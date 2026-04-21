@@ -1,0 +1,525 @@
+// ERP AMAZON — schema Prisma (F4: financeiro + estoque)
+//
+// Convenções:
+// - Dinheiro em centavos (Int). Nunca Float.
+// - Datas em UTC; lógica de fuso (America/Sao_Paulo) é aplicada na camada de serviço.
+// - Enums representados como String + constantes de domínio (SQLite não tem enum nativo).
+// - Cada modelo tem createdAt/updatedAt para auditoria básica.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ── Autenticação ────────────────────────────────────────────────────────────
+
+// Usuário do sistema. Estrutura pronta para multi-usuário, mas hoje temos só o dono.
+//
+// role:
+//   ADMIN   — acesso total
+//   MEMBRO  — acesso operacional (pode ser refinado depois)
+//
+// senhaHash é bcrypt (nunca a senha em texto puro).
+// ultimoAcesso é atualizado no login bem-sucedido.
+model Usuario {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  senhaHash    String
+  nome         String
+  // ADMIN | MEMBRO
+  role         String    @default("ADMIN")
+  ativo        Boolean   @default(true)
+  avatarUrl    String?
+  ultimoAcesso DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@index([email])
+  @@index([ativo])
+}
+
+model Categoria {
+  id            String   @id @default(cuid())
+  nome          String   @unique
+  // RECEITA | DESPESA | AMBAS
+  tipo          String
+  cor           String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  movimentacoes Movimentacao[]
+  contas        ContaPagar[]
+}
+
+model Fornecedor {
+  id         String   @id @default(cuid())
+  nome       String   @unique
+  documento  String?
+  contato    String?
+  observacoes String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  contas     ContaPagar[]
+  pedidos    PedidoCompra[]
+}
+
+// Movimentação de caixa (entrada ou saída realizada).
+//
+// origem explica de onde veio:
+//   MANUAL     — lançada diretamente pelo usuário
+//   CONTA_PAGA — gerada automaticamente ao marcar uma ContaPagar como paga
+//   IMPORTACAO — criada via importador CSV/XLSX
+//   AJUSTE     — ajuste manual de saldo; exige motivoAjuste
+//
+// referenciaId guarda o id da entidade de origem (ex: ContaPagar.id) quando aplicável.
+model Movimentacao {
+  id              String   @id @default(cuid())
+  // ENTRADA | SAIDA
+  tipo            String
+  // valor em centavos, sempre positivo (o sinal vem de tipo)
+  valor           Int
+  dataCompetencia DateTime
+  dataCaixa       DateTime
+  categoriaId     String
+  descricao       String
+  // MANUAL | CONTA_PAGA | IMPORTACAO | AJUSTE
+  origem          String
+  referenciaId    String?
+  motivoAjuste    String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  categoria       Categoria     @relation(fields: [categoriaId], references: [id])
+  contaPaga       ContaPagar?   @relation("ContaPagaMovimentacao")
+  contaReceber    ContaReceber? @relation("ContaReceberMovimentacao")
+
+  @@index([dataCaixa])
+  @@index([tipo])
+  @@index([categoriaId])
+  @@index([origem])
+}
+
+// Conta a pagar.
+//
+// status:
+//   ABERTA     — em aberto, ainda não vencida
+//   VENCIDA    — em aberto e com vencimento no passado
+//   PAGA       — liquidada; movimentacaoId aponta para a saída gerada
+//   CANCELADA  — descartada manualmente
+//
+// recorrencia:
+//   NENHUMA    — conta única
+//   MENSAL     — ao pagar, gera próxima instância (com contaPaiId apontando para a origem)
+model ContaPagar {
+  id             String   @id @default(cuid())
+  fornecedorId   String
+  categoriaId    String
+  descricao      String
+  // valor em centavos
+  valor          Int
+  vencimento     DateTime
+  // ABERTA | VENCIDA | PAGA | CANCELADA
+  status         String   @default("ABERTA")
+  // NENHUMA | MENSAL
+  recorrencia    String   @default("NENHUMA")
+  contaPaiId     String?
+  pagoEm         DateTime?
+  movimentacaoId String?  @unique
+  observacoes    String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  fornecedor     Fornecedor    @relation(fields: [fornecedorId], references: [id])
+  categoria      Categoria     @relation(fields: [categoriaId], references: [id])
+  nfAnexo        String?
+  nfNome         String?
+
+  contaPai       ContaPagar?   @relation("Recorrencia", fields: [contaPaiId], references: [id])
+  filhas         ContaPagar[]  @relation("Recorrencia")
+  movimentacao   Movimentacao? @relation("ContaPagaMovimentacao", fields: [movimentacaoId], references: [id])
+  dossieFinanceiro DossieFinanceiro?
+  pedidoCompra   PedidoCompra? @relation("PedidoContaPagar")
+
+  @@index([status])
+  @@index([vencimento])
+  @@index([fornecedorId])
+}
+
+// Agrupa documentos que representam a mesma obrigação financeira
+// independentemente da ordem de entrada (boleto primeiro, NF depois, etc.).
+// Pode existir antes da ContaPagar e ser vinculada depois.
+model DossieFinanceiro {
+  id                  String   @id @default(cuid())
+  fornecedorNome      String?
+  fornecedorDocumento String?
+  descricao           String?
+  valor               Int?
+  vencimento          DateTime?
+  numeroDocumento     String?
+  status              String   @default("PENDENTE")
+  contaPagarId        String?  @unique
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  contaPagar          ContaPagar?          @relation(fields: [contaPagarId], references: [id])
+  documentos          DocumentoFinanceiro[]
+
+  @@index([status])
+  @@index([fornecedorDocumento])
+  @@index([vencimento])
+}
+
+// Documento individual recebido do fornecedor (boleto, NF, etc.).
+// O arquivo sempre pertence a um DossieFinanceiro e pode acabar vinculado
+// indiretamente a uma ContaPagar quando o dossiê é conciliado.
+model DocumentoFinanceiro {
+  id                  String   @id @default(cuid())
+  dossieId            String
+  tipo                String
+  nomeArquivo         String
+  caminhoArquivo      String
+  mimeType            String
+  sha256              String   @unique
+  textoExtraido       String?
+  fornecedorNome      String?
+  fornecedorDocumento String?
+  descricao           String?
+  valor               Int?
+  vencimento          DateTime?
+  numeroDocumento     String?
+  chaveAcesso         String?
+  linhaDigitavel      String?
+  dataEmissao         DateTime?
+  protegidoPorSenha   Boolean  @default(false)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  dossie              DossieFinanceiro @relation(fields: [dossieId], references: [id], onDelete: Cascade)
+
+  @@index([dossieId])
+  @@index([tipo])
+  @@index([fornecedorDocumento])
+  @@index([vencimento])
+}
+
+// Conta a receber — receita esperada (Amazon, marketplace, etc.).
+//
+// status:
+//   PENDENTE   — dinheiro esperado, ainda não recebido
+//   RECEBIDA   — confirmado na conta bancária
+//   CANCELADA  — cancelada/estornada
+//
+// origem:
+//   AMAZON     — importada do relatório Unified Transaction
+//   MANUAL     — lançada pelo usuário
+//
+// liquidacaoId: ID de liquidação da Amazon (agrupa pedidos do mesmo lote).
+model ContaReceber {
+  id                String   @id @default(cuid())
+  descricao         String
+  valor             Int      // centavos, líquido (após taxas Amazon)
+  dataPrevisao      DateTime?
+  dataRecebimento   DateTime?
+  // PENDENTE | RECEBIDA | CANCELADA
+  status            String   @default("PENDENTE")
+  // AMAZON | MANUAL
+  origem            String   @default("AMAZON")
+  liquidacaoId      String?  // Amazon settlement ID
+  totalPedidos      Int      @default(0)
+  movimentacaoId    String?  @unique
+  observacoes       String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  movimentacao      Movimentacao? @relation("ContaReceberMovimentacao", fields: [movimentacaoId], references: [id])
+
+  @@index([status])
+  @@index([dataPrevisao])
+  @@index([liquidacaoId])
+}
+
+// ── Estoque ─────────────────────────────────────────────────────────────────
+
+// Produto cadastrado no ERP (SKU como identificador único mestre).
+//
+// estoqueAtual é atualizado de forma atômica junto com cada MovimentacaoEstoque
+// para evitar recalcular sum() em toda leitura.
+//
+// statusReposicao (OK/ATENCAO/REPOR) é derivado — nunca persistido.
+model Produto {
+  id              String   @id @default(cuid())
+  sku             String   @unique
+  asin            String?
+  nome            String
+  descricao       String?
+  // custo unitário em centavos
+  custoUnitario   Int?
+  // preço de venda em centavos (informativo)
+  precoVenda      Int?
+  estoqueAtual    Int      @default(0)
+  estoqueMinimo   Int      @default(0)
+  unidade         String   @default("un")
+  ativo           Boolean  @default(true)
+  imagemUrl       String?
+  observacoes     String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  movimentacoes   MovimentacaoEstoque[]
+  itensPedido     ItemPedidoCompra[]
+  metricas        ProdutoMetricaGestorSeller[]
+
+  @@index([sku])
+  @@index([asin])
+  @@index([ativo])
+}
+
+// Movimentação de estoque (entrada ou saída de produto).
+//
+// tipo: ENTRADA | SAIDA
+// origem: MANUAL | IMPORTACAO | AJUSTE | COMPRA | VENDA
+//
+// custoUnitario captura o custo no momento da movimentação (snapshot histórico).
+model MovimentacaoEstoque {
+  id               String   @id @default(cuid())
+  produtoId        String
+  // ENTRADA | SAIDA
+  tipo             String
+  quantidade       Int
+  // custo unitário no momento da movimentação, em centavos
+  custoUnitario    Int?
+  // MANUAL | IMPORTACAO | AJUSTE | COMPRA | VENDA
+  origem           String
+  referenciaId     String?
+  observacoes      String?
+  dataMovimentacao DateTime
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  produto          Produto  @relation(fields: [produtoId], references: [id])
+
+  @@index([produtoId])
+  @@index([dataMovimentacao])
+  @@index([tipo])
+  @@index([origem])
+}
+
+// ── Compras & Reposição ─────────────────────────────────────────────────────
+
+// Pedido de compra ao fornecedor.
+//
+// status:
+//   RASCUNHO   — em elaboração, pode ser editado
+//   CONFIRMADO — pedido feito ao fornecedor; cria ContaPagar
+//   RECEBIDO   — mercadoria chegou; cria MovimentacaoEstoque ENTRADA por item
+//   CANCELADO  — cancelado
+model PedidoCompra {
+  id              String    @id @default(cuid())
+  numero          String?
+  fornecedorId    String?
+  fornecedor      Fornecedor? @relation(fields: [fornecedorId], references: [id])
+  // RASCUNHO | CONFIRMADO | RECEBIDO | CANCELADO
+  status          String    @default("RASCUNHO")
+  dataEmissao     DateTime  @default(now())
+  dataPrevisao    DateTime?
+  dataRecebimento DateTime?
+  // total em centavos (desnormalizado para queries rápidas)
+  totalCentavos   Int       @default(0)
+  observacoes     String?
+  // contaPagar criada ao confirmar
+  contaPagarId    String?   @unique
+  contaPagar      ContaPagar? @relation("PedidoContaPagar", fields: [contaPagarId], references: [id])
+  itens           ItemPedidoCompra[]
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([status])
+  @@index([dataEmissao])
+  @@index([fornecedorId])
+}
+
+// Item de um PedidoCompra (produto + quantidade + custo negociado).
+model ItemPedidoCompra {
+  id              String   @id @default(cuid())
+  pedidoId        String
+  pedido          PedidoCompra @relation(fields: [pedidoId], references: [id], onDelete: Cascade)
+  produtoId       String
+  produto         Produto  @relation(fields: [produtoId], references: [id])
+  quantidade      Int
+  custoUnitario   Int      // centavos
+  subtotal        Int      // quantidade * custoUnitario (desnormalizado)
+  createdAt       DateTime @default(now())
+
+  @@index([pedidoId])
+  @@index([produtoId])
+}
+
+// ── Amazon Sync ──────────────────────────────────────────────────────────────
+
+// Histórico de sincronizações com Amazon SP-API.
+model AmazonSyncLog {
+  id        String   @id @default(cuid())
+  // ORDERS | INVENTORY | ALL
+  tipo      String
+  // PROCESSANDO | SUCESSO | ERRO
+  status    String
+  mensagem  String?
+  detalhes  String?  // JSON stringificado com detalhes do resultado
+  registros Int      @default(0)
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([tipo])
+  @@index([status])
+}
+
+// Controle das solicitações oficiais de avaliação/feedback enviadas pela
+// Solicitations API. Garante idempotência por pedido Amazon.
+model AmazonReviewSolicitation {
+  id            String   @id @default(cuid())
+  amazonOrderId String   @unique
+  marketplaceId String
+  // PENDENTE | ELEGIVEL | ENVIADO | NAO_ELEGIVEL | ERRO
+  status        String   @default("PENDENTE")
+  asin          String?
+  sku           String?
+  checkedAt     DateTime?
+  sentAt        DateTime?
+  errorMessage  String?
+  rawResponse   String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([status])
+  @@index([sentAt])
+  @@index([createdAt])
+  @@index([marketplaceId])
+}
+
+// Configuração chave-valor simples (percentuais de destinação, preferências).
+model ConfiguracaoSistema {
+  id        String   @id @default(cuid())
+  chave     String   @unique
+  valor     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ── Vendas FBA ───────────────────────────────────────────────────────────────
+
+// Lote de importação FBA (vendas ou sincronização de estoque).
+model LoteImportacaoFBA {
+  id                  String    @id @default(cuid())
+  nomeArquivo         String
+  // VENDAS | ESTOQUE
+  tipo                String
+  totalLinhas         Int
+  periodoInicio       DateTime?
+  periodoFim          DateTime?
+  produtosAtualizados Int       @default(0)
+  createdAt           DateTime  @default(now())
+
+  vendas              VendaFBA[]
+
+  @@index([tipo])
+  @@index([createdAt])
+}
+
+// Registro de venda individual importado do Gestor Seller / Seller Central.
+model VendaFBA {
+  id                    String   @id @default(cuid())
+  numeroPedido          String
+  marketplace           String?
+  // Enviado | Cancelado | Reembolsado | Pendente
+  status                String
+  dataCompra            DateTime
+  asin                  String?
+  skuExterno            String
+  skuInterno            String?
+  titulo                String?
+  quantidade            Int
+  // preço unitário em centavos
+  precoUnitarioCentavos Int
+  // totalCentavos = quantidade * precoUnitarioCentavos
+  totalCentavos         Int
+  loteId                String
+  createdAt             DateTime @default(now())
+
+  lote                  LoteImportacaoFBA @relation(fields: [loteId], references: [id], onDelete: Cascade)
+
+  @@unique([numeroPedido, skuExterno])
+  @@index([skuExterno])
+  @@index([dataCompra])
+  @@index([status])
+  @@index([loteId])
+}
+
+// ── Gestor Seller — métricas de produto ────────────────────────────────────
+
+// Agrupa um snapshot de métricas importado do products_report.xlsx.
+// Um novo lote é criado a cada sincronização; o histórico fica preservado.
+model LoteMetricaGS {
+  id          String   @id @default(cuid())
+  nomeArquivo String
+  createdAt   DateTime @default(now())
+
+  metricas    ProdutoMetricaGestorSeller[]
+
+  @@index([createdAt])
+}
+
+// Métricas comerciais por produto extraídas do Gestor Seller (products_report).
+// Salvas por lote para permitir comparação entre períodos.
+// Valores monetários em centavos (Int). Percentuais como Float (ex: 15.5 = 15,5%).
+model ProdutoMetricaGestorSeller {
+  id                     String   @id @default(cuid())
+  loteId                 String
+  // null quando o SKU não foi encontrado/criado no catálogo ERP
+  produtoId              String?
+  sku                    String
+  titulo                 String?
+  // custo e preço em centavos (snapshot do relatório)
+  custoUnitarioCentavos  Int?
+  precoVendaCentavos     Int?
+  unidadesVendidasTotais Int      @default(0)
+  // receita por canal, em centavos
+  vendasAmazonCentavos   Int      @default(0)
+  vendasMlCentavos       Int      @default(0)
+  vendasShopeeCentavos   Int      @default(0)
+  vendasTikTokCentavos   Int      @default(0)
+  faturamentoCentavos    Int      @default(0)
+  lucroCentavos          Int      @default(0)
+  margemPercentual       Float    @default(0)
+  custoAdsCentavos       Int      @default(0)
+  lucroPosAdsCentavos    Int      @default(0)
+  mpaPercentual          Float    @default(0)
+  createdAt              DateTime @default(now())
+
+  lote     LoteMetricaGS @relation(fields: [loteId], references: [id], onDelete: Cascade)
+  produto  Produto?      @relation(fields: [produtoId], references: [id])
+
+  @@unique([loteId, sku])
+  @@index([sku])
+  @@index([produtoId])
+  @@index([loteId])
+}
+
+// Lote de importação. Cada upload bem-sucedido cria um registro aqui;
+// as movimentações geradas guardam ImportacaoLote.id em referenciaId.
+// Permite listar o histórico de arquivos importados e remover o lote
+// inteiro (junto com as movimentações vinculadas) quando preciso refazer.
+model ImportacaoLote {
+  id           String   @id @default(cuid())
+  nomeArquivo  String
+  // GENERICO | NUBANK (string para manter compat com SQLite)
+  formato      String
+  totalLinhas  Int
+  criadoEm     DateTime @default(now())
+
+  @@index([criadoEm])
+}
