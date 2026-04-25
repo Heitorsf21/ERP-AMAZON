@@ -97,7 +97,7 @@ function SearchTrigger({ onOpen }: { onOpen: () => void }) {
       aria-label="Buscar no sistema"
     >
       <Search className="h-4 w-4 opacity-70 transition-opacity group-hover:opacity-100" />
-      <span className="flex-1 text-left">Buscar páginas, ações, dados…</span>
+      <span className="flex-1 text-left">Buscar produtos, contas, fornecedores… (&gt; para ações)</span>
       <kbd className="hidden items-center gap-1 rounded border border-border/70 bg-background px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground sm:inline-flex">
         {ATALHO_BUSCA}
       </kbd>
@@ -158,12 +158,19 @@ function ProfileMenu() {
         >
           <span
             className={cn(
-              "flex h-8 w-8 items-center justify-center rounded-full",
+              "flex h-8 w-8 items-center justify-center overflow-hidden rounded-full",
               "bg-gradient-to-br from-primary to-primary/70 text-xs font-semibold text-primary-foreground",
               "shadow-sm ring-2 ring-background",
             )}
           >
-            {isLoading && !iniciais ? (
+            {usuario?.avatarUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src="/api/perfil/avatar"
+                alt={nome || "Avatar"}
+                className="h-full w-full object-cover"
+              />
+            ) : isLoading && !iniciais ? (
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
             ) : iniciais ? (
               iniciais

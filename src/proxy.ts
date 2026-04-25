@@ -4,8 +4,13 @@ import { SESSION_COOKIE_NAME, verifySession } from "@/lib/session";
 // Rotas públicas (não exigem sessão).
 const PUBLIC_PATHS = [
   "/login",
+  "/esqueci-senha",
+  "/redefinir-senha",
   "/api/auth/login",
   "/api/auth/logout",
+  "/api/auth/2fa/verificar",
+  "/api/auth/recuperar-senha",
+  "/api/auth/redefinir-senha",
   // Health check público para watchdog/load balancer/Nginx checar saúde do app
   // sem precisar manter sessão. Não vaza nada sensível (só status agregado).
   "/api/health",

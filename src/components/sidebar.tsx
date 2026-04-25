@@ -1,34 +1,16 @@
 "use client";
 
 import Link from "next/link";
-import type { Route } from "next";
 import { usePathname } from "next/navigation";
 import * as React from "react";
 import {
-  LayoutDashboard,
-  Wallet,
-  FileText,
-  ArrowDownToLine,
-  Package,
-  ShoppingCart,
-  PiggyBank,
-  Globe,
-  BarChart3,
   ChevronLeft,
   ChevronRight,
   ChevronDown,
-  Home,
-  ShoppingBag,
-  Settings,
-  Star,
-  UserCircle,
-  Banknote,
-  Store,
-  Cog,
   Menu,
-  Bell,
-  Megaphone,
+  Package,
 } from "lucide-react";
+import { HOME_ITEM, NAV_GROUPS, type NavLeaf, type NavGroup as NavGroupT } from "./nav-routes";
 import { useQuery } from "@tanstack/react-query";
 import { fetchJSON } from "@/lib/fetcher";
 import { cn } from "@/lib/utils";
@@ -48,63 +30,12 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 
-type LeafItem = {
-  href: Route;
-  label: string;
-  icon: React.ComponentType<{ className?: string }>;
-  hint?: string;
-  badge?: number;
-};
+// Re-exporta para o resto do arquivo
+type LeafItem = NavLeaf & { badge?: number };
+type Group = NavGroupT;
 
-type Group = {
-  id: string;
-  label: string;
-  icon: React.ComponentType<{ className?: string }>;
-  items: LeafItem[];
-};
-
-const homeItem: LeafItem = { href: "/home" as Route, label: "Home", icon: Home };
-
-const groups: Group[] = [
-  {
-    id: "financeiro",
-    label: "Financeiro",
-    icon: Banknote,
-    items: [
-      { href: "/financeiro/dashboard" as Route, label: "Dashboard", icon: LayoutDashboard },
-      { href: "/caixa" as Route, label: "Caixa", icon: Wallet },
-      { href: "/contas-a-pagar" as Route, label: "Contas a Pagar", icon: FileText },
-      { href: "/contas-a-receber" as Route, label: "Contas a Receber", icon: ArrowDownToLine },
-      { href: "/notas-fiscais" as Route, label: "Notas Fiscais", icon: FileText },
-      { href: "/destinacao" as Route, label: "Destinação", icon: PiggyBank },
-      { href: "/dre" as Route, label: "DRE", icon: BarChart3 },
-    ],
-  },
-  {
-    id: "ecommerce",
-    label: "E-commerce",
-    icon: Store,
-    items: [
-      { href: "/dashboard-ecommerce" as Route, label: "Dashboard", icon: BarChart3 },
-      { href: "/produtos" as Route, label: "Produtos", icon: Package },
-      { href: "/vendas" as Route, label: "Vendas", icon: ShoppingBag },
-      { href: "/compras" as Route, label: "Compras", icon: ShoppingCart },
-      { href: "/avaliacoes" as Route, label: "Avaliações", icon: Star },
-      { href: "/publicidade" as Route, label: "Publicidade", icon: Megaphone },
-    ],
-  },
-  {
-    id: "configuracao",
-    label: "Configuração",
-    icon: Cog,
-    items: [
-      { href: "/amazon" as Route, label: "Conector Amazon", icon: Globe },
-      { href: "/notificacoes" as Route, label: "Notificações", icon: Bell },
-      { href: "/perfil" as Route, label: "Perfil", icon: UserCircle },
-      { href: "/configuracoes" as Route, label: "Configurações", icon: Settings },
-    ],
-  },
-];
+const homeItem = HOME_ITEM;
+const groups = NAV_GROUPS;
 
 function isActive(pathname: string, href: string): boolean {
   if (href === "/home") return pathname === "/home" || pathname === "/";

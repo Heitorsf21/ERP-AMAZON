@@ -4,6 +4,7 @@
 
 export const SESSION_COOKIE_NAME = "erp_session";
 const SEVEN_DAYS_SECONDS = 60 * 60 * 24 * 7;
+const THIRTY_DAYS_SECONDS = 60 * 60 * 24 * 30;
 
 export type SessionPayload = {
   uid: string;
@@ -94,20 +95,23 @@ export async function verifySession(
   }
 }
 
-export function buildSessionCookieOptions() {
+export function buildSessionCookieOptions(remember = false) {
   return {
     httpOnly: true,
     sameSite: "lax" as const,
     secure: process.env.NODE_ENV === "production",
     path: "/",
-    maxAge: SEVEN_DAYS_SECONDS,
+    maxAge: remember ? THIRTY_DAYS_SECONDS : SEVEN_DAYS_SECONDS,
   };
 }
 
-export function sessionMaxAgeSeconds(): number {
-  return SEVEN_DAYS_SECONDS;
+export function sessionMaxAgeSeconds(remember = false): number {
+  return remember ? THIRTY_DAYS_SECONDS : SEVEN_DAYS_SECONDS;
 }
 
-export function buildSessionExpiry(): number {
-  return Math.floor(Date.now() / 1000) + SEVEN_DAYS_SECONDS;
+export function buildSessionExpiry(remember = false): number {
+  return (
+    Math.floor(Date.now() / 1000) +
+    (remember ? THIRTY_DAYS_SECONDS : SEVEN_DAYS_SECONDS)
+  );
 }

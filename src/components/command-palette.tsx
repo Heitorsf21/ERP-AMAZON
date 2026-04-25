@@ -3,54 +3,40 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import type { Route } from "next";
+import { useQueryClient } from "@tanstack/react-query";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
+import { toast } from "sonner";
 import {
   Search,
-  Home,
-  LayoutDashboard,
-  Wallet,
-  FileText,
-  ArrowDownToLine,
-  PiggyBank,
-  BarChart3,
-  Package,
-  ShoppingBag,
-  ShoppingCart,
-  Globe,
-  UserCircle,
-  Settings,
   ArrowRight,
+  Package,
+  FileText,
+  Building2,
+  Receipt,
+  Plus,
+  Upload,
+  RefreshCw,
+  CheckCircle2,
+  Zap,
+  ScrollText,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { ALL_NAV_ITEMS } from "./nav-routes";
+import type { BuscaResposta, BuscaResultadoItem } from "@/modules/busca/service";
 
-// ─── Types ────────────────────────────────────────────────────────────────────
+// ─── Tipos ────────────────────────────────────────────────────────────────────
 
-type NavItem = {
-  id: string;
+type Modo = "navegacao" | "acoes";
+
+type FlatItem = {
+  key: string;
   label: string;
+  sub?: string;
   group: string;
   icon: React.ComponentType<{ className?: string }>;
-  href: string;
-  keywords: string[];
+  /** Ação ao selecionar. Pode navegar (usar router.push) ou executar callback. */
+  run: () => void | Promise<void>;
 };
-
-// ─── Static items ─────────────────────────────────────────────────────────────
-
-const NAV_ITEMS: NavItem[] = [
-  { id: "home", label: "Home", group: "Páginas", icon: Home, href: "/home", keywords: ["inicio", "principal", "central"] },
-  { id: "dashboard", label: "Dashboard Financeiro", group: "Páginas", icon: LayoutDashboard, href: "/financeiro/dashboard", keywords: ["relatorio", "resumo", "financeiro", "grafico"] },
-  { id: "caixa", label: "Caixa", group: "Páginas", icon: Wallet, href: "/caixa", keywords: ["extrato", "movimentacao", "bancario", "lancamento", "banco"] },
-  { id: "contas-pagar", label: "Contas a Pagar", group: "Páginas", icon: FileText, href: "/contas-a-pagar", keywords: ["debito", "fornecedor", "boleto", "pagar", "vencimento"] },
-  { id: "contas-receber", label: "Contas a Receber", group: "Páginas", icon: ArrowDownToLine, href: "/contas-a-receber", keywords: ["amazon", "recebimento", "liquidacao", "receber"] },
-  { id: "destinacao", label: "Destinação de Caixa", group: "Páginas", icon: PiggyBank, href: "/destinacao", keywords: ["saldo", "livre", "comprometido", "projetado"] },
-  { id: "dre", label: "DRE", group: "Páginas", icon: BarChart3, href: "/dre", keywords: ["resultado", "lucro", "prejuizo", "demonstrativo", "receita", "despesa"] },
-  { id: "produtos", label: "Produtos", group: "Páginas", icon: Package, href: "/produtos", keywords: ["estoque", "inventario", "fba", "quantidade", "sku", "catalogo"] },
-  { id: "vendas", label: "Vendas", group: "Páginas", icon: ShoppingBag, href: "/vendas", keywords: ["pedidos", "venda", "orders"] },
-  { id: "compras", label: "Compras", group: "Páginas", icon: ShoppingCart, href: "/compras", keywords: ["pedido compra", "reposicao", "fornecedor", "purchase"] },
-  { id: "amazon", label: "Conector Amazon", group: "Configuração", icon: Globe, href: "/amazon", keywords: ["sp-api", "sincronizar", "api", "credenciais", "marketplace"] },
-  { id: "perfil", label: "Meu Perfil", group: "Configuração", icon: UserCircle, href: "/perfil", keywords: ["senha", "usuario", "conta", "alterar"] },
-  { id: "configuracoes", label: "Configurações", group: "Configuração", icon: Settings, href: "/configuracoes", keywords: ["sistema", "preferencias", "config"] },
-];
 
 // ─── Context ──────────────────────────────────────────────────────────────────
 
@@ -60,8 +46,6 @@ const CommandPaletteCtx = React.createContext<Ctx>({ open: () => {} });
 export function useCommandPalette() {
   return React.useContext(CommandPaletteCtx);
 }
-
-// ─── Provider ─────────────────────────────────────────────────────────────────
 
 export function CommandPaletteProvider({ children }: { children: React.ReactNode }) {
   const [isOpen, setIsOpen] = React.useState(false);
@@ -91,8 +75,22 @@ function normalize(s: string) {
   return s
     .toLowerCase()
     .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "");
+    .replace(/[̀-ͯ]/g, "");
 }
+
+const TIPO_ICON: Record<BuscaResultadoItem["tipo"], React.ComponentType<{ className?: string }>> = {
+  produto: Package,
+  "conta-pagar": Receipt,
+  fornecedor: Building2,
+  documento: FileText,
+};
+
+const TIPO_GROUP: Record<BuscaResultadoItem["tipo"], string> = {
+  produto: "Produtos",
+  "conta-pagar": "Contas a Pagar",
+  fornecedor: "Fornecedores",
+  documento: "Documentos",
+};
 
 // ─── Dialog ───────────────────────────────────────────────────────────────────
 
@@ -104,36 +102,249 @@ function CommandPaletteDialog({
   onClose: () => void;
 }) {
   const router = useRouter();
+  const qc = useQueryClient();
   const [query, setQuery] = React.useState("");
   const [selectedIdx, setSelectedIdx] = React.useState(0);
   const inputRef = React.useRef<HTMLInputElement>(null);
   const listRef = React.useRef<HTMLDivElement>(null);
 
-  const filtered = React.useMemo<NavItem[]>(() => {
-    if (!query.trim()) return NAV_ITEMS;
-    const q = normalize(query);
-    return NAV_ITEMS.filter((item) => {
-      return (
-        normalize(item.label).includes(q) ||
-        normalize(item.keywords.join(" ")).includes(q) ||
-        normalize(item.group).includes(q)
-      );
-    });
-  }, [query]);
+  // Modo é decidido pelo prefixo da query.
+  const modo: Modo = query.startsWith(">") ? "acoes" : "navegacao";
+  const queryAjustada = modo === "acoes" ? query.slice(1).trim() : query.trim();
 
-  const groups = React.useMemo(() => {
-    const map = new Map<string, NavItem[]>();
-    for (const item of filtered) {
+  // Busca remota: só dispara se modo=navegacao e tem ≥2 chars, com debounce 200ms.
+  const [dadosRemotos, setDadosRemotos] = React.useState<BuscaResposta | null>(null);
+  const [carregandoRemoto, setCarregandoRemoto] = React.useState(false);
+
+  React.useEffect(() => {
+    if (modo !== "navegacao" || queryAjustada.length < 2) {
+      setDadosRemotos(null);
+      return;
+    }
+    const ctrl = new AbortController();
+    const timer = setTimeout(async () => {
+      setCarregandoRemoto(true);
+      try {
+        const r = await fetch(
+          `/api/busca?q=${encodeURIComponent(queryAjustada)}&limit=5`,
+          { signal: ctrl.signal },
+        );
+        if (r.ok) {
+          const data = (await r.json()) as BuscaResposta;
+          setDadosRemotos(data);
+        }
+      } catch {
+        // ignore (abort/erro)
+      } finally {
+        setCarregandoRemoto(false);
+      }
+    }, 200);
+    return () => {
+      clearTimeout(timer);
+      ctrl.abort();
+    };
+  }, [queryAjustada, modo]);
+
+  // Ações rápidas (estáticas, executam callback).
+  const acoesRapidas = React.useMemo<FlatItem[]>(
+    () => [
+      {
+        key: "acao:nova-conta",
+        label: "Nova conta a pagar",
+        sub: "Abre o formulário",
+        group: "Ações",
+        icon: Plus,
+        run: () => {
+          router.push("/contas-a-pagar?novo=1" as Route);
+          onClose();
+        },
+      },
+      {
+        key: "acao:novo-produto",
+        label: "Novo produto",
+        sub: "Cadastrar SKU MFS-",
+        group: "Ações",
+        icon: Plus,
+        run: () => {
+          router.push("/produtos?novo=1" as Route);
+          onClose();
+        },
+      },
+      {
+        key: "acao:subir-documento",
+        label: "Subir nota fiscal ou boleto",
+        sub: "Upload de PDF",
+        group: "Ações",
+        icon: Upload,
+        run: () => {
+          router.push("/notas-fiscais?upload=1" as Route);
+          onClose();
+        },
+      },
+      {
+        key: "acao:importar-extrato",
+        label: "Importar extrato Nubank",
+        sub: "CSV/OFX",
+        group: "Ações",
+        icon: Upload,
+        run: () => {
+          router.push("/caixa?importar=1" as Route);
+          onClose();
+        },
+      },
+      {
+        key: "acao:sync-amazon",
+        label: "Sincronizar Amazon agora",
+        sub: "Pedidos + estoque",
+        group: "Ações",
+        icon: RefreshCw,
+        run: async () => {
+          onClose();
+          toast.loading("Disparando sync...", { id: "sync-amazon" });
+          try {
+            const r = await fetch("/api/amazon/sync", {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ tipo: "ORDERS", diasAtras: 3 }),
+            });
+            if (r.ok) {
+              toast.success("Sync de pedidos disparado", { id: "sync-amazon" });
+              qc.invalidateQueries({ queryKey: ["amazon-status"] });
+            } else {
+              toast.error("Falha ao disparar sync", { id: "sync-amazon" });
+            }
+          } catch {
+            toast.error("Erro de rede", { id: "sync-amazon" });
+          }
+        },
+      },
+      {
+        key: "acao:sync-settlement",
+        label: "Sincronizar settlement Amazon",
+        sub: "Baixa CSV financeiro",
+        group: "Ações",
+        icon: RefreshCw,
+        run: async () => {
+          onClose();
+          toast.loading("Buscando settlement...", { id: "sync-sett" });
+          try {
+            const r = await fetch("/api/amazon/sync-settlement", { method: "POST" });
+            if (r.ok) {
+              toast.success("Settlement sincronizado", { id: "sync-sett" });
+            } else {
+              toast.error("Falha", { id: "sync-sett" });
+            }
+          } catch {
+            toast.error("Erro de rede", { id: "sync-sett" });
+          }
+        },
+      },
+      {
+        key: "acao:marcar-recebida",
+        label: "Marcar liquidação como recebida",
+        sub: "Vai para Contas a Receber",
+        group: "Ações",
+        icon: CheckCircle2,
+        run: () => {
+          router.push("/contas-a-receber" as Route);
+          onClose();
+        },
+      },
+      {
+        key: "acao:health",
+        label: "Ver saúde do sistema",
+        sub: "Worker, fila, quotas",
+        group: "Ações",
+        icon: ScrollText,
+        run: () => {
+          router.push("/sistema" as Route);
+          onClose();
+        },
+      },
+    ],
+    [router, qc, onClose],
+  );
+
+  // Constrói lista plana de resultados de acordo com o modo.
+  const flat = React.useMemo<FlatItem[]>(() => {
+    // MODO AÇÕES
+    if (modo === "acoes") {
+      if (!queryAjustada) return acoesRapidas;
+      const q = normalize(queryAjustada);
+      return acoesRapidas.filter(
+        (a) =>
+          normalize(a.label).includes(q) || normalize(a.sub ?? "").includes(q),
+      );
+    }
+
+    // MODO NAVEGAÇÃO
+    const items: FlatItem[] = [];
+
+    // Páginas (filtra client-side por label/keywords/group)
+    const q = normalize(queryAjustada);
+    const paginas = queryAjustada
+      ? ALL_NAV_ITEMS.filter(
+          (it) =>
+            normalize(it.label).includes(q) ||
+            normalize((it.keywords ?? []).join(" ")).includes(q) ||
+            normalize(it.group).includes(q),
+        )
+      : ALL_NAV_ITEMS;
+
+    for (const p of paginas) {
+      items.push({
+        key: `pagina:${p.href}`,
+        label: p.label,
+        group: `Páginas — ${p.group}`,
+        icon: p.icon,
+        run: () => {
+          router.push(p.href);
+          onClose();
+        },
+      });
+    }
+
+    // Dados remotos
+    if (dadosRemotos) {
+      const grupos: Array<keyof BuscaResposta> = [
+        "produtos",
+        "contas",
+        "fornecedores",
+        "documentos",
+      ];
+      for (const g of grupos) {
+        for (const it of dadosRemotos[g]) {
+          items.push({
+            key: `${it.tipo}:${it.id}`,
+            label: it.label,
+            sub: it.sub,
+            group: TIPO_GROUP[it.tipo],
+            icon: TIPO_ICON[it.tipo],
+            run: () => {
+              router.push(it.href as Route);
+              onClose();
+            },
+          });
+        }
+      }
+    }
+
+    return items;
+  }, [modo, queryAjustada, dadosRemotos, acoesRapidas, router, onClose]);
+
+  // Agrupa por group label, preservando ordem
+  const grupos = React.useMemo(() => {
+    const map = new Map<string, FlatItem[]>();
+    for (const item of flat) {
       if (!map.has(item.group)) map.set(item.group, []);
       map.get(item.group)!.push(item);
     }
-    return map;
-  }, [filtered]);
+    return [...map.entries()];
+  }, [flat]);
 
-  // Pre-compute flat list for keyboard nav
-  const flat = React.useMemo<NavItem[]>(() => [...groups.values()].flat(), [groups]);
-
-  React.useEffect(() => { setSelectedIdx(0); }, [query]);
+  React.useEffect(() => {
+    setSelectedIdx(0);
+  }, [query]);
 
   React.useEffect(() => {
     if (isOpen) {
@@ -149,11 +360,6 @@ function CommandPaletteDialog({
     el?.scrollIntoView({ block: "nearest" });
   }, [selectedIdx]);
 
-  function go(href: string) {
-    router.push(href as Route);
-    onClose();
-  }
-
   function onKeyDown(e: React.KeyboardEvent) {
     if (e.key === "ArrowDown") {
       e.preventDefault();
@@ -164,18 +370,18 @@ function CommandPaletteDialog({
     } else if (e.key === "Enter") {
       e.preventDefault();
       const item = flat[selectedIdx];
-      if (item) go(item.href);
+      if (item) item.run();
     }
   }
 
-  // Build indexed rows per group for rendering
+  // Indices flat para a render
   const renderedGroups = React.useMemo(() => {
     let idx = 0;
-    return [...groups.entries()].map(([groupLabel, items]) => ({
+    return grupos.map(([groupLabel, items]) => ({
       groupLabel,
       rows: items.map((item) => ({ item, idx: idx++ })),
     }));
-  }, [groups]);
+  }, [grupos]);
 
   return (
     <DialogPrimitive.Root open={isOpen} onOpenChange={(v) => !v && onClose()}>
@@ -183,7 +389,7 @@ function CommandPaletteDialog({
         <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm animate-in fade-in-0 duration-150" />
         <DialogPrimitive.Content
           className={cn(
-            "fixed left-1/2 top-[12vh] z-50 w-[min(92vw,560px)] -translate-x-1/2",
+            "fixed left-1/2 top-[12vh] z-50 w-[min(92vw,640px)] -translate-x-1/2",
             "rounded-xl border bg-popover shadow-2xl",
             "animate-in fade-in-0 zoom-in-95 slide-in-from-top-4 duration-150",
           )}
@@ -194,14 +400,25 @@ function CommandPaletteDialog({
 
           {/* Search bar */}
           <div className="flex items-center gap-3 border-b px-4 py-3">
-            <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
+            {modo === "acoes" ? (
+              <Zap className="h-4 w-4 shrink-0 text-amber-500" />
+            ) : (
+              <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
+            )}
             <input
               ref={inputRef}
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Buscar páginas e ações…"
+              placeholder={
+                modo === "acoes"
+                  ? "Buscar ação..."
+                  : "Buscar produtos, contas, fornecedores ou digite > para ações"
+              }
               className="flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
             />
+            {carregandoRemoto && (
+              <span className="text-[10px] text-muted-foreground">buscando…</span>
+            )}
             {query && (
               <button
                 type="button"
@@ -214,11 +431,24 @@ function CommandPaletteDialog({
             )}
           </div>
 
+          {/* Hint quando query vazia */}
+          {!queryAjustada && modo === "navegacao" && (
+            <div className="border-b px-4 py-2 text-[11px] text-muted-foreground">
+              Digite ao menos 2 caracteres para buscar produtos/contas. Use{" "}
+              <kbd className="rounded border border-border/70 bg-muted/50 px-1 py-0.5 font-mono text-[10px]">
+                {">"}
+              </kbd>{" "}
+              para entrar no modo de ações rápidas.
+            </div>
+          )}
+
           {/* Results */}
-          <div ref={listRef} className="max-h-[380px] overflow-y-auto p-1.5">
+          <div ref={listRef} className="max-h-[420px] overflow-y-auto p-1.5">
             {flat.length === 0 ? (
               <div className="py-10 text-center text-sm text-muted-foreground">
-                Nenhum resultado para &ldquo;{query}&rdquo;
+                {queryAjustada
+                  ? `Nenhum resultado para "${queryAjustada}"`
+                  : "Nenhuma sugestão"}
               </div>
             ) : (
               renderedGroups.map(({ groupLabel, rows }) => (
@@ -231,10 +461,10 @@ function CommandPaletteDialog({
                     const sel = idx === selectedIdx;
                     return (
                       <button
-                        key={item.id}
+                        key={item.key}
                         type="button"
                         data-cmd-idx={idx}
-                        onClick={() => go(item.href)}
+                        onClick={() => item.run()}
                         onMouseEnter={() => setSelectedIdx(idx)}
                         className={cn(
                           "flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors",
@@ -253,7 +483,14 @@ function CommandPaletteDialog({
                         >
                           <Icon className="h-3.5 w-3.5" />
                         </span>
-                        <span className="flex-1 text-left">{item.label}</span>
+                        <div className="flex min-w-0 flex-1 flex-col text-left">
+                          <span className="truncate">{item.label}</span>
+                          {item.sub && (
+                            <span className="truncate text-[11px] text-muted-foreground">
+                              {item.sub}
+                            </span>
+                          )}
+                        </div>
                         {sel && (
                           <ArrowRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground/50" />
                         )}
@@ -268,16 +505,25 @@ function CommandPaletteDialog({
           {/* Footer */}
           <div className="flex items-center gap-4 border-t px-4 py-2 text-[11px] text-muted-foreground/60">
             <span className="flex items-center gap-1">
-              <kbd className="rounded border border-border/50 bg-muted/50 px-1 py-0.5 font-mono text-[10px]">↑↓</kbd>
+              <kbd className="rounded border border-border/50 bg-muted/50 px-1 py-0.5 font-mono text-[10px]">
+                ↑↓
+              </kbd>
               navegar
             </span>
             <span className="flex items-center gap-1">
-              <kbd className="rounded border border-border/50 bg-muted/50 px-1 py-0.5 font-mono text-[10px]">↵</kbd>
+              <kbd className="rounded border border-border/50 bg-muted/50 px-1 py-0.5 font-mono text-[10px]">
+                ↵
+              </kbd>
               abrir
             </span>
             <span className="flex items-center gap-1">
-              <kbd className="rounded border border-border/50 bg-muted/50 px-1 py-0.5 font-mono text-[10px]">ESC</kbd>
+              <kbd className="rounded border border-border/50 bg-muted/50 px-1 py-0.5 font-mono text-[10px]">
+                ESC
+              </kbd>
               fechar
+            </span>
+            <span className="ml-auto">
+              {modo === "acoes" ? "Modo: ações" : "Modo: navegação"}
             </span>
           </div>
         </DialogPrimitive.Content>

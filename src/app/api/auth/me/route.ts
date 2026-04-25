@@ -22,6 +22,8 @@ export async function GET() {
       ativo: true,
       ultimoAcesso: true,
       createdAt: true,
+      twoFactorEnabled: true,
+      twoFactorMethod: true,
     },
   });
 

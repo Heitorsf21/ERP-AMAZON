@@ -19,20 +19,56 @@ datasource db {
 // ── Autenticação ────────────────────────────────────────────────────────────
 
 model Usuario {
-  id           String    @id @default(cuid())
-  email        String    @unique
-  senhaHash    String
-  nome         String
+  id                String    @id @default(cuid())
+  email             String    @unique
+  senhaHash         String
+  nome              String
   // ADMIN | MEMBRO
-  role         String    @default("ADMIN")
-  ativo        Boolean   @default(true)
-  avatarUrl    String?
-  ultimoAcesso DateTime?
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  role              String    @default("ADMIN")
+  ativo             Boolean   @default(true)
+  avatarUrl         String?
+  ultimoAcesso      DateTime?
+  // 2FA opcional por email
+  twoFactorEnabled  Boolean   @default(false)
+  twoFactorMethod   String?   // "EMAIL"
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  tokensRecuperacao TokenRecuperacaoSenha[]
+  codigos2fa        CodigoVerificacao2FA[]
 
   @@index([email])
   @@index([ativo])
+}
+
+model TokenRecuperacaoSenha {
+  id        String    @id @default(cuid())
+  usuarioId String
+  tokenHash String    @unique
+  expiresAt DateTime
+  usadoEm   DateTime?
+  createdAt DateTime  @default(now())
+
+  usuario Usuario @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+
+  @@index([usuarioId])
+  @@index([expiresAt])
+}
+
+model CodigoVerificacao2FA {
+  id          String    @id @default(cuid())
+  usuarioId   String
+  codigoHash  String
+  challengeId String    @unique
+  expiresAt   DateTime
+  usadoEm     DateTime?
+  createdAt   DateTime  @default(now())
+
+  usuario Usuario @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+
+  @@index([usuarioId])
+  @@index([challengeId])
+  @@index([expiresAt])
 }
 
 model Categoria {
