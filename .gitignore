@@ -1,52 +1,20 @@
-# Node
+# Dependências (rebuildar com npm install)
 node_modules/
-.pnp
-.pnp.js
 
-# Next
+# Build Next.js (rebuildar com npm run dev / build)
 .next/
 out/
 build/
 
-# Env
-.env
-.env.local
-.env.*.local
-.vercel/
-
-# Logs
+# Logs e PIDs temporários
 *.log
-logs/
-.dev-server.current
 .dev-server.pid
+.dev-server.current
 
-# Arquivos locais sensíveis/importações manuais
-/*.csv
-/*.ofx
-/*.pdf
-/image*.png
-uploads/
-CLAUDE.md
-
-# Ferramentas/agentes locais
-.agents/
-.claude/
-ERP AMAZON2/
-
-# Prisma / banco
-prisma/*.db
-prisma/*.db-journal
-prisma/migrations/dev.db*
-
-# IDE / SO
-.vscode/
-.idea/
-.DS_Store
-Thumbs.db
-
-# Testes
-coverage/
-
-# TypeScript
+# TypeScript gerado
 *.tsbuildinfo
 next-env.d.ts
+
+# Cópias locais
+"ERP AMAZON2/"
+ERP AMAZON2/
