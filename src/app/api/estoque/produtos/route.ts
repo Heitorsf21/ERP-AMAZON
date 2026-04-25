@@ -9,6 +9,7 @@ export const GET = handle(async (req: Request) => {
     busca: searchParams.get("busca") ?? undefined,
     ativo: searchParams.get("ativo") ?? undefined,
     statusReposicao: searchParams.get("statusReposicao") ?? undefined,
+    incluirNaoMfs: searchParams.get("incluirNaoMfs") ?? undefined,
   });
   return ok(produtos);
 });

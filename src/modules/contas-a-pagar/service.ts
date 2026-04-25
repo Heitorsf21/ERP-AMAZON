@@ -208,6 +208,68 @@ export const contasService = {
     return contasRepository.listar(parsed);
   },
 
+  async totaisDoMes() {
+    // Atualiza status VENCIDA antes de calcular totais.
+    await contasRepository.atualizarVencidas();
+
+    const agora = new Date();
+    // Início do mês corrente em America/Sao_Paulo (UTC-3).
+    const ano = agora.getFullYear();
+    const mes = agora.getMonth();
+    const inicioMes = new Date(Date.UTC(ano, mes, 1, 3, 0, 0));
+    const fimMes = new Date(Date.UTC(ano, mes + 1, 1, 2, 59, 59, 999));
+
+    const [emAberto, vencidas, pagasMes, todasMes] = await Promise.all([
+      // Em aberto: status ABERTA com vencimento dentro do mês.
+      db.contaPagar.aggregate({
+        _sum: { valor: true },
+        _count: { _all: true },
+        where: {
+          status: "ABERTA",
+          vencimento: { gte: inicioMes, lte: fimMes },
+        },
+      }),
+      // Vencidas: status VENCIDA com vencimento dentro do mês.
+      db.contaPagar.aggregate({
+        _sum: { valor: true },
+        _count: { _all: true },
+        where: {
+          status: "VENCIDA",
+          vencimento: { gte: inicioMes, lte: fimMes },
+        },
+      }),
+      // Pagas no mês: status PAGA com pagoEm dentro do mês.
+      db.contaPagar.aggregate({
+        _sum: { valor: true },
+        _count: { _all: true },
+        where: {
+          status: "PAGA",
+          pagoEm: { gte: inicioMes, lte: fimMes },
+        },
+      }),
+      // Total do mês: todas com vencimento no mês (qualquer status exceto cancelada).
+      db.contaPagar.aggregate({
+        _sum: { valor: true },
+        _count: { _all: true },
+        where: {
+          status: { not: "CANCELADA" },
+          vencimento: { gte: inicioMes, lte: fimMes },
+        },
+      }),
+    ]);
+
+    return {
+      emAbertoCentavos: emAberto._sum.valor ?? 0,
+      qtdEmAberto: emAberto._count._all,
+      vencidasCentavos: vencidas._sum.valor ?? 0,
+      qtdVencidas: vencidas._count._all,
+      pagasMesCentavos: pagasMes._sum.valor ?? 0,
+      qtdPagasMes: pagasMes._count._all,
+      totalMesCentavos: todasMes._sum.valor ?? 0,
+      qtdTotal: todasMes._count._all,
+    };
+  },
+
   async buscarPorId(id: string) {
     const conta = await contasRepository.buscarPorId(id);
     if (!conta) throw new Error("conta não encontrada");

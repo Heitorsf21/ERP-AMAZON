@@ -1,5 +1,6 @@
 import { handle, ok } from "@/lib/api";
 import { db } from "@/lib/db";
+import { getDistribuicaoCompleta } from "@/modules/destinacao/service";
 
 export const dynamic = "force-dynamic";
 
@@ -43,6 +44,10 @@ export const GET = handle(async () => {
   const saldoLivre = saldoAtual - totalComprometido;
   const saldoProjetado = saldoLivre + aReceber;
 
+  // Enriquecimento: distribuição planejada baseada no saldo PROJETADO.
+  // É opcional na resposta — clientes antigos podem ignorar.
+  const distribuicao = await getDistribuicaoCompleta(Math.max(saldoProjetado, 0));
+
   return ok({
     saldoAtual,
     comprometidoContas,
@@ -54,5 +59,6 @@ export const GET = handle(async () => {
     aReceberCount: contasReceber._count,
     saldoLivre,
     saldoProjetado,
+    distribuicao,
   });
 });

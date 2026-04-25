@@ -1,60 +1,84 @@
 import Link from "next/link";
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, Wallet, Package, ShoppingCart } from "lucide-react";
 import { CardSaldo } from "@/components/caixa/card-saldo";
 import { GraficoProjecao } from "@/components/caixa/grafico-projecao";
 import { PageHeader } from "@/components/ui/page-header";
-import { CardResumoEstoque } from "@/components/estoque/card-resumo-estoque";
+import { CardResumoEstoque } from "@/components/produtos/card-resumo-estoque";
 import { CardResumoCompras } from "@/components/compras/card-resumo-compras";
 import { Button } from "@/components/ui/button";
-import { Separator } from "@/components/ui/separator";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { KpiStrip } from "./kpi-strip";
 
 export default function DashboardFinanceiroPage() {
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       <PageHeader
         title="Dashboard Financeiro"
         description="Visão geral financeira e operacional."
       />
 
-      <section className="space-y-4">
-        <h2 className="text-sm font-medium uppercase tracking-wide text-muted-foreground">
-          Financeiro
-        </h2>
-        <CardSaldo />
-        <GraficoProjecao />
-      </section>
+      {/* Stat strip — KPIs do dia */}
+      <KpiStrip />
 
-      <Separator />
-
-      <section className="space-y-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-sm font-medium uppercase tracking-wide text-muted-foreground">
-            Estoque
-          </h2>
+      {/* Seção Financeiro */}
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between space-y-0">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Wallet className="h-4 w-4 text-primary" />
+            Financeiro
+          </CardTitle>
           <Button variant="ghost" size="sm" asChild className="gap-1 text-xs">
-            <Link href="/estoque">
-              Ver estoque <ArrowRight className="h-3 w-3" />
+            <Link href="/financeiro">
+              Ver detalhes <ArrowRight className="h-3 w-3" />
             </Link>
           </Button>
-        </div>
-        <CardResumoEstoque />
-      </section>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <CardSaldo />
+          <GraficoProjecao />
+        </CardContent>
+      </Card>
 
-      <Separator />
+      {/* Seção Produtos */}
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between space-y-0">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Package className="h-4 w-4 text-primary" />
+            Produtos
+          </CardTitle>
+          <Button variant="ghost" size="sm" asChild className="gap-1 text-xs">
+            <Link href="/produtos">
+              Ver produtos <ArrowRight className="h-3 w-3" />
+            </Link>
+          </Button>
+        </CardHeader>
+        <CardContent>
+          <CardResumoEstoque />
+        </CardContent>
+      </Card>
 
-      <section className="space-y-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-sm font-medium uppercase tracking-wide text-muted-foreground">
+      {/* Seção Compras */}
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between space-y-0">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <ShoppingCart className="h-4 w-4 text-primary" />
             Compras
-          </h2>
+          </CardTitle>
           <Button variant="ghost" size="sm" asChild className="gap-1 text-xs">
             <Link href="/compras">
               Ver compras <ArrowRight className="h-3 w-3" />
             </Link>
           </Button>
-        </div>
-        <CardResumoCompras />
-      </section>
+        </CardHeader>
+        <CardContent>
+          <CardResumoCompras />
+        </CardContent>
+      </Card>
     </div>
   );
 }

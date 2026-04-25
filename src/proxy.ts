@@ -6,6 +6,9 @@ const PUBLIC_PATHS = [
   "/login",
   "/api/auth/login",
   "/api/auth/logout",
+  // Health check público para watchdog/load balancer/Nginx checar saúde do app
+  // sem precisar manter sessão. Não vaza nada sensível (só status agregado).
+  "/api/health",
 ];
 
 // Prefixos públicos (pasta pública servida pelo Next).

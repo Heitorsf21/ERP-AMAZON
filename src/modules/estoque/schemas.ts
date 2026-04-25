@@ -6,7 +6,11 @@ import {
 } from "@/modules/shared/domain";
 
 export const criarProdutoSchema = z.object({
-  sku: z.string().min(1, "SKU obrigatório").max(100),
+  sku: z
+    .string()
+    .min(1, "SKU obrigatório")
+    .max(100)
+    .regex(/^MFS-/, "SKU deve comecar com 'MFS-'"),
   asin: z.string().max(20).optional().nullable(),
   nome: z.string().min(1, "Nome obrigatório").max(200),
   descricao: z.string().max(500).optional().nullable(),
@@ -40,6 +44,10 @@ export const filtrosProdutoSchema = z.object({
       StatusReposicao.REPOR,
     ])
     .optional(),
+  incluirNaoMfs: z
+    .enum(["true", "false"])
+    .transform((v) => v === "true")
+    .optional(),
 });
 export type FiltrosProdutoInput = z.infer<typeof filtrosProdutoSchema>;
 
@@ -64,7 +72,10 @@ export type CriarMovimentacaoEstoqueInput = z.infer<
 
 export const importarProdutosSchema = z.array(
   z.object({
-    sku: z.string().min(1),
+    sku: z
+      .string()
+      .min(1)
+      .regex(/^MFS-/, "SKU deve comecar com 'MFS-'"),
     asin: z.string().optional().nullable(),
     nome: z.string().min(1),
     custoUnitario: z.number().int().min(0).optional().nullable(),

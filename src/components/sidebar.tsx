@@ -75,6 +75,7 @@ const groups: Group[] = [
       { href: "/caixa" as Route, label: "Caixa", icon: Wallet },
       { href: "/contas-a-pagar" as Route, label: "Contas a Pagar", icon: FileText },
       { href: "/contas-a-receber" as Route, label: "Contas a Receber", icon: ArrowDownToLine },
+      { href: "/notas-fiscais" as Route, label: "Notas Fiscais", icon: FileText },
       { href: "/destinacao" as Route, label: "Destinação", icon: PiggyBank },
       { href: "/dre" as Route, label: "DRE", icon: BarChart3 },
     ],
@@ -85,7 +86,7 @@ const groups: Group[] = [
     icon: Store,
     items: [
       { href: "/dashboard-ecommerce" as Route, label: "Dashboard", icon: BarChart3 },
-      { href: "/estoque" as Route, label: "Estoque", icon: Package },
+      { href: "/produtos" as Route, label: "Produtos", icon: Package },
       { href: "/vendas" as Route, label: "Vendas", icon: ShoppingBag },
       { href: "/compras" as Route, label: "Compras", icon: ShoppingCart },
       { href: "/avaliacoes" as Route, label: "Avaliações", icon: Star },

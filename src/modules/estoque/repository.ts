@@ -6,10 +6,19 @@ import type {
 import { TipoMovimentacaoEstoque } from "@/modules/shared/domain";
 
 export const estoqueRepository = {
-  async listarProdutos(filtros: { busca?: string; ativo?: boolean }) {
+  async listarProdutos(filtros: {
+    busca?: string;
+    ativo?: boolean;
+    incluirNaoMfs?: boolean;
+  }) {
     return db.produto.findMany({
       where: {
-        ativo: filtros.ativo ?? true,
+        // Quando filtros.ativo === undefined, NAO filtra (mostra todos).
+        // Quando true, mostra so ativos. Quando false, mostra so inativos.
+        ...(filtros.ativo !== undefined ? { ativo: filtros.ativo } : {}),
+        // Por padrao mostramos apenas SKUs que comecam com MFS-.
+        // Passe incluirNaoMfs=true para listar TODOS (admin/debug).
+        ...(filtros.incluirNaoMfs ? {} : { sku: { startsWith: "MFS-" } }),
         ...(filtros.busca
           ? {
               OR: [

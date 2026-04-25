@@ -21,14 +21,22 @@ export const contasReceberService = {
    *
    * Retorna o resumo da importação para o frontend exibir.
    */
-  async importarAmazonCSV(conteudo: string): Promise<ResumoImportacao> {
-    const transacoes = parseAmazonCSV(conteudo);
+  async importarAmazonCSV(
+    conteudo: string | Buffer | Uint8Array,
+  ): Promise<ResumoImportacao> {
+    // Aceita Buffer (vindo da Reports API automatizada) ou string (upload manual).
+    const conteudoStr =
+      typeof conteudo === "string"
+        ? conteudo
+        : Buffer.from(conteudo).toString("utf8");
+
+    const transacoes = parseAmazonCSV(conteudoStr);
     if (transacoes.length === 0) {
       throw new Error("Nenhuma transação encontrada no CSV");
     }
 
     const resumo = resumirImportacao(transacoes);
-    await dashboardEcommerceService.importarVendasAmazonCSV(conteudo);
+    await dashboardEcommerceService.importarVendasAmazonCSV(conteudoStr);
 
     // Cria/atualiza ContaReceber para liquidações pendentes ou parciais
     for (const liq of resumo.liquidacoes) {

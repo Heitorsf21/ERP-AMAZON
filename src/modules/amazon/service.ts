@@ -1,10 +1,17 @@
 import { db } from "@/lib/db";
 import {
+  decryptConfigValue,
+  encryptConfigValue,
+  isSecretConfigKey,
+} from "@/lib/crypto";
+import {
   createProductReviewAndSellerFeedbackSolicitation,
   getInventorySummaries,
   listFinancialTransactions,
   getMarketplaceParticipations,
+  getSellerId,
   getOrders,
+  getOrderItems,
   getSolicitationActionsForOrder,
   getCatalogItem,
   getProductOffers,
@@ -13,7 +20,7 @@ import {
   type SPFinanceTransaction,
   type SPAPICredentials,
   type SPOrder,
-  type SPOrderItem,
+  type SPOrderItemDetail,
 } from "@/lib/amazon-sp-api";
 import { gunzipSync } from "zlib";
 import {
@@ -34,6 +41,7 @@ export const AMAZON_CONFIG_KEYS = [
   "amazon_refresh_token",
   "amazon_marketplace_id",
   "amazon_endpoint",
+  "amazon_seller_id",
 ] as const;
 
 // Chaves usadas pela automação diária de solicitação de reviews.
@@ -58,6 +66,13 @@ const REVIEWS_LOOKBACK_DIAS = 30;
 // Reduzimos para 5 por execução para ficar abaixo do limite.
 const REVIEWS_BATCH_POR_EXECUCAO = 5;
 const DEFAULT_MARKETPLACE_ID = "A2Q3Y263D00KWC";
+
+// Helper para campos JSON: SQLite armazena como String?; em Postgres viraria Json.
+// Mantemos a mesma forma de chamada (asJson(...)) para facilitar troca de provider.
+function asJson(value: unknown): string | null {
+  if (value === null || value === undefined) return null;
+  return JSON.stringify(value);
+}
 const ORDERS_CURSOR_KEY = "amazon_orders_last_updated_after";
 const BACKFILL_CURSOR_KEY = "amazon_backfill_orders_cursor";
 
@@ -113,7 +128,10 @@ export async function getAmazonConfig(): Promise<Record<string, string>> {
     where: { chave: { in: [...AMAZON_CONFIG_KEYS] } },
   });
   const config: Record<string, string> = {};
-  for (const r of registros) config[r.chave] = r.valor;
+  for (const r of registros) {
+    // Decripta automaticamente valores marcados com prefixo `enc:`.
+    config[r.chave] = decryptConfigValue(r.valor) ?? "";
+  }
 
   config.amazon_client_id ||= process.env.AMAZON_LWA_CLIENT_ID ?? "";
   config.amazon_client_secret ||= process.env.AMAZON_LWA_CLIENT_SECRET ?? "";
@@ -142,17 +160,38 @@ export async function saveAmazonConfig(
     if (!valor) {
       await db.configuracaoSistema.deleteMany({ where: { chave } });
     } else {
+      // Criptografa em repouso quando for campo sensível (secret, token, password).
+      const armazenado = isSecretConfigKey(chave) ? encryptConfigValue(valor) : valor;
       await db.configuracaoSistema.upsert({
         where: { chave },
-        create: { chave, valor },
-        update: { valor },
+        create: { chave, valor: armazenado },
+        update: { valor: armazenado },
       });
     }
   }
-}
 
-function isSecretConfigKey(chave: string) {
-  return chave.includes("secret") || chave.includes("token");
+  // Após salvar, se as credenciais essenciais estiverem completas e ainda
+  // não houver `amazon_seller_id`, resolve via SP-API e persiste. Falhas
+  // (ex.: 403, rate limit) não devem quebrar o salvamento da config.
+  try {
+    const config = await getAmazonConfig();
+    const creds = buildCredentials(config);
+    if (creds && !config.amazon_seller_id) {
+      const sellerId = await getSellerId(creds);
+      if (sellerId) {
+        await db.configuracaoSistema.upsert({
+          where: { chave: "amazon_seller_id" },
+          create: { chave: "amazon_seller_id", valor: sellerId },
+          update: { valor: sellerId },
+        });
+      }
+    }
+  } catch (err) {
+    console.warn(
+      "[saveAmazonConfig] Falha ao resolver amazon_seller_id automaticamente:",
+      err instanceof Error ? err.message : String(err),
+    );
+  }
 }
 
 function buildCredentials(
@@ -192,7 +231,7 @@ async function createLog(
       tipo,
       status,
       mensagem: mensagem ?? null,
-      detalhes: detalhes ? JSON.stringify(detalhes) : null,
+      detalhes: asJson(detalhes),
       registros,
     },
   });
@@ -307,6 +346,7 @@ export async function syncInventory(): Promise<{
   ajustados: number;
   criados: number;
   divergencias: Array<{ sku: string; erp: number; amazon: number }>;
+  naoCadastrados: Array<{ sku: string; asin: string | null; qtdAmazon: number }>;
   rateLimited?: boolean;
   mensagem?: string;
 }> {
@@ -316,36 +356,39 @@ export async function syncInventory(): Promise<{
 
   const creds = await getCredentialsOrThrow();
   const divergencias: Array<{ sku: string; erp: number; amazon: number }> = [];
+  const naoCadastrados: Array<{
+    sku: string;
+    asin: string | null;
+    qtdAmazon: number;
+  }> = [];
   let sincronizados = 0;
   let ajustados = 0;
-  let criados = 0;
+  const criados = 0;
 
   try {
     const summaries = await getInventorySummaries(creds);
 
     for (const item of summaries) {
-      let produto = await db.produto.findUnique({
+      const produto = await db.produto.findUnique({
         where: { sku: item.sellerSku },
       });
-
-      if (!produto) {
-        produto = await db.produto.create({
-          data: {
-            sku: item.sellerSku,
-            asin: item.asin || null,
-            nome: item.sellerSku,
-            estoqueAtual: 0,
-            estoqueMinimo: 0,
-          },
-        });
-        criados++;
-      }
 
       const qtdAmazon =
         item.inventoryDetails?.fulfillableQuantity ?? item.totalQuantity;
       const reservado =
         item.inventoryDetails?.reservedQuantity?.totalReservedQuantity ?? 0;
       const inbound = item.inventoryDetails?.inboundWorkingQuantity ?? 0;
+
+      if (!produto) {
+        // NUNCA cria produtos automaticamente — exigimos cadastro manual com SKU MFS-.
+        // Apenas registramos para o front exibir e o usuário decidir.
+        naoCadastrados.push({
+          sku: item.sellerSku,
+          asin: item.asin ?? null,
+          qtdAmazon,
+        });
+        continue;
+      }
 
       if (produto.estoqueAtual !== qtdAmazon) {
         const diferenca = qtdAmazon - produto.estoqueAtual;
@@ -391,9 +434,12 @@ export async function syncInventory(): Promise<{
       where: { id: logId },
       data: {
         status: StatusAmazonSync.SUCESSO,
-        mensagem: `${sincronizados} SKUs verificados, ${divergencias.length} divergências`,
-        detalhes:
-          divergencias.length > 0 ? JSON.stringify(divergencias) : null,
+        mensagem: `${sincronizados} SKUs verificados, ${divergencias.length} divergências, ${naoCadastrados.length} nao cadastrados`,
+        detalhes: asJson(
+          divergencias.length > 0 || naoCadastrados.length > 0
+            ? { divergencias, naoCadastrados }
+            : null,
+        ),
         registros: sincronizados,
       },
     });
@@ -406,7 +452,7 @@ export async function syncInventory(): Promise<{
         data: {
           status: StatusAmazonSync.ERRO,
           mensagem,
-          detalhes: JSON.stringify({
+          detalhes: asJson({
             erro: e instanceof Error ? e.message : String(e),
           }),
         },
@@ -416,6 +462,7 @@ export async function syncInventory(): Promise<{
         ajustados,
         criados,
         divergencias,
+        naoCadastrados,
         rateLimited: true,
         mensagem,
       };
@@ -431,7 +478,7 @@ export async function syncInventory(): Promise<{
     throw e;
   }
 
-  return { sincronizados, ajustados, criados, divergencias };
+  return { sincronizados, ajustados, criados, divergencias, naoCadastrados };
 }
 
 async function syncOrdersInternal(
@@ -462,11 +509,30 @@ async function syncOrdersInternal(
       dateFilter: "created",
     });
     const pedidos: VendaAmazonSyncResumo[] = [];
+
+    // Buscamos itens detalhados (com preço, taxa, frete) por pedido.
+    // O endpoint de listagem /orders/2026-01-01/orders NAO traz isso —
+    // só /orders/v0/orders/{id}/orderItems. Rate limit ORDERS_GET = 0.5 rps.
+    const itemsPorOrderId = new Map<string, SPOrderItemDetail[]>();
+    for (const order of orders) {
+      if (!order.orderId) continue;
+      try {
+        const detalhes = await getOrderItems(creds, order.orderId);
+        itemsPorOrderId.set(order.orderId, detalhes);
+      } catch (err) {
+        if (isAmazonRateLimitError(err)) {
+          throw err;
+        }
+        // erro pontual num pedido — segue o fluxo, marca vazio
+        itemsPorOrderId.set(order.orderId, []);
+      }
+    }
+
     const skus = [
       ...new Set(
-        orders
-          .flatMap((order) => order.orderItems ?? [])
-          .map((item) => item.product?.sellerSku)
+        Array.from(itemsPorOrderId.values())
+          .flat()
+          .map((item) => item.SellerSKU)
           .filter((sku): sku is string => !!sku),
       ),
     ];
@@ -482,20 +548,32 @@ async function syncOrdersInternal(
         maxCursorDate = cursorDate;
       }
 
-      for (const item of order.orderItems ?? []) {
-        const sku = item.product?.sellerSku;
+      const itensDetalhados = order.orderId
+        ? itemsPorOrderId.get(order.orderId) ?? []
+        : [];
+
+      for (const item of itensDetalhados) {
+        const sku = item.SellerSKU;
         if (!order.orderId || !sku) {
           ignoradas++;
           continue;
         }
 
         const produto = produtosPorSku.get(sku);
-        const quantidade = Math.max(1, Number(item.quantityOrdered || 1));
-        const valorBrutoCentavos = extractItemPriceCentavos(item);
+        const quantidade = Math.max(1, Number(item.QuantityOrdered || 1));
+        const valorBrutoCentavos = parseAmountCentavos(item.ItemPrice);
+        const fretesCentavos = parseAmountCentavos(item.ShippingPrice);
+        const taxasCentavos =
+          parseAmountCentavos(item.ItemTax) +
+          parseAmountCentavos(item.ShippingTax);
         const precoUnitarioCentavos =
           quantidade > 0
             ? Math.round(valorBrutoCentavos / quantidade)
             : valorBrutoCentavos;
+        // Liquido = bruto - taxas (ItemTax + ShippingTax). Frete em geral
+        // é repassado pelo cliente, então não entra como dedução do líquido.
+        const liquidoMarketplaceCentavos = valorBrutoCentavos - taxasCentavos;
+
         const where = {
           amazonOrderId_sku: {
             amazonOrderId: order.orderId,
@@ -504,16 +582,15 @@ async function syncOrdersInternal(
         };
         const existente = await db.vendaAmazon.findUnique({ where });
         const data = {
-          orderItemId: item.orderItemId ?? null,
-          asin: item.product?.asin ?? produto?.asin ?? null,
-          titulo: item.product?.title ?? null,
+          orderItemId: item.OrderItemId ?? null,
+          asin: item.ASIN ?? produto?.asin ?? null,
+          titulo: item.Title ?? null,
           quantidade,
           precoUnitarioCentavos,
           valorBrutoCentavos,
-          taxasCentavos: existente?.taxasCentavos ?? 0,
-          fretesCentavos: existente?.fretesCentavos ?? 0,
-          liquidoMarketplaceCentavos:
-            existente?.liquidoMarketplaceCentavos ?? valorBrutoCentavos,
+          taxasCentavos,
+          fretesCentavos,
+          liquidoMarketplaceCentavos,
           marketplace: order.salesChannel?.marketplaceName ?? creds.marketplaceId,
           fulfillmentChannel: order.salesChannel?.channelName ?? null,
           statusPedido: order.orderStatus ?? existente?.statusPedido ?? "UNKNOWN",
@@ -547,7 +624,7 @@ async function syncOrdersInternal(
           amazonOrderId: order.orderId,
           purchaseDate: order.createdTime,
           lastUpdatedDate: order.lastUpdatedTime,
-          asin: item.product?.asin,
+          asin: item.ASIN,
           sku,
           quantityOrdered: quantidade,
           statusPedido: order.orderStatus,
@@ -564,7 +641,7 @@ async function syncOrdersInternal(
       data: {
         status: StatusAmazonSync.SUCESSO,
         mensagem: `${pedidos.length} itens de pedido sincronizados pela Orders API.`,
-        detalhes: JSON.stringify({ pedidos: pedidos.slice(0, 20) }),
+        detalhes: asJson({ pedidos: pedidos.slice(0, 20) }),
         registros: pedidos.length,
       },
     });
@@ -585,7 +662,7 @@ async function syncOrdersInternal(
         data: {
           status: StatusAmazonSync.ERRO,
           mensagem,
-          detalhes: JSON.stringify({
+          detalhes: asJson({
             erro: e instanceof Error ? e.message : String(e),
           }),
           registros: 0,
@@ -763,7 +840,7 @@ async function syncFinancialEvents(
       data: {
         status: StatusAmazonSync.SUCESSO,
         mensagem: `${transactions.length} eventos financeiros lidos.`,
-        detalhes: JSON.stringify({
+        detalhes: asJson({
           vendasAtualizadas,
           reembolsosCriados,
           reembolsosAtualizados,
@@ -789,7 +866,7 @@ async function syncFinancialEvents(
         data: {
           status: StatusAmazonSync.ERRO,
           mensagem,
-          detalhes: JSON.stringify({
+          detalhes: asJson({
             erro: e instanceof Error ? e.message : String(e),
           }),
         },
@@ -822,8 +899,15 @@ function parseDate(value?: string | null): Date | null {
   return Number.isFinite(time) ? new Date(time) : null;
 }
 
-function extractItemPriceCentavos(item: SPOrderItem): number {
-  return extractAmountCentavos(item.product?.price);
+/**
+ * Converte um campo da SP-API tipo {Amount?: string; CurrencyCode?: string}
+ * em centavos (Int). Robusto a undefined/NaN.
+ */
+function parseAmountCentavos(v: { Amount?: string } | undefined | null): number {
+  if (!v?.Amount) return 0;
+  const n = Number(v.Amount);
+  if (!Number.isFinite(n)) return 0;
+  return Math.round(n * 100);
 }
 
 function extractAmountCentavos(value: unknown): number {
@@ -1185,7 +1269,7 @@ async function sendReviewSolicitationLegacy(
         status: StatusAmazonReviewSolicitation.ENVIADO,
         sentAt: new Date(),
         errorMessage: null,
-        rawResponse: JSON.stringify(response),
+        rawResponse: asJson(response),
       },
     });
   } catch (e) {
@@ -1249,7 +1333,7 @@ async function processEligibleReviewSolicitationsLegacy(diasAtras = 30) {
       data: {
         status: erros.length ? StatusAmazonSync.ERRO : StatusAmazonSync.SUCESSO,
         mensagem: `${verificados} verificados, ${enviados} enviados, ${ignorados} ignorados`,
-        detalhes: erros.length ? JSON.stringify(erros) : null,
+        detalhes: asJson(erros.length ? erros : null),
         registros: enviados,
       },
     });
@@ -1304,7 +1388,7 @@ async function checkReviewSolicitationWithCreds(
         resolvedReason: null,
         lastCheckedAction: canRequest ? "productReviewAndSellerFeedback" : null,
         errorMessage: null,
-        rawResponse: JSON.stringify(result.response),
+        rawResponse: asJson(result.response),
       },
     });
   } catch (e) {
@@ -1319,7 +1403,7 @@ async function checkReviewSolicitationWithCreds(
           nextCheckAt: new Date(checkedAt.getTime() + 30 * 60_000),
           qualificationReason: "QUOTA_AMAZON_COOLDOWN",
           errorMessage: errorToMessage(e),
-          rawResponse: JSON.stringify({ message: errorToMessage(e) }),
+          rawResponse: asJson({ message: errorToMessage(e) }),
         },
       });
     }
@@ -1357,7 +1441,7 @@ async function sendReviewSolicitationWithCreds(
         qualificationReason: "ACAO_OFICIAL_DISPONIVEL",
         lastCheckedAction: "productReviewAndSellerFeedback",
         errorMessage: null,
-        rawResponse: JSON.stringify(response),
+        rawResponse: asJson(response),
       },
     });
   } catch (e) {
@@ -1373,7 +1457,7 @@ async function sendReviewSolicitationWithCreds(
           lastAttemptAt: attemptedAt,
           attempts: { increment: 1 },
           errorMessage: message,
-          rawResponse: JSON.stringify({ message }),
+          rawResponse: asJson({ message }),
         },
       });
     }
@@ -1389,7 +1473,7 @@ async function sendReviewSolicitationWithCreds(
           lastAttemptAt: attemptedAt,
           attempts: { increment: 1 },
           errorMessage: null,
-          rawResponse: JSON.stringify({ message }),
+          rawResponse: asJson({ message }),
         },
       });
     }
@@ -1405,7 +1489,7 @@ async function sendReviewSolicitationWithCreds(
           lastAttemptAt: attemptedAt,
           attempts: { increment: 1 },
           errorMessage: message,
-          rawResponse: JSON.stringify({ message }),
+          rawResponse: asJson({ message }),
         },
       });
     }
@@ -1434,7 +1518,7 @@ async function checkReviewSolicitationWithCredsLegacy(
         asin: metadata.asin ?? null,
         sku: metadata.sku ?? null,
         checkedAt: new Date(),
-        rawResponse: JSON.stringify(result.response),
+        rawResponse: asJson(result.response),
       },
       update: {
         marketplaceId: creds.marketplaceId,
@@ -1443,7 +1527,7 @@ async function checkReviewSolicitationWithCredsLegacy(
         sku: metadata.sku ?? undefined,
         checkedAt: new Date(),
         errorMessage: null,
-        rawResponse: JSON.stringify(result.response),
+        rawResponse: asJson(result.response),
       },
     });
   } catch (e) {
@@ -1483,7 +1567,7 @@ async function sendReviewSolicitationWithCredsLegacy(
         status: StatusAmazonReviewSolicitation.ENVIADO,
         sentAt: new Date(),
         errorMessage: null,
-        rawResponse: JSON.stringify(response),
+        rawResponse: asJson(response),
       },
     });
   } catch (e) {
@@ -1814,7 +1898,7 @@ async function runReviewSolicitationQueue({
         mensagem:
           `Reviews: ${pedidos30d} pedidos 30d, ${tentadosHoje} tentados, ` +
           `${enviadosHoje} enviados, ${adiadosAmanha} adiados`,
-        detalhes: JSON.stringify({
+        detalhes: asJson({
           pedidos30d,
           naFila,
           tentadosHoje,
@@ -2194,7 +2278,7 @@ async function markReviewTechnicalError(
       nextCheckAt: addDays(attemptedAt, 1),
       qualificationReason: "ERRO_TECNICO",
       errorMessage: message,
-      rawResponse: JSON.stringify({ message }),
+      rawResponse: asJson({ message }),
     },
   });
 }
@@ -2246,6 +2330,8 @@ export async function getReviewMetrics() {
   inicioHoje.setHours(0, 0, 0, 0);
   const inicio7d = new Date(agora);
   inicio7d.setDate(inicio7d.getDate() - 7);
+  const inicio30d = new Date(agora);
+  inicio30d.setDate(inicio30d.getDate() - 30);
   const cutoff =
     maxDate(subDays(agora, REVIEWS_LOOKBACK_DIAS), parseConfigDate(config.backfillStartDate)) ??
     parseConfigDate(config.backfillStartDate);
@@ -2256,6 +2342,7 @@ export async function getReviewMetrics() {
     tentadosHoje,
     enviadosHoje,
     enviadas7d,
+    enviadas30d,
     jaSolicitados,
     adiadosAmanha,
     expirados,
@@ -2282,6 +2369,12 @@ export async function getReviewMetrics() {
         where: {
           status: StatusAmazonReviewSolicitation.ENVIADO,
           sentAt: { gte: inicio7d },
+        },
+      }),
+      db.amazonReviewSolicitation.count({
+        where: {
+          status: StatusAmazonReviewSolicitation.ENVIADO,
+          sentAt: { gte: inicio30d },
         },
       }),
       db.amazonReviewSolicitation.count({
@@ -2325,6 +2418,7 @@ export async function getReviewMetrics() {
     enviadosHoje,
     enviadasHoje: enviadosHoje,
     enviadas7d,
+    enviadas30d,
     jaSolicitados,
     adiadosAmanha,
     expirados,
@@ -2427,7 +2521,7 @@ export async function runReviewDiscovery() {
       data: {
         status: StatusAmazonSync.SUCESSO,
         mensagem: `${descoberta.pedidos30d} pedidos avaliados para fila de reviews.`,
-        detalhes: JSON.stringify({
+        detalhes: asJson({
           startDate: startDate.toISOString(),
           cursor: descoberta.maxOrderCreatedAt?.toISOString() ?? null,
           rateLimited: descoberta.rateLimited,
@@ -2503,7 +2597,7 @@ export async function runReviewSendBatch(): Promise<ReviewAutomationResult> {
         mensagem:
           `Reviews: ${tentadosHoje} tentados, ${enviadosHoje} enviados, ` +
           `${adiadosAmanha} adiados`,
-        detalhes: JSON.stringify({
+        detalhes: asJson({
           naFila,
           tentadosHoje,
           enviadosHoje,
@@ -2653,7 +2747,7 @@ async function runDailyReviewAutomationLegacy(): Promise<{
       data: {
         status: erros.length ? StatusAmazonSync.ERRO : StatusAmazonSync.SUCESSO,
         mensagem: `Cron: ${verificados} verificados, ${enviados} enviados, ${ignorados} ignorados`,
-        detalhes: erros.length ? JSON.stringify(erros) : null,
+        detalhes: asJson(erros.length ? erros : null),
         registros: enviados,
       },
     });

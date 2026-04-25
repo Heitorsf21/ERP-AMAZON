@@ -152,7 +152,7 @@ export function SugestoesReposicao() {
                 </div>
 
                 <Button variant="ghost" size="sm" asChild>
-                  <Link href={`/estoque/${s.id}`}>
+                  <Link href={`/produtos/${s.id}`}>
                     <ArrowRight className="h-4 w-4" />
                   </Link>
                 </Button>

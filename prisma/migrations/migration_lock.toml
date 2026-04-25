@@ -1,0 +1,3 @@
+# Prisma migration lock — provider em uso.
+# Não editar manualmente; o Prisma usa esse arquivo para detectar mudanças de provider.
+provider = "postgresql"

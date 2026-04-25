@@ -52,7 +52,7 @@ export const notificacaoService = {
           tipo: "ESTOQUE_CRITICO",
           titulo: `Estoque crítico: ${p.nome || p.sku}`,
           descricao: `${diasEstoque} dia${diasEstoque === 1 ? "" : "s"} restante${diasEstoque === 1 ? "" : "s"} de estoque (${unidadesPorDia.toFixed(1)} un/dia)`,
-          linkRef: "/estoque",
+          linkRef: "/produtos",
           dedupeKey: `ESTOQUE_CRITICO:${p.sku}:${hoje}`,
         });
       }
@@ -74,7 +74,7 @@ export const notificacaoService = {
         tipo: "BUYBOX_PERDIDO",
         titulo: `Buybox perdida: ${p.nome || p.sku}`,
         descricao: `O produto está sem o Buybox há mais de 7 dias consecutivos`,
-        linkRef: "/estoque",
+        linkRef: "/produtos",
         dedupeKey: `BUYBOX_PERDIDO:${p.sku}:${hoje}`,
       });
     }
@@ -147,7 +147,7 @@ export const notificacaoService = {
         tipo: "CUSTO_AUSENTE",
         titulo: `${semCusto.length} produto${semCusto.length > 1 ? "s" : ""} sem custo cadastrado`,
         descricao: `Margem e lucro não calculados para: ${listaSkus}`,
-        linkRef: "/estoque",
+        linkRef: "/produtos",
         dedupeKey: `CUSTO_AUSENTE:${format(startOfDay(new Date()), "yyyy-MM-dd")}`,
       });
     }

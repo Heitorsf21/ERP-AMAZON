@@ -109,7 +109,7 @@ export function IndicadoresRapidos() {
         (estoque?.countRepor ?? 0) > 0
           ? `${estoque?.countRepor} repor urgente`
           : "nada em alerta",
-      href: "/estoque" as Route,
+      href: "/produtos" as Route,
     },
   ];
 

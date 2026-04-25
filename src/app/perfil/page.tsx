@@ -2,12 +2,18 @@ import { redirect } from "next/navigation";
 import { formatInTimeZone } from "date-fns-tz";
 import { ptBR } from "date-fns/locale";
 import { PageHeader } from "@/components/ui/page-header";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { UserCircle, Shield, Palette, Clock } from "lucide-react";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Clock, MonitorSmartphone, Shield, UserCircle } from "lucide-react";
 import { db } from "@/lib/db";
 import { getSession } from "@/lib/auth";
 import { AlterarSenhaForm } from "./alterar-senha-form";
-import { PreferenciasCard } from "./preferencias-card";
+import { EncerrarSessaoButton } from "./encerrar-sessao-button";
 
 export const dynamic = "force-dynamic";
 
@@ -42,7 +48,7 @@ export default async function PerfilPage() {
     ? formatInTimeZone(
         usuario.ultimoAcesso,
         TZ,
-        "dd 'de' MMMM 'às' HH:mm",
+        "dd 'de' MMMM 'as' HH:mm",
         { locale: ptBR },
       )
     : "Primeira vez por aqui";
@@ -54,13 +60,24 @@ export default async function PerfilPage() {
     { locale: ptBR },
   );
 
+  // Ultimo acesso e o "inicio da sessao atual" do ponto de vista do usuario.
+  const sessaoDesde = usuario.ultimoAcesso
+    ? formatInTimeZone(
+        usuario.ultimoAcesso,
+        TZ,
+        "dd 'de' MMMM 'as' HH:mm",
+        { locale: ptBR },
+      )
+    : "agora";
+
   return (
     <div className="space-y-6">
       <PageHeader
         title="Meu perfil"
-        description="Dados, preferências e segurança da sua conta."
+        description="Identidade, seguranca e sessao."
       />
 
+      {/* ── Header com identidade ── */}
       <Card className="overflow-hidden">
         <CardContent className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:gap-6">
           <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-primary to-primary/70 text-xl font-semibold text-primary-foreground shadow-sm ring-2 ring-background">
@@ -76,22 +93,23 @@ export default async function PerfilPage() {
               </span>
               <span className="inline-flex items-center gap-1">
                 <Clock className="h-3 w-3" />
-                Último acesso: <span className="capitalize">{ultimoAcesso}</span>
+                Ultimo acesso: <span className="capitalize">{ultimoAcesso}</span>
               </span>
-              <span className="opacity-60">·</span>
+              <span className="opacity-60">.</span>
               <span>Membro desde <span className="capitalize">{membroDesde}</span></span>
             </div>
           </div>
         </CardContent>
       </Card>
 
-      <div className="grid gap-4 lg:grid-cols-3">
-        <Card className="lg:col-span-2">
+      <div className="grid gap-4 lg:grid-cols-2">
+        {/* ── Card Seguranca ── */}
+        <Card>
           <CardHeader>
             <div className="mb-2 flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
               <Shield className="h-4 w-4" />
             </div>
-            <CardTitle className="text-base">Trocar senha</CardTitle>
+            <CardTitle className="text-base">Seguranca</CardTitle>
             <CardDescription>
               Use uma senha forte com ao menos 8 caracteres.
             </CardDescription>
@@ -101,7 +119,22 @@ export default async function PerfilPage() {
           </CardContent>
         </Card>
 
-        <PreferenciasCard />
+        {/* ── Card Sessao ── */}
+        <Card>
+          <CardHeader>
+            <div className="mb-2 flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
+              <MonitorSmartphone className="h-4 w-4" />
+            </div>
+            <CardTitle className="text-base">Sessao</CardTitle>
+            <CardDescription>
+              Voce esta logado neste dispositivo desde{" "}
+              <span className="capitalize text-foreground">{sessaoDesde}</span>.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <EncerrarSessaoButton />
+          </CardContent>
+        </Card>
       </div>
     </div>
   );

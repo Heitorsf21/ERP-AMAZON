@@ -1,14 +1,14 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Activity,
+  AlertTriangle,
   CheckCircle,
   Clock,
-  Eye,
-  EyeOff,
-  Globe,
+  ExternalLink,
   Loader2,
   RefreshCw,
   Settings,
@@ -47,39 +47,6 @@ type QueueSummary = {
   failed: number;
 };
 
-const CAMPOS_CONFIG = [
-  {
-    key: "amazon_client_id",
-    label: "LWA Client ID",
-    placeholder: "amzn1.application-oa2-client...",
-    secret: false,
-  },
-  {
-    key: "amazon_client_secret",
-    label: "LWA Client Secret",
-    placeholder: "...",
-    secret: true,
-  },
-  {
-    key: "amazon_refresh_token",
-    label: "LWA Refresh Token",
-    placeholder: "Atz|...",
-    secret: true,
-  },
-  {
-    key: "amazon_marketplace_id",
-    label: "Marketplace ID",
-    placeholder: "A2Q3Y263D00KWC",
-    secret: false,
-  },
-  {
-    key: "amazon_endpoint",
-    label: "SP-API Endpoint",
-    placeholder: "https://sellingpartnerapi-na.amazon.com",
-    secret: false,
-  },
-] as const;
-
 function StatusBadge({ status }: { status: string }) {
   if (status === "SUCESSO") return <Badge variant="success">Sucesso</Badge>;
   if (status === "ERRO") return <Badge variant="destructive">Erro</Badge>;
@@ -89,8 +56,8 @@ function StatusBadge({ status }: { status: string }) {
 function TipoBadge({ tipo }: { tipo: string }) {
   const map: Record<string, string> = {
     ORDERS: "Pedidos",
-    INVENTORY: "Inventário",
-    REVIEWS: "Avaliações",
+    INVENTORY: "Inventario",
+    REVIEWS: "Avaliacoes",
     ALL: "Completo",
     TEST: "Teste",
   };
@@ -109,7 +76,7 @@ function LastSync({ logs, tipo }: { logs: SyncLog[]; tipo: string }) {
   return (
     <span className="flex items-center gap-1 text-xs text-muted-foreground">
       <Clock className="h-3 w-3 shrink-0" />
-      Última sync: {ago}
+      Ultima sync: {ago}
       {last.registros > 0 && (
         <span className="ml-1 text-muted-foreground/60">- {last.registros} reg.</span>
       )}
@@ -131,11 +98,9 @@ function formatDate(value: string | null) {
 
 export default function AmazonPage() {
   const qc = useQueryClient();
-  const [formValues, setFormValues] = React.useState<Record<string, string>>({});
-  const [camposVisiveis, setCamposVisiveis] = React.useState<Set<string>>(new Set());
   const [diasAtras, setDiasAtras] = React.useState(30);
 
-  const { data: configData, isLoading: loadingConfig } = useQuery<ConfigResponse>({
+  const { data: configData } = useQuery<ConfigResponse>({
     queryKey: ["amazon-config"],
     queryFn: () => fetchJSON<ConfigResponse>("/api/amazon/config"),
   });
@@ -152,43 +117,6 @@ export default function AmazonPage() {
     refetchInterval: 8_000,
   });
 
-  React.useEffect(() => {
-    if (!configData) return;
-
-    setFormValues({
-      amazon_marketplace_id: "A2Q3Y263D00KWC",
-      amazon_endpoint: "https://sellingpartnerapi-na.amazon.com",
-      ...configData.config,
-    });
-  }, [configData]);
-
-  const salvarConfig = useMutation({
-    mutationFn: (values: Record<string, string>) =>
-      fetchJSON("/api/amazon/config", {
-        method: "POST",
-        body: JSON.stringify(values),
-      }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["amazon-config"] });
-      toast.success("Configurações salvas.");
-    },
-    onError: () => toast.error("Erro ao salvar configurações."),
-  });
-
-  const testarConexao = useMutation({
-    mutationFn: () =>
-      fetchJSON<{ ok: boolean; mensagem: string }>("/api/amazon/sync", {
-        method: "POST",
-        body: JSON.stringify({ tipo: "TEST" }),
-      }),
-    onSuccess: (data) => {
-      if (data.ok) toast.success(data.mensagem);
-      else toast.error(data.mensagem);
-      qc.invalidateQueries({ queryKey: ["amazon-logs"] });
-    },
-    onError: (e) => toast.error(e instanceof Error ? e.message : "Erro"),
-  });
-
   const sincronizarPedidos = useMutation({
     mutationFn: () =>
       fetchJSON("/api/amazon/sync", {
@@ -201,7 +129,7 @@ export default function AmazonPage() {
       toast.success("Sincronizacao de pedidos enfileirada.");
     },
     onError: (e) =>
-      toast.error(e instanceof Error ? e.message : "Erro na sincronização"),
+      toast.error(e instanceof Error ? e.message : "Erro na sincronizacao"),
   });
 
   const sincronizarInventario = useMutation({
@@ -212,36 +140,27 @@ export default function AmazonPage() {
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["amazon-logs"] });
-      toast.success("Inventário verificado.");
+      toast.success("Inventario verificado.");
     },
     onError: (e) =>
-      toast.error(e instanceof Error ? e.message : "Erro ao verificar inventário"),
+      toast.error(e instanceof Error ? e.message : "Erro ao verificar inventario"),
   });
 
-  function toggleVisivel(key: string) {
-    setCamposVisiveis((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
-  }
-
   const qualquerSyncAtivo =
-    sincronizarPedidos.isPending ||
-    sincronizarInventario.isPending ||
-    testarConexao.isPending;
+    sincronizarPedidos.isPending || sincronizarInventario.isPending;
+
+  const configurado = configData?.configurado ?? false;
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       <PageHeader
         title="Conector Amazon"
-        description="Integração com Amazon SP-API para sincronizar pedidos, inventário e solicitações oficiais de avaliação."
+        description="Painel operacional. Para editar credenciais, va para Configuracoes > Integracoes."
       >
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {configData && (
-            <Badge variant={configData.configurado ? "success" : "secondary"}>
-              {configData.configurado ? "Configurado" : "Não configurado"}
+            <Badge variant={configurado ? "success" : "secondary"}>
+              {configurado ? "Configurado" : "Nao configurado"}
             </Badge>
           )}
           {queue && (
@@ -249,117 +168,51 @@ export default function AmazonPage() {
               Fila: {queue.queued} pend. / {queue.running} rodando
             </Badge>
           )}
+          <Button asChild variant="outline" size="sm">
+            <Link href="/sistema" className="inline-flex items-center gap-1">
+              Ver saude do sistema
+              <ExternalLink className="h-3 w-3" />
+            </Link>
+          </Button>
         </div>
       </PageHeader>
 
-      <Tabs defaultValue="config">
+      {!configurado && (
+        <div className="flex flex-col gap-3 rounded-xl border border-amber-500/40 bg-amber-500/5 p-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-start gap-3">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-amber-500/15 text-amber-600 dark:text-amber-400">
+              <AlertTriangle className="h-4 w-4" />
+            </div>
+            <div>
+              <p className="text-sm font-medium">Credenciais nao configuradas</p>
+              <p className="text-xs text-muted-foreground">
+                Configure as credenciais SP-API para habilitar sincronizacoes.
+              </p>
+            </div>
+          </div>
+          <Button asChild size="sm">
+            <Link href="/configuracoes" className="inline-flex items-center gap-1.5">
+              <Settings className="h-3.5 w-3.5" />
+              Configurar
+            </Link>
+          </Button>
+        </div>
+      )}
+
+      <Tabs defaultValue="sync">
         <TabsList className="flex flex-wrap">
-          <TabsTrigger value="config" className="gap-2">
-            <Settings className="h-4 w-4" />
-            Credenciais
-          </TabsTrigger>
           <TabsTrigger value="sync" className="gap-2">
             <RefreshCw className="h-4 w-4" />
-            Sincronização
+            Sincronizacao manual
           </TabsTrigger>
           <TabsTrigger value="logs" className="gap-2">
             <Activity className="h-4 w-4" />
-            Histórico
+            Historico
             {logs.some((l) => l.status === "ERRO") && (
               <span className="ml-1 flex h-1.5 w-1.5 rounded-full bg-destructive" />
             )}
           </TabsTrigger>
         </TabsList>
-
-        <TabsContent value="config" className="mt-4">
-          <div className="rounded-xl border bg-card p-5">
-            <div className="mb-4 rounded-lg border border-primary/20 bg-primary/5 p-4 text-sm text-muted-foreground">
-              <p className="mb-1 font-medium text-foreground">Como obter as credenciais</p>
-              <ol className="list-inside list-decimal space-y-1">
-                <li>Acesse o Seller Central e abra o aplicativo SP-API privado.</li>
-                <li>Copie o Client ID e Client Secret em Credenciais do LWA.</li>
-                <li>Em Gerenciar autorizações, gere o Refresh Token do Brasil.</li>
-                <li>Use o marketplace do Brasil: <code>A2Q3Y263D00KWC</code>.</li>
-                <li>Use o endpoint: <code>https://sellingpartnerapi-na.amazon.com</code>.</li>
-              </ol>
-            </div>
-
-            {loadingConfig ? (
-              <div className="space-y-3">
-                {Array.from({ length: 5 }).map((_, i) => (
-                  <Skeleton key={i} className="h-10 w-full" />
-                ))}
-              </div>
-            ) : (
-              <div className="grid gap-4 sm:grid-cols-2">
-                {CAMPOS_CONFIG.map((campo) => (
-                  <div key={campo.key} className="space-y-1">
-                    <Label>{campo.label}</Label>
-                    <div className="relative">
-                      <Input
-                        type={
-                          campo.secret && !camposVisiveis.has(campo.key)
-                            ? "password"
-                            : "text"
-                        }
-                        placeholder={campo.placeholder}
-                        value={formValues[campo.key] ?? ""}
-                        onChange={(e) =>
-                          setFormValues((prev) => ({
-                            ...prev,
-                            [campo.key]: e.target.value,
-                          }))
-                        }
-                      />
-                      {campo.secret && (
-                        <button
-                          type="button"
-                          onClick={() => toggleVisivel(campo.key)}
-                          className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                          aria-label={
-                            camposVisiveis.has(campo.key)
-                              ? "Ocultar credencial"
-                              : "Mostrar credencial"
-                          }
-                        >
-                          {camposVisiveis.has(campo.key) ? (
-                            <EyeOff className="h-4 w-4" />
-                          ) : (
-                            <Eye className="h-4 w-4" />
-                          )}
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            <div className="mt-5 flex flex-wrap gap-3">
-              <Button
-                onClick={() => salvarConfig.mutate(formValues)}
-                disabled={salvarConfig.isPending || loadingConfig}
-              >
-                {salvarConfig.isPending && (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                )}
-                Salvar Credenciais
-              </Button>
-              <Button
-                variant="outline"
-                onClick={() => testarConexao.mutate()}
-                disabled={qualquerSyncAtivo}
-              >
-                {testarConexao.isPending ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                ) : (
-                  <Globe className="mr-2 h-4 w-4" />
-                )}
-                Testar Conexão
-              </Button>
-            </div>
-          </div>
-        </TabsContent>
 
         <TabsContent value="sync" className="mt-4">
           <div className="space-y-4">
@@ -369,11 +222,11 @@ export default function AmazonPage() {
                 {!loadingLogs && <LastSync logs={logs} tipo="ORDERS" />}
               </div>
               <p className="mb-4 text-sm text-muted-foreground">
-                Busca pedidos recentes pela Orders API 2026-01-01 e registra o resultado no histórico.
+                Busca pedidos recentes pela Orders API 2026-01-01 e registra o resultado no historico.
               </p>
               <div className="flex flex-wrap items-center gap-3">
                 <div className="flex items-center gap-2">
-                  <Label className="whitespace-nowrap">Últimos</Label>
+                  <Label className="whitespace-nowrap">Ultimos</Label>
                   <Input
                     type="number"
                     min={1}
@@ -386,7 +239,7 @@ export default function AmazonPage() {
                 </div>
                 <Button
                   onClick={() => sincronizarPedidos.mutate()}
-                  disabled={qualquerSyncAtivo}
+                  disabled={qualquerSyncAtivo || !configurado}
                   className={cn(
                     sincronizarPedidos.isSuccess &&
                       "border-success/40 bg-success/10 text-success hover:bg-success/15",
@@ -405,7 +258,7 @@ export default function AmazonPage() {
                   {sincronizarPedidos.isPending
                     ? "Lendo..."
                     : sincronizarPedidos.isSuccess
-                      ? "Concluído"
+                      ? "Concluido"
                       : sincronizarPedidos.isError
                         ? "Tentar novamente"
                         : "Ler Pedidos"}
@@ -415,16 +268,16 @@ export default function AmazonPage() {
 
             <div className="rounded-xl border bg-card p-5">
               <div className="mb-1 flex items-start justify-between gap-3">
-                <h3 className="text-sm font-semibold">Verificar Inventário FBA</h3>
+                <h3 className="text-sm font-semibold">Verificar Inventario FBA</h3>
                 {!loadingLogs && <LastSync logs={logs} tipo="INVENTORY" />}
               </div>
               <p className="mb-4 text-sm text-muted-foreground">
-                Compara o inventário FBA da Amazon com o estoque no ERP e lista divergências.
+                Compara o inventario FBA da Amazon com o estoque no ERP e lista divergencias.
               </p>
               <Button
                 variant={sincronizarInventario.isError ? "destructive" : "outline"}
                 onClick={() => sincronizarInventario.mutate()}
-                disabled={qualquerSyncAtivo}
+                disabled={qualquerSyncAtivo || !configurado}
               >
                 {sincronizarInventario.isPending ? (
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -441,7 +294,7 @@ export default function AmazonPage() {
                     ? "Verificado"
                     : sincronizarInventario.isError
                       ? "Tentar novamente"
-                      : "Verificar Inventário"}
+                      : "Verificar Inventario"}
               </Button>
             </div>
           </div>
@@ -457,7 +310,7 @@ export default function AmazonPage() {
           ) : logs.length === 0 ? (
             <div className="flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed bg-muted/20 py-16 text-center">
               <Activity className="h-8 w-8 text-muted-foreground/40" />
-              <p className="text-sm text-muted-foreground">Nenhuma sincronização realizada.</p>
+              <p className="text-sm text-muted-foreground">Nenhuma sincronizacao realizada.</p>
             </div>
           ) : (
             <div className="space-y-2">

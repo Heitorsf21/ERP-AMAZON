@@ -7,7 +7,6 @@ import {
   TrendingDown,
   DollarSign,
   BarChart3,
-  Minus,
   ChevronRight,
   Printer,
   CalendarDays,
@@ -30,6 +29,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
+import { KpiCard } from "@/components/ui/kpi-card";
 import { fetchJSON } from "@/lib/fetcher";
 import { formatBRL } from "@/lib/money";
 import { cn } from "@/lib/utils";
@@ -114,43 +114,6 @@ function getPeriodo(preset: Preset): { de: string; ate: string } {
 }
 
 // ── Sub-componentes ────────────────────────────────────────────────────────────
-function KPICard({
-  label,
-  value,
-  sub,
-  trend,
-  highlight,
-}: {
-  label: string;
-  value: string;
-  sub?: string;
-  trend?: "up" | "down" | "neutral";
-  highlight?: "positive" | "negative" | "neutral";
-}) {
-  const cor =
-    highlight === "positive"
-      ? "text-emerald-600 dark:text-emerald-400"
-      : highlight === "negative"
-        ? "text-destructive"
-        : "text-foreground";
-
-  return (
-    <Card>
-      <CardContent className="pt-5 pb-4">
-        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-          {label}
-        </p>
-        <div className="mt-1 flex items-end gap-2">
-          <p className={cn("text-2xl font-bold tabular-nums", cor)}>{value}</p>
-          {trend === "up" && <TrendingUp className="mb-0.5 h-4 w-4 text-emerald-500" />}
-          {trend === "down" && <TrendingDown className="mb-0.5 h-4 w-4 text-destructive" />}
-        </div>
-        {sub && <p className="mt-0.5 text-xs text-muted-foreground">{sub}</p>}
-      </CardContent>
-    </Card>
-  );
-}
-
 // Linha da tabela DRE
 type TipoLinha = "grupo" | "item" | "subtotal" | "resultado";
 
@@ -319,16 +282,21 @@ export default function DREPage() {
       </PageHeader>
 
       {/* Seletor de período */}
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="inline-flex flex-wrap gap-0.5 rounded-lg border bg-muted/30 p-0.5">
         {presets.map((p) => (
-          <Button
+          <button
             key={p.key}
-            variant={preset === p.key ? "default" : "outline"}
-            size="sm"
+            type="button"
             onClick={() => setPreset(p.key)}
+            className={cn(
+              "rounded-md px-3 py-1 text-sm font-medium transition-colors",
+              preset === p.key
+                ? "bg-background text-foreground shadow-sm"
+                : "text-muted-foreground hover:text-foreground",
+            )}
           >
             {p.label}
-          </Button>
+          </button>
         ))}
       </div>
 
@@ -501,32 +469,51 @@ export default function DREPage() {
         <>
           {/* KPI Cards */}
           <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-            <KPICard
+            <KpiCard
               label="Receita Líquida"
               value={formatBRL(d.receitaLiquida)}
               sub={`${d.quantidadeLiquidacoes} liquidação(ões) Amazon`}
-              highlight={d.receitaLiquida >= 0 ? "positive" : "negative"}
+              icon={DollarSign}
+              color={d.receitaLiquida >= 0 ? "green" : "red"}
+              valueClassName={
+                d.receitaLiquida >= 0
+                  ? "text-emerald-600 dark:text-emerald-400"
+                  : "text-destructive"
+              }
             />
-            <KPICard
+            <KpiCard
               label="Margem Bruta"
               value={`${d.percentualMargemBruta.toFixed(1)}%`}
               sub={formatBRL(d.margemBruta)}
-              trend={d.margemBruta >= 0 ? "up" : "down"}
-              highlight={d.margemBruta >= 0 ? "positive" : "negative"}
+              icon={d.margemBruta >= 0 ? TrendingUp : TrendingDown}
+              color={d.margemBruta >= 0 ? "green" : "red"}
+              valueClassName={
+                d.margemBruta >= 0
+                  ? "text-emerald-600 dark:text-emerald-400"
+                  : "text-destructive"
+              }
             />
-            <KPICard
+            <KpiCard
               label="ROI"
               value={`${d.roi.toFixed(1)}%`}
               sub="resultado / CMV"
-              trend={d.roi >= 0 ? "up" : "down"}
-              highlight={d.roi >= 30 ? "positive" : d.roi >= 0 ? "neutral" : "negative"}
+              icon={d.roi >= 0 ? TrendingUp : TrendingDown}
+              color={d.roi >= 30 ? "green" : d.roi >= 0 ? "blue" : "red"}
+              valueClassName={cn(
+                d.roi >= 30 && "text-emerald-600 dark:text-emerald-400",
+                d.roi < 0 && "text-destructive",
+              )}
             />
-            <KPICard
+            <KpiCard
               label="MPA"
               value={`${d.mpaPercentual.toFixed(1)}%`}
               sub={`Margem pós-anúncio: ${formatBRL(d.mpaValor)}`}
-              trend={d.mpaPercentual >= 0 ? "up" : "down"}
-              highlight={d.mpaPercentual >= 20 ? "positive" : d.mpaPercentual >= 0 ? "neutral" : "negative"}
+              icon={d.mpaPercentual >= 0 ? TrendingUp : TrendingDown}
+              color={d.mpaPercentual >= 20 ? "green" : d.mpaPercentual >= 0 ? "blue" : "red"}
+              valueClassName={cn(
+                d.mpaPercentual >= 20 && "text-emerald-600 dark:text-emerald-400",
+                d.mpaPercentual < 0 && "text-destructive",
+              )}
             />
           </div>
 

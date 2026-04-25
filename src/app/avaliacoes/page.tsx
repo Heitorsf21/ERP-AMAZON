@@ -11,7 +11,6 @@ import {
   PackageOpen,
   Play,
   RefreshCw,
-  Search,
   Send,
   TriangleAlert,
 } from "lucide-react";
@@ -20,7 +19,6 @@ import { ptBR } from "date-fns/locale";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { PageHeader } from "@/components/ui/page-header";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
@@ -41,6 +39,7 @@ type ReviewMetrics = {
   elegiveisHoje: number;
   enviadasHoje: number;
   enviadas7d: number;
+  enviadas30d: number;
   jaSolicitados: number;
   adiadosAmanha: number;
   expirados: number;
@@ -147,7 +146,6 @@ function KpiCard({
 
 export default function AvaliacoesPage() {
   const qc = useQueryClient();
-  const [orderId, setOrderId] = React.useState("");
 
   const { data: config, isLoading: loadingConfig } = useQuery<AutomationConfig>({
     queryKey: ["reviews-config"],
@@ -229,51 +227,6 @@ export default function AvaliacoesPage() {
     onError: (e) => toast.error(e instanceof Error ? e.message : "Erro"),
   });
 
-  const verificar = useMutation({
-    mutationFn: () =>
-      fetchJSON<ReviewSolicitation>("/api/amazon/reviews/check", {
-        method: "POST",
-        body: JSON.stringify({ amazonOrderId: orderId.trim() }),
-      }),
-    onSuccess: (data) => {
-      qc.invalidateQueries({ queryKey: ["reviews-historico"] });
-      qc.invalidateQueries({ queryKey: ["reviews-metricas"] });
-      toast.success(
-        data.status === "ELEGIVEL"
-          ? "Pedido elegível para envio."
-          : "Pedido verificado.",
-      );
-    },
-    onError: (e) => toast.error(e instanceof Error ? e.message : "Erro"),
-  });
-
-  const enviar = useMutation({
-    mutationFn: () =>
-      fetchJSON<ReviewSolicitation>("/api/amazon/reviews/send", {
-        method: "POST",
-        body: JSON.stringify({ amazonOrderId: orderId.trim(), confirm: true }),
-      }),
-    onSuccess: (data) => {
-      qc.invalidateQueries({ queryKey: ["reviews-historico"] });
-      qc.invalidateQueries({ queryKey: ["reviews-metricas"] });
-      if (data.status === "ENVIADO") {
-        toast.success("Solicitacao oficial enviada pela Amazon.");
-        return;
-      }
-      if (data.status === "JA_SOLICITADO") {
-        toast.success("Pedido ja constava como solicitado na Amazon.");
-        return;
-      }
-      if (data.status === "AGUARDANDO") {
-        toast.info("A Amazon ainda nao liberou este pedido; ele ficou na fila.");
-        return;
-      }
-      toast.info("Pedido atualizado no historico de avaliacoes.");
-      return;
-    },
-    onError: (e) => toast.error(e instanceof Error ? e.message : "Erro"),
-  });
-
   const toggleProduto = useMutation({
     mutationFn: (payload: { produtoId: string; ativo: boolean }) =>
       fetchJSON("/api/amazon/reviews/produtos", {
@@ -298,17 +251,6 @@ export default function AvaliacoesPage() {
       qc.invalidateQueries({ queryKey: ["reviews-produtos"] });
     },
   });
-
-  function confirmarEnvioManual() {
-    if (!orderId.trim()) {
-      toast.error("Informe o número do pedido Amazon.");
-      return;
-    }
-    const ok = window.confirm(
-      "Enviar a solicitação oficial da Amazon para este pedido? Essa ação é real e não deve ser repetida.",
-    );
-    if (ok) enviar.mutate();
-  }
 
   const ultimaExecucaoHint = config?.ultimaExecucao
     ? `última execução ${formatDistanceToNow(new Date(config.ultimaExecucao), {
@@ -394,13 +336,24 @@ export default function AvaliacoesPage() {
       </div>
 
       {/* KPIs */}
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
         <KpiCard
           label="Pedidos 30d"
           value={metricas?.pedidos30d ?? "-"}
           hint={metricas ? `${metricas.naFila} na fila` : undefined}
           icon={CheckCircle2}
           tone="default"
+        />
+        <KpiCard
+          label="Sucesso (30 dias)"
+          value={metricas?.enviadas30d ?? "-"}
+          hint={
+            metricas
+              ? `${metricas.totalEnviadas} no total · ${metricas.enviadas7d} em 7d`
+              : undefined
+          }
+          icon={CheckCircle2}
+          tone="success"
         />
         <KpiCard
           label="Enviadas hoje"
@@ -432,44 +385,6 @@ export default function AvaliacoesPage() {
         </TabsList>
 
         <TabsContent value="historico" className="mt-4 space-y-4">
-          <div className="rounded-xl border bg-card p-5">
-            <h3 className="mb-1 text-sm font-semibold">Envio manual</h3>
-            <p className="mb-4 text-sm text-muted-foreground">
-              Use para testar um pedido específico. A automação diária já cobre os
-              elegíveis automaticamente.
-            </p>
-            <div className="grid gap-3 md:grid-cols-[minmax(240px,1fr)_auto_auto]">
-              <Input
-                placeholder="Ex: 702-1234567-1234567"
-                value={orderId}
-                onChange={(e) => setOrderId(e.target.value)}
-              />
-              <Button
-                variant="outline"
-                onClick={() => verificar.mutate()}
-                disabled={verificar.isPending || !orderId.trim()}
-              >
-                {verificar.isPending ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                ) : (
-                  <Search className="mr-2 h-4 w-4" />
-                )}
-                Verificar
-              </Button>
-              <Button
-                onClick={confirmarEnvioManual}
-                disabled={enviar.isPending || !orderId.trim()}
-              >
-                {enviar.isPending ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                ) : (
-                  <Send className="mr-2 h-4 w-4" />
-                )}
-                Enviar
-              </Button>
-            </div>
-          </div>
-
           <div className="rounded-xl border bg-card">
             <div className="flex items-center justify-between border-b p-4">
               <h3 className="text-sm font-semibold">Histórico de solicitações</h3>

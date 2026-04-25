@@ -5,7 +5,16 @@ import { ok } from "@/lib/api";
 export const dynamic = "force-dynamic";
 
 async function calcularDRE(de: Date, ate: Date) {
-  const [contasReceber, movEntradas, contasPagas] = await Promise.all([
+  const [
+    contasReceber,
+    movEntradas,
+    contasPagas,
+    vendasAmazonAgg,
+    reembolsosAmazonAgg,
+    saidasEstoque,
+    adsCampanhasAgg,
+    adsManualAgg,
+  ] = await Promise.all([
     db.contaReceber.findMany({
       where: { status: "RECEBIDA", dataRecebimento: { gte: de, lte: ate } },
       select: { valor: true },
@@ -17,6 +26,43 @@ async function calcularDRE(de: Date, ate: Date) {
     db.contaPagar.findMany({
       where: { status: "PAGA", pagoEm: { gte: de, lte: ate } },
       include: { categoria: true },
+    }),
+    // Vendas Amazon detalhadas (Sprint 4 — DRE expandido).
+    db.vendaAmazon.aggregate({
+      where: { dataVenda: { gte: de, lte: ate } },
+      _sum: {
+        valorBrutoCentavos: true,
+        liquidoMarketplaceCentavos: true,
+        taxasCentavos: true,
+        fretesCentavos: true,
+      },
+      _count: { _all: true },
+    }),
+    db.amazonReembolso.aggregate({
+      where: { dataReembolso: { gte: de, lte: ate } },
+      _sum: {
+        valorReembolsadoCentavos: true,
+        taxasReembolsadasCentavos: true,
+      },
+      _count: { _all: true },
+    }),
+    // CPV: cada SAÍDA de estoque × custo unitário histórico.
+    db.movimentacaoEstoque.findMany({
+      where: { tipo: "SAIDA", dataMovimentacao: { gte: de, lte: ate } },
+      select: { quantidade: true, custoUnitario: true },
+    }),
+    db.adsCampanha.aggregate({
+      where: {
+        OR: [
+          { periodoFim: { gte: de, lte: ate } },
+          { periodoInicio: { gte: de, lte: ate } },
+        ],
+      },
+      _sum: { gastoCentavos: true, vendasAtribuidasCentavos: true },
+    }),
+    db.adsGastoManual.aggregate({
+      where: { periodoFim: { gte: de, lte: ate } },
+      _sum: { valorCentavos: true },
     }),
   ]);
 
@@ -62,6 +108,21 @@ async function calcularDRE(de: Date, ate: Date) {
   const mpaPercentual =
     totalReceitas > 0 ? (mpaValor / totalReceitas) * 100 : 0;
 
+  // ── Bloco enriquecido (dados Amazon completos) ───────────────────
+  const vendasAmazonBrutas = vendasAmazonAgg._sum.valorBrutoCentavos ?? 0;
+  const vendasAmazonLiquidas = vendasAmazonAgg._sum.liquidoMarketplaceCentavos ?? 0;
+  const taxasAmazon = vendasAmazonAgg._sum.taxasCentavos ?? 0;
+  const fretesAmazon = vendasAmazonAgg._sum.fretesCentavos ?? 0;
+  const reembolsosValor = reembolsosAmazonAgg._sum.valorReembolsadoCentavos ?? 0;
+  const reembolsosTaxas = reembolsosAmazonAgg._sum.taxasReembolsadasCentavos ?? 0;
+  const cpvEstoqueCalculado = saidasEstoque.reduce(
+    (s, m) => s + m.quantidade * (m.custoUnitario ?? 0),
+    0,
+  );
+  const adsCampanhasCentavos = adsCampanhasAgg._sum.gastoCentavos ?? 0;
+  const adsManualCentavos = adsManualAgg._sum.valorCentavos ?? 0;
+  const adsTotal = adsCampanhasCentavos + adsManualCentavos;
+
   return {
     receitaAmazon,
     outrasReceitas,
@@ -82,6 +143,27 @@ async function calcularDRE(de: Date, ate: Date) {
     mpaPercentual,
     resultadoFinal: resultadoOperacional,
     quantidadeLiquidacoes: contasReceber.length,
+
+    // Detalhamento Amazon (novos):
+    amazon: {
+      vendasBrutas: vendasAmazonBrutas,
+      vendasLiquidas: vendasAmazonLiquidas,
+      taxas: taxasAmazon,
+      fretes: fretesAmazon,
+      reembolsos: reembolsosValor,
+      reembolsosTaxas: reembolsosTaxas,
+      quantidadeVendas: vendasAmazonAgg._count._all ?? 0,
+      quantidadeReembolsos: reembolsosAmazonAgg._count._all ?? 0,
+    },
+    cpv: {
+      calculado: cpvEstoqueCalculado,
+      contasPagas: custoMercadorias,
+    },
+    ads: {
+      campanhas: adsCampanhasCentavos,
+      manual: adsManualCentavos,
+      total: adsTotal,
+    },
   };
 }
 

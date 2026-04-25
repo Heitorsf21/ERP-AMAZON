@@ -18,9 +18,8 @@ export function PreferenciasSection() {
   React.useEffect(() => setMounted(true), []);
 
   return (
-    <div className="rounded-xl border bg-card p-5">
-      <h3 className="mb-1 text-sm font-semibold">Tema</h3>
-      <p className="mb-4 text-xs text-muted-foreground">Escolha a aparência da interface.</p>
+    <div>
+      <p className="mb-3 text-xs text-muted-foreground">Tema</p>
       <div className="flex gap-2">
         {TEMAS.map(({ value, label, icon: Icon }) => {
           const active = mounted && theme === value;

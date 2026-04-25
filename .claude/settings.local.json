@@ -1,0 +1,40 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(grep -r '$transaction' /c/Users/arthu/ERP-AMAZON/src '--include=*.ts' -l)",
+      "Bash(grep -r \"process\\\\.env\\\\.\" \"$\\(pwd\\)/src\" --include=\"*.ts\" --include=\"*.tsx\")",
+      "Bash(grep -r \"logger\\\\|Logger\\\\|pino\\\\|winston\\\\|console\\\\.log\" \"$\\(pwd\\)/src\" --include=\"*.ts\" --include=\"*.tsx\")",
+      "Bash(grep -E \"export \\(async \\)?function|export const\" \"$\\(pwd\\)/src/lib/db.ts\")",
+      "Bash(grep \"^model \" \"$\\(pwd\\)/prisma/schema.prisma\")",
+      "Bash(npx.cmd prisma *)",
+      "Bash(npm.cmd install *)",
+      "Bash(npm.cmd run *)",
+      "Bash(npx.cmd tsc *)",
+      "Bash(npx.cmd eslint *)",
+      "Bash(npx.cmd vitest *)",
+      "Bash(DATABASE_URL=\"postgresql://x:y@localhost:5432/x\" npx.cmd prisma validate)",
+      "Bash(DATABASE_URL=\"postgresql://x:y@localhost:5432/x\" npx.cmd prisma migrate diff --from-empty --to-schema-datamodel prisma/schema.prisma --script)",
+      "Bash(mkdir -p \"prisma/migrations/20260425000000_init_postgres\")",
+      "Bash(docker rm *)",
+      "Bash(docker run *)",
+      "PowerShell($paths = @\\(\"C:\\\\Program Files\\\\Docker\\\\Docker\\\\Docker Desktop.exe\", \"$env:LOCALAPPDATA\\\\Docker\\\\Docker Desktop.exe\", \"$env:ProgramFiles\\\\Docker\\\\Docker\\\\Docker Desktop.exe\"\\); $found = $null; foreach \\($p in $paths\\) { if \\(Test-Path $p\\) { $found = $p; break } }; if \\($found\\) { Start-Process $found; \"Iniciado: $found\" } else { \"Docker Desktop nao encontrado nos caminhos padrao. Procurando...\"; Get-ChildItem -Path \"C:\\\\Program Files\" -Filter \"Docker Desktop.exe\" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 3 -ExpandProperty FullName })",
+      "Bash(docker info *)",
+      "Bash(docker version *)",
+      "Bash(curl -s \"http://localhost:3000/api/health\")",
+      "Bash(curl -s \"http://localhost:3000/api/amazon/config\")",
+      "Bash(npx.cmd tsx *)",
+      "Bash(grep -oE 'INVENTORY_SYNC[^}]{0,200}' \"C:/Users/arthu/AppData/Local/Temp/claude/c--Users-arthu-ERP-AMAZON/a32e497b-517e-449d-97c1-e728e217dde5/tasks/biij7lxza.output\")",
+      "Bash(mv c:/Users/arthu/ERP-AMAZON/src/app/estoque/'[id]'/page.tsx c:/Users/arthu/ERP-AMAZON/src/app/produtos/'[id]'/page.tsx)",
+      "Bash(rmdir c:/Users/arthu/ERP-AMAZON/src/app/estoque/'[id]')",
+      "PowerShell($out = & npx.cmd tsc --noEmit 2>&1; \"EXIT=$LASTEXITCODE\"; \"LINES=$\\($out.Count\\)\"; $out | Select-Object -First 100 | Out-String)",
+      "Bash(curl -sv \"http://localhost:3000/api/health\")",
+      "Bash(tasklist //FI \"IMAGENAME eq node.exe\" //FO csv)",
+      "Bash(npx eslint *)",
+      "Bash(echo \"EXIT=$?\")",
+      "Bash(echo \"EXIT: $?\")",
+      "Bash(curl -sI \"https://images-na.ssl-images-amazon.com/images/P/B0CQGDDMZ4.01._SCLZZZZZZZ_SL300_.jpg\")",
+      "Bash(curl -sI \"https://m.media-amazon.com/images/I/B0CQGDDMZ4.jpg\")",
+      "Bash(git restore *)"
+    ]
+  }
+}

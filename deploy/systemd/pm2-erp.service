@@ -1,0 +1,28 @@
+; pm2-erp.service — sobe os processos PM2 do usuario erp no boot.
+; Instalar:
+;   cp deploy/systemd/pm2-erp.service /etc/systemd/system/
+;   systemctl daemon-reload
+;   systemctl enable --now pm2-erp
+[Unit]
+Description=PM2 process manager (erp-amazon)
+Documentation=https://pm2.keymetrics.io/
+After=network.target postgresql.service
+Wants=postgresql.service
+
+[Service]
+Type=forking
+User=erp
+LimitNOFILE=infinity
+LimitNPROC=infinity
+LimitCORE=infinity
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+Environment=PM2_HOME=/home/erp/.pm2
+PIDFile=/home/erp/.pm2/pm2.pid
+Restart=on-failure
+RestartSec=5
+ExecStart=/usr/bin/pm2 resurrect
+ExecReload=/usr/bin/pm2 reload all
+ExecStop=/usr/bin/pm2 kill
+
+[Install]
+WantedBy=multi-user.target

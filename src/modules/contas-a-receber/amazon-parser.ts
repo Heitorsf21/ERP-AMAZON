@@ -173,8 +173,18 @@ function parseCSVLine(line: string): string[] {
 
 // ── Parser principal ─────────────────────────────────────────────────
 
-export function parseAmazonCSV(conteudo: string): TransacaoAmazon[] {
-  const linhas = conteudo.split(/\r?\n/).filter((l) => l.trim());
+/**
+ * Aceita string (UTF-8 já decodificada) ou Buffer/Uint8Array (vindo da SP-API
+ * Reports API). O CSV da Amazon vem em UTF-8.
+ */
+export function parseAmazonCSV(
+  conteudo: string | Buffer | Uint8Array,
+): TransacaoAmazon[] {
+  const texto =
+    typeof conteudo === "string"
+      ? conteudo
+      : Buffer.from(conteudo).toString("utf8");
+  const linhas = texto.split(/\r?\n/).filter((l) => l.trim());
 
   // Pula linhas de cabeçalho descritivo + linha de nomes de colunas
   const dataLines = linhas.slice(HEADER_LINES + 1);

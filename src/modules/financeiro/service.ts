@@ -1,6 +1,6 @@
 import type { Prisma, PrismaClient } from "@prisma/client";
 import { db } from "@/lib/db";
-import { fimDoDiaSP, inicioDoDiaSP, somarDias } from "@/lib/date";
+import { agora, fimDoDiaSP, inicioDoDiaSP, somarDias } from "@/lib/date";
 import {
   FormatoImportacao,
   OrigemMovimentacao,
@@ -32,6 +32,54 @@ export const financeiroService = {
   async calcularSaldoAtual(filtros: unknown = {}): Promise<number> {
     const parsed = filtrosMovimentacaoSchema.parse(filtros);
     return movimentacaoRepository.somarSaldo(parsed);
+  },
+
+  /**
+   * Totais do mês corrente (fuso America/Sao_Paulo): soma de entradas, saídas
+   * e variação líquida (entradas - saídas). Usado pelas mini-stats da página
+   * de Caixa.
+   */
+  async totaisDoMes(): Promise<{
+    entradasCentavos: number;
+    saidasCentavos: number;
+    variacaoCentavos: number;
+    inicio: Date;
+    fim: Date;
+  }> {
+    const hoje = agora();
+    const inicio = inicioDoDiaSP(
+      new Date(hoje.getFullYear(), hoje.getMonth(), 1),
+    );
+    const fim = fimDoDiaSP(
+      new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0),
+    );
+
+    const [entradas, saidas] = await Promise.all([
+      db.movimentacao.aggregate({
+        where: {
+          tipo: TipoMovimentacao.ENTRADA,
+          dataCaixa: { gte: inicio, lte: fim },
+        },
+        _sum: { valor: true },
+      }),
+      db.movimentacao.aggregate({
+        where: {
+          tipo: TipoMovimentacao.SAIDA,
+          dataCaixa: { gte: inicio, lte: fim },
+        },
+        _sum: { valor: true },
+      }),
+    ]);
+
+    const entradasCentavos = entradas._sum.valor ?? 0;
+    const saidasCentavos = saidas._sum.valor ?? 0;
+    return {
+      entradasCentavos,
+      saidasCentavos,
+      variacaoCentavos: entradasCentavos - saidasCentavos,
+      inicio,
+      fim,
+    };
   },
 
   /**

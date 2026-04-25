@@ -44,7 +44,7 @@ const NAV_ITEMS: NavItem[] = [
   { id: "contas-receber", label: "Contas a Receber", group: "Páginas", icon: ArrowDownToLine, href: "/contas-a-receber", keywords: ["amazon", "recebimento", "liquidacao", "receber"] },
   { id: "destinacao", label: "Destinação de Caixa", group: "Páginas", icon: PiggyBank, href: "/destinacao", keywords: ["saldo", "livre", "comprometido", "projetado"] },
   { id: "dre", label: "DRE", group: "Páginas", icon: BarChart3, href: "/dre", keywords: ["resultado", "lucro", "prejuizo", "demonstrativo", "receita", "despesa"] },
-  { id: "estoque", label: "Estoque", group: "Páginas", icon: Package, href: "/estoque", keywords: ["produtos", "inventario", "fba", "quantidade", "sku"] },
+  { id: "produtos", label: "Produtos", group: "Páginas", icon: Package, href: "/produtos", keywords: ["estoque", "inventario", "fba", "quantidade", "sku", "catalogo"] },
   { id: "vendas", label: "Vendas", group: "Páginas", icon: ShoppingBag, href: "/vendas", keywords: ["pedidos", "venda", "orders"] },
   { id: "compras", label: "Compras", group: "Páginas", icon: ShoppingCart, href: "/compras", keywords: ["pedido compra", "reposicao", "fornecedor", "purchase"] },
   { id: "amazon", label: "Conector Amazon", group: "Configuração", icon: Globe, href: "/amazon", keywords: ["sp-api", "sincronizar", "api", "credenciais", "marketplace"] },

@@ -2,14 +2,14 @@
 
 import { useState, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { CheckCircle2, Upload, X, ChevronDown, ChevronRight, TrendingDown } from "lucide-react";
+import { CheckCircle2, Upload, X, ChevronDown, ChevronRight, TrendingDown, Clock, ArrowDownToLine, Check } from "lucide-react";
 import { toast } from "sonner";
-import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PageHeader } from "@/components/ui/page-header";
 import { DataTableSkeleton } from "@/components/ui/data-table-skeleton";
+import { KpiCard } from "@/components/ui/kpi-card";
 import {
   Table,
   TableBody,
@@ -308,103 +308,95 @@ export default function ContasAReceberPage() {
         </Button>
       </PageHeader>
 
-      {/* Resumo da importação */}
+      {/* Resumo da importação — alert sutil */}
       {resumo && (
-        <Card className="border-primary/20 bg-primary/5">
-          <CardContent className="pt-4 pb-4">
-            <div className="flex items-start justify-between gap-2">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-wide text-primary mb-2">
-                  Importação concluída — {resumo.periodo}
-                </p>
-                <div className="grid grid-cols-2 gap-x-8 gap-y-1 text-sm sm:grid-cols-3">
-                  <div>
-                    <span className="text-muted-foreground">Transações:</span>{" "}
-                    {resumo.totalTransacoes}
-                  </div>
+        <div className="rounded-lg border border-primary/20 bg-primary/5 px-4 py-2 text-sm">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex min-w-0 items-center gap-2">
+              <Check className="h-3.5 w-3.5 shrink-0 text-primary" />
+              <span className="truncate">
+                <span className="font-medium">Importação OK</span>
+                <span className="text-muted-foreground"> — {resumo.periodo}: </span>
+                {resumo.totalTransacoes} txns, {resumo.pedidos.quantidade} pedidos,{" "}
+                <span className="text-warning font-medium">{resumo.diferidos.quantidade} diferidos</span>
+              </span>
+            </div>
+            <details className="group shrink-0">
+              <summary className="cursor-pointer list-none text-xs text-muted-foreground hover:text-foreground">
+                detalhes
+              </summary>
+              <div className="absolute right-4 mt-2 w-72 rounded-lg border bg-popover p-3 text-xs shadow-md">
+                <div className="grid grid-cols-2 gap-x-3 gap-y-1">
                   <div>
                     <span className="text-muted-foreground">Pedidos:</span>{" "}
-                    {resumo.pedidos.quantidade} ({formatBRL(resumo.pedidos.totalCentavos)})
+                    {formatBRL(resumo.pedidos.totalCentavos)}
                   </div>
                   <div>
-                    <span className="text-muted-foreground">Transferências:</span>{" "}
-                    {resumo.transferencias.quantidade} ({formatBRL(resumo.transferencias.totalCentavos)})
+                    <span className="text-muted-foreground">Transf.:</span>{" "}
+                    {formatBRL(resumo.transferencias.totalCentavos)}
                   </div>
                   <div>
                     <span className="text-muted-foreground">Reembolsos:</span>{" "}
-                    {resumo.reembolsos.quantidade} ({formatBRL(resumo.reembolsos.totalCentavos)})
+                    {formatBRL(resumo.reembolsos.totalCentavos)}
                   </div>
                   <div>
                     <span className="text-muted-foreground">Taxas:</span>{" "}
-                    {resumo.taxas.quantidade} ({formatBRL(resumo.taxas.totalCentavos)})
+                    {formatBRL(resumo.taxas.totalCentavos)}
                   </div>
-                  <div className="font-medium text-warning">
+                  <div className="col-span-2 text-warning">
                     <span className="text-muted-foreground">Diferidos:</span>{" "}
-                    {resumo.diferidos.quantidade} ({formatBRL(resumo.diferidos.totalCentavos)})
+                    {formatBRL(resumo.diferidos.totalCentavos)}
                   </div>
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={() => setResumo(null)}
-                className="text-muted-foreground hover:text-foreground"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-          </CardContent>
-        </Card>
+            </details>
+            <button
+              type="button"
+              onClick={() => setResumo(null)}
+              className="shrink-0 text-muted-foreground hover:text-foreground"
+              aria-label="Fechar resumo"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
       )}
 
       {/* Cards de resumo */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <Card>
-          <CardContent className="pt-5 pb-5">
-            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground mb-1">
-              A receber
-            </p>
-            <p className="text-2xl font-semibold tabular-nums text-warning">
-              {totais ? formatBRL(totais.totalPendenteCentavos) : "—"}
-            </p>
-            <p className="mt-1 text-xs text-muted-foreground">
-              {totais
-                ? `${totais.quantidadePendente} liquidação${totais.quantidadePendente !== 1 ? "ões" : ""}`
-                : ""}
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="pt-5 pb-5">
-            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground mb-1">
-              Já recebido
-            </p>
-            <p className="text-2xl font-semibold tabular-nums text-success">
-              {totais ? formatBRL(totais.totalRecebidaCentavos) : "—"}
-            </p>
-            <p className="mt-1 text-xs text-muted-foreground">
-              {totais
-                ? `${totais.quantidadeRecebida} liquidação${totais.quantidadeRecebida !== 1 ? "ões" : ""}`
-                : ""}
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="pt-5 pb-5">
-            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground mb-1">
-              Total Amazon
-            </p>
-            <p className="text-2xl font-semibold tabular-nums">
-              {totais ? formatBRL(totais.totalCentavos) : "—"}
-            </p>
-            <p className="mt-1 text-xs text-muted-foreground">
-              {totais
-                ? `${totais.quantidadePendente + totais.quantidadeRecebida} liquidações`
-                : ""}
-            </p>
-          </CardContent>
-        </Card>
+        <KpiCard
+          label="A receber"
+          color="orange"
+          icon={Clock}
+          value={totais ? formatBRL(totais.totalPendenteCentavos) : "—"}
+          sub={
+            totais
+              ? `${totais.quantidadePendente} liquidação${totais.quantidadePendente !== 1 ? "ões" : ""}`
+              : undefined
+          }
+        />
+        <KpiCard
+          label="Já recebido"
+          color="green"
+          icon={CheckCircle2}
+          value={totais ? formatBRL(totais.totalRecebidaCentavos) : "—"}
+          sub={
+            totais
+              ? `${totais.quantidadeRecebida} liquidação${totais.quantidadeRecebida !== 1 ? "ões" : ""}`
+              : undefined
+          }
+        />
+        <KpiCard
+          label="Total Amazon"
+          color="blue"
+          icon={ArrowDownToLine}
+          value={totais ? formatBRL(totais.totalCentavos) : "—"}
+          sub={
+            totais
+              ? `${totais.quantidadePendente + totais.quantidadeRecebida} liquidações`
+              : undefined
+          }
+        />
       </div>
 
       {/* Tabs */}

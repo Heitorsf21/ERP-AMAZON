@@ -158,6 +158,9 @@ export const TipoAmazonSyncJob = {
   REVIEWS_DISCOVERY: "REVIEWS_DISCOVERY",
   REVIEWS_SEND: "REVIEWS_SEND",
   REPORTS_BACKFILL: "REPORTS_BACKFILL",
+  SETTLEMENT_REPORT_SYNC: "SETTLEMENT_REPORT_SYNC",
+  BUYBOX_CHECK: "BUYBOX_CHECK",
+  CATALOG_REFRESH: "CATALOG_REFRESH",
 } as const;
 export type TipoAmazonSyncJob =
   (typeof TipoAmazonSyncJob)[keyof typeof TipoAmazonSyncJob];
@@ -201,3 +204,21 @@ export const StatusReposicao = {
 } as const;
 export type StatusReposicao =
   (typeof StatusReposicao)[keyof typeof StatusReposicao];
+
+// ── Notificações operacionais ───────────────────────────────────────
+export const TipoNotificacao = {
+  ESTOQUE_CRITICO: "ESTOQUE_CRITICO",
+  BUYBOX_PERDIDO: "BUYBOX_PERDIDO",
+  BUYBOX_RECUPERADO: "BUYBOX_RECUPERADO",
+  REEMBOLSO_ALTO: "REEMBOLSO_ALTO",
+  ACOS_ALTO: "ACOS_ALTO",
+  LIQUIDACAO_ATRASADA: "LIQUIDACAO_ATRASADA",
+  CUSTO_AUSENTE: "CUSTO_AUSENTE",
+  JOB_FALHANDO: "JOB_FALHANDO",
+  QUOTA_BLOQUEADA: "QUOTA_BLOQUEADA",
+  SETTLEMENT_NOVO: "SETTLEMENT_NOVO",
+  RECEBIMENTO_RECONCILIADO: "RECEBIMENTO_RECONCILIADO",
+  WORKER_REINICIADO: "WORKER_REINICIADO",
+} as const;
+export type TipoNotificacao =
+  (typeof TipoNotificacao)[keyof typeof TipoNotificacao];

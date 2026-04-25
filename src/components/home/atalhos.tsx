@@ -1,3 +1,6 @@
+// @deprecated Não usado mais na home (substituído por AlertasCriticos +
+// ResumoRapidoModal em abr/2026). Mantido em disco para evitar conflitos com
+// outras frentes em paralelo. Pode ser removido quando ninguém mais importar.
 import Link from "next/link";
 import type { Route } from "next";
 import {

@@ -1,0 +1,8 @@
+# Cron Linux do usuario erp.
+# Instalar: crontab -e (como erp) e colar as linhas abaixo.
+
+# Backup diario do Postgres + uploads (03:00)
+0 3 * * * /opt/erp-amazon/deploy/backup-postgres.sh >> /var/log/erp-backup.log 2>&1
+
+# Watchdog do worker a cada 5 min
+*/5 * * * * /opt/erp-amazon/deploy/watchdog.sh >> /var/log/erp-watchdog.log 2>&1

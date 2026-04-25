@@ -143,10 +143,10 @@ export function EstoqueAtencao() {
           </div>
         </div>
         <Link
-          href={"/estoque" as Route}
+          href={"/produtos" as Route}
           className="flex items-center gap-1 text-xs text-primary transition-colors hover:underline"
         >
-          Ver estoque <ArrowRight className="h-3 w-3" />
+          Ver produtos <ArrowRight className="h-3 w-3" />
         </Link>
       </CardHeader>
       <CardContent className="pt-0">

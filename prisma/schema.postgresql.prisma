@@ -1,0 +1,671 @@
+// ERP AMAZON — schema Prisma (PostgreSQL)
+//
+// Convenções:
+// - Dinheiro em centavos (Int). Nunca Float.
+// - Datas em UTC; lógica de fuso (America/Sao_Paulo) é aplicada na camada de serviço.
+// - Enums representados como String + constantes de domínio (mais flexível que enum nativo).
+// - Cada modelo tem createdAt/updatedAt para auditoria básica.
+// - Campos JSON usam tipo Json (mapeia para jsonb no Postgres).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ── Autenticação ────────────────────────────────────────────────────────────
+
+model Usuario {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  senhaHash    String
+  nome         String
+  // ADMIN | MEMBRO
+  role         String    @default("ADMIN")
+  ativo        Boolean   @default(true)
+  avatarUrl    String?
+  ultimoAcesso DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@index([email])
+  @@index([ativo])
+}
+
+model Categoria {
+  id        String   @id @default(cuid())
+  nome      String   @unique
+  // RECEITA | DESPESA | AMBAS
+  tipo      String
+  cor       String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  movimentacoes Movimentacao[]
+  contas        ContaPagar[]
+}
+
+model Fornecedor {
+  id          String   @id @default(cuid())
+  nome        String   @unique
+  documento   String?
+  contato     String?
+  observacoes String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  contas  ContaPagar[]
+  pedidos PedidoCompra[]
+}
+
+model Movimentacao {
+  id              String   @id @default(cuid())
+  // ENTRADA | SAIDA
+  tipo            String
+  valor           Int
+  dataCompetencia DateTime
+  dataCaixa       DateTime
+  categoriaId     String
+  descricao       String
+  // MANUAL | CONTA_PAGA | IMPORTACAO | AJUSTE
+  origem          String
+  referenciaId    String?
+  motivoAjuste    String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  categoria    Categoria     @relation(fields: [categoriaId], references: [id], onDelete: Restrict)
+  contaPaga    ContaPagar?   @relation("ContaPagaMovimentacao")
+  contaReceber ContaReceber? @relation("ContaReceberMovimentacao")
+
+  @@index([dataCaixa])
+  @@index([tipo])
+  @@index([categoriaId])
+  @@index([origem])
+}
+
+model ContaPagar {
+  id             String    @id @default(cuid())
+  fornecedorId   String
+  categoriaId    String
+  descricao      String
+  valor          Int
+  vencimento     DateTime
+  // ABERTA | VENCIDA | PAGA | CANCELADA
+  status         String    @default("ABERTA")
+  // NENHUMA | MENSAL
+  recorrencia    String    @default("NENHUMA")
+  contaPaiId     String?
+  pagoEm         DateTime?
+  movimentacaoId String?   @unique
+  observacoes    String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  fornecedor Fornecedor @relation(fields: [fornecedorId], references: [id], onDelete: Restrict)
+  categoria  Categoria  @relation(fields: [categoriaId], references: [id], onDelete: Restrict)
+  nfAnexo    String?
+  nfNome     String?
+
+  contaPai         ContaPagar?       @relation("Recorrencia", fields: [contaPaiId], references: [id], onDelete: SetNull)
+  filhas           ContaPagar[]      @relation("Recorrencia")
+  movimentacao     Movimentacao?     @relation("ContaPagaMovimentacao", fields: [movimentacaoId], references: [id], onDelete: SetNull)
+  dossieFinanceiro DossieFinanceiro?
+  pedidoCompra     PedidoCompra?     @relation("PedidoContaPagar")
+
+  @@index([status])
+  @@index([vencimento])
+  @@index([fornecedorId])
+}
+
+model DossieFinanceiro {
+  id                  String    @id @default(cuid())
+  fornecedorNome      String?
+  fornecedorDocumento String?
+  descricao           String?
+  valor               Int?
+  vencimento          DateTime?
+  numeroDocumento     String?
+  status              String    @default("PENDENTE")
+  contaPagarId        String?   @unique
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  contaPagar ContaPagar?           @relation(fields: [contaPagarId], references: [id], onDelete: SetNull)
+  documentos DocumentoFinanceiro[]
+
+  @@index([status])
+  @@index([fornecedorDocumento])
+  @@index([vencimento])
+}
+
+model DocumentoFinanceiro {
+  id                  String    @id @default(cuid())
+  dossieId            String
+  tipo                String
+  nomeArquivo         String
+  caminhoArquivo      String
+  mimeType            String
+  sha256              String    @unique
+  textoExtraido       String?
+  fornecedorNome      String?
+  fornecedorDocumento String?
+  descricao           String?
+  valor               Int?
+  vencimento          DateTime?
+  numeroDocumento     String?
+  chaveAcesso         String?
+  linhaDigitavel      String?
+  dataEmissao         DateTime?
+  protegidoPorSenha   Boolean   @default(false)
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  dossie DossieFinanceiro @relation(fields: [dossieId], references: [id], onDelete: Cascade)
+
+  @@index([dossieId])
+  @@index([tipo])
+  @@index([fornecedorDocumento])
+  @@index([vencimento])
+}
+
+model ContaReceber {
+  id              String    @id @default(cuid())
+  descricao       String
+  valor           Int
+  dataPrevisao    DateTime?
+  dataRecebimento DateTime?
+  // PENDENTE | RECEBIDA | CANCELADA
+  status          String    @default("PENDENTE")
+  // AMAZON | MANUAL
+  origem          String    @default("AMAZON")
+  liquidacaoId    String?
+  totalPedidos    Int       @default(0)
+  movimentacaoId  String?   @unique
+  observacoes     String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  movimentacao Movimentacao? @relation("ContaReceberMovimentacao", fields: [movimentacaoId], references: [id], onDelete: SetNull)
+
+  @@index([status])
+  @@index([dataPrevisao])
+  @@index([liquidacaoId])
+}
+
+// ── Estoque ─────────────────────────────────────────────────────────────────
+
+model Produto {
+  id                      String   @id @default(cuid())
+  sku                     String   @unique
+  asin                    String?
+  nome                    String
+  descricao               String?
+  custoUnitario           Int?
+  precoVenda              Int?
+  amazonEstoqueDisponivel Int?
+  amazonEstoqueReservado  Int?
+  amazonEstoqueInbound    Int?
+  amazonEstoqueTotal      Int?
+  amazonUltimaSyncEm      DateTime?
+  estoqueAtual            Int      @default(0)
+  estoqueMinimo           Int      @default(0)
+  unidade                 String   @default("un")
+  ativo                   Boolean  @default(true)
+  solicitarReviewsAtivo   Boolean  @default(true)
+  imagemUrl               String?
+  observacoes             String?
+  // Catálogo Amazon
+  amazonImagemUrl         String?
+  amazonTituloOficial     String?
+  amazonCategoria         String?
+  amazonCatalogSyncEm     DateTime?
+  // Buybox snapshot atual
+  buyboxGanho             Boolean?
+  buyboxPreco             Int?
+  buyboxConcorrentes      Int?
+  buyboxUltimaSyncEm      DateTime?
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+
+  movimentacoes    MovimentacaoEstoque[]
+  itensPedido      ItemPedidoCompra[]
+  metricas         ProdutoMetricaGestorSeller[]
+  adsGastosManuais AdsGastoManual[]
+  reembolsosAmazon AmazonReembolso[]
+  buyboxSnapshots  BuyBoxSnapshot[]
+
+  @@index([sku])
+  @@index([asin])
+  @@index([ativo])
+  @@index([amazonUltimaSyncEm])
+  @@index([estoqueAtual])
+}
+
+model VendaAmazon {
+  id                         String   @id @default(cuid())
+  amazonOrderId              String
+  orderItemId                String?
+  sku                        String
+  asin                       String?
+  titulo                     String?
+  quantidade                 Int
+  precoUnitarioCentavos      Int
+  valorBrutoCentavos         Int?
+  taxasCentavos              Int      @default(0)
+  fretesCentavos             Int      @default(0)
+  liquidoMarketplaceCentavos Int?
+  custoUnitarioCentavos      Int?
+  liquidacaoId               String?
+  marketplace                String?
+  fulfillmentChannel         String?
+  statusPedido               String   @default("UNKNOWN")
+  statusFinanceiro           String   @default("PENDENTE")
+  dataVenda                  DateTime
+  ultimaSyncEm               DateTime?
+  criadoEm                   DateTime @default(now())
+  atualizadoEm               DateTime @updatedAt
+
+  @@unique([amazonOrderId, sku])
+  @@index([orderItemId])
+  @@index([dataVenda])
+  @@index([sku])
+  @@index([liquidacaoId])
+  @@index([statusPedido])
+  @@index([statusFinanceiro])
+  @@index([ultimaSyncEm])
+}
+
+model AmazonReembolso {
+  id                        String   @id @default(cuid())
+  amazonOrderId             String
+  orderItemId               String?
+  sku                       String
+  asin                      String?
+  titulo                    String?
+  quantidade                Int      @default(0)
+  valorReembolsadoCentavos  Int
+  taxasReembolsadasCentavos Int      @default(0)
+  dataReembolso             DateTime
+  liquidacaoId              String?
+  marketplace               String?
+  referenciaExterna         String   @unique
+  statusFinanceiro          String?
+  motivoCategoria           String?
+  produtoId                 String?
+  criadoEm                  DateTime @default(now())
+  atualizadoEm              DateTime @updatedAt
+
+  produto Produto? @relation(fields: [produtoId], references: [id], onDelete: SetNull)
+
+  @@index([amazonOrderId])
+  @@index([orderItemId])
+  @@index([sku])
+  @@index([dataReembolso])
+  @@index([liquidacaoId])
+  @@index([produtoId])
+  @@index([motivoCategoria])
+}
+
+model AdsGastoManual {
+  id            String   @id @default(cuid())
+  periodoInicio DateTime
+  periodoFim    DateTime
+  produtoId     String?
+  valorCentavos Int
+  criadoEm      DateTime @default(now())
+
+  produto Produto? @relation(fields: [produtoId], references: [id], onDelete: SetNull)
+
+  @@index([periodoInicio, periodoFim])
+  @@index([produtoId])
+}
+
+model MovimentacaoEstoque {
+  id               String   @id @default(cuid())
+  produtoId        String
+  // ENTRADA | SAIDA
+  tipo             String
+  quantidade       Int
+  custoUnitario    Int?
+  // MANUAL | IMPORTACAO | AJUSTE | COMPRA | VENDA
+  origem           String
+  referenciaId     String?
+  observacoes      String?
+  dataMovimentacao DateTime
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  produto Produto @relation(fields: [produtoId], references: [id], onDelete: Restrict)
+
+  @@index([produtoId])
+  @@index([dataMovimentacao])
+  @@index([tipo])
+  @@index([origem])
+}
+
+// ── Compras & Reposição ─────────────────────────────────────────────────────
+
+model PedidoCompra {
+  id              String             @id @default(cuid())
+  numero          String?
+  fornecedorId    String?
+  fornecedor      Fornecedor?        @relation(fields: [fornecedorId], references: [id], onDelete: Restrict)
+  // RASCUNHO | CONFIRMADO | RECEBIDO | CANCELADO
+  status          String             @default("RASCUNHO")
+  dataEmissao     DateTime           @default(now())
+  dataPrevisao    DateTime?
+  dataRecebimento DateTime?
+  totalCentavos   Int                @default(0)
+  observacoes     String?
+  contaPagarId    String?            @unique
+  contaPagar      ContaPagar?        @relation("PedidoContaPagar", fields: [contaPagarId], references: [id], onDelete: SetNull)
+  itens           ItemPedidoCompra[]
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+
+  @@index([status])
+  @@index([dataEmissao])
+  @@index([fornecedorId])
+}
+
+model ItemPedidoCompra {
+  id            String       @id @default(cuid())
+  pedidoId      String
+  pedido        PedidoCompra @relation(fields: [pedidoId], references: [id], onDelete: Cascade)
+  produtoId     String
+  produto       Produto      @relation(fields: [produtoId], references: [id], onDelete: Restrict)
+  quantidade    Int
+  custoUnitario Int
+  subtotal      Int
+  createdAt     DateTime     @default(now())
+
+  @@index([pedidoId])
+  @@index([produtoId])
+}
+
+// ── Amazon Sync ──────────────────────────────────────────────────────────────
+
+model AmazonSyncLog {
+  id        String   @id @default(cuid())
+  tipo      String
+  // PROCESSANDO | SUCESSO | ERRO
+  status    String
+  mensagem  String?
+  detalhes  Json?
+  registros Int      @default(0)
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([tipo])
+  @@index([status])
+}
+
+model AmazonSyncJob {
+  id          String    @id @default(cuid())
+  tipo        String
+  // QUEUED | RUNNING | SUCCESS | FAILED | CANCELLED
+  status      String    @default("QUEUED")
+  priority    Int       @default(0)
+  payload     Json?
+  result      Json?
+  error       String?
+  attempts    Int       @default(0)
+  maxAttempts Int       @default(5)
+  runAfter    DateTime  @default(now())
+  startedAt   DateTime?
+  finishedAt  DateTime?
+  lockedAt    DateTime?
+  lockedBy    String?
+  dedupeKey   String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([status, runAfter, priority])
+  @@index([tipo])
+  @@index([dedupeKey])
+  @@index([createdAt])
+  @@index([lockedAt])
+}
+
+model AmazonApiQuota {
+  id                 String    @id @default(cuid())
+  operation          String    @unique
+  nextAllowedAt      DateTime?
+  rateLimitPerSecond Float?
+  burst              Int?
+  observedRps        Float?
+  lastStatus         Int?
+  lastError          String?
+  lastAttemptAt      DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  @@index([nextAllowedAt])
+}
+
+model AmazonReviewSolicitation {
+  id                  String    @id @default(cuid())
+  amazonOrderId       String    @unique
+  marketplaceId       String
+  status              String    @default("PENDENTE")
+  origem              String    @default("DAILY")
+  asin                String?
+  sku                 String?
+  orderCreatedAt      DateTime?
+  eligibleFrom        DateTime?
+  deliveryWindowStart DateTime?
+  deliveryWindowEnd   DateTime?
+  nextCheckAt         DateTime?
+  attempts            Int       @default(0)
+  lastAttemptAt       DateTime?
+  qualificationReason String?
+  resolvedReason      String?
+  lastCheckedAction   String?
+  checkedAt           DateTime?
+  sentAt              DateTime?
+  errorMessage        String?
+  rawResponse         Json?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  @@index([status])
+  @@index([origem])
+  @@index([orderCreatedAt])
+  @@index([eligibleFrom])
+  @@index([deliveryWindowEnd])
+  @@index([nextCheckAt])
+  @@index([lastAttemptAt])
+  @@index([sentAt])
+  @@index([createdAt])
+  @@index([marketplaceId])
+}
+
+model ConfiguracaoSistema {
+  id        String   @id @default(cuid())
+  chave     String   @unique
+  valor     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ── Vendas FBA ───────────────────────────────────────────────────────────────
+
+model LoteImportacaoFBA {
+  id                  String    @id @default(cuid())
+  nomeArquivo         String
+  // VENDAS | ESTOQUE
+  tipo                String
+  totalLinhas         Int
+  periodoInicio       DateTime?
+  periodoFim          DateTime?
+  produtosAtualizados Int       @default(0)
+  createdAt           DateTime  @default(now())
+
+  vendas VendaFBA[]
+
+  @@index([tipo])
+  @@index([createdAt])
+}
+
+model VendaFBA {
+  id                    String   @id @default(cuid())
+  numeroPedido          String
+  marketplace           String?
+  status                String
+  dataCompra            DateTime
+  asin                  String?
+  skuExterno            String
+  skuInterno            String?
+  titulo                String?
+  quantidade            Int
+  precoUnitarioCentavos Int
+  totalCentavos         Int
+  loteId                String
+  createdAt             DateTime @default(now())
+
+  lote LoteImportacaoFBA @relation(fields: [loteId], references: [id], onDelete: Cascade)
+
+  @@unique([numeroPedido, skuExterno])
+  @@index([skuExterno])
+  @@index([dataCompra])
+  @@index([status])
+  @@index([loteId])
+}
+
+// ── Gestor Seller — métricas de produto ────────────────────────────────────
+
+model LoteMetricaGS {
+  id          String   @id @default(cuid())
+  nomeArquivo String
+  createdAt   DateTime @default(now())
+
+  metricas ProdutoMetricaGestorSeller[]
+
+  @@index([createdAt])
+}
+
+model ProdutoMetricaGestorSeller {
+  id                     String   @id @default(cuid())
+  loteId                 String
+  produtoId              String?
+  sku                    String
+  titulo                 String?
+  custoUnitarioCentavos  Int?
+  precoVendaCentavos     Int?
+  unidadesVendidasTotais Int      @default(0)
+  vendasAmazonCentavos   Int      @default(0)
+  vendasMlCentavos       Int      @default(0)
+  vendasShopeeCentavos   Int      @default(0)
+  vendasTikTokCentavos   Int      @default(0)
+  faturamentoCentavos    Int      @default(0)
+  lucroCentavos          Int      @default(0)
+  margemPercentual       Float    @default(0)
+  custoAdsCentavos       Int      @default(0)
+  lucroPosAdsCentavos    Int      @default(0)
+  mpaPercentual          Float    @default(0)
+  createdAt              DateTime @default(now())
+
+  lote    LoteMetricaGS @relation(fields: [loteId], references: [id], onDelete: Cascade)
+  produto Produto?      @relation(fields: [produtoId], references: [id], onDelete: SetNull)
+
+  @@unique([loteId, sku])
+  @@index([sku])
+  @@index([produtoId])
+  @@index([loteId])
+}
+
+model ImportacaoLote {
+  id          String   @id @default(cuid())
+  nomeArquivo String
+  formato     String
+  totalLinhas Int
+  criadoEm    DateTime @default(now())
+
+  @@index([criadoEm])
+}
+
+model AdsCampanha {
+  id                       String   @id @default(cuid())
+  periodoInicio            DateTime
+  periodoFim               DateTime
+  nomeCampanha             String
+  asin                     String?
+  sku                      String?
+  impressoes               Int      @default(0)
+  cliques                  Int      @default(0)
+  gastoCentavos            Int
+  vendasAtribuidasCentavos Int      @default(0)
+  pedidos                  Int      @default(0)
+  unidades                 Int      @default(0)
+  acosPercentual           Float?
+  roas                     Float?
+  criadoEm                 DateTime @default(now())
+  updatedAt                DateTime @updatedAt
+
+  @@index([periodoInicio, periodoFim])
+  @@index([sku])
+  @@index([nomeCampanha])
+}
+
+model Notificacao {
+  id          String   @id @default(cuid())
+  // ESTOQUE_CRITICO | BUYBOX_PERDIDO | BUYBOX_RECUPERADO | REEMBOLSO_ALTO | ACOS_ALTO |
+  // LIQUIDACAO_ATRASADA | CUSTO_AUSENTE | JOB_FALHANDO | QUOTA_BLOQUEADA | SETTLEMENT_NOVO |
+  // RECEBIMENTO_RECONCILIADO | WORKER_REINICIADO
+  tipo        String
+  titulo      String
+  descricao   String
+  lida        Boolean  @default(false)
+  linkRef     String?
+  dedupeKey   String?  @unique
+  criadaEm    DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([lida])
+  @@index([tipo])
+  @@index([criadaEm])
+}
+
+model AmazonSettlementReport {
+  id                  String    @id @default(cuid())
+  reportId            String    @unique
+  reportDocumentId    String?
+  settlementId        String?   @unique
+  periodoInicio       DateTime?
+  periodoFim          DateTime?
+  depositDate         DateTime?
+  totalAmountCentavos Int?
+  processadoEm        DateTime?
+  contasGeradas       Int       @default(0)
+  criadoEm            DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  @@index([settlementId])
+  @@index([depositDate])
+  @@index([processadoEm])
+}
+
+// Histórico de buybox por SKU (medido em intervalos do BUYBOX_CHECK).
+// Permite gráficos de "% do tempo com buybox últimos N dias".
+model BuyBoxSnapshot {
+  id              String   @id @default(cuid())
+  produtoId       String?
+  sku             String
+  asin            String?
+  somosBuybox     Boolean
+  precoNosso      Int?
+  precoBuybox     Int?
+  sellerBuybox    String?
+  numeroOfertas   Int?
+  capturadoEm     DateTime @default(now())
+
+  produto Produto? @relation(fields: [produtoId], references: [id], onDelete: SetNull)
+
+  @@index([sku, capturadoEm])
+  @@index([produtoId])
+  @@index([capturadoEm])
+}

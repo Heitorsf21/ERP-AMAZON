@@ -7,6 +7,7 @@
  */
 
 import {
+  adoptObservedRateLimit,
   AmazonSpApiOperation,
   markAmazonOperationRateLimited,
   markAmazonOperationSuccess,
@@ -193,6 +194,12 @@ export async function spApiRequest<T = unknown>(
 
     const payload = await parseResponse(response);
     lastPayload = payload;
+
+    // Sempre que possível, calibra rate limit observado pela Amazon.
+    if (options.operation) {
+      const observed = response.headers.get("x-amzn-RateLimit-Limit");
+      if (observed) await adoptObservedRateLimit(options.operation, observed);
+    }
 
     if (response.ok) {
       if (options.operation) {
@@ -382,8 +389,90 @@ export async function getReportDocument(
   }
 }
 
+export interface SPMarketplaceParticipation {
+  marketplace?: {
+    id?: string;
+    name?: string;
+    countryCode?: string;
+    defaultCurrencyCode?: string;
+    defaultLanguageCode?: string;
+    domainName?: string;
+  };
+  participation?: {
+    isParticipating?: boolean;
+    hasSuspendedListings?: boolean;
+    sellerId?: string;
+  };
+  // Algumas variações da SP-API retornam sellerId no nível raiz.
+  sellerId?: string;
+}
+
+export interface SPMarketplaceParticipationsResponse {
+  payload?: SPMarketplaceParticipation[];
+}
+
 export async function getMarketplaceParticipations(creds: SPAPICredentials) {
-  return spApiRequest(creds, "/sellers/v1/marketplaceParticipations");
+  return spApiRequest<SPMarketplaceParticipationsResponse | SPMarketplaceParticipation[]>(
+    creds,
+    "/sellers/v1/marketplaceParticipations",
+    { operation: AmazonSpApiOperation.SELLERS_GET },
+  );
+}
+
+export interface SPSellerAccountResponse {
+  payload?: {
+    sellerId?: string;
+    [key: string]: unknown;
+  };
+  sellerId?: string;
+  [key: string]: unknown;
+}
+
+/**
+ * Retorna o sellerId (Merchant Token) da própria conta.
+ *
+ * Usa o endpoint `/sellers/v1/account` (preferido — retorna sellerId
+ * diretamente). Se ele não estiver disponível para o app, faz fallback
+ * para `/sellers/v1/marketplaceParticipations` (algumas regiões antigas
+ * ainda devolvem sellerId em `participation.sellerId`).
+ *
+ * Importante: o endpoint `/sellers/v1/marketplaceParticipations` no
+ * marketplace BR (verificado em 2026-04) retorna apenas storeName e
+ * participation flags — SEM sellerId. Por isso `getSellerAccount` é o
+ * caminho principal.
+ */
+export async function getSellerAccount(creds: SPAPICredentials): Promise<SPSellerAccountResponse> {
+  return spApiRequest<SPSellerAccountResponse>(
+    creds,
+    "/sellers/v1/account",
+    { operation: AmazonSpApiOperation.SELLERS_GET },
+  );
+}
+
+export async function getSellerId(creds: SPAPICredentials): Promise<string | null> {
+  // Caminho principal: /sellers/v1/account.
+  try {
+    const acct = await getSellerAccount(creds);
+    const fromAccount = acct.payload?.sellerId ?? acct.sellerId ?? null;
+    if (fromAccount) return fromAccount;
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.warn(`[getSellerId] /sellers/v1/account falhou: ${msg.slice(0, 200)}`);
+  }
+
+  // Fallback: /sellers/v1/marketplaceParticipations (regiões legadas).
+  const result = await getMarketplaceParticipations(creds);
+  const list: SPMarketplaceParticipation[] = Array.isArray(result)
+    ? result
+    : (result?.payload ?? []);
+  const target = list.find((p) => p.marketplace?.id === creds.marketplaceId);
+  return (
+    target?.participation?.sellerId ??
+    target?.sellerId ??
+    list[0]?.participation?.sellerId ??
+    list[0]?.sellerId ??
+    null
+  );
 }
 
 export async function getCatalogItem(
@@ -405,7 +494,10 @@ export async function getCatalogItem(
     );
     if ("item" in result && result.item) return result.item;
     return result as SPCatalogItem;
-  } catch {
+  } catch (e) {
+    // Loga o motivo real (auth, ASIN invalido, rate limit etc.) sem quebrar o caller.
+    const msg = e instanceof Error ? e.message : String(e);
+    console.warn(`[getCatalogItem] ASIN ${asin} falhou: ${msg.slice(0, 200)}`);
     return null;
   }
 }
@@ -433,6 +525,59 @@ export async function getProductOffers(
   } catch {
     return null;
   }
+}
+
+export interface SPOrderItemDetail {
+  ASIN?: string;
+  SellerSKU?: string;
+  OrderItemId: string;
+  Title?: string;
+  QuantityOrdered: number;
+  ItemPrice?: { Amount?: string; CurrencyCode?: string };
+  ShippingPrice?: { Amount?: string; CurrencyCode?: string };
+  PromotionDiscount?: { Amount?: string; CurrencyCode?: string };
+  ItemTax?: { Amount?: string; CurrencyCode?: string };
+  ShippingTax?: { Amount?: string; CurrencyCode?: string };
+}
+
+/**
+ * Busca os itens detalhados de um pedido pela Orders API.
+ * Endpoint: /orders/v0/orders/{orderId}/orderItems
+ *
+ * IMPORTANTE: o endpoint /orders/2026-01-01/orders (lista) NAO retorna itens completos.
+ * Para preço, taxa, frete etc. é obrigatório chamar /orders/v0/orders/{id}/orderItems separado.
+ *
+ * Rate limit: 0.5 rps, burst 30 (operacao ORDERS_GET).
+ */
+export async function getOrderItems(
+  creds: SPAPICredentials,
+  orderId: string,
+  options: { accessToken?: string; maxPages?: number } = {},
+): Promise<SPOrderItemDetail[]> {
+  type Resp = {
+    payload?: { OrderItems?: SPOrderItemDetail[]; NextToken?: string };
+    OrderItems?: SPOrderItemDetail[];
+    NextToken?: string;
+  };
+  const items: SPOrderItemDetail[] = [];
+  let nextToken: string | undefined;
+  let pages = 0;
+  do {
+    const res = await spApiRequest<Resp>(
+      creds,
+      `/orders/v0/orders/${encodeURIComponent(orderId)}/orderItems`,
+      {
+        operation: AmazonSpApiOperation.ORDERS_GET,
+        accessToken: options.accessToken,
+        params: nextToken ? { NextToken: nextToken } : {},
+      },
+    );
+    const list = res.payload?.OrderItems ?? res.OrderItems ?? [];
+    items.push(...list);
+    nextToken = res.payload?.NextToken ?? res.NextToken;
+    pages++;
+  } while (nextToken && pages < (options.maxPages ?? 5));
+  return items;
 }
 
 export async function getOrders(
@@ -551,20 +696,21 @@ export async function getInventorySummaries(
   let pages = 0;
 
   do {
+    // FBA Inventory API exige marketplaceIds (e granularity*) em TODA chamada,
+    // inclusive nas paginas seguintes — não basta passar só nextToken.
+    const baseParams: RequestParams = {
+      details: true,
+      granularityType: "Marketplace",
+      granularityId: creds.marketplaceId,
+      marketplaceIds: creds.marketplaceId,
+    };
     const result = await spApiRequest<InventoryResponse>(
       creds,
       "/fba/inventory/v1/summaries",
       {
         operation: AmazonSpApiOperation.INVENTORY_SUMMARIES,
         accessToken: options.accessToken,
-        params: nextToken
-          ? { nextToken }
-          : {
-              details: true,
-              granularityType: "Marketplace",
-              granularityId: creds.marketplaceId,
-              marketplaceIds: creds.marketplaceId,
-            },
+        params: nextToken ? { ...baseParams, nextToken } : baseParams,
       },
     );
 

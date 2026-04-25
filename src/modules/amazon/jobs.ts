@@ -18,6 +18,10 @@ const OPEN_JOB_STATUSES = [
   StatusAmazonSyncJob.RUNNING,
 ] as const;
 
+// Intervalos otimizados ao máximo permitido pela SP-API.
+// ORDERS aceita 1/60s — 2min usa ~2.5% da quota.
+// INVENTORY aceita 2 rps — 5min é folgado para FBA.
+// FINANCES aceita 0.5 rps — 30min preserva quota e é frequente.
 const SCHEDULES: Array<{
   tipo: TipoAmazonSyncJobType;
   intervalMs: number;
@@ -26,24 +30,24 @@ const SCHEDULES: Array<{
 }> = [
   {
     tipo: TipoAmazonSyncJob.ORDERS_SYNC,
-    intervalMs: 15 * 60_000,
+    intervalMs: 2 * 60_000,
     priority: 30,
     payload: { diasAtras: 3, maxPages: 1 },
   },
   {
     tipo: TipoAmazonSyncJob.INVENTORY_SYNC,
-    intervalMs: 30 * 60_000,
+    intervalMs: 5 * 60_000,
     priority: 20,
   },
   {
     tipo: TipoAmazonSyncJob.FINANCES_SYNC,
-    intervalMs: 2 * 60 * 60_000,
+    intervalMs: 30 * 60_000,
     priority: 10,
     payload: { diasAtras: 14, maxPages: 1 },
   },
   {
     tipo: TipoAmazonSyncJob.REFUNDS_SYNC,
-    intervalMs: 2 * 60 * 60_000,
+    intervalMs: 60 * 60_000,
     priority: 10,
     payload: { diasAtras: 90, maxPages: 1 },
   },
@@ -56,6 +60,21 @@ const SCHEDULES: Array<{
     tipo: TipoAmazonSyncJob.REVIEWS_SEND,
     intervalMs: 60 * 60_000,
     priority: 35,
+  },
+  {
+    tipo: TipoAmazonSyncJob.SETTLEMENT_REPORT_SYNC,
+    intervalMs: 6 * 60 * 60_000,
+    priority: 25,
+  },
+  {
+    tipo: TipoAmazonSyncJob.BUYBOX_CHECK,
+    intervalMs: 15 * 60_000,
+    priority: 15,
+  },
+  {
+    tipo: TipoAmazonSyncJob.CATALOG_REFRESH,
+    intervalMs: 24 * 60 * 60_000,
+    priority: 5,
   },
 ];
 
@@ -110,6 +129,10 @@ export async function getAmazonSyncQueueSummary() {
   return { queued, running, failed, lastJobs };
 }
 
+// Claim com optimistic lock: pega o job de maior prioridade pronto e
+// marca como RUNNING via updateMany com filtro de status (evita race se 2 workers
+// pegarem o mesmo). No Postgres real, trocamos isso por SELECT FOR UPDATE SKIP LOCKED
+// (versão em prisma/schema.postgresql.prisma + jobs commitada para futuro).
 export async function claimNextAmazonSyncJob(workerId: string) {
   const now = new Date();
   const job = await db.amazonSyncJob.findFirst({
@@ -203,6 +226,7 @@ export async function ensureRecurringAmazonJobs(now = new Date()) {
   return created;
 }
 
+// SQLite guarda payload como JSON stringificado. (Em Postgres usaremos Json/jsonb.)
 export function parseJobPayload<T extends Record<string, unknown>>(
   payload: string | null,
 ): T {

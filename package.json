@@ -17,10 +17,15 @@
     "amazon:analisar": "tsx scripts/amazon-analisar-relatorio.ts",
     "amazon:worker": "tsx scripts/amazon-worker.ts",
     "amazon:worker:once": "tsx scripts/amazon-worker.ts --once",
+    "amazon:test": "tsx scripts/test-amazon-apis.ts",
+    "amazon:reprocessar-vendas": "tsx scripts/reprocessar-vendas-amazon.ts",
     "prisma:generate": "prisma generate",
     "prisma:push": "prisma db push",
+    "prisma:migrate": "prisma migrate dev",
+    "prisma:migrate:deploy": "prisma migrate deploy",
     "prisma:studio": "prisma studio",
-    "db:seed": "tsx prisma/seed.ts"
+    "db:seed": "tsx prisma/seed.ts",
+    "migrate:sqlite-to-postgres": "tsx scripts/migrate-sqlite-to-postgres.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.90.0",

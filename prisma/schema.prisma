@@ -1,9 +1,10 @@
-// ERP AMAZON — schema Prisma (F4: financeiro + estoque)
+// ERP AMAZON — schema Prisma (SQLite local; produção usa Postgres em prisma/schema.postgresql.prisma)
 //
 // Convenções:
 // - Dinheiro em centavos (Int). Nunca Float.
 // - Datas em UTC; lógica de fuso (America/Sao_Paulo) é aplicada na camada de serviço.
-// - Enums representados como String + constantes de domínio (SQLite não tem enum nativo).
+// - Enums representados como String + constantes de domínio.
+// - JSON guardado como String? (SQLite). Em Postgres, campos viram Json/jsonb.
 // - Cada modelo tem createdAt/updatedAt para auditoria básica.
 
 generator client {
@@ -17,14 +18,6 @@ datasource db {
 
 // ── Autenticação ────────────────────────────────────────────────────────────
 
-// Usuário do sistema. Estrutura pronta para multi-usuário, mas hoje temos só o dono.
-//
-// role:
-//   ADMIN   — acesso total
-//   MEMBRO  — acesso operacional (pode ser refinado depois)
-//
-// senhaHash é bcrypt (nunca a senha em texto puro).
-// ultimoAcesso é atualizado no login bem-sucedido.
 model Usuario {
   id           String    @id @default(cuid())
   email        String    @unique
@@ -68,20 +61,10 @@ model Fornecedor {
   pedidos PedidoCompra[]
 }
 
-// Movimentação de caixa (entrada ou saída realizada).
-//
-// origem explica de onde veio:
-//   MANUAL     — lançada diretamente pelo usuário
-//   CONTA_PAGA — gerada automaticamente ao marcar uma ContaPagar como paga
-//   IMPORTACAO — criada via importador CSV/XLSX
-//   AJUSTE     — ajuste manual de saldo; exige motivoAjuste
-//
-// referenciaId guarda o id da entidade de origem (ex: ContaPagar.id) quando aplicável.
 model Movimentacao {
   id              String   @id @default(cuid())
   // ENTRADA | SAIDA
   tipo            String
-  // valor em centavos, sempre positivo (o sinal vem de tipo)
   valor           Int
   dataCompetencia DateTime
   dataCaixa       DateTime
@@ -94,7 +77,7 @@ model Movimentacao {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
-  categoria    Categoria     @relation(fields: [categoriaId], references: [id])
+  categoria    Categoria     @relation(fields: [categoriaId], references: [id], onDelete: Restrict)
   contaPaga    ContaPagar?   @relation("ContaPagaMovimentacao")
   contaReceber ContaReceber? @relation("ContaReceberMovimentacao")
 
@@ -104,23 +87,11 @@ model Movimentacao {
   @@index([origem])
 }
 
-// Conta a pagar.
-//
-// status:
-//   ABERTA     — em aberto, ainda não vencida
-//   VENCIDA    — em aberto e com vencimento no passado
-//   PAGA       — liquidada; movimentacaoId aponta para a saída gerada
-//   CANCELADA  — descartada manualmente
-//
-// recorrencia:
-//   NENHUMA    — conta única
-//   MENSAL     — ao pagar, gera próxima instância (com contaPaiId apontando para a origem)
 model ContaPagar {
   id             String    @id @default(cuid())
   fornecedorId   String
   categoriaId    String
   descricao      String
-  // valor em centavos
   valor          Int
   vencimento     DateTime
   // ABERTA | VENCIDA | PAGA | CANCELADA
@@ -134,14 +105,14 @@ model ContaPagar {
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
-  fornecedor Fornecedor @relation(fields: [fornecedorId], references: [id])
-  categoria  Categoria  @relation(fields: [categoriaId], references: [id])
+  fornecedor Fornecedor @relation(fields: [fornecedorId], references: [id], onDelete: Restrict)
+  categoria  Categoria  @relation(fields: [categoriaId], references: [id], onDelete: Restrict)
   nfAnexo    String?
   nfNome     String?
 
-  contaPai         ContaPagar?       @relation("Recorrencia", fields: [contaPaiId], references: [id])
+  contaPai         ContaPagar?       @relation("Recorrencia", fields: [contaPaiId], references: [id], onDelete: SetNull)
   filhas           ContaPagar[]      @relation("Recorrencia")
-  movimentacao     Movimentacao?     @relation("ContaPagaMovimentacao", fields: [movimentacaoId], references: [id])
+  movimentacao     Movimentacao?     @relation("ContaPagaMovimentacao", fields: [movimentacaoId], references: [id], onDelete: SetNull)
   dossieFinanceiro DossieFinanceiro?
   pedidoCompra     PedidoCompra?     @relation("PedidoContaPagar")
 
@@ -150,9 +121,6 @@ model ContaPagar {
   @@index([fornecedorId])
 }
 
-// Agrupa documentos que representam a mesma obrigação financeira
-// independentemente da ordem de entrada (boleto primeiro, NF depois, etc.).
-// Pode existir antes da ContaPagar e ser vinculada depois.
 model DossieFinanceiro {
   id                  String    @id @default(cuid())
   fornecedorNome      String?
@@ -166,7 +134,7 @@ model DossieFinanceiro {
   createdAt           DateTime  @default(now())
   updatedAt           DateTime  @updatedAt
 
-  contaPagar ContaPagar?           @relation(fields: [contaPagarId], references: [id])
+  contaPagar ContaPagar?           @relation(fields: [contaPagarId], references: [id], onDelete: SetNull)
   documentos DocumentoFinanceiro[]
 
   @@index([status])
@@ -174,9 +142,6 @@ model DossieFinanceiro {
   @@index([vencimento])
 }
 
-// Documento individual recebido do fornecedor (boleto, NF, etc.).
-// O arquivo sempre pertence a um DossieFinanceiro e pode acabar vinculado
-// indiretamente a uma ContaPagar quando o dossiê é conciliado.
 model DocumentoFinanceiro {
   id                  String    @id @default(cuid())
   dossieId            String
@@ -207,36 +172,24 @@ model DocumentoFinanceiro {
   @@index([vencimento])
 }
 
-// Conta a receber — receita esperada (Amazon, marketplace, etc.).
-//
-// status:
-//   PENDENTE   — dinheiro esperado, ainda não recebido
-//   RECEBIDA   — confirmado na conta bancária
-//   CANCELADA  — cancelada/estornada
-//
-// origem:
-//   AMAZON     — importada do relatório Unified Transaction
-//   MANUAL     — lançada pelo usuário
-//
-// liquidacaoId: ID de liquidação da Amazon (agrupa pedidos do mesmo lote).
 model ContaReceber {
   id              String    @id @default(cuid())
   descricao       String
-  valor           Int // centavos, líquido (após taxas Amazon)
+  valor           Int
   dataPrevisao    DateTime?
   dataRecebimento DateTime?
   // PENDENTE | RECEBIDA | CANCELADA
   status          String    @default("PENDENTE")
   // AMAZON | MANUAL
   origem          String    @default("AMAZON")
-  liquidacaoId    String? // Amazon settlement ID
+  liquidacaoId    String?
   totalPedidos    Int       @default(0)
   movimentacaoId  String?   @unique
   observacoes     String?
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
-  movimentacao Movimentacao? @relation("ContaReceberMovimentacao", fields: [movimentacaoId], references: [id])
+  movimentacao Movimentacao? @relation("ContaReceberMovimentacao", fields: [movimentacaoId], references: [id], onDelete: SetNull)
 
   @@index([status])
   @@index([dataPrevisao])
@@ -245,87 +198,76 @@ model ContaReceber {
 
 // ── Estoque ─────────────────────────────────────────────────────────────────
 
-// Produto cadastrado no ERP (SKU como identificador único mestre).
-//
-// estoqueAtual é atualizado de forma atômica junto com cada MovimentacaoEstoque
-// para evitar recalcular sum() em toda leitura.
-//
-// statusReposicao (OK/ATENCAO/REPOR) é derivado — nunca persistido.
 model Produto {
-  id                    String   @id @default(cuid())
-  sku                   String   @unique
-  asin                  String?
-  nome                  String
-  descricao             String?
-  // custo unitário em centavos
-  custoUnitario         Int?
-  // preço de venda em centavos (informativo)
-  precoVenda            Int?
-  // Snapshots vindos da Amazon FBA Inventory API.
+  id                      String   @id @default(cuid())
+  sku                     String   @unique
+  asin                    String?
+  nome                    String
+  descricao               String?
+  custoUnitario           Int?
+  precoVenda              Int?
   amazonEstoqueDisponivel Int?
   amazonEstoqueReservado  Int?
   amazonEstoqueInbound    Int?
   amazonEstoqueTotal      Int?
   amazonUltimaSyncEm      DateTime?
-  estoqueAtual          Int      @default(0)
-  estoqueMinimo         Int      @default(0)
-  unidade               String   @default("un")
-  ativo                 Boolean  @default(true)
-  // Controle de solicitação automática de avaliações por SKU.
-  // true = elegível para o cron diário; false = pausado pelo usuário.
-  solicitarReviewsAtivo Boolean  @default(true)
-  imagemUrl             String?
-  observacoes           String?
-  // Catálogo Amazon (Catalog Items API v2022-04-01)
-  amazonImagemUrl       String?
-  amazonTituloOficial   String?
-  amazonCategoria       String?
-  amazonCatalogSyncEm   DateTime?
-  // Buybox (Product Pricing API v2022-05-01)
-  buyboxGanho           Boolean?
-  buyboxPreco           Int?      // centavos
-  buyboxConcorrentes    Int?
-  buyboxUltimaSyncEm    DateTime?
-  createdAt             DateTime @default(now())
-  updatedAt             DateTime @updatedAt
+  estoqueAtual            Int      @default(0)
+  estoqueMinimo           Int      @default(0)
+  unidade                 String   @default("un")
+  ativo                   Boolean  @default(true)
+  solicitarReviewsAtivo   Boolean  @default(true)
+  imagemUrl               String?
+  observacoes             String?
+  // Catálogo Amazon
+  amazonImagemUrl         String?
+  amazonTituloOficial     String?
+  amazonCategoria         String?
+  amazonCatalogSyncEm     DateTime?
+  // Buybox snapshot atual
+  buyboxGanho             Boolean?
+  buyboxPreco             Int?
+  buyboxConcorrentes      Int?
+  buyboxUltimaSyncEm      DateTime?
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
 
   movimentacoes    MovimentacaoEstoque[]
   itensPedido      ItemPedidoCompra[]
   metricas         ProdutoMetricaGestorSeller[]
   adsGastosManuais AdsGastoManual[]
   reembolsosAmazon AmazonReembolso[]
+  buyboxSnapshots  BuyBoxSnapshot[]
 
   @@index([sku])
   @@index([asin])
   @@index([ativo])
   @@index([amazonUltimaSyncEm])
+  @@index([estoqueAtual])
 }
 
-// Venda analitica Amazon item-a-item, alimentada inicialmente pelo CSV
-// Unified Transaction e preparada para receber Orders/Reports/Finances API.
 model VendaAmazon {
-  id                    String   @id @default(cuid())
-  amazonOrderId         String
-  orderItemId           String?
-  sku                   String
-  asin                  String?
-  titulo                String?
-  quantidade            Int
-  precoUnitarioCentavos Int
-  valorBrutoCentavos    Int?
-  taxasCentavos         Int      @default(0)
-  fretesCentavos        Int      @default(0)
+  id                         String   @id @default(cuid())
+  amazonOrderId              String
+  orderItemId                String?
+  sku                        String
+  asin                       String?
+  titulo                     String?
+  quantidade                 Int
+  precoUnitarioCentavos      Int
+  valorBrutoCentavos         Int?
+  taxasCentavos              Int      @default(0)
+  fretesCentavos             Int      @default(0)
   liquidoMarketplaceCentavos Int?
-  custoUnitarioCentavos Int?
-  liquidacaoId          String?
-  marketplace           String?
-  fulfillmentChannel    String?
-  statusPedido          String   @default("UNKNOWN")
-  statusFinanceiro      String   @default("PENDENTE")
-  dataVenda             DateTime
-  ultimaSyncEm          DateTime?
-  criadoEm              DateTime @default(now())
-  atualizadoEm          DateTime @updatedAt
+  custoUnitarioCentavos      Int?
+  liquidacaoId               String?
+  marketplace                String?
+  fulfillmentChannel         String?
+  statusPedido               String   @default("UNKNOWN")
+  statusFinanceiro           String   @default("PENDENTE")
+  dataVenda                  DateTime
+  ultimaSyncEm               DateTime?
+  criadoEm                   DateTime @default(now())
+  atualizadoEm               DateTime @updatedAt
 
   @@unique([amazonOrderId, sku])
   @@index([orderItemId])
@@ -337,28 +279,25 @@ model VendaAmazon {
   @@index([ultimaSyncEm])
 }
 
-// Evento financeiro de reembolso Amazon. Separado de VendaAmazon para suportar
-// reembolsos parciais e mÃºltiplos eventos no mesmo pedido/produto.
 model AmazonReembolso {
-  id                         String   @id @default(cuid())
-  amazonOrderId              String
-  orderItemId                String?
-  sku                        String
-  asin                       String?
-  titulo                     String?
-  quantidade                 Int      @default(0)
-  valorReembolsadoCentavos   Int
-  taxasReembolsadasCentavos  Int      @default(0)
-  dataReembolso              DateTime
-  liquidacaoId               String?
-  marketplace                String?
-  referenciaExterna          String   @unique
-  statusFinanceiro           String?
-  // CUSTOMER_RETURN | DEFECTIVE | NOT_AS_DESCRIBED | DAMAGED_BY_FC | SWITCHEROO | OTHER
-  motivoCategoria            String?
-  produtoId                  String?
-  criadoEm                   DateTime @default(now())
-  atualizadoEm               DateTime @updatedAt
+  id                        String   @id @default(cuid())
+  amazonOrderId             String
+  orderItemId               String?
+  sku                       String
+  asin                      String?
+  titulo                    String?
+  quantidade                Int      @default(0)
+  valorReembolsadoCentavos  Int
+  taxasReembolsadasCentavos Int      @default(0)
+  dataReembolso             DateTime
+  liquidacaoId              String?
+  marketplace               String?
+  referenciaExterna         String   @unique
+  statusFinanceiro          String?
+  motivoCategoria           String?
+  produtoId                 String?
+  criadoEm                  DateTime @default(now())
+  atualizadoEm              DateTime @updatedAt
 
   produto Produto? @relation(fields: [produtoId], references: [id], onDelete: SetNull)
 
@@ -371,8 +310,6 @@ model AmazonReembolso {
   @@index([motivoCategoria])
 }
 
-// Gasto manual de Ads enquanto a Amazon Advertising API nao esta aprovada.
-// produtoId null representa gasto geral a ser rateado por faturamento.
 model AdsGastoManual {
   id            String   @id @default(cuid())
   periodoInicio DateTime
@@ -387,19 +324,12 @@ model AdsGastoManual {
   @@index([produtoId])
 }
 
-// Movimentação de estoque (entrada ou saída de produto).
-//
-// tipo: ENTRADA | SAIDA
-// origem: MANUAL | IMPORTACAO | AJUSTE | COMPRA | VENDA
-//
-// custoUnitario captura o custo no momento da movimentação (snapshot histórico).
 model MovimentacaoEstoque {
   id               String   @id @default(cuid())
   produtoId        String
   // ENTRADA | SAIDA
   tipo             String
   quantidade       Int
-  // custo unitário no momento da movimentação, em centavos
   custoUnitario    Int?
   // MANUAL | IMPORTACAO | AJUSTE | COMPRA | VENDA
   origem           String
@@ -409,7 +339,7 @@ model MovimentacaoEstoque {
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
-  produto Produto @relation(fields: [produtoId], references: [id])
+  produto Produto @relation(fields: [produtoId], references: [id], onDelete: Restrict)
 
   @@index([produtoId])
   @@index([dataMovimentacao])
@@ -419,29 +349,20 @@ model MovimentacaoEstoque {
 
 // ── Compras & Reposição ─────────────────────────────────────────────────────
 
-// Pedido de compra ao fornecedor.
-//
-// status:
-//   RASCUNHO   — em elaboração, pode ser editado
-//   CONFIRMADO — pedido feito ao fornecedor; cria ContaPagar
-//   RECEBIDO   — mercadoria chegou; cria MovimentacaoEstoque ENTRADA por item
-//   CANCELADO  — cancelado
 model PedidoCompra {
   id              String             @id @default(cuid())
   numero          String?
   fornecedorId    String?
-  fornecedor      Fornecedor?        @relation(fields: [fornecedorId], references: [id])
+  fornecedor      Fornecedor?        @relation(fields: [fornecedorId], references: [id], onDelete: Restrict)
   // RASCUNHO | CONFIRMADO | RECEBIDO | CANCELADO
   status          String             @default("RASCUNHO")
   dataEmissao     DateTime           @default(now())
   dataPrevisao    DateTime?
   dataRecebimento DateTime?
-  // total em centavos (desnormalizado para queries rápidas)
   totalCentavos   Int                @default(0)
   observacoes     String?
-  // contaPagar criada ao confirmar
   contaPagarId    String?            @unique
-  contaPagar      ContaPagar?        @relation("PedidoContaPagar", fields: [contaPagarId], references: [id])
+  contaPagar      ContaPagar?        @relation("PedidoContaPagar", fields: [contaPagarId], references: [id], onDelete: SetNull)
   itens           ItemPedidoCompra[]
   createdAt       DateTime           @default(now())
   updatedAt       DateTime           @updatedAt
@@ -451,16 +372,15 @@ model PedidoCompra {
   @@index([fornecedorId])
 }
 
-// Item de um PedidoCompra (produto + quantidade + custo negociado).
 model ItemPedidoCompra {
   id            String       @id @default(cuid())
   pedidoId      String
   pedido        PedidoCompra @relation(fields: [pedidoId], references: [id], onDelete: Cascade)
   produtoId     String
-  produto       Produto      @relation(fields: [produtoId], references: [id])
+  produto       Produto      @relation(fields: [produtoId], references: [id], onDelete: Restrict)
   quantidade    Int
-  custoUnitario Int // centavos
-  subtotal      Int // quantidade * custoUnitario (desnormalizado)
+  custoUnitario Int
+  subtotal      Int
   createdAt     DateTime     @default(now())
 
   @@index([pedidoId])
@@ -469,15 +389,13 @@ model ItemPedidoCompra {
 
 // ── Amazon Sync ──────────────────────────────────────────────────────────────
 
-// Histórico de sincronizações com Amazon SP-API.
 model AmazonSyncLog {
   id        String   @id @default(cuid())
-  // ORDERS | INVENTORY | ALL
   tipo      String
   // PROCESSANDO | SUCESSO | ERRO
   status    String
   mensagem  String?
-  detalhes  String? // JSON stringificado com detalhes do resultado
+  detalhes  String?
   registros Int      @default(0)
   createdAt DateTime @default(now())
 
@@ -486,10 +404,8 @@ model AmazonSyncLog {
   @@index([status])
 }
 
-// Fila persistente para sincronizacoes Amazon processadas por worker.
 model AmazonSyncJob {
   id          String    @id @default(cuid())
-  // ORDERS_SYNC | FINANCES_SYNC | INVENTORY_SYNC | REFUNDS_SYNC | REVIEWS_DISCOVERY | REVIEWS_SEND | REPORTS_BACKFILL
   tipo        String
   // QUEUED | RUNNING | SUCCESS | FAILED | CANCELLED
   status      String    @default("QUEUED")
@@ -515,13 +431,13 @@ model AmazonSyncJob {
   @@index([lockedAt])
 }
 
-// Cooldown local por operacao SP-API, espelhando o token bucket da Amazon.
 model AmazonApiQuota {
   id                 String    @id @default(cuid())
   operation          String    @unique
   nextAllowedAt      DateTime?
   rateLimitPerSecond Float?
   burst              Int?
+  observedRps        Float?
   lastStatus         Int?
   lastError          String?
   lastAttemptAt      DateTime?
@@ -531,15 +447,11 @@ model AmazonApiQuota {
   @@index([nextAllowedAt])
 }
 
-// Controle das solicitações oficiais de avaliação/feedback enviadas pela
-// Solicitations API. Garante idempotência por pedido Amazon.
 model AmazonReviewSolicitation {
   id                  String    @id @default(cuid())
   amazonOrderId       String    @unique
   marketplaceId       String
-  // PENDENTE | AGUARDANDO | ELEGIVEL | ENVIADO | JA_SOLICITADO | NAO_ELEGIVEL | EXPIRADO | ERRO
   status              String    @default("PENDENTE")
-  // BACKFILL | DAILY | MANUAL
   origem              String    @default("DAILY")
   asin                String?
   sku                 String?
@@ -572,7 +484,6 @@ model AmazonReviewSolicitation {
   @@index([marketplaceId])
 }
 
-// Configuração chave-valor simples (percentuais de destinação, preferências).
 model ConfiguracaoSistema {
   id        String   @id @default(cuid())
   chave     String   @unique
@@ -583,7 +494,6 @@ model ConfiguracaoSistema {
 
 // ── Vendas FBA ───────────────────────────────────────────────────────────────
 
-// Lote de importação FBA (vendas ou sincronização de estoque).
 model LoteImportacaoFBA {
   id                  String    @id @default(cuid())
   nomeArquivo         String
@@ -601,12 +511,10 @@ model LoteImportacaoFBA {
   @@index([createdAt])
 }
 
-// Registro de venda individual importado do Gestor Seller / Seller Central.
 model VendaFBA {
   id                    String   @id @default(cuid())
   numeroPedido          String
   marketplace           String?
-  // Enviado | Cancelado | Reembolsado | Pendente
   status                String
   dataCompra            DateTime
   asin                  String?
@@ -614,9 +522,7 @@ model VendaFBA {
   skuInterno            String?
   titulo                String?
   quantidade            Int
-  // preço unitário em centavos
   precoUnitarioCentavos Int
-  // totalCentavos = quantidade * precoUnitarioCentavos
   totalCentavos         Int
   loteId                String
   createdAt             DateTime @default(now())
@@ -632,8 +538,6 @@ model VendaFBA {
 
 // ── Gestor Seller — métricas de produto ────────────────────────────────────
 
-// Agrupa um snapshot de métricas importado do products_report.xlsx.
-// Um novo lote é criado a cada sincronização; o histórico fica preservado.
 model LoteMetricaGS {
   id          String   @id @default(cuid())
   nomeArquivo String
@@ -644,21 +548,15 @@ model LoteMetricaGS {
   @@index([createdAt])
 }
 
-// Métricas comerciais por produto extraídas do Gestor Seller (products_report).
-// Salvas por lote para permitir comparação entre períodos.
-// Valores monetários em centavos (Int). Percentuais como Float (ex: 15.5 = 15,5%).
 model ProdutoMetricaGestorSeller {
   id                     String   @id @default(cuid())
   loteId                 String
-  // null quando o SKU não foi encontrado/criado no catálogo ERP
   produtoId              String?
   sku                    String
   titulo                 String?
-  // custo e preço em centavos (snapshot do relatório)
   custoUnitarioCentavos  Int?
   precoVendaCentavos     Int?
   unidadesVendidasTotais Int      @default(0)
-  // receita por canal, em centavos
   vendasAmazonCentavos   Int      @default(0)
   vendasMlCentavos       Int      @default(0)
   vendasShopeeCentavos   Int      @default(0)
@@ -672,7 +570,7 @@ model ProdutoMetricaGestorSeller {
   createdAt              DateTime @default(now())
 
   lote    LoteMetricaGS @relation(fields: [loteId], references: [id], onDelete: Cascade)
-  produto Produto?      @relation(fields: [produtoId], references: [id])
+  produto Produto?      @relation(fields: [produtoId], references: [id], onDelete: SetNull)
 
   @@unique([loteId, sku])
   @@index([sku])
@@ -680,14 +578,9 @@ model ProdutoMetricaGestorSeller {
   @@index([loteId])
 }
 
-// Lote de importação. Cada upload bem-sucedido cria um registro aqui;
-// as movimentações geradas guardam ImportacaoLote.id em referenciaId.
-// Permite listar o histórico de arquivos importados e remover o lote
-// inteiro (junto com as movimentações vinculadas) quando preciso refazer.
 model ImportacaoLote {
   id          String   @id @default(cuid())
   nomeArquivo String
-  // GENERICO | NUBANK (string para manter compat com SQLite)
   formato     String
   totalLinhas Int
   criadoEm    DateTime @default(now())
@@ -695,9 +588,6 @@ model ImportacaoLote {
   @@index([criadoEm])
 }
 
-// Campanha de Ads importada via relatório CSV da Amazon Advertising.
-// Cada linha do relatório de campanha vira um registro aqui.
-// acosPercentual = gastoCentavos / vendasAtribuidasCentavos * 100
 model AdsCampanha {
   id                       String   @id @default(cuid())
   periodoInicio            DateTime
@@ -721,11 +611,11 @@ model AdsCampanha {
   @@index([nomeCampanha])
 }
 
-// Notificação interna gerada automaticamente pelo ERP.
-// dedupeKey evita duplicatas do mesmo alerta no mesmo dia.
 model Notificacao {
   id          String   @id @default(cuid())
-  // ESTOQUE_CRITICO | BUYBOX_PERDIDO | REEMBOLSO_ALTO | ACOS_ALTO | LIQUIDACAO_ATRASADA | CUSTO_AUSENTE
+  // ESTOQUE_CRITICO | BUYBOX_PERDIDO | BUYBOX_RECUPERADO | REEMBOLSO_ALTO | ACOS_ALTO |
+  // LIQUIDACAO_ATRASADA | CUSTO_AUSENTE | JOB_FALHANDO | QUOTA_BLOQUEADA | SETTLEMENT_NOVO |
+  // RECEBIMENTO_RECONCILIADO | WORKER_REINICIADO
   tipo        String
   titulo      String
   descricao   String
@@ -740,9 +630,6 @@ model Notificacao {
   @@index([criadaEm])
 }
 
-// Registro de Settlement Report baixado via Reports API.
-// Cada liquidação Amazon gera um relatório GET_V2_SETTLEMENT_REPORT_DATA_FLAT_FILE.
-// processadoEm null = ainda não reconciliado com ContaReceber.
 model AmazonSettlementReport {
   id                  String    @id @default(cuid())
   reportId            String    @unique
@@ -753,10 +640,32 @@ model AmazonSettlementReport {
   depositDate         DateTime?
   totalAmountCentavos Int?
   processadoEm        DateTime?
+  contasGeradas       Int       @default(0)
   criadoEm            DateTime  @default(now())
   updatedAt           DateTime  @updatedAt
 
   @@index([settlementId])
   @@index([depositDate])
   @@index([processadoEm])
+}
+
+// Histórico de buybox por SKU (medido em intervalos do BUYBOX_CHECK).
+// Permite gráficos de "% do tempo com buybox últimos N dias".
+model BuyBoxSnapshot {
+  id              String   @id @default(cuid())
+  produtoId       String?
+  sku             String
+  asin            String?
+  somosBuybox     Boolean
+  precoNosso      Int?
+  precoBuybox     Int?
+  sellerBuybox    String?
+  numeroOfertas   Int?
+  capturadoEm     DateTime @default(now())
+
+  produto Produto? @relation(fields: [produtoId], references: [id], onDelete: SetNull)
+
+  @@index([sku, capturadoEm])
+  @@index([produtoId])
+  @@index([capturadoEm])
 }

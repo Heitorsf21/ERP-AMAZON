@@ -18,7 +18,7 @@ import {
   BarChart3,
   Banknote,
   Boxes,
-  CalendarDays,
+  Calendar,
   CircleDollarSign,
   LineChart,
   Megaphone,
@@ -31,6 +31,7 @@ import {
   TrendingUp,
 } from "lucide-react";
 import Link from "next/link";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -44,6 +45,11 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { PageHeader } from "@/components/ui/page-header";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { Select } from "@/components/ui/select";
 import {
   Table,
@@ -124,32 +130,72 @@ type Produto = {
   nome: string;
 };
 
-type AdsGastoManual = {
-  id: string;
-  periodoInicio: string;
-  periodoFim: string;
-  produtoId: string | null;
-  valorCentavos: number;
-  produto: Produto | null;
-};
-
 const presets = [
   { label: "Hoje", value: PeriodoPreset.HOJE },
   { label: "Ontem", value: PeriodoPreset.ONTEM },
-  { label: "7d", value: PeriodoPreset.SETE_DIAS },
-  { label: "15d", value: PeriodoPreset.QUINZE_DIAS },
-  { label: "30d", value: PeriodoPreset.TRINTA_DIAS },
-  { label: "Esse mes", value: PeriodoPreset.MES_ATUAL },
-  { label: "Mes passado", value: PeriodoPreset.MES_PASSADO },
-  { label: "Esse ano", value: PeriodoPreset.ANO_ATUAL },
+  { label: "Ultimos 7 dias", value: PeriodoPreset.SETE_DIAS },
+  { label: "Ultimos 15 dias", value: PeriodoPreset.QUINZE_DIAS },
+  { label: "Ultimos 30 dias", value: PeriodoPreset.TRINTA_DIAS },
+  { label: "Mes atual", value: PeriodoPreset.MES_ATUAL },
+  { label: "Mes anterior", value: PeriodoPreset.MES_PASSADO },
+  { label: "Ano atual", value: PeriodoPreset.ANO_ATUAL },
   { label: "Personalizado", value: PeriodoPreset.PERSONALIZADO },
 ] as const;
+
+function formatPeriodoBR(value: string): string {
+  const [ano, mes, dia] = value.split("-");
+  return `${dia}/${mes}/${ano}`;
+}
 
 function periodoInicial() {
   const periodo = resolverPeriodo(PeriodoPreset.TRINTA_DIAS);
   return {
     de: formatarDataInputPeriodo(periodo.de),
     ate: formatarDataInputPeriodo(periodo.ate),
+  };
+}
+
+const PRESET_VALUES = new Set<string>(
+  Object.values(PeriodoPreset),
+);
+
+function lerEstadoInicialDaURL(searchParams: URLSearchParams) {
+  const presetParam = searchParams.get("preset");
+  const deParam = searchParams.get("de");
+  const ateParam = searchParams.get("ate");
+
+  if (presetParam === PeriodoPreset.PERSONALIZADO && deParam && ateParam) {
+    return {
+      preset: PeriodoPreset.PERSONALIZADO as PeriodoPreset,
+      periodo: { de: deParam, ate: ateParam },
+    };
+  }
+
+  if (presetParam && PRESET_VALUES.has(presetParam)) {
+    const preset = presetParam as PeriodoPreset;
+    if (preset === PeriodoPreset.PERSONALIZADO) {
+      return { preset, periodo: periodoInicial() };
+    }
+    const intervalo = resolverPeriodo(preset);
+    return {
+      preset,
+      periodo: {
+        de: formatarDataInputPeriodo(intervalo.de),
+        ate: formatarDataInputPeriodo(intervalo.ate),
+      },
+    };
+  }
+
+  if (deParam && ateParam) {
+    return {
+      preset: PeriodoPreset.PERSONALIZADO as PeriodoPreset,
+      periodo: { de: deParam, ate: ateParam },
+    };
+  }
+
+  return {
+    preset: PeriodoPreset.TRINTA_DIAS as PeriodoPreset,
+    periodo: periodoInicial(),
   };
 }
 
@@ -238,16 +284,21 @@ function KpiCard({
 
   return (
     <Card className="overflow-hidden">
-      <CardContent className="p-4">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <p className="text-xs font-medium uppercase text-muted-foreground">
+      <CardContent className="p-3.5">
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0 flex-1">
+            <p className="text-[11px] font-medium uppercase text-muted-foreground line-clamp-1" title={titulo}>
               {titulo}
             </p>
-            <p className="mt-2 truncate text-2xl font-semibold tracking-tight tabular-nums">
+            {/* Valor: tamanho conservador para caber valores monetarios longos
+                em qualquer largura de coluna sem cortar. */}
+            <p
+              className="mt-1.5 text-base font-semibold leading-tight tracking-tight tabular-nums break-words sm:text-lg"
+              title={valor}
+            >
               {valor}
             </p>
-            <div className="mt-1 flex items-center gap-2">
+            <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5">
               {delta && (
                 <DeltaBadge
                   valor={delta.valor}
@@ -256,7 +307,7 @@ function KpiCard({
                 />
               )}
               {detalhe && (
-                <p className="truncate text-xs text-muted-foreground">
+                <p className="text-xs text-muted-foreground" title={detalhe}>
                   {detalhe}
                 </p>
               )}
@@ -271,11 +322,11 @@ function KpiCard({
           </div>
           <div
             className={cn(
-              "flex h-9 w-9 shrink-0 items-center justify-center rounded-md",
+              "flex h-8 w-8 shrink-0 items-center justify-center rounded-md",
               tones[tone],
             )}
           >
-            <Icon className="h-4 w-4" />
+            <Icon className="h-3.5 w-3.5" />
           </div>
         </div>
       </CardContent>
@@ -285,9 +336,24 @@ function KpiCard({
 
 export default function DashboardEcommercePage() {
   const qc = useQueryClient();
-  const [periodo, setPeriodo] = React.useState(periodoInicial);
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+
+  const estadoInicial = React.useMemo(
+    () => lerEstadoInicialDaURL(new URLSearchParams(searchParams.toString())),
+    // calcula apenas uma vez no mount; mudancas posteriores partem da UI
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  );
+
+  const [periodo, setPeriodo] = React.useState(estadoInicial.periodo);
   const [presetAtivo, setPresetAtivo] = React.useState<PeriodoPreset>(
-    PeriodoPreset.TRINTA_DIAS,
+    estadoInicial.preset,
+  );
+  const [periodoPopoverAberto, setPeriodoPopoverAberto] = React.useState(false);
+  const [personalizadoRascunho, setPersonalizadoRascunho] = React.useState(
+    estadoInicial.periodo,
   );
   const [sortProdutos, setSortProdutos] = React.useState<"desc" | "asc">(
     "desc",
@@ -295,12 +361,28 @@ export default function DashboardEcommercePage() {
   const [produtoDetalhe, setProdutoDetalhe] = React.useState<TopProduto | null>(
     null,
   );
-  const [adsForm, setAdsForm] = React.useState({
-    produtoId: "",
-    valor: "",
-  });
+
+  React.useEffect(() => {
+    const params = new URLSearchParams();
+    params.set("preset", presetAtivo);
+    if (presetAtivo === PeriodoPreset.PERSONALIZADO) {
+      params.set("de", periodo.de);
+      params.set("ate", periodo.ate);
+    }
+    const novaQuery = params.toString();
+    const atual = searchParams.toString();
+    if (novaQuery !== atual) {
+      router.replace(`${pathname}?${novaQuery}` as never, { scroll: false });
+    }
+  }, [presetAtivo, periodo, pathname, router, searchParams]);
 
   const qs = queryString(periodo);
+
+  const presetSelecionado = presets.find((p) => p.value === presetAtivo);
+  const labelBotaoPeriodo =
+    presetAtivo === PeriodoPreset.PERSONALIZADO
+      ? `${formatPeriodoBR(periodo.de)} - ${formatPeriodoBR(periodo.ate)}`
+      : (presetSelecionado?.label ?? "Periodo");
 
   const { data: kpis, isLoading: loadingKpis } = useQuery<Kpis>({
     queryKey: ["dashboard-ecommerce-kpis", periodo],
@@ -321,38 +403,6 @@ export default function DashboardEcommercePage() {
       fetchJSON<TopProduto[]>(
         `/api/dashboard-ecommerce/top-produtos?${qs}&limit=15`,
       ),
-  });
-
-  const { data: produtos = [] } = useQuery<Produto[]>({
-    queryKey: ["estoque-produtos", "ads-form"],
-    queryFn: () => fetchJSON<Produto[]>("/api/estoque/produtos"),
-  });
-
-  const { data: gastosAds = [] } = useQuery<AdsGastoManual[]>({
-    queryKey: ["ads-gasto-manual", periodo],
-    queryFn: () => fetchJSON<AdsGastoManual[]>(`/api/ads/gasto-manual?${qs}`),
-  });
-
-  const criarAds = useMutation({
-    mutationFn: (payload: {
-      produtoId: string | null;
-      valorCentavos: number;
-      periodoInicio: string;
-      periodoFim: string;
-    }) =>
-      fetchJSON("/api/ads/gasto-manual", {
-        method: "POST",
-        body: JSON.stringify(payload),
-      }),
-    onSuccess: () => {
-      setAdsForm({ produtoId: "", valor: "" });
-      qc.invalidateQueries({ queryKey: ["ads-gasto-manual"] });
-      qc.invalidateQueries({ queryKey: ["dashboard-ecommerce-kpis"] });
-      qc.invalidateQueries({ queryKey: ["dashboard-ecommerce-timeline"] });
-      qc.invalidateQueries({ queryKey: ["dashboard-ecommerce-top-produtos"] });
-      toast.success("Gasto de Ads salvo");
-    },
-    onError: (err) => toast.error((err as Error).message),
   });
 
   const produtosOrdenados = React.useMemo(() => {
@@ -449,32 +499,33 @@ export default function DashboardEcommercePage() {
 
   function aplicarPreset(value: PeriodoPreset) {
     setPresetAtivo(value);
-    if (value === PeriodoPreset.PERSONALIZADO) return;
-
-    const resolvido = resolverPeriodo(value);
-    setPeriodo({
-      de: formatarDataInputPeriodo(resolvido.de),
-      ate: formatarDataInputPeriodo(resolvido.ate),
-    });
-  }
-
-  function salvarAds(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    let valorCentavos: number;
-
-    try {
-      valorCentavos = parseValorBRParaCentavos(adsForm.valor);
-    } catch {
-      toast.error("Informe um valor de Ads valido");
+    if (value === PeriodoPreset.PERSONALIZADO) {
+      setPersonalizadoRascunho(periodo);
       return;
     }
 
-    criarAds.mutate({
-      produtoId: adsForm.produtoId || null,
-      valorCentavos,
-      periodoInicio: periodo.de,
-      periodoFim: periodo.ate,
-    });
+    const resolvido = resolverPeriodo(value);
+    const novo = {
+      de: formatarDataInputPeriodo(resolvido.de),
+      ate: formatarDataInputPeriodo(resolvido.ate),
+    };
+    setPeriodo(novo);
+    setPersonalizadoRascunho(novo);
+    setPeriodoPopoverAberto(false);
+  }
+
+  function aplicarPersonalizado() {
+    if (!personalizadoRascunho.de || !personalizadoRascunho.ate) {
+      toast.error("Informe data inicial e final");
+      return;
+    }
+    if (personalizadoRascunho.de > personalizadoRascunho.ate) {
+      toast.error("Data inicial deve ser anterior a final");
+      return;
+    }
+    setPresetAtivo(PeriodoPreset.PERSONALIZADO);
+    setPeriodo(personalizadoRascunho);
+    setPeriodoPopoverAberto(false);
   }
 
   return (
@@ -484,44 +535,116 @@ export default function DashboardEcommercePage() {
         description="KPIs comerciais da Amazon por vendas item-a-item."
       />
 
-      <div className="flex flex-col gap-3 rounded-lg border bg-card p-3 md:flex-row md:items-center md:justify-between">
-        <div className="flex flex-wrap gap-1">
-          {presets.map((preset) => (
+      <div className="flex flex-col gap-3 rounded-lg border bg-card p-3 sm:flex-row sm:items-center sm:justify-between">
+        <Popover
+          open={periodoPopoverAberto}
+          onOpenChange={(open) => {
+            setPeriodoPopoverAberto(open);
+            if (open) setPersonalizadoRascunho(periodo);
+          }}
+        >
+          <PopoverTrigger asChild>
             <Button
-              key={preset.value}
               type="button"
+              variant="outline"
               size="sm"
-              variant={presetAtivo === preset.value ? "default" : "ghost"}
-              onClick={() => aplicarPreset(preset.value)}
-              className="h-8"
+              className="h-9 w-full justify-start gap-2 sm:w-auto"
             >
-              {preset.label}
+              <Calendar className="h-4 w-4 text-muted-foreground" />
+              <span className="text-xs font-medium text-muted-foreground">
+                Periodo:
+              </span>
+              <span className="font-semibold">{labelBotaoPeriodo}</span>
             </Button>
-          ))}
-        </div>
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-          <div className="flex items-center gap-2">
-            <CalendarDays className="h-4 w-4 text-muted-foreground" />
-            <Input
-              type="date"
-              value={periodo.de}
-              onChange={(e) => {
-                setPresetAtivo(PeriodoPreset.PERSONALIZADO);
-                setPeriodo((prev) => ({ ...prev, de: e.target.value }));
-              }}
-              className="h-8 w-[140px]"
-            />
-          </div>
-          <Input
-            type="date"
-            value={periodo.ate}
-            onChange={(e) => {
-              setPresetAtivo(PeriodoPreset.PERSONALIZADO);
-              setPeriodo((prev) => ({ ...prev, ate: e.target.value }));
-            }}
-            className="h-8 w-[140px]"
-          />
-        </div>
+          </PopoverTrigger>
+          <PopoverContent align="start" className="w-72 p-2">
+            <div className="flex flex-col">
+              {presets.map((preset) => {
+                const ativo = presetAtivo === preset.value;
+                return (
+                  <button
+                    key={preset.value}
+                    type="button"
+                    onClick={() => aplicarPreset(preset.value)}
+                    className={cn(
+                      "flex items-center justify-between rounded-md px-2.5 py-1.5 text-left text-sm transition-colors",
+                      ativo
+                        ? "bg-primary/10 font-semibold text-primary"
+                        : "hover:bg-muted",
+                    )}
+                  >
+                    <span>{preset.label}</span>
+                    {ativo && preset.value !== PeriodoPreset.PERSONALIZADO && (
+                      <span className="text-[11px] text-muted-foreground">
+                        Atual
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+
+            {presetAtivo === PeriodoPreset.PERSONALIZADO && (
+              <div className="mt-3 space-y-2 border-t pt-3">
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="space-y-1">
+                    <Label
+                      htmlFor="periodo-de"
+                      className="text-[11px] text-muted-foreground"
+                    >
+                      De
+                    </Label>
+                    <Input
+                      id="periodo-de"
+                      type="date"
+                      value={personalizadoRascunho.de}
+                      onChange={(e) =>
+                        setPersonalizadoRascunho((prev) => ({
+                          ...prev,
+                          de: e.target.value,
+                        }))
+                      }
+                      className="h-8"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label
+                      htmlFor="periodo-ate"
+                      className="text-[11px] text-muted-foreground"
+                    >
+                      Ate
+                    </Label>
+                    <Input
+                      id="periodo-ate"
+                      type="date"
+                      value={personalizadoRascunho.ate}
+                      onChange={(e) =>
+                        setPersonalizadoRascunho((prev) => ({
+                          ...prev,
+                          ate: e.target.value,
+                        }))
+                      }
+                      className="h-8"
+                    />
+                  </div>
+                </div>
+                <Button
+                  type="button"
+                  size="sm"
+                  className="w-full"
+                  onClick={aplicarPersonalizado}
+                >
+                  Aplicar periodo
+                </Button>
+              </div>
+            )}
+          </PopoverContent>
+        </Popover>
+
+        <p className="text-xs text-muted-foreground sm:text-right">
+          Mostrando {formatPeriodoBR(periodo.de)} ate{" "}
+          {formatPeriodoBR(periodo.ate)}
+        </p>
       </div>
 
       {kpis && kpis.vendasSemCusto > 0 && (
@@ -531,7 +654,7 @@ export default function DashboardEcommercePage() {
             <strong>{kpis.vendasSemCusto} venda(s)</strong> sem custo cadastrado — lucro e margem podem estar incorretos.
           </span>
           <Link
-            href="/estoque"
+            href="/produtos"
             className="ml-auto shrink-0 text-xs font-semibold text-amber-700 underline-offset-4 hover:underline dark:text-amber-400"
           >
             Corrigir custos →
@@ -539,13 +662,13 @@ export default function DashboardEcommercePage() {
         </div>
       )}
 
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-6">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
         {cards.map((card) => (
           <KpiCard key={card.titulo} {...card} />
         ))}
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+      <div>
         <Card>
           <CardHeader className="flex-row items-center justify-between space-y-0">
             <CardTitle className="text-base">Faturamento diario</CardTitle>
@@ -624,89 +747,6 @@ export default function DashboardEcommercePage() {
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Ads manual</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <form className="space-y-3" onSubmit={salvarAds}>
-              <div className="space-y-1.5">
-                <Label htmlFor="adsProduto">Produto</Label>
-                <Select
-                  id="adsProduto"
-                  value={adsForm.produtoId}
-                  onChange={(e) =>
-                    setAdsForm((prev) => ({
-                      ...prev,
-                      produtoId: e.target.value,
-                    }))
-                  }
-                >
-                  <option value="">Geral</option>
-                  {produtos.map((produto) => (
-                    <option key={produto.id} value={produto.id}>
-                      {produto.sku} - {produto.nome}
-                    </option>
-                  ))}
-                </Select>
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="adsValor">Valor</Label>
-                <Input
-                  id="adsValor"
-                  inputMode="decimal"
-                  placeholder="0,00"
-                  value={adsForm.valor}
-                  onChange={(e) =>
-                    setAdsForm((prev) => ({ ...prev, valor: e.target.value }))
-                  }
-                />
-              </div>
-              <Button
-                type="submit"
-                className="w-full"
-                disabled={criarAds.isPending}
-              >
-                {criarAds.isPending ? "Salvando..." : "Salvar gasto"}
-              </Button>
-            </form>
-
-            <div className="space-y-2">
-              {gastosAds.length === 0 ? (
-                <p className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">
-                  Sem gasto manual no periodo.
-                </p>
-              ) : (
-                gastosAds.slice(0, 5).map((gasto) => (
-                  <div
-                    key={gasto.id}
-                    className="flex items-center justify-between gap-3 rounded-md border p-3 text-sm"
-                  >
-                    <div className="min-w-0">
-                      <p className="truncate font-medium">
-                        {gasto.produto
-                          ? `${gasto.produto.sku} - ${gasto.produto.nome}`
-                          : "Geral"}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        {new Date(gasto.periodoInicio).toLocaleDateString(
-                          "pt-BR",
-                        )}{" "}
-                        -{" "}
-                        {new Date(gasto.periodoFim).toLocaleDateString(
-                          "pt-BR",
-                        )}
-                      </p>
-                    </div>
-                    <span className="shrink-0 font-mono font-semibold">
-                      {formatBRL(gasto.valorCentavos)}
-                    </span>
-                  </div>
-                ))
-              )}
-            </div>
-          </CardContent>
-        </Card>
       </div>
 
       <Card>
