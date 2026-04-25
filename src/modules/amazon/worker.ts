@@ -21,6 +21,7 @@ import {
 import {
   runBuyboxCheck,
   runCatalogRefresh,
+  syncOrdersHistoryReport,
   syncSettlementReports,
   reconciliarRecebimentosAmazon,
 } from "@/modules/amazon/jobs-handlers";
@@ -126,8 +127,8 @@ async function processJob(
   const payload = parseJobPayload<SyncPayload>(payloadRaw);
 
   // Para jobs que precisam de credenciais, busca-as uma única vez.
+  // REVIEWS_DISCOVERY/SEND buscam suas próprias creds via getCredentialsOrThrow.
   const needCreds =
-    tipo !== TipoAmazonSyncJob.REPORTS_BACKFILL &&
     tipo !== TipoAmazonSyncJob.REVIEWS_DISCOVERY &&
     tipo !== TipoAmazonSyncJob.REVIEWS_SEND;
 
@@ -179,12 +180,7 @@ async function processJob(
     case TipoAmazonSyncJob.CATALOG_REFRESH:
       return runCatalogRefresh(sp!);
     case TipoAmazonSyncJob.REPORTS_BACKFILL:
-      return {
-        ok: true,
-        skipped: true,
-        mensagem:
-          "Reports API agora roda em SETTLEMENT_REPORT_SYNC; backfill desativado.",
-      };
+      return syncOrdersHistoryReport(sp!);
     default:
       throw new Error(`Tipo de job Amazon desconhecido: ${tipo}`);
   }

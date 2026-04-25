@@ -759,6 +759,12 @@ async function syncFinancialEvents(
           const existente = await db.amazonReembolso.findUnique({
             where: { referenciaExterna },
           });
+          // taxasReembolsadasCentavos: AmazonFees no top-level já inclui Commission + FBA fees.
+          // Fallback para a heurística antiga se nada bater (compat Finance Events API legacy).
+          const taxasRefundTop = findBreakdownAmount(item, "AmazonFees");
+          const taxasRefundCentavos = Math.abs(
+            taxasRefundTop || sumBreakdowns(item, "fee"),
+          );
           const data = {
             amazonOrderId: orderId,
             orderItemId: readDeepString(item, ["orderItemId", "OrderItemId"]) ?? null,
@@ -771,9 +777,10 @@ async function syncFinancialEvents(
               Math.abs(readDeepNumber(item, ["quantity", "quantityShipped"]) ?? 1),
             ),
             valorReembolsadoCentavos: amount,
-            taxasReembolsadasCentavos: Math.abs(sumBreakdowns(item, "fee")),
+            taxasReembolsadasCentavos: taxasRefundCentavos,
             dataReembolso,
             liquidacaoId:
+              findSettlementId(transaction) ??
               readDeepString(transaction, ["settlementId", "settlement-id"]) ??
               null,
             marketplace: transaction.marketplaceId ?? creds.marketplaceId,
@@ -812,16 +819,32 @@ async function syncFinancialEvents(
         }
 
         const liquidoMarketplaceCentavos = extractAmountCentavos(item);
-        const taxasCentavos = Math.abs(sumBreakdowns(item, "fee"));
-        const fretesCentavos = Math.abs(sumBreakdowns(item, "shipping"));
+
+        // Transactions API v2024: AmazonFees no top-level já inclui Commission + FBA + tax.
+        // Frete pode aparecer como ShippingChargeback (cobrança ao vendedor) ou ShippingCharge.
+        // Fallback para a busca recursiva antiga se a API estiver no shape legacy.
+        const taxasTop = findBreakdownAmount(item, "AmazonFees");
+        const taxasCentavos = Math.abs(taxasTop || sumBreakdowns(item, "fee"));
+        const fretesTop = sumTopBreakdowns(item, [
+          "ShippingChargeback",
+          "ShippingCharge",
+          "Shipping",
+        ]);
+        const fretesCentavos = Math.abs(fretesTop || sumBreakdowns(item, "shipping"));
+
+        // valorBruto = ProductCharges (preço cheio antes de deduzir taxas Amazon).
+        const valorBrutoCentavos = findBreakdownAmount(item, "ProductCharges");
+
         const updated = await db.vendaAmazon.updateMany({
           where: { amazonOrderId: orderId, sku },
           data: {
             taxasCentavos,
             fretesCentavos,
+            valorBrutoCentavos: valorBrutoCentavos || undefined,
             liquidoMarketplaceCentavos:
               liquidoMarketplaceCentavos || undefined,
             liquidacaoId:
+              findSettlementId(transaction) ??
               readDeepString(transaction, ["settlementId", "settlement-id"]) ??
               undefined,
             statusFinanceiro:
@@ -986,6 +1009,9 @@ function findOrderId(
   return related?.relatedIdentifierValue;
 }
 
+// Legado (Finances Events API antiga) — não recursivo agora pra evitar
+// double-count com a Transactions API v2024 que tem breakdowns aninhados.
+// Mantido como fallback se findBreakdownAmount não acha nada.
 function sumBreakdowns(value: unknown, keyword: string): number {
   let total = 0;
   visitRecords(value, (record) => {
@@ -1004,10 +1030,57 @@ function sumBreakdowns(value: unknown, keyword: string): number {
         record.Amount ??
         record.value ??
         record.Value ??
-        record.totalAmount,
+        record.totalAmount ??
+        record.breakdownAmount,
     );
   });
   return total;
+}
+
+// Transactions API v2024 retorna `breakdowns: [{breakdownType, breakdownAmount:{currencyAmount}, breakdowns?}]`.
+// Esta busca olha SÓ o nível superior do array de breakdowns do item — evita double-count
+// (AmazonFees já totaliza Commission + FBA fees nos sub-breakdowns).
+function findBreakdownAmount(item: unknown, breakdownType: string): number {
+  if (!isObjectRecord(item)) return 0;
+  const breakdowns = item.breakdowns;
+  if (!Array.isArray(breakdowns)) return 0;
+  for (const b of breakdowns) {
+    if (!isObjectRecord(b)) continue;
+    const type = readStringFromRecord(b, [
+      "breakdownType",
+      "type",
+      "chargeType",
+      "feeType",
+      "name",
+    ]);
+    if (type === breakdownType) {
+      return extractAmountCentavos(
+        b.breakdownAmount ?? b.amount ?? b.Amount ?? b.value ?? b.Value,
+      );
+    }
+  }
+  return 0;
+}
+
+// Soma top-level breakdowns que casam com QUALQUER um dos tipos passados.
+function sumTopBreakdowns(item: unknown, types: string[]): number {
+  let total = 0;
+  for (const t of types) total += findBreakdownAmount(item, t);
+  return total;
+}
+
+// Procura SETTLEMENT_ID em transaction.relatedIdentifiers (Transactions API v2024).
+function findSettlementId(transaction: {
+  relatedIdentifiers?: Array<{
+    relatedIdentifierName?: string | null;
+    relatedIdentifierValue?: string | null;
+  }>;
+}): string | undefined {
+  const found = transaction.relatedIdentifiers?.find((id) => {
+    const name = (id?.relatedIdentifierName ?? "").toUpperCase();
+    return name === "SETTLEMENT_ID" || name === "SETTLEMENTID";
+  });
+  return found?.relatedIdentifierValue ?? undefined;
 }
 
 function readDeepString(value: unknown, keys: string[]): string | undefined {
@@ -1688,6 +1761,9 @@ export async function setReviewAutomationActive(ativo: boolean) {
       update: { valor: ativo ? "true" : "false" },
     }),
   ]);
+  // Invalida cache do scheduler para o toggle reagir em até 1 loop em vez de 30s.
+  const { invalidateReviewToggleCache } = await import("@/modules/amazon/jobs");
+  invalidateReviewToggleCache();
   return getReviewAutomationConfig();
 }
 

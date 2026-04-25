@@ -39,24 +39,30 @@ npm run prisma:push
 # 3. Popular com categorias padrão e 1 fornecedor exemplo
 npm run db:seed
 
-# 4. Subir o app
+# 4. Subir o app (web Next.js + worker Amazon em paralelo)
 npm run dev
 ```
 
-App disponível em http://localhost:3000.
+App disponível em http://localhost:3000. O comando `npm run dev` chama `scripts/dev.mjs`, que sobe o Next.js (`next dev --webpack`) e o `tsx scripts/amazon-worker.ts` em paralelo — Ctrl+C derruba os dois (no Windows usa `taskkill /T /F` para matar a árvore). PIDs em `.dev-server.pid` e `.dev-worker.pid`.
+
+Para subir só o web sem worker: `npm run dev:web`.
 
 ## Scripts
 
 | Script | Função |
 |---|---|
-| `npm run dev` | Next.js em dev |
-| `npm run build` | Build de produção |
-| `npm run start` | Rodar build |
+| `npm run dev` | Next.js + amazon-worker juntos (via `scripts/dev.mjs`) |
+| `npm run dev:web` | Só o Next.js (sem worker) |
+| `npm run dev:turbopack` | Next.js dev com turbopack |
+| `npm run dev:clean` | Limpa `.next/` e roda `dev` |
+| `npm run build` / `npm run start` | Build e produção |
+| `npm run amazon:worker` | Worker daemon avulso |
+| `npm run amazon:worker:once` | Uma rodada do worker |
+| `npm run amazon:test` | Smoke test SP-API |
 | `npm run typecheck` | `tsc --noEmit` |
-| `npm run test` | Vitest uma vez |
-| `npm run test:watch` | Vitest em watch |
-| `npm run prisma:studio` | UI do Prisma para inspecionar dados |
-| `npm run db:seed` | Popula categorias e fornecedor exemplo |
+| `npm run test` / `npm run test:watch` | Vitest |
+| `npm run prisma:studio` | UI do Prisma |
+| `npm run db:seed` | Seed de categorias + fornecedor |
 
 ## Estrutura
 

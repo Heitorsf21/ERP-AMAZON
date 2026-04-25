@@ -317,6 +317,7 @@ function AsinCell({ asin }: { asin: string | null }) {
 }
 
 type FiltroAtivo = "ATIVOS" | "INATIVOS" | "TODOS";
+type FiltroCusto = "COM_CUSTO" | "SEM_CUSTO" | "TODOS";
 
 function SortableHeader({
   label,
@@ -374,6 +375,8 @@ export function ListaProdutos() {
   const [buscaDebounced, setBuscaDebounced] = useState("");
   const [filtroStatus, setFiltroStatus] = useState<FiltroStatus>("TODOS");
   const [filtroAtivo, setFiltroAtivo] = useState<FiltroAtivo>("ATIVOS");
+  // Default "COM_CUSTO" oculta SKUs descontinuados sem custo unitário (limpa o visual).
+  const [filtroCusto, setFiltroCusto] = useState<FiltroCusto>("COM_CUSTO");
   const [sort, setSort] = useState<SortState>(null);
 
   useEffect(() => {
@@ -398,10 +401,13 @@ export function ListaProdutos() {
   if (filtroAtivo === "ATIVOS") params.set("ativo", "true");
   else if (filtroAtivo === "INATIVOS") params.set("ativo", "false");
   // (filtroAtivo === "TODOS" => não envia, backend devolve todos)
+  // Filtro Custo: oculta os SKUs descontinuados sem custo por padrão.
+  if (filtroCusto === "COM_CUSTO") params.set("temCusto", "true");
+  else if (filtroCusto === "SEM_CUSTO") params.set("temCusto", "false");
   const qs = params.toString();
 
   const { data: produtos = [], isLoading } = useQuery<Produto[]>({
-    queryKey: ["estoque-produtos", buscaDebounced, filtroStatus, filtroAtivo],
+    queryKey: ["estoque-produtos", buscaDebounced, filtroStatus, filtroAtivo, filtroCusto],
     queryFn: () =>
       fetchJSON<Produto[]>(`/api/estoque/produtos${qs ? `?${qs}` : ""}`),
     placeholderData: keepPreviousData,
@@ -691,6 +697,25 @@ export function ListaProdutos() {
                   }`}
                 >
                   {v === "ATIVOS" ? "Ativos" : v === "INATIVOS" ? "Inativos" : "Todos"}
+                </button>
+              ))}
+            </div>
+            <div
+              className="flex gap-1 rounded-lg border bg-muted/30 p-1"
+              title="Oculta SKUs sem custo unitário cadastrado (descontinuados)"
+            >
+              {(["COM_CUSTO", "SEM_CUSTO", "TODOS"] as const).map((v) => (
+                <button
+                  key={v}
+                  type="button"
+                  onClick={() => setFiltroCusto(v)}
+                  className={`rounded-md px-3 py-1.5 text-sm font-medium transition ${
+                    filtroCusto === v
+                      ? "bg-background text-foreground shadow-sm"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  {v === "COM_CUSTO" ? "Com custo" : v === "SEM_CUSTO" ? "Sem custo" : "Todos"}
                 </button>
               ))}
             </div>

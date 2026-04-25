@@ -48,6 +48,11 @@ export const filtrosProdutoSchema = z.object({
     .enum(["true", "false"])
     .transform((v) => v === "true")
     .optional(),
+  // "true" = só com custo > 0; "false" = só sem custo (descontinuados); omitido = todos.
+  temCusto: z
+    .enum(["true", "false"])
+    .transform((v) => v === "true")
+    .optional(),
 });
 export type FiltrosProdutoInput = z.infer<typeof filtrosProdutoSchema>;
 

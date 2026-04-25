@@ -10,13 +10,16 @@
 import { gunzipSync } from "node:zlib";
 import { db } from "@/lib/db";
 import {
+  createReport,
   getCatalogItem,
   getProductOffers,
+  getReport,
   getReportDocument,
   getSettlementReports,
   type SPAPICredentials,
   type SPCatalogItem,
 } from "@/lib/amazon-sp-api";
+import { parseAllOrdersTsv } from "@/modules/amazon/parsers/all-orders-tsv";
 import {
   notificarBuyboxPerdido,
   notificarBuyboxRecuperado,
@@ -371,3 +374,226 @@ export async function reconciliarRecebimentosAmazon() {
   return { ok: true, candidatas: candidatas.length, vinculadas };
 }
 
+// ─────────────────────────────────────────────────────────────────────
+// REPORTS_BACKFILL — backfill de pedidos via Reports API
+// Usa GET_FLAT_FILE_ALL_ORDERS_DATA_BY_ORDER_DATE_GENERAL em janelas de 30 dias.
+// Cada execução do job avança no máximo UMA janela (cria report → polling em
+// runs subsequentes → quando DONE, baixa/upserta/avança cursor). Auto-desliga
+// quando o cursor alcança `now - 2 dias`.
+// ─────────────────────────────────────────────────────────────────────
+
+const ORDERS_HISTORY_REPORT_TYPE =
+  "GET_FLAT_FILE_ALL_ORDERS_DATA_BY_ORDER_DATE_GENERAL";
+const ORDERS_HISTORY_CURSOR_KEY = "amazon_orders_history_cursor";
+const ORDERS_HISTORY_PENDING_KEY = "amazon_orders_history_pending_report_id";
+const ORDERS_HISTORY_PENDING_END_KEY = "amazon_orders_history_pending_window_end";
+const LOJA_ABERTA_EM_KEY = "amazon_loja_aberta_em";
+const LOJA_ABERTA_EM_DEFAULT = "2025-07-28T00:00:00.000Z";
+const ORDERS_HISTORY_WINDOW_DAYS = 30;
+const ORDERS_HISTORY_END_OFFSET_DAYS = 2;
+
+async function getCfg(chave: string): Promise<string | null> {
+  const row = await db.configuracaoSistema.findUnique({ where: { chave } });
+  return row?.valor ?? null;
+}
+
+async function setCfg(chave: string, valor: string): Promise<void> {
+  await db.configuracaoSistema.upsert({
+    where: { chave },
+    create: { chave, valor },
+    update: { valor },
+  });
+}
+
+async function delCfg(chave: string): Promise<void> {
+  await db.configuracaoSistema
+    .delete({ where: { chave } })
+    .catch(() => undefined);
+}
+
+export async function syncOrdersHistoryReport(creds: SPAPICredentials) {
+  const now = new Date();
+  const endLimit = addDays(now, -ORDERS_HISTORY_END_OFFSET_DAYS);
+
+  const lojaAbertaIso =
+    (await getCfg(LOJA_ABERTA_EM_KEY)) ?? LOJA_ABERTA_EM_DEFAULT;
+  const cursorIso = await getCfg(ORDERS_HISTORY_CURSOR_KEY);
+  const cursor = new Date(cursorIso ?? lojaAbertaIso);
+
+  if (!Number.isFinite(cursor.getTime())) {
+    return {
+      ok: false,
+      mensagem: `Cursor inválido (${cursorIso ?? lojaAbertaIso})`,
+    };
+  }
+
+  if (cursor >= endLimit) {
+    return {
+      ok: true,
+      completo: true,
+      mensagem: `Backfill completo. Cursor em ${cursor.toISOString()}.`,
+    };
+  }
+
+  // 1) Já temos um report pendente? Faz polling.
+  const pendingId = await getCfg(ORDERS_HISTORY_PENDING_KEY);
+  if (pendingId) {
+    const report = await getReport(creds, pendingId);
+    const status = report.processingStatus ?? "UNKNOWN";
+
+    if (status === "IN_QUEUE" || status === "IN_PROGRESS") {
+      return {
+        ok: true,
+        pending: true,
+        reportId: pendingId,
+        status,
+        mensagem: `Report ${pendingId} ainda ${status}. Re-tentando em próximo slot.`,
+      };
+    }
+
+    if (status === "FATAL" || status === "CANCELLED") {
+      await delCfg(ORDERS_HISTORY_PENDING_KEY);
+      await delCfg(ORDERS_HISTORY_PENDING_END_KEY);
+      return {
+        ok: false,
+        mensagem: `Report ${pendingId} terminou em ${status}. Limpo para retry.`,
+      };
+    }
+
+    // DONE — baixar e processar.
+    if (!report.reportDocumentId) {
+      await delCfg(ORDERS_HISTORY_PENDING_KEY);
+      await delCfg(ORDERS_HISTORY_PENDING_END_KEY);
+      return { ok: false, mensagem: `Report ${pendingId} DONE sem documentId.` };
+    }
+
+    const doc = await getReportDocument(creds, report.reportDocumentId);
+    if (!doc?.url) {
+      return { ok: false, mensagem: `Falha ao obter URL do report ${pendingId}.` };
+    }
+
+    const buffer = await downloadReportDocument(doc.url, doc.compressionAlgorithm);
+    const rows = parseAllOrdersTsv(buffer);
+    const stats = await upsertOrdersHistoryRows(rows, creds.marketplaceId);
+
+    // Avança cursor para o dataEndTime do report (ou o que tínhamos persistido).
+    const windowEndIso =
+      report.dataEndTime ??
+      (await getCfg(ORDERS_HISTORY_PENDING_END_KEY)) ??
+      endLimit.toISOString();
+    await setCfg(ORDERS_HISTORY_CURSOR_KEY, new Date(windowEndIso).toISOString());
+    await delCfg(ORDERS_HISTORY_PENDING_KEY);
+    await delCfg(ORDERS_HISTORY_PENDING_END_KEY);
+
+    return {
+      ok: true,
+      processado: true,
+      reportId: pendingId,
+      janelaAte: windowEndIso,
+      ...stats,
+    };
+  }
+
+  // 2) Sem report pendente — cria um para a próxima janela.
+  const windowStart = cursor;
+  const proposedEnd = addDays(windowStart, ORDERS_HISTORY_WINDOW_DAYS);
+  const windowEnd = proposedEnd > endLimit ? endLimit : proposedEnd;
+
+  const created = await createReport(creds, {
+    reportType: ORDERS_HISTORY_REPORT_TYPE,
+    dataStartTime: windowStart,
+    dataEndTime: windowEnd,
+  });
+
+  await setCfg(ORDERS_HISTORY_PENDING_KEY, created.reportId);
+  await setCfg(ORDERS_HISTORY_PENDING_END_KEY, windowEnd.toISOString());
+
+  return {
+    ok: true,
+    pending: true,
+    created: true,
+    reportId: created.reportId,
+    janelaInicio: windowStart.toISOString(),
+    janelaFim: windowEnd.toISOString(),
+  };
+}
+
+async function upsertOrdersHistoryRows(
+  rows: Awaited<ReturnType<typeof parseAllOrdersTsv>>,
+  marketplaceFallback: string,
+) {
+  let criadas = 0;
+  let atualizadas = 0;
+  let ignoradas = 0;
+
+  // Pré-carrega produtos por SKU pra pegar custoUnitario e asin.
+  const skus = Array.from(new Set(rows.map((r) => r.sku))).filter(Boolean);
+  const produtos = skus.length
+    ? await db.produto.findMany({
+        where: { sku: { in: skus } },
+        select: { sku: true, custoUnitario: true, asin: true },
+      })
+    : [];
+  const produtosPorSku = new Map(produtos.map((p) => [p.sku, p]));
+
+  for (const r of rows) {
+    if (!r.amazonOrderId || !r.sku) {
+      ignoradas++;
+      continue;
+    }
+
+    const produto = produtosPorSku.get(r.sku);
+    const valorBrutoCentavos = r.itemPriceCentavos;
+    const fretesCentavos = r.shippingPriceCentavos;
+    // Provisório: o FINANCES_SYNC posterior refina taxasCentavos com fees Amazon reais.
+    const taxasCentavos = r.itemTaxCentavos + r.shippingTaxCentavos;
+    const precoUnitarioCentavos =
+      r.quantity > 0
+        ? Math.round(valorBrutoCentavos / r.quantity)
+        : valorBrutoCentavos;
+    const liquidoMarketplaceCentavos = valorBrutoCentavos - taxasCentavos;
+
+    const where = {
+      amazonOrderId_sku: { amazonOrderId: r.amazonOrderId, sku: r.sku },
+    };
+    const existente = await db.vendaAmazon.findUnique({ where });
+
+    const data = {
+      asin: r.asin ?? produto?.asin ?? null,
+      titulo: r.productName ?? null,
+      quantidade: r.quantity,
+      precoUnitarioCentavos,
+      valorBrutoCentavos,
+      taxasCentavos: existente?.taxasCentavos ?? taxasCentavos,
+      fretesCentavos: existente?.fretesCentavos ?? fretesCentavos,
+      liquidoMarketplaceCentavos:
+        existente?.liquidoMarketplaceCentavos ?? liquidoMarketplaceCentavos,
+      marketplace: r.salesChannel ?? marketplaceFallback,
+      fulfillmentChannel: r.fulfillmentChannel,
+      statusPedido: r.orderStatus,
+      statusFinanceiro: existente?.statusFinanceiro ?? "PENDENTE",
+      dataVenda: r.purchaseDate ?? existente?.dataVenda ?? new Date(),
+      ultimaSyncEm: new Date(),
+    };
+
+    if (existente) {
+      await db.vendaAmazon.update({ where: { id: existente.id }, data });
+      atualizadas++;
+    } else {
+      await db.vendaAmazon.create({
+        data: {
+          amazonOrderId: r.amazonOrderId,
+          sku: r.sku,
+          ...data,
+          custoUnitarioCentavos:
+            produto?.custoUnitario && produto.custoUnitario > 0
+              ? produto.custoUnitario
+              : null,
+        },
+      });
+      criadas++;
+    }
+  }
+
+  return { linhas: rows.length, criadas, atualizadas, ignoradas };
+}

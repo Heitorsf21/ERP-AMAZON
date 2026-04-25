@@ -389,6 +389,41 @@ export async function getReportDocument(
   }
 }
 
+// Reports API — cria um report e retorna o reportId. Polling é feito em getReport.
+export async function createReport(
+  creds: SPAPICredentials,
+  args: {
+    reportType: string;
+    dataStartTime: Date;
+    dataEndTime: Date;
+    marketplaceIds?: string[];
+  },
+): Promise<{ reportId: string }> {
+  const body = {
+    reportType: args.reportType,
+    dataStartTime: args.dataStartTime.toISOString(),
+    dataEndTime: args.dataEndTime.toISOString(),
+    marketplaceIds: args.marketplaceIds ?? [creds.marketplaceId],
+  };
+  return spApiRequest<{ reportId: string }>(
+    creds,
+    "/reports/2021-06-30/reports",
+    { method: "POST", body, operation: AmazonSpApiOperation.REPORTS_CREATE },
+  );
+}
+
+// Polling — retorna status atual + reportDocumentId quando DONE.
+export async function getReport(
+  creds: SPAPICredentials,
+  reportId: string,
+): Promise<SPReport> {
+  return spApiRequest<SPReport>(
+    creds,
+    `/reports/2021-06-30/reports/${encodeURIComponent(reportId)}`,
+    { operation: AmazonSpApiOperation.REPORTS_GET },
+  );
+}
+
 export interface SPMarketplaceParticipation {
   marketplace?: {
     id?: string;

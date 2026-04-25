@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { getReviewAutomationConfig } from "@/modules/amazon/service";
 import {
   StatusAmazonSyncJob,
   TipoAmazonSyncJob,
@@ -65,6 +66,14 @@ const SCHEDULES: Array<{
     tipo: TipoAmazonSyncJob.SETTLEMENT_REPORT_SYNC,
     intervalMs: 6 * 60 * 60_000,
     priority: 25,
+  },
+  {
+    // Backfill de pedidos via Reports API. Cada execução cria/processa UMA janela
+    // de 30d. Auto-no-op quando o cursor alcança now-2d. Roda a cada 30min para
+    // dar tempo ao Amazon processar os reports (que costumam levar 5-10min).
+    tipo: TipoAmazonSyncJob.REPORTS_BACKFILL,
+    intervalMs: 30 * 60_000,
+    priority: 5,
   },
   {
     tipo: TipoAmazonSyncJob.BUYBOX_CHECK,
@@ -205,10 +214,43 @@ export async function failAmazonSyncJob({
   });
 }
 
+// Cache curto (30s) do toggle master de reviews — `ensureRecurringAmazonJobs`
+// roda a cada loop do worker (~30s default). Sem cache seria 1 SELECT por loop.
+let reviewToggleCache: { value: boolean; at: number } | null = null;
+const REVIEW_TOGGLE_CACHE_TTL_MS = 30_000;
+
+export function invalidateReviewToggleCache() {
+  reviewToggleCache = null;
+}
+
+async function getReviewAutomacaoAtivaCached(now: number): Promise<boolean> {
+  if (reviewToggleCache && now - reviewToggleCache.at < REVIEW_TOGGLE_CACHE_TTL_MS) {
+    return reviewToggleCache.value;
+  }
+  const value = await getReviewAutomationConfig()
+    .then((c) => c.automacaoAtiva)
+    .catch(() => true);
+  reviewToggleCache = { value, at: now };
+  return value;
+}
+
 export async function ensureRecurringAmazonJobs(now = new Date()) {
   const created = [];
 
+  // Toggle master da automação de reviews. Se desativado, não enfileiramos
+  // REVIEWS_DISCOVERY/SEND para manter a fila limpa (os handlers também têm
+  // a checagem como defesa em profundidade).
+  const reviewAutomacaoAtiva = await getReviewAutomacaoAtivaCached(now.getTime());
+
   for (const schedule of SCHEDULES) {
+    if (
+      !reviewAutomacaoAtiva &&
+      (schedule.tipo === TipoAmazonSyncJob.REVIEWS_DISCOVERY ||
+        schedule.tipo === TipoAmazonSyncJob.REVIEWS_SEND)
+    ) {
+      continue;
+    }
+
     const slot = Math.floor(now.getTime() / schedule.intervalMs);
     const dedupeKey = `${schedule.tipo}:${slot}`;
     const job = await enqueueAmazonSyncJob(

@@ -61,13 +61,15 @@ export const POST = handle(async (req: NextRequest) => {
     if (tipo === "REFUNDS") return ok({ ok: true, queued: true, job });
   }
 
-  if (tipo === "BACKFILL") {
+  if (tipo === "BACKFILL" || tipo === "REPORTS_BACKFILL") {
+    // Backfill histórico via Reports API (GET_FLAT_FILE_ALL_ORDERS_DATA_BY_ORDER_DATE_GENERAL).
+    // Avança UMA janela de 30d por execução; auto-encerra ao alcançar now-2d.
     const job = await enqueueAmazonSyncJob(
-      TipoAmazonSyncJob.ORDERS_SYNC,
-      { diasAtras: body.diasAtras ?? 730, maxPages: 1 },
+      TipoAmazonSyncJob.REPORTS_BACKFILL,
+      {},
       {
         priority: 60,
-        dedupeKey: `manual:${TipoAmazonSyncJob.ORDERS_SYNC}:backfill`,
+        dedupeKey: `manual:${TipoAmazonSyncJob.REPORTS_BACKFILL}`,
       },
     );
     return ok({ ok: true, queued: true, job });

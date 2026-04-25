@@ -7,7 +7,8 @@
     "node": ">=20"
   },
   "scripts": {
-    "dev": "cross-env NODE_OPTIONS=\"--max-old-space-size=4096\" next dev --webpack",
+    "dev": "node scripts/dev.mjs",
+    "dev:web": "cross-env NODE_OPTIONS=\"--max-old-space-size=4096\" next dev --webpack",
     "dev:turbopack": "cross-env NODE_OPTIONS=\"--max-old-space-size=4096\" next dev --turbopack",
     "dev:clean": "rimraf .next && npm run dev",
     "build": "next build",

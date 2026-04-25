@@ -10,25 +10,32 @@ export const estoqueRepository = {
     busca?: string;
     ativo?: boolean;
     incluirNaoMfs?: boolean;
+    temCusto?: boolean;
   }) {
+    // Monta cláusulas em AND para evitar OR colidirem entre si.
+    const AND: Array<Record<string, unknown>> = [];
+    // Quando filtros.ativo === undefined, NAO filtra (mostra todos).
+    if (filtros.ativo !== undefined) AND.push({ ativo: filtros.ativo });
+    // Por padrao mostramos apenas SKUs que comecam com MFS-.
+    if (!filtros.incluirNaoMfs) AND.push({ sku: { startsWith: "MFS-" } });
+    // Filtro por presença de custo unitário (oculta SKUs descontinuados sem custo).
+    // undefined = não filtra; true = só com custo > 0; false = só sem custo (null ou 0).
+    if (filtros.temCusto === true) AND.push({ custoUnitario: { gt: 0 } });
+    if (filtros.temCusto === false) {
+      AND.push({ OR: [{ custoUnitario: null }, { custoUnitario: 0 }] });
+    }
+    if (filtros.busca) {
+      AND.push({
+        OR: [
+          { sku: { contains: filtros.busca } },
+          { nome: { contains: filtros.busca } },
+          { asin: { contains: filtros.busca } },
+        ],
+      });
+    }
+
     return db.produto.findMany({
-      where: {
-        // Quando filtros.ativo === undefined, NAO filtra (mostra todos).
-        // Quando true, mostra so ativos. Quando false, mostra so inativos.
-        ...(filtros.ativo !== undefined ? { ativo: filtros.ativo } : {}),
-        // Por padrao mostramos apenas SKUs que comecam com MFS-.
-        // Passe incluirNaoMfs=true para listar TODOS (admin/debug).
-        ...(filtros.incluirNaoMfs ? {} : { sku: { startsWith: "MFS-" } }),
-        ...(filtros.busca
-          ? {
-              OR: [
-                { sku: { contains: filtros.busca } },
-                { nome: { contains: filtros.busca } },
-                { asin: { contains: filtros.busca } },
-              ],
-            }
-          : {}),
-      },
+      where: AND.length ? { AND } : undefined,
       orderBy: { nome: "asc" },
     });
   },

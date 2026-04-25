@@ -10,6 +10,7 @@ export const GET = handle(async (req: Request) => {
     ativo: searchParams.get("ativo") ?? undefined,
     statusReposicao: searchParams.get("statusReposicao") ?? undefined,
     incluirNaoMfs: searchParams.get("incluirNaoMfs") ?? undefined,
+    temCusto: searchParams.get("temCusto") ?? undefined,
   });
   return ok(produtos);
 });

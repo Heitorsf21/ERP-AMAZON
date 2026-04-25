@@ -3,15 +3,17 @@
 import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  AlertCircle,
   CheckCircle2,
+  Circle,
   Clock,
   Download,
-  Loader2,
+  Hash,
   MessageSquare,
   PackageOpen,
-  Play,
   RefreshCw,
   Send,
+  Server,
   TriangleAlert,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
@@ -77,29 +79,67 @@ type ProdutoToggle = {
   ultimaEnvioEm: string | null;
 };
 
-function ReviewStatusBadge({ status }: { status: string }) {
-  const labels: Record<string, string> = {
-    PENDENTE: "Pendente",
-    AGUARDANDO: "Aguardando",
-    ELEGIVEL: "Elegível",
-    ENVIADO: "Enviado",
-    JA_SOLICITADO: "Ja solicitado",
-    NAO_ELEGIVEL: "Não elegível",
-    EXPIRADO: "Expirado",
-    ERRO: "Erro",
-  };
+type HealthStatus = {
+  worker?: { lastHeartbeatAt: string | null; ageSec: number | null; ok: boolean };
+};
 
-  if (status === "ENVIADO") return <Badge variant="success">{labels[status]}</Badge>;
-  if (status === "JA_SOLICITADO") return <Badge variant="success">{labels[status]}</Badge>;
-  if (status === "ERRO") return <Badge variant="destructive">{labels[status]}</Badge>;
-  if (status === "EXPIRADO") return <Badge variant="warning">{labels[status]}</Badge>;
-  if (status === "AGUARDANDO") return <Badge variant="secondary">{labels[status]}</Badge>;
-  if (status === "ELEGIVEL") return <Badge variant="outline">{labels[status]}</Badge>;
-  return <Badge variant="secondary">{labels[status] ?? status}</Badge>;
+const STATUS_META: Record<
+  string,
+  { label: string; tone: "success" | "warning" | "danger" | "muted" | "info" }
+> = {
+  PENDENTE: { label: "Pendente", tone: "muted" },
+  AGUARDANDO: { label: "Aguardando", tone: "info" },
+  ELEGIVEL: { label: "Elegível", tone: "info" },
+  ENVIADO: { label: "Enviado", tone: "success" },
+  JA_SOLICITADO: { label: "Já solicitado", tone: "success" },
+  NAO_ELEGIVEL: { label: "Não elegível", tone: "muted" },
+  EXPIRADO: { label: "Expirado", tone: "warning" },
+  ERRO: { label: "Erro", tone: "danger" },
+};
+
+const STATUS_FILTERS: Array<{ key: string; label: string }> = [
+  { key: "ALL", label: "Todos" },
+  { key: "ENVIADO", label: "Enviados" },
+  { key: "AGUARDANDO", label: "Aguardando" },
+  { key: "ELEGIVEL", label: "Elegíveis" },
+  { key: "ERRO", label: "Erros" },
+  { key: "EXPIRADO", label: "Expirados" },
+];
+
+function ReviewStatusBadge({ status }: { status: string }) {
+  const meta = STATUS_META[status] ?? { label: status, tone: "muted" as const };
+  const variants: Record<typeof meta.tone, string> = {
+    success: "bg-emerald-500/10 text-emerald-600 ring-1 ring-inset ring-emerald-500/20",
+    warning: "bg-amber-500/10 text-amber-600 ring-1 ring-inset ring-amber-500/20",
+    danger: "bg-rose-500/10 text-rose-600 ring-1 ring-inset ring-rose-500/20",
+    info: "bg-sky-500/10 text-sky-600 ring-1 ring-inset ring-sky-500/20",
+    muted: "bg-muted text-muted-foreground ring-1 ring-inset ring-border",
+  };
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center rounded-md px-2 py-0.5 text-[11px] font-medium",
+        variants[meta.tone],
+      )}
+    >
+      {meta.label}
+    </span>
+  );
+}
+
+function StatusDot({ tone }: { tone: "success" | "warning" | "danger" | "muted" | "info" }) {
+  const colors: Record<typeof tone, string> = {
+    success: "bg-emerald-500",
+    warning: "bg-amber-500",
+    danger: "bg-rose-500",
+    info: "bg-sky-500",
+    muted: "bg-muted-foreground/40",
+  };
+  return <span className={cn("h-2 w-2 shrink-0 rounded-full", colors[tone])} />;
 }
 
 function formatDateTime(value: string | null) {
-  if (!value) return "-";
+  if (!value) return "—";
   return new Date(value).toLocaleString("pt-BR", {
     timeZone: "America/Sao_Paulo",
     day: "2-digit",
@@ -108,6 +148,11 @@ function formatDateTime(value: string | null) {
     hour: "2-digit",
     minute: "2-digit",
   });
+}
+
+function formatRelative(value: string | null) {
+  if (!value) return null;
+  return formatDistanceToNow(new Date(value), { locale: ptBR, addSuffix: true });
 }
 
 function KpiCard({
@@ -125,9 +170,9 @@ function KpiCard({
 }) {
   const tones: Record<typeof tone, string> = {
     default: "border-border bg-card",
-    success: "border-success/30 bg-success/5",
+    success: "border-emerald-500/30 bg-emerald-500/5",
     warning: "border-amber-500/30 bg-amber-500/5",
-    danger: "border-destructive/30 bg-destructive/5",
+    danger: "border-rose-500/30 bg-rose-500/5",
   };
 
   return (
@@ -146,6 +191,7 @@ function KpiCard({
 
 export default function AvaliacoesPage() {
   const qc = useQueryClient();
+  const [statusFilter, setStatusFilter] = React.useState<string>("ALL");
 
   const { data: config, isLoading: loadingConfig } = useQuery<AutomationConfig>({
     queryKey: ["reviews-config"],
@@ -173,6 +219,12 @@ export default function AvaliacoesPage() {
     queryFn: () => fetchJSON<ProdutoToggle[]>("/api/amazon/reviews/produtos"),
   });
 
+  const { data: health } = useQuery<HealthStatus>({
+    queryKey: ["health-worker"],
+    queryFn: () => fetchJSON<HealthStatus>("/api/health"),
+    refetchInterval: 20_000,
+  });
+
   const toggleAutomacao = useMutation({
     mutationFn: (ativo: boolean) =>
       fetchJSON<AutomationConfig>("/api/amazon/reviews/config", {
@@ -183,45 +235,8 @@ export default function AvaliacoesPage() {
       qc.setQueryData(["reviews-config"], data);
       toast.success(
         data.automacaoAtiva
-          ? "Automação diária ativada."
-          : "Automação diária desativada.",
-      );
-    },
-    onError: (e) => toast.error(e instanceof Error ? e.message : "Erro"),
-  });
-
-  const rodarAgora = useMutation({
-    mutationFn: () =>
-      fetchJSON<{
-        queued?: boolean;
-        executada: boolean;
-        motivo?: string;
-        pedidos30d: number;
-        naFila: number;
-        tentadosHoje: number;
-        enviadosHoje: number;
-        jaSolicitados: number;
-        adiadosAmanha: number;
-        expirados: number;
-        errosReais: number;
-        verificados: number;
-        enviados: number;
-        ignorados: number;
-      }>("/api/amazon/reviews/cron-daily", { method: "POST" }),
-    onSuccess: (data) => {
-      qc.invalidateQueries({ queryKey: ["reviews-historico"] });
-      qc.invalidateQueries({ queryKey: ["reviews-metricas"] });
-      qc.invalidateQueries({ queryKey: ["reviews-config"] });
-      if (data.queued) {
-        toast.success("Automacao de avaliacoes enfileirada.");
-        return;
-      }
-      if (!data.executada) {
-        toast.info(data.motivo ?? "Automação não executou.");
-        return;
-      }
-      toast.success(
-        `${data.enviadosHoje} enviados, ${data.tentadosHoje} tentados, ${data.adiadosAmanha} adiados.`,
+          ? "Automação ativada — o worker passará a enfileirar checagens."
+          : "Automação desativada — o worker para as checagens periódicas.",
       );
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Erro"),
@@ -252,14 +267,27 @@ export default function AvaliacoesPage() {
     },
   });
 
-  const ultimaExecucaoHint = config?.ultimaExecucao
-    ? `última execução ${formatDistanceToNow(new Date(config.ultimaExecucao), {
-        locale: ptBR,
-        addSuffix: true,
-      })}`
-    : "nunca executada";
+  const automacaoAtiva = config?.automacaoAtiva ?? false;
+  const workerOk = health?.worker?.ok ?? false;
+  const workerAge = health?.worker?.ageSec ?? null;
+  const workerHeartbeat = health?.worker?.lastHeartbeatAt ?? null;
+
+  const ultimaExecucaoRel = formatRelative(config?.ultimaExecucao ?? null);
+  const ultimaExecucaoAbs = formatDateTime(config?.ultimaExecucao ?? null);
 
   const pausadosCount = produtos.filter((p) => !p.solicitarReviewsAtivo).length;
+  const ativosCount = produtos.length - pausadosCount;
+
+  const filteredReviews =
+    statusFilter === "ALL"
+      ? reviews
+      : reviews.filter((r) => r.status === statusFilter);
+
+  const headerStatus = !automacaoAtiva
+    ? { label: "Automação desativada", tone: "muted" as const }
+    : workerOk
+      ? { label: "Automação ativa · worker online", tone: "success" as const }
+      : { label: "Automação ativa · worker offline", tone: "warning" as const };
 
   function exportarReviewsCSV(data: ReviewSolicitation[]) {
     const linhas = [
@@ -289,49 +317,88 @@ export default function AvaliacoesPage() {
     <div className="space-y-6">
       <PageHeader
         title="Solicitação de Avaliações"
-        description="Automação diária de pedidos de review no Amazon Seller Central via SP-API."
+        description="Automação contínua de pedidos de review no Amazon Seller Central via SP-API."
       >
-        <Badge variant={config?.automacaoAtiva ? "success" : "secondary"}>
-          {config?.automacaoAtiva ? "Automação ativa" : "Automação desativada"}
-        </Badge>
+        <div
+          className={cn(
+            "inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-medium",
+            headerStatus.tone === "success" &&
+              "border-emerald-500/30 bg-emerald-500/10 text-emerald-700",
+            headerStatus.tone === "warning" &&
+              "border-amber-500/30 bg-amber-500/10 text-amber-700",
+            headerStatus.tone === "muted" &&
+              "border-border bg-muted text-muted-foreground",
+          )}
+        >
+          <StatusDot tone={headerStatus.tone === "muted" ? "muted" : headerStatus.tone} />
+          {headerStatus.label}
+        </div>
       </PageHeader>
 
       {/* Card automação */}
-      <div className="rounded-xl border bg-card p-5">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div className="space-y-1">
-            <div className="flex items-center gap-3">
-              <h3 className="text-sm font-semibold">Automação diária</h3>
+      <div className="overflow-hidden rounded-xl border bg-card">
+        <div className="grid gap-0 lg:grid-cols-[1.4fr_1fr]">
+          <div className="space-y-4 p-5">
+            <div className="flex items-start justify-between gap-4">
+              <div className="space-y-1">
+                <h3 className="text-sm font-semibold">Automação contínua</h3>
+                <p className="text-xs text-muted-foreground">
+                  Enquanto este toggle estiver ativo e o worker em execução, o
+                  sistema enfileira <code className="rounded bg-muted px-1 py-0.5 text-[10px]">REVIEWS_DISCOVERY</code> a cada 6h e <code className="rounded bg-muted px-1 py-0.5 text-[10px]">REVIEWS_SEND</code> a cada 1h.
+                  Ao desativar, novas checagens param imediatamente — o histórico permanece.
+                </p>
+              </div>
               <Switch
-                checked={config?.automacaoAtiva ?? false}
+                checked={automacaoAtiva}
                 disabled={loadingConfig || toggleAutomacao.isPending}
                 onCheckedChange={(v) => toggleAutomacao.mutate(v)}
-                aria-label="Ativar automação diária"
+                aria-label="Ativar automação contínua de avaliações"
+                className="mt-1"
               />
             </div>
-            <p className="max-w-xl text-sm text-muted-foreground">
-              Quando ativa, o sistema busca pedidos criados nos ultimos 30 dias,
-              tenta a solicitacao oficial e deixa na fila para o dia seguinte
-              quando a Amazon ainda nao liberar o envio.
-            </p>
-            <p className="text-xs text-muted-foreground">
-              <Clock className="mr-1 inline h-3 w-3" />
-              {ultimaExecucaoHint}
-              {pausadosCount > 0 && ` · ${pausadosCount} SKU(s) pausado(s)`}
-            </p>
-          </div>
-          <Button
-            variant="outline"
-            onClick={() => rodarAgora.mutate()}
-            disabled={rodarAgora.isPending}
-          >
-            {rodarAgora.isPending ? (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            ) : (
-              <Play className="mr-2 h-4 w-4" />
+
+            {automacaoAtiva && !workerOk && (
+              <div className="flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/5 p-3 text-xs text-amber-700">
+                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                <span>
+                  A automação está ligada, mas o worker não está respondendo
+                  (heartbeat &gt; 5min). Confira <code className="rounded bg-amber-500/10 px-1">npm run amazon:worker</code> ou o PM2 no servidor.
+                </span>
+              </div>
             )}
-            Rodar agora
-          </Button>
+          </div>
+
+          <div className="grid grid-cols-2 gap-px bg-border lg:border-l">
+            <div className="flex flex-col gap-2 bg-card p-4">
+              <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                <Server className="h-3.5 w-3.5" /> Worker
+              </div>
+              <div className="flex items-center gap-2">
+                <StatusDot tone={workerOk ? "success" : "danger"} />
+                <span className="text-sm font-semibold">
+                  {workerOk ? "Online" : workerHeartbeat ? "Offline" : "Sem heartbeat"}
+                </span>
+              </div>
+              <span className="text-[11px] text-muted-foreground">
+                {workerHeartbeat
+                  ? `Heartbeat ${formatRelative(workerHeartbeat)}`
+                  : "Aguardando worker iniciar"}
+                {workerAge !== null && workerOk ? ` · ${workerAge}s atrás` : ""}
+              </span>
+            </div>
+            <div className="flex flex-col gap-2 bg-card p-4">
+              <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                <Clock className="h-3.5 w-3.5" /> Última execução
+              </div>
+              <span className="text-sm font-semibold">
+                {ultimaExecucaoRel ?? "Nunca executada"}
+              </span>
+              <span className="text-[11px] text-muted-foreground">
+                {config?.ultimaExecucao ? ultimaExecucaoAbs : "—"}
+                {pausadosCount > 0 && ` · ${pausadosCount} SKU(s) pausado(s)`}
+              </span>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -339,14 +406,14 @@ export default function AvaliacoesPage() {
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
         <KpiCard
           label="Pedidos 30d"
-          value={metricas?.pedidos30d ?? "-"}
+          value={metricas?.pedidos30d ?? "—"}
           hint={metricas ? `${metricas.naFila} na fila` : undefined}
           icon={CheckCircle2}
           tone="default"
         />
         <KpiCard
           label="Sucesso (30 dias)"
-          value={metricas?.enviadas30d ?? "-"}
+          value={metricas?.enviadas30d ?? "—"}
           hint={
             metricas
               ? `${metricas.totalEnviadas} no total · ${metricas.enviadas7d} em 7d`
@@ -357,20 +424,20 @@ export default function AvaliacoesPage() {
         />
         <KpiCard
           label="Enviadas hoje"
-          value={metricas?.enviadosHoje ?? metricas?.enviadasHoje ?? "-"}
+          value={metricas?.enviadosHoje ?? metricas?.enviadasHoje ?? "—"}
           hint={metricas ? `${metricas.tentadosHoje} tentados hoje` : undefined}
           icon={Send}
           tone="success"
         />
         <KpiCard
           label="Adiados"
-          value={metricas?.adiadosAmanha ?? "-"}
-          hint={metricas ? `${metricas.jaSolicitados} ja solicitados` : undefined}
+          value={metricas?.adiadosAmanha ?? "—"}
+          hint={metricas ? `${metricas.jaSolicitados} já solicitados` : undefined}
           icon={MessageSquare}
         />
         <KpiCard
           label="Erros"
-          value={metricas?.errosReais ?? "-"}
+          value={metricas?.errosReais ?? "—"}
           hint={metricas ? `${metricas.expirados} expirados` : undefined}
           icon={TriangleAlert}
           tone={metricas && metricas.errosReais > 0 ? "danger" : "default"}
@@ -381,22 +448,51 @@ export default function AvaliacoesPage() {
       <Tabs defaultValue="historico">
         <TabsList>
           <TabsTrigger value="historico">Geral & Histórico</TabsTrigger>
-          <TabsTrigger value="produtos">Por Produto</TabsTrigger>
+          <TabsTrigger value="produtos">
+            Por Produto
+            {produtos.length > 0 && (
+              <Badge variant="secondary" className="ml-2 px-1.5 py-0 text-[10px]">
+                {ativosCount}/{produtos.length}
+              </Badge>
+            )}
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="historico" className="mt-4 space-y-4">
           <div className="rounded-xl border bg-card">
-            <div className="flex items-center justify-between border-b p-4">
-              <h3 className="text-sm font-semibold">Histórico de solicitações</h3>
-              <div className="flex items-center gap-1">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b p-4">
+              <div className="space-y-0.5">
+                <h3 className="text-sm font-semibold">Histórico de solicitações</h3>
+                <p className="text-xs text-muted-foreground">
+                  {filteredReviews.length} de {reviews.length} solicitações
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-1 rounded-md bg-muted p-0.5">
+                  {STATUS_FILTERS.map((f) => (
+                    <button
+                      key={f.key}
+                      type="button"
+                      onClick={() => setStatusFilter(f.key)}
+                      className={cn(
+                        "rounded px-2 py-1 text-[11px] font-medium transition",
+                        statusFilter === f.key
+                          ? "bg-background text-foreground shadow-sm"
+                          : "text-muted-foreground hover:text-foreground",
+                      )}
+                    >
+                      {f.label}
+                    </button>
+                  ))}
+                </div>
                 <Button
                   type="button"
                   variant="ghost"
                   size="icon"
-                  className="h-7 w-7"
+                  className="h-8 w-8"
                   title="Exportar CSV"
                   disabled={!reviews.length}
-                  onClick={() => exportarReviewsCSV(reviews)}
+                  onClick={() => exportarReviewsCSV(filteredReviews)}
                 >
                   <Download className="h-3.5 w-3.5" />
                 </Button>
@@ -417,134 +513,228 @@ export default function AvaliacoesPage() {
             {loadingReviews ? (
               <div className="space-y-2 p-4">
                 {Array.from({ length: 5 }).map((_, i) => (
-                  <Skeleton key={i} className="h-14 w-full" />
+                  <Skeleton key={i} className="h-16 w-full" />
                 ))}
               </div>
-            ) : reviews.length === 0 ? (
-              <div className="flex flex-col items-center justify-center gap-2 py-12 text-center">
+            ) : filteredReviews.length === 0 ? (
+              <div className="flex flex-col items-center justify-center gap-2 py-16 text-center">
                 <MessageSquare className="h-8 w-8 text-muted-foreground/40" />
                 <p className="text-sm text-muted-foreground">
-                  Nenhuma solicitação registrada ainda.
+                  {reviews.length === 0
+                    ? "Nenhuma solicitação registrada ainda."
+                    : "Nenhuma solicitação com este filtro."}
                 </p>
+                {reviews.length > 0 && statusFilter !== "ALL" && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setStatusFilter("ALL")}
+                  >
+                    Limpar filtro
+                  </Button>
+                )}
               </div>
             ) : (
-              <div className="divide-y">
-                {reviews.map((r) => (
-                  <div
-                    key={r.id}
-                    className="grid gap-3 p-4 md:grid-cols-[1.4fr_.8fr_1fr_1fr] md:items-center"
-                  >
-                    <div className="min-w-0">
-                      <p className="truncate font-mono text-sm">{r.amazonOrderId}</p>
-                      <p className="truncate text-xs text-muted-foreground">
-                        {r.sku ?? "SKU não informado"}
-                        {r.asin ? ` · ${r.asin}` : ""}
-                      </p>
-                    </div>
-                    <ReviewStatusBadge status={r.status} />
-                    <div className="text-xs text-muted-foreground">
-                      <p>Pedido: {formatDateTime(r.orderCreatedAt)}</p>
-                      <p>Checado: {formatDateTime(r.checkedAt)}</p>
-                      <p>Enviado: {formatDateTime(r.sentAt)}</p>
-                      <p>Proxima: {formatDateTime(r.nextCheckAt)}</p>
-                    </div>
-                    {r.errorMessage ? (
-                      <p className="text-xs text-destructive">{r.errorMessage}</p>
-                    ) : r.qualificationReason || r.resolvedReason ? (
-                      <p className="text-xs text-muted-foreground">
-                        {r.resolvedReason ?? r.qualificationReason}
-                        {r.attempts > 0 ? ` · ${r.attempts} tentativa(s)` : ""}
-                      </p>
-                    ) : (
-                      <p className="text-xs text-muted-foreground">—</p>
-                    )}
-                  </div>
-                ))}
-              </div>
+              <ul className="divide-y">
+                {filteredReviews.map((r) => {
+                  const meta =
+                    STATUS_META[r.status] ?? { label: r.status, tone: "muted" as const };
+                  const reason =
+                    r.errorMessage ?? r.resolvedReason ?? r.qualificationReason;
+                  return (
+                    <li
+                      key={r.id}
+                      className="grid items-start gap-4 p-4 transition hover:bg-muted/30 md:grid-cols-[auto_1.6fr_1fr_1.2fr]"
+                    >
+                      <div className="flex h-9 w-9 items-center justify-center rounded-full bg-muted">
+                        <StatusDot tone={meta.tone} />
+                      </div>
+                      <div className="min-w-0 space-y-1">
+                        <div className="flex items-center gap-2">
+                          <Hash className="h-3 w-3 text-muted-foreground/60" />
+                          <p className="truncate font-mono text-sm">
+                            {r.amazonOrderId}
+                          </p>
+                          <ReviewStatusBadge status={r.status} />
+                        </div>
+                        <p className="truncate text-xs text-muted-foreground">
+                          {r.sku ?? "SKU não informado"}
+                          {r.asin ? ` · ${r.asin}` : ""}
+                        </p>
+                      </div>
+                      <dl className="grid grid-cols-1 gap-y-1 text-[11px] text-muted-foreground sm:grid-cols-[auto_1fr] sm:gap-x-2">
+                        <dt className="text-muted-foreground/70">Pedido</dt>
+                        <dd className="text-foreground/80">
+                          {formatDateTime(r.orderCreatedAt)}
+                        </dd>
+                        {r.sentAt && (
+                          <>
+                            <dt className="text-emerald-600/80">Enviado</dt>
+                            <dd className="text-emerald-700">
+                              {formatDateTime(r.sentAt)}
+                            </dd>
+                          </>
+                        )}
+                        {r.nextCheckAt && !r.sentAt && (
+                          <>
+                            <dt className="text-muted-foreground/70">Próxima</dt>
+                            <dd className="text-foreground/80">
+                              {formatDateTime(r.nextCheckAt)}
+                            </dd>
+                          </>
+                        )}
+                      </dl>
+                      <div className="text-xs">
+                        {reason ? (
+                          <p
+                            className={cn(
+                              r.errorMessage
+                                ? "text-rose-600"
+                                : "text-muted-foreground",
+                            )}
+                          >
+                            {reason}
+                          </p>
+                        ) : (
+                          <p className="text-muted-foreground/70">—</p>
+                        )}
+                        {r.attempts > 0 && (
+                          <p className="mt-1 text-[10px] uppercase tracking-wide text-muted-foreground/60">
+                            {r.attempts} tentativa{r.attempts > 1 ? "s" : ""}
+                          </p>
+                        )}
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
             )}
           </div>
         </TabsContent>
 
         <TabsContent value="produtos" className="mt-4">
           <div className="rounded-xl border bg-card">
-            <div className="border-b p-4">
-              <h3 className="text-sm font-semibold">Controle individual por SKU</h3>
-              <p className="text-sm text-muted-foreground">
-                Desative um produto para excluí-lo da automação diária. O histórico
-                por SKU continua visível.
-              </p>
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b p-4">
+              <div className="space-y-0.5">
+                <h3 className="text-sm font-semibold">Controle individual por SKU</h3>
+                <p className="text-xs text-muted-foreground">
+                  Desative um produto para excluí-lo da automação. O histórico
+                  por SKU continua visível.
+                </p>
+              </div>
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <span className="inline-flex items-center gap-1.5">
+                  <StatusDot tone="success" /> {ativosCount} ativos
+                </span>
+                <span className="text-muted-foreground/40">·</span>
+                <span className="inline-flex items-center gap-1.5">
+                  <StatusDot tone="muted" /> {pausadosCount} pausados
+                </span>
+              </div>
             </div>
 
             {loadingProdutos ? (
               <div className="space-y-2 p-4">
                 {Array.from({ length: 4 }).map((_, i) => (
-                  <Skeleton key={i} className="h-16 w-full" />
+                  <Skeleton key={i} className="h-20 w-full" />
                 ))}
               </div>
             ) : produtos.length === 0 ? (
-              <div className="flex flex-col items-center justify-center gap-2 py-12 text-center">
+              <div className="flex flex-col items-center justify-center gap-2 py-16 text-center">
                 <PackageOpen className="h-8 w-8 text-muted-foreground/40" />
                 <p className="text-sm text-muted-foreground">
                   Nenhum produto ativo cadastrado.
                 </p>
               </div>
             ) : (
-              <div className="divide-y">
-                {produtos.map((p) => (
-                  <div
-                    key={p.id}
-                    className="flex items-center gap-4 p-4"
-                  >
-                    <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-md border bg-muted">
-                      {p.imagemUrl ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={p.imagemUrl}
-                          alt={p.nome}
-                          className="h-full w-full object-cover"
-                        />
-                      ) : (
-                        <PackageOpen className="h-5 w-5 text-muted-foreground/50" />
+              <ul className="divide-y">
+                {produtos.map((p) => {
+                  const ultimaRel = formatRelative(p.ultimaEnvioEm);
+                  return (
+                    <li
+                      key={p.id}
+                      className={cn(
+                        "grid items-center gap-4 p-4 transition hover:bg-muted/30 md:grid-cols-[auto_1.6fr_1fr_auto]",
+                        !p.solicitarReviewsAtivo && "bg-muted/20",
                       )}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-medium">{p.nome}</p>
-                      <p className="truncate text-xs text-muted-foreground">
-                        {p.sku}
-                        {p.asin ? ` · ${p.asin}` : ""}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        {p.totalEnviadas} enviadas
-                        {p.ultimaEnvioEm
-                          ? ` · última ${formatDistanceToNow(
-                              new Date(p.ultimaEnvioEm),
-                              { locale: ptBR, addSuffix: true },
-                            )}`
-                          : ""}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span
+                    >
+                      <div
                         className={cn(
-                          "text-xs font-medium",
-                          p.solicitarReviewsAtivo
-                            ? "text-success"
-                            : "text-muted-foreground",
+                          "flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-lg border bg-muted",
+                          !p.solicitarReviewsAtivo && "opacity-60",
                         )}
                       >
-                        {p.solicitarReviewsAtivo ? "Ativo" : "Pausado"}
-                      </span>
-                      <Switch
-                        checked={p.solicitarReviewsAtivo}
-                        onCheckedChange={(v) =>
-                          toggleProduto.mutate({ produtoId: p.id, ativo: v })
-                        }
-                        aria-label={`Ativar reviews para ${p.nome}`}
-                      />
-                    </div>
-                  </div>
-                ))}
-              </div>
+                        {p.imagemUrl ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={p.imagemUrl}
+                            alt={p.nome}
+                            className="h-full w-full object-cover"
+                          />
+                        ) : (
+                          <PackageOpen className="h-6 w-6 text-muted-foreground/50" />
+                        )}
+                      </div>
+                      <div className="min-w-0 space-y-1">
+                        <p
+                          className={cn(
+                            "truncate text-sm font-medium",
+                            !p.solicitarReviewsAtivo && "text-muted-foreground",
+                          )}
+                        >
+                          {p.nome}
+                        </p>
+                        <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
+                          <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-muted-foreground">
+                            {p.sku}
+                          </span>
+                          {p.asin && (
+                            <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-muted-foreground">
+                              {p.asin}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex flex-col gap-0.5 text-xs">
+                        <div className="flex items-center gap-1.5">
+                          <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
+                          <span className="font-medium tabular-nums">
+                            {p.totalEnviadas}
+                          </span>
+                          <span className="text-muted-foreground">enviadas</span>
+                        </div>
+                        <span className="text-[11px] text-muted-foreground">
+                          {ultimaRel ? `Última ${ultimaRel}` : "Sem envios ainda"}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <span
+                          className={cn(
+                            "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium",
+                            p.solicitarReviewsAtivo
+                              ? "bg-emerald-500/10 text-emerald-700 ring-1 ring-inset ring-emerald-500/20"
+                              : "bg-muted text-muted-foreground ring-1 ring-inset ring-border",
+                          )}
+                        >
+                          {p.solicitarReviewsAtivo ? (
+                            <Circle className="h-2 w-2 fill-current" />
+                          ) : (
+                            <Circle className="h-2 w-2" />
+                          )}
+                          {p.solicitarReviewsAtivo ? "Ativo" : "Pausado"}
+                        </span>
+                        <Switch
+                          checked={p.solicitarReviewsAtivo}
+                          onCheckedChange={(v) =>
+                            toggleProduto.mutate({ produtoId: p.id, ativo: v })
+                          }
+                          aria-label={`Ativar reviews para ${p.nome}`}
+                        />
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
             )}
           </div>
         </TabsContent>
