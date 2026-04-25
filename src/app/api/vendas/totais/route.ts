@@ -10,36 +10,53 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     const de = searchParams.get("de");
     const ate = searchParams.get("ate");
 
-    const where: Prisma.VendaFBAWhereInput = {
-      status: { notIn: ["Cancelado", "Reembolsado", "cancelado", "reembolsado"] },
+    const where: Prisma.VendaAmazonWhereInput = {
+      NOT: [
+        { statusPedido: { in: ["Cancelado", "CANCELADO", "Cancelled", "Canceled"] } },
+        { statusFinanceiro: { in: ["Reembolsado", "REEMBOLSADO", "Refunded"] } },
+      ],
     };
 
     if (de || ate) {
-      where.dataCompra = {};
-      if (de) where.dataCompra.gte = new Date(de);
+      where.dataVenda = {};
+      if (de) where.dataVenda.gte = new Date(de);
       if (ate) {
         const fim = new Date(ate);
         fim.setHours(23, 59, 59, 999);
-        where.dataCompra.lte = fim;
+        where.dataVenda.lte = fim;
       }
     }
 
-    const [agg, totalPedidos, ultimaImportacao] = await Promise.all([
-      db.vendaFBA.aggregate({
+    const [vendas, agg, ultimaImportacao] = await Promise.all([
+      db.vendaAmazon.findMany({
         where,
-        _sum: { totalCentavos: true, quantidade: true },
-        _count: { id: true },
+        select: {
+          amazonOrderId: true,
+          quantidade: true,
+          precoUnitarioCentavos: true,
+          valorBrutoCentavos: true,
+        },
       }),
-      db.vendaFBA.count({ where }),
-      db.loteImportacaoFBA.findFirst({
+      db.vendaAmazon.aggregate({
+        where,
+        _sum: { quantidade: true },
+      }),
+      db.amazonSyncLog.findFirst({
         orderBy: { createdAt: "desc" },
-        select: { createdAt: true, tipo: true, nomeArquivo: true },
+        select: { createdAt: true, tipo: true, mensagem: true },
       }),
     ]);
 
-    const receitaBrutaCentavos = agg._sum.totalCentavos ?? 0;
+    const receitaBrutaCentavos = vendas.reduce(
+      (acc, venda) =>
+        acc +
+        (venda.valorBrutoCentavos ??
+          venda.precoUnitarioCentavos * venda.quantidade),
+      0,
+    );
     const unidadesVendidas = agg._sum.quantidade ?? 0;
-    const quantidadePedidos = totalPedidos;
+    const quantidadePedidos = new Set(vendas.map((venda) => venda.amazonOrderId))
+      .size;
     const ticketMedioCentavos =
       quantidadePedidos > 0
         ? Math.round(receitaBrutaCentavos / quantidadePedidos)

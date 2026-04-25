@@ -19,7 +19,12 @@ export const criarProdutoSchema = z.object({
 });
 export type CriarProdutoInput = z.infer<typeof criarProdutoSchema>;
 
-export const atualizarProdutoSchema = criarProdutoSchema.partial().omit({ sku: true });
+export const atualizarProdutoSchema = criarProdutoSchema
+  .partial()
+  .omit({ sku: true })
+  .extend({
+    solicitarReviewsAtivo: z.boolean().optional(),
+  });
 export type AtualizarProdutoInput = z.infer<typeof atualizarProdutoSchema>;
 
 export const filtrosProdutoSchema = z.object({

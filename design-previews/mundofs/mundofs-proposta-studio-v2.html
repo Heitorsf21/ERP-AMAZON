@@ -1,0 +1,946 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Mundo F&S - Studio v2</title>
+  <style>
+    :root {
+      --ink: #0d2528;
+      --deep: #173b3e;
+      --teal: #215f55;
+      --mint: #92dfba;
+      --gold: #e1ad4c;
+      --copper: #bd7458;
+      --cream: #f8f1e4;
+      --paper: #fffaf0;
+      --line: rgba(13, 37, 40, .12);
+      --shadow: 0 24px 68px rgba(13, 37, 40, .14);
+      --radius: 8px;
+      --sans: "Aptos", "Segoe UI Variable", "Segoe UI", sans-serif;
+      --serif: Georgia, "Times New Roman", serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: #111;
+      color: var(--ink);
+      font-family: var(--sans);
+      letter-spacing: 0;
+    }
+
+    .preview {
+      width: 1440px;
+      min-height: 1400px;
+      margin: 0 auto;
+      overflow: hidden;
+      background:
+        linear-gradient(90deg, rgba(13, 37, 40, .045) 1px, transparent 1px),
+        linear-gradient(180deg, rgba(13, 37, 40, .04) 1px, transparent 1px),
+        radial-gradient(circle at 82% 8%, rgba(225, 173, 76, .18), transparent 28%),
+        radial-gradient(circle at 14% 24%, rgba(146, 223, 186, .16), transparent 22%),
+        var(--cream);
+      background-size: 46px 46px, 46px 46px, auto, auto, auto;
+    }
+
+    .shell {
+      width: min(1180px, calc(100% - 64px));
+      margin: 0 auto;
+    }
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 88px;
+    }
+
+    .brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 14px;
+      color: var(--ink);
+      text-decoration: none;
+    }
+
+    .brand-mark {
+      position: relative;
+      display: grid;
+      width: 58px;
+      height: 58px;
+      place-items: center;
+      border-radius: 14px;
+      background:
+        linear-gradient(135deg, rgba(255, 255, 255, .2), transparent),
+        var(--deep);
+      box-shadow:
+        inset 0 0 0 1px rgba(255, 255, 255, .12),
+        0 16px 34px rgba(13, 37, 40, .18);
+      overflow: hidden;
+    }
+
+    .brand-mark::before {
+      content: "";
+      position: absolute;
+      width: 74px;
+      height: 26px;
+      border: 2px solid rgba(146, 223, 186, .54);
+      border-radius: 999px;
+      transform: rotate(-28deg);
+    }
+
+    .brand-mark::after {
+      content: "";
+      position: absolute;
+      right: 9px;
+      top: 11px;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--gold);
+      box-shadow: 0 0 16px rgba(225, 173, 76, .65);
+    }
+
+    .brand-mark span {
+      position: relative;
+      z-index: 1;
+      color: white;
+      font-size: 18px;
+      font-weight: 950;
+      letter-spacing: -.02em;
+    }
+
+    .wordmark strong {
+      display: block;
+      font-family: var(--serif);
+      font-size: 28px;
+      line-height: .92;
+    }
+
+    .wordmark small {
+      display: block;
+      margin-top: 7px;
+      color: var(--teal);
+      font-size: 10px;
+      font-weight: 950;
+      letter-spacing: .18em;
+      text-transform: uppercase;
+    }
+
+    .nav {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      padding: 6px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: rgba(255, 250, 240, .72);
+      box-shadow: 0 16px 40px rgba(13, 37, 40, .08);
+      backdrop-filter: blur(16px);
+    }
+
+    .nav a {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      height: 38px;
+      padding: 0 15px;
+      border-radius: 999px;
+      color: rgba(13, 37, 40, .7);
+      font-size: 13px;
+      font-weight: 900;
+      text-decoration: none;
+    }
+
+    .nav a.active {
+      background: var(--deep);
+      color: white;
+      box-shadow: 0 10px 22px rgba(13, 37, 40, .18);
+    }
+
+    .hero {
+      position: relative;
+      display: grid;
+      grid-template-columns: .9fr 1.05fr;
+      gap: 34px;
+      min-height: 700px;
+      padding: 38px;
+      border: 1px solid rgba(13, 37, 40, .12);
+      border-radius: var(--radius);
+      background:
+        linear-gradient(135deg, rgba(255, 250, 240, .96), rgba(255, 250, 240, .78)),
+        var(--paper);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+
+    .hero::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background:
+        linear-gradient(90deg, rgba(13, 37, 40, .045) 1px, transparent 1px),
+        linear-gradient(180deg, rgba(13, 37, 40, .04) 1px, transparent 1px);
+      background-size: 42px 42px;
+      pointer-events: none;
+      mask-image: linear-gradient(90deg, rgba(0, 0, 0, .6), transparent 68%);
+    }
+
+    .hero-copy {
+      position: relative;
+      z-index: 2;
+      align-self: center;
+      padding-left: 28px;
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      height: 36px;
+      padding: 0 14px;
+      border: 1px solid rgba(33, 95, 85, .22);
+      border-left: 5px solid var(--gold);
+      border-radius: var(--radius);
+      background: rgba(33, 95, 85, .07);
+      color: var(--teal);
+      font-size: 12px;
+      font-weight: 950;
+      letter-spacing: .14em;
+      text-transform: uppercase;
+    }
+
+    h1 {
+      max-width: 570px;
+      margin: 24px 0 0;
+      color: var(--ink);
+      font-family: var(--serif);
+      font-size: 62px;
+      line-height: .98;
+      letter-spacing: 0;
+    }
+
+    .hero-text {
+      max-width: 520px;
+      margin: 24px 0 0;
+      color: rgba(13, 37, 40, .72);
+      font-size: 19px;
+      line-height: 1.56;
+    }
+
+    .actions {
+      display: flex;
+      gap: 12px;
+      margin-top: 34px;
+    }
+
+    .btn {
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 11px;
+      height: 52px;
+      padding: 0 18px 0 14px;
+      border-radius: 999px;
+      font-size: 14px;
+      font-weight: 950;
+      text-decoration: none;
+      overflow: hidden;
+    }
+
+    .btn-icon {
+      display: grid;
+      width: 32px;
+      height: 32px;
+      place-items: center;
+      border-radius: 50%;
+      font-size: 15px;
+      line-height: 1;
+    }
+
+    .btn-primary {
+      background: var(--deep);
+      color: white;
+      box-shadow: 0 18px 42px rgba(13, 37, 40, .2);
+    }
+
+    .btn-primary .btn-icon {
+      background: var(--mint);
+      color: var(--ink);
+    }
+
+    .btn-secondary {
+      border: 1px solid rgba(13, 37, 40, .13);
+      background: rgba(255, 250, 240, .82);
+      color: var(--ink);
+      box-shadow: 0 10px 24px rgba(13, 37, 40, .08);
+    }
+
+    .btn-secondary .btn-icon {
+      background: rgba(225, 173, 76, .18);
+      color: var(--deep);
+    }
+
+    .proof {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+      max-width: 522px;
+      margin-top: 32px;
+    }
+
+    .proof-card {
+      min-height: 84px;
+      padding: 15px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: rgba(255, 255, 255, .62);
+    }
+
+    .proof-card span,
+    .scene-label,
+    .section-label,
+    .tile span,
+    .step span,
+    .contact-box span {
+      display: block;
+      color: rgba(13, 37, 40, .52);
+      font-size: 11px;
+      font-weight: 950;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+    }
+
+    .proof-card strong {
+      display: block;
+      margin-top: 8px;
+      font-family: var(--serif);
+      font-size: 22px;
+      line-height: 1;
+    }
+
+    .visual {
+      position: relative;
+      z-index: 2;
+      align-self: center;
+      min-height: 584px;
+      border-radius: var(--radius);
+      background:
+        linear-gradient(160deg, rgba(23, 59, 62, .96), rgba(33, 95, 85, .9)),
+        var(--deep);
+      box-shadow:
+        inset 0 0 0 1px rgba(255, 250, 240, .13),
+        0 30px 80px rgba(13, 37, 40, .2);
+      overflow: hidden;
+      color: white;
+    }
+
+    .visual::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background:
+        linear-gradient(90deg, rgba(255, 250, 240, .055) 1px, transparent 1px),
+        linear-gradient(180deg, rgba(255, 250, 240, .045) 1px, transparent 1px);
+      background-size: 44px 44px;
+      opacity: .9;
+    }
+
+    .scene-header {
+      position: absolute;
+      left: 28px;
+      right: 28px;
+      top: 28px;
+      z-index: 2;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }
+
+    .scene-label {
+      color: rgba(255, 250, 240, .62);
+    }
+
+    .scene-title {
+      display: block;
+      margin-top: 6px;
+      font-family: var(--serif);
+      font-size: 26px;
+      line-height: 1;
+    }
+
+    .scene-badge {
+      display: inline-flex;
+      align-items: center;
+      height: 34px;
+      padding: 0 13px;
+      border-radius: 999px;
+      background: rgba(146, 223, 186, .16);
+      color: #bff1d6;
+      font-size: 11px;
+      font-weight: 950;
+      letter-spacing: .1em;
+      text-transform: uppercase;
+    }
+
+    .market-map {
+      position: absolute;
+      left: 42px;
+      right: 42px;
+      top: 124px;
+      height: 340px;
+      border: 1px solid rgba(255, 250, 240, .14);
+      border-radius: var(--radius);
+      background: rgba(255, 250, 240, .08);
+      overflow: hidden;
+    }
+
+    .map-line {
+      position: absolute;
+      height: 3px;
+      border-radius: 99px;
+      background: linear-gradient(90deg, rgba(146, 223, 186, .4), rgba(225, 173, 76, .7));
+      transform-origin: left center;
+    }
+
+    .line-a {
+      left: 80px;
+      top: 92px;
+      width: 430px;
+      transform: rotate(0deg);
+    }
+
+    .line-b {
+      left: 130px;
+      top: 212px;
+      width: 360px;
+      transform: rotate(-12deg);
+    }
+
+    .line-c {
+      left: 252px;
+      top: 156px;
+      width: 250px;
+      transform: rotate(28deg);
+    }
+
+    .node {
+      position: absolute;
+      display: grid;
+      place-items: center;
+      border: 1px solid rgba(255, 250, 240, .16);
+      border-radius: 18px;
+      background:
+        linear-gradient(145deg, rgba(255, 250, 240, .16), rgba(255, 250, 240, .08));
+      box-shadow: 0 20px 45px rgba(0, 0, 0, .18);
+      backdrop-filter: blur(8px);
+    }
+
+    .hub {
+      left: 168px;
+      top: 82px;
+      width: 148px;
+      height: 148px;
+      border-radius: 30px;
+      background: linear-gradient(145deg, rgba(146, 223, 186, .28), rgba(255, 250, 240, .1));
+      z-index: 2;
+    }
+
+    .hub-mark {
+      display: grid;
+      width: 72px;
+      height: 72px;
+      place-items: center;
+      border-radius: 20px;
+      background: var(--paper);
+      color: var(--deep);
+      font-family: var(--serif);
+      font-size: 24px;
+      font-weight: 900;
+      box-shadow: 0 18px 34px rgba(0, 0, 0, .2);
+    }
+
+    .node.card-a {
+      left: 58px;
+      top: 72px;
+      width: 118px;
+      height: 88px;
+    }
+
+    .node.card-b {
+      right: 44px;
+      top: 42px;
+      width: 132px;
+      height: 96px;
+    }
+
+    .node.card-c {
+      left: 92px;
+      bottom: 52px;
+      width: 130px;
+      height: 96px;
+    }
+
+    .node.card-d {
+      right: 58px;
+      bottom: 52px;
+      width: 152px;
+      height: 108px;
+      background: linear-gradient(145deg, rgba(225, 173, 76, .24), rgba(255, 250, 240, .1));
+    }
+
+    .box-icon {
+      width: 54px;
+      height: 42px;
+      border-radius: 8px;
+      background: linear-gradient(135deg, #d2a869, #a77942);
+      box-shadow: inset -10px 0 0 rgba(67, 49, 29, .14);
+    }
+
+    .card-lines {
+      display: grid;
+      gap: 7px;
+      width: 66px;
+    }
+
+    .card-lines i {
+      height: 7px;
+      border-radius: 99px;
+      background: rgba(255, 250, 240, .62);
+    }
+
+    .card-lines i:nth-child(2) {
+      width: 76%;
+      background: rgba(146, 223, 186, .72);
+    }
+
+    .card-lines i:nth-child(3) {
+      width: 54%;
+      background: rgba(225, 173, 76, .7);
+    }
+
+    .dashboard-card {
+      position: absolute;
+      left: 86px;
+      right: 86px;
+      bottom: 28px;
+      z-index: 2;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+    }
+
+    .dash-tile {
+      min-height: 72px;
+      padding: 13px;
+      border: 1px solid rgba(255, 250, 240, .14);
+      border-radius: var(--radius);
+      background: rgba(7, 21, 22, .32);
+    }
+
+    .dash-tile span {
+      display: block;
+      color: rgba(255, 250, 240, .56);
+      font-size: 10px;
+      font-weight: 950;
+      letter-spacing: .1em;
+      text-transform: uppercase;
+    }
+
+    .dash-tile strong {
+      display: block;
+      margin-top: 6px;
+      color: white;
+      font-size: 18px;
+    }
+
+    .section-grid {
+      display: grid;
+      grid-template-columns: .92fr 1.08fr;
+      gap: 24px;
+      margin-top: 28px;
+    }
+
+    .panel,
+    .tiles,
+    .flow,
+    .contact {
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: rgba(255, 250, 240, .76);
+      box-shadow: 0 16px 44px rgba(13, 37, 40, .08);
+    }
+
+    .panel {
+      padding: 36px;
+    }
+
+    .section-label {
+      color: var(--teal);
+    }
+
+    h2 {
+      margin: 15px 0 0;
+      font-family: var(--serif);
+      font-size: 44px;
+      line-height: 1.03;
+      letter-spacing: 0;
+    }
+
+    .panel p {
+      margin: 18px 0 0;
+      color: rgba(13, 37, 40, .68);
+      font-size: 17px;
+      line-height: 1.62;
+    }
+
+    .tiles {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 1px;
+      overflow: hidden;
+      background: rgba(13, 37, 40, .1);
+    }
+
+    .tile {
+      min-height: 148px;
+      padding: 26px;
+      background: rgba(255, 250, 240, .88);
+    }
+
+    .tile strong {
+      display: block;
+      margin-top: 12px;
+      font-family: var(--serif);
+      font-size: 31px;
+      line-height: 1;
+    }
+
+    .tile p {
+      margin: 9px 0 0;
+      color: rgba(13, 37, 40, .62);
+      font-size: 14px;
+      line-height: 1.42;
+    }
+
+    .bottom {
+      display: grid;
+      grid-template-columns: 1.35fr .85fr;
+      gap: 24px;
+      margin-top: 24px;
+      padding-bottom: 72px;
+    }
+
+    .flow {
+      padding: 30px;
+    }
+
+    .flow-head {
+      display: flex;
+      align-items: end;
+      justify-content: space-between;
+      gap: 24px;
+      margin-bottom: 22px;
+    }
+
+    .flow h2 {
+      max-width: 590px;
+      font-size: 36px;
+    }
+
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      height: 32px;
+      padding: 0 12px;
+      border-radius: 999px;
+      background: rgba(146, 223, 186, .22);
+      color: var(--teal);
+      font-size: 11px;
+      font-weight: 950;
+      letter-spacing: .1em;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+
+    .steps {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+    }
+
+    .step {
+      min-height: 185px;
+      padding: 22px;
+      border: 1px solid rgba(13, 37, 40, .11);
+      border-radius: var(--radius);
+      background: #fffdf7;
+    }
+
+    .step-number {
+      display: grid;
+      width: 42px;
+      height: 42px;
+      place-items: center;
+      margin-bottom: 22px;
+      border-radius: var(--radius);
+      background: var(--deep);
+      color: var(--mint);
+      font-weight: 950;
+    }
+
+    .step strong {
+      display: block;
+      margin-top: 8px;
+      font-family: var(--serif);
+      font-size: 22px;
+      line-height: 1.12;
+    }
+
+    .contact {
+      padding: 30px;
+      color: white;
+      background:
+        radial-gradient(circle at 90% 10%, rgba(225, 173, 76, .22), transparent 32%),
+        linear-gradient(180deg, rgba(33, 95, 85, .98), rgba(23, 59, 62, .98));
+    }
+
+    .contact .section-label {
+      color: var(--mint);
+    }
+
+    .contact h2 {
+      color: white;
+      font-size: 36px;
+    }
+
+    .contact p {
+      margin: 16px 0 0;
+      color: rgba(255, 250, 240, .72);
+      line-height: 1.55;
+    }
+
+    .contact-list {
+      display: grid;
+      gap: 12px;
+      margin-top: 26px;
+    }
+
+    .contact-box {
+      padding: 16px;
+      border: 1px solid rgba(255, 250, 240, .14);
+      border-radius: var(--radius);
+      background: rgba(255, 250, 240, .08);
+    }
+
+    .contact-box span {
+      color: rgba(146, 223, 186, .88);
+    }
+
+    .contact-box strong {
+      display: block;
+      margin-top: 5px;
+      overflow-wrap: anywhere;
+    }
+  </style>
+</head>
+<body>
+  <div class="preview">
+    <header class="topbar shell">
+      <a class="brand" href="#">
+        <span class="brand-mark"><span>FS</span></span>
+        <span class="wordmark">
+          <strong>Mundo F&S</strong>
+          <small>Marketplace distribution</small>
+        </span>
+      </a>
+
+      <nav class="nav" aria-label="Navegacao principal">
+        <a class="active" href="#">Operacao</a>
+        <a href="#">Seguranca</a>
+        <a href="#">Termos</a>
+        <a href="#">Contato</a>
+        <a href="#">EN</a>
+      </nav>
+    </header>
+
+    <main class="shell">
+      <section class="hero">
+        <div class="hero-copy">
+          <span class="eyebrow">Distribuicao em marketplace</span>
+          <h1>Operacao digital para marcas que querem vender melhor.</h1>
+          <p class="hero-text">
+            A Mundo F&S conecta catalogo, disponibilidade, anuncios e logistica
+            em uma operacao clara para marketplaces, com foco em Amazon Brasil.
+          </p>
+
+          <div class="actions">
+            <a class="btn btn-primary" href="#">
+              <span class="btn-icon">></span>
+              Contato oficial
+            </a>
+            <a class="btn btn-secondary" href="#">
+              <span class="btn-icon">✓</span>
+              Ver seguranca
+            </a>
+          </div>
+
+          <div class="proof">
+            <div class="proof-card">
+              <span>Foco operacional</span>
+              <strong>Amazon Brasil</strong>
+            </div>
+            <div class="proof-card">
+              <span>Logistica</span>
+              <strong>FBA Classic</strong>
+            </div>
+            <div class="proof-card">
+              <span>Modelo</span>
+              <strong>Distribuicao digital</strong>
+            </div>
+            <div class="proof-card">
+              <span>Governanca</span>
+              <strong>Canais oficiais</strong>
+            </div>
+          </div>
+        </div>
+
+        <aside class="visual" aria-label="Visual marketplace Mundo F&S">
+          <div class="scene-header">
+            <div>
+              <span class="scene-label">Command layer</span>
+              <strong class="scene-title">Catalogo, estoque e marketplace</strong>
+            </div>
+            <span class="scene-badge">Amazon Brasil</span>
+          </div>
+
+          <div class="market-map">
+            <span class="map-line line-a"></span>
+            <span class="map-line line-b"></span>
+            <span class="map-line line-c"></span>
+
+            <div class="node hub">
+              <span class="hub-mark">FS</span>
+            </div>
+            <div class="node card-a"><span class="box-icon"></span></div>
+            <div class="node card-b">
+              <span class="card-lines"><i></i><i></i><i></i></span>
+            </div>
+            <div class="node card-c">
+              <span class="card-lines"><i></i><i></i><i></i></span>
+            </div>
+            <div class="node card-d"><span class="box-icon"></span></div>
+          </div>
+
+          <div class="dashboard-card">
+            <div class="dash-tile">
+              <span>Catalogo</span>
+              <strong>Ofertas ativas</strong>
+            </div>
+            <div class="dash-tile">
+              <span>Disponibilidade</span>
+              <strong>Estoque monitorado</strong>
+            </div>
+            <div class="dash-tile">
+              <span>Canal</span>
+              <strong>Marketplace</strong>
+            </div>
+          </div>
+        </aside>
+      </section>
+
+      <section class="section-grid">
+        <article class="panel">
+          <span class="section-label">Identidade mais forte</span>
+          <h2>Mais marca, mais confianca, mais calor humano.</h2>
+          <p>
+            A nova proposta troca a leitura de site documental por uma presenca
+            de empresa ativa: visual limpo, assinatura propria e pontos de
+            confianca logo na primeira dobra.
+          </p>
+        </article>
+
+        <div class="tiles">
+          <div class="tile">
+            <span>Logo</span>
+            <strong>Monograma FS</strong>
+            <p>Marca mais simples, memoravel e legivel em telas pequenas.</p>
+          </div>
+          <div class="tile">
+            <span>Botoes</span>
+            <strong>CTAs premium</strong>
+            <p>Icones, contraste e hierarquia mais claros para acao.</p>
+          </div>
+          <div class="tile">
+            <span>Imagem central</span>
+            <strong>Cena propria</strong>
+            <p>Visual de operacao marketplace com linguagem mais sofisticada.</p>
+          </div>
+          <div class="tile">
+            <span>Tom</span>
+            <strong>Studio comercial</strong>
+            <p>Aconchegante, institucional e pronto para parceria.</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="bottom">
+        <article class="flow">
+          <div class="flow-head">
+            <div>
+              <span class="section-label">Fluxo comercial</span>
+              <h2>Da curadoria ao marketplace, com rastreabilidade.</h2>
+            </div>
+            <span class="tag">Operacao independente</span>
+          </div>
+
+          <div class="steps">
+            <div class="step">
+              <div class="step-number">01</div>
+              <span>Curadoria</span>
+              <strong>Produtos e fornecedores selecionados</strong>
+            </div>
+            <div class="step">
+              <div class="step-number">02</div>
+              <span>Catalogo</span>
+              <strong>Anuncios, ofertas e disponibilidade</strong>
+            </div>
+            <div class="step">
+              <div class="step-number">03</div>
+              <span>Logistica</span>
+              <strong>Preparacao e acompanhamento FBA</strong>
+            </div>
+          </div>
+        </article>
+
+        <aside class="contact">
+          <span class="section-label">Canais oficiais</span>
+          <h2>Contato sem friccao.</h2>
+          <p>
+            A area de contato fica mais objetiva, preservando os dados oficiais
+            e separando o site publico dos sistemas internos.
+          </p>
+
+          <div class="contact-list">
+            <div class="contact-box">
+              <span>E-mail</span>
+              <strong>Admfsmundo@gmail.com</strong>
+            </div>
+            <div class="contact-box">
+              <span>Telefones</span>
+              <strong>(31) 99771-0655 / (31) 99855-7225</strong>
+            </div>
+          </div>
+        </aside>
+      </section>
+    </main>
+  </div>
+</body>
+</html>

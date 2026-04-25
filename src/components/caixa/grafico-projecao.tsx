@@ -4,6 +4,7 @@ import {
   Area,
   AreaChart,
   CartesianGrid,
+  Legend,
   ReferenceLine,
   ResponsiveContainer,
   Tooltip,
@@ -24,19 +25,20 @@ function formatEixoY(centavos: number): string {
 
 type TooltipProps = {
   active?: boolean;
-  payload?: Array<{ value: number }>;
+  payload?: Array<{ name: string; value: number; color: string }>;
   label?: string;
 };
 
 function TooltipPersonalizado({ active, payload, label }: TooltipProps) {
   if (!active || !payload?.length) return null;
-  const valor = payload[0]!.value;
   return (
-    <div className="rounded border bg-background px-3 py-2 text-sm shadow">
+    <div className="rounded border bg-background px-3 py-2 text-sm shadow space-y-1">
       <p className="font-medium">{label}</p>
-      <p className={valor < 0 ? "text-destructive" : "text-green-600"}>
-        {formatBRL(valor)}
-      </p>
+      {payload.map((p) => (
+        <p key={p.name} style={{ color: p.color }}>
+          {p.name}: {formatBRL(p.value)}
+        </p>
+      ))}
     </div>
   );
 }
@@ -61,32 +63,35 @@ export function GraficoProjecao() {
 
   const pontos = data?.projecao ?? [];
 
-  // Cor da área: vermelha se algum ponto projetado for negativo
   const temNegativo = pontos.some((p) => p.saldoCentavos < 0);
-  const corArea = temNegativo ? "#ef4444" : "#22c55e";
-  const corAreaFill = temNegativo ? "#fee2e2" : "#dcfce7";
+  const corTotal = temNegativo ? "#ef4444" : "#22c55e";
+  const corTotalFill = temNegativo ? "#fee2e2" : "#dcfce7";
+  const corBase = "#3b82f6";
+
+  const chartData = pontos.map((p) => ({
+    name: p.label,
+    "Com Amazon": p.saldoCentavos,
+    "Base s/ Amazon": p.saldoBaseCentavos ?? p.saldoCentavos,
+  }));
 
   return (
     <Card>
       <CardHeader className="pb-2">
         <CardTitle className="text-sm font-medium">Projeção de caixa</CardTitle>
         <p className="text-xs text-muted-foreground">
-          Saldo projetado após pagamento das contas em aberto por janela de tempo
+          Saldo projetado após contas a pagar e liquidações Amazon previstas
         </p>
       </CardHeader>
       <CardContent>
         <ResponsiveContainer width="100%" height={200}>
           <AreaChart
-            data={pontos.map((p) => ({
-              name: p.label,
-              saldo: p.saldoCentavos,
-            }))}
+            data={chartData}
             margin={{ top: 8, right: 8, left: 8, bottom: 0 }}
           >
             <defs>
-              <linearGradient id="gradSaldo" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor={corArea} stopOpacity={0.3} />
-                <stop offset="95%" stopColor={corAreaFill} stopOpacity={0} />
+              <linearGradient id="gradTotal" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="5%" stopColor={corTotal} stopOpacity={0.25} />
+                <stop offset="95%" stopColor={corTotalFill} stopOpacity={0} />
               </linearGradient>
             </defs>
             <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
@@ -102,14 +107,27 @@ export function GraficoProjecao() {
               className="text-muted-foreground"
             />
             <Tooltip content={<TooltipPersonalizado />} />
+            <Legend
+              wrapperStyle={{ fontSize: 11, paddingTop: 4 }}
+            />
             <ReferenceLine y={0} stroke="#94a3b8" strokeDasharray="4 2" />
             <Area
               type="monotone"
-              dataKey="saldo"
-              stroke={corArea}
+              dataKey="Base s/ Amazon"
+              stroke={corBase}
+              strokeWidth={1.5}
+              strokeDasharray="5 3"
+              fill="none"
+              dot={false}
+              activeDot={{ r: 4 }}
+            />
+            <Area
+              type="monotone"
+              dataKey="Com Amazon"
+              stroke={corTotal}
               strokeWidth={2}
-              fill="url(#gradSaldo)"
-              dot={{ r: 4, fill: corArea }}
+              fill="url(#gradTotal)"
+              dot={{ r: 4, fill: corTotal }}
               activeDot={{ r: 5 }}
             />
           </AreaChart>

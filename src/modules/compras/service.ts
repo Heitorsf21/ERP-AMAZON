@@ -10,7 +10,10 @@ import {
   type ReceberPedidoInput,
 } from "./schemas";
 import { StatusPedidoCompra, StatusReposicao } from "@/modules/shared/domain";
-import { addDays } from "date-fns";
+import { addDays, subDays } from "date-fns";
+
+const COBERTURA_DIAS = 60;
+const URGENTE_DIAS = 15;
 
 export const comprasService = {
   async listar(filtros: { status?: string }) {
@@ -131,18 +134,95 @@ export const comprasService = {
   },
 
   async sugestoes() {
-    const produtos = await comprasRepository.sugestoes();
-    return produtos
+    const desde = subDays(new Date(), 30);
+
+    const [produtos, vendas30d] = await Promise.all([
+      db.produto.findMany({
+        where: { ativo: true },
+        select: {
+          id: true,
+          sku: true,
+          asin: true,
+          nome: true,
+          estoqueAtual: true,
+          estoqueMinimo: true,
+          custoUnitario: true,
+          unidade: true,
+        },
+        orderBy: { estoqueAtual: "asc" },
+      }),
+      db.vendaAmazon.groupBy({
+        by: ["sku"],
+        where: {
+          dataVenda: { gte: desde },
+          statusPedido: { notIn: ["Canceled", "REEMBOLSADO"] },
+        },
+        _sum: { quantidade: true },
+      }),
+    ]);
+
+    const vendasPorSku = new Map(
+      vendas30d.map((v) => [v.sku, v._sum.quantidade ?? 0]),
+    );
+
+    const hoje = new Date();
+
+    const sugestoes = produtos
       .map((p) => {
+        const vendido30d = vendasPorSku.get(p.sku) ?? 0;
+        const unidadesPorDia = vendido30d / 30;
+        const diasEstoque =
+          unidadesPorDia > 0
+            ? Math.floor(p.estoqueAtual / unidadesPorDia)
+            : null;
+
+        // Prioridade pela velocidade de vendas
         let statusReposicao: string = StatusReposicao.OK;
-        if (p.estoqueMinimo > 0) {
+        if (diasEstoque !== null) {
+          if (diasEstoque < URGENTE_DIAS) statusReposicao = StatusReposicao.REPOR;
+          else if (diasEstoque < COBERTURA_DIAS) statusReposicao = StatusReposicao.ATENCAO;
+        } else if (p.estoqueMinimo > 0) {
+          // Fallback: sem dados de velocidade, usa estoqueMinimo
           if (p.estoqueAtual <= p.estoqueMinimo) statusReposicao = StatusReposicao.REPOR;
           else if (p.estoqueAtual <= p.estoqueMinimo * 1.5)
             statusReposicao = StatusReposicao.ATENCAO;
         }
-        return { ...p, statusReposicao };
+
+        // Quantidade sugerida para cobertura de 60 dias
+        const qtdSugerida =
+          unidadesPorDia > 0
+            ? Math.max(0, Math.ceil(COBERTURA_DIAS * unidadesPorDia) - p.estoqueAtual)
+            : p.estoqueMinimo > 0
+              ? Math.max(p.estoqueMinimo * 2 - p.estoqueAtual, p.estoqueMinimo)
+              : 0;
+
+        // Data estimada de ruptura
+        const dataRuptura =
+          diasEstoque !== null
+            ? new Date(hoje.getTime() + diasEstoque * 86_400_000).toISOString()
+            : null;
+
+        return {
+          ...p,
+          statusReposicao,
+          vendido30d,
+          unidadesPorDia: Math.round(unidadesPorDia * 10) / 10,
+          diasEstoque,
+          dataRuptura,
+          qtdSugerida,
+        };
       })
       .filter((p) => p.statusReposicao !== StatusReposicao.OK);
+
+    // Ordena: REPOR (urgente) primeiro, depois ATENCAO; dentro de cada grupo por diasEstoque asc
+    return sugestoes.sort((a, b) => {
+      if (a.statusReposicao !== b.statusReposicao) {
+        return a.statusReposicao === StatusReposicao.REPOR ? -1 : 1;
+      }
+      const dA = a.diasEstoque ?? 9999;
+      const dB = b.diasEstoque ?? 9999;
+      return dA - dB;
+    });
   },
 
   async totais() {

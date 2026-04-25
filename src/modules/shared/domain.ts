@@ -139,7 +139,10 @@ export type StatusAmazonSync =
 
 export const TipoAmazonSync = {
   ORDERS: "ORDERS",
+  FINANCES: "FINANCES",
+  REFUNDS: "REFUNDS",
   INVENTORY: "INVENTORY",
+  BACKFILL: "BACKFILL",
   REVIEWS: "REVIEWS",
   TEST: "TEST",
   ALL: "ALL",
@@ -147,15 +150,48 @@ export const TipoAmazonSync = {
 export type TipoAmazonSync =
   (typeof TipoAmazonSync)[keyof typeof TipoAmazonSync];
 
+export const TipoAmazonSyncJob = {
+  ORDERS_SYNC: "ORDERS_SYNC",
+  FINANCES_SYNC: "FINANCES_SYNC",
+  INVENTORY_SYNC: "INVENTORY_SYNC",
+  REFUNDS_SYNC: "REFUNDS_SYNC",
+  REVIEWS_DISCOVERY: "REVIEWS_DISCOVERY",
+  REVIEWS_SEND: "REVIEWS_SEND",
+  REPORTS_BACKFILL: "REPORTS_BACKFILL",
+} as const;
+export type TipoAmazonSyncJob =
+  (typeof TipoAmazonSyncJob)[keyof typeof TipoAmazonSyncJob];
+
+export const StatusAmazonSyncJob = {
+  QUEUED: "QUEUED",
+  RUNNING: "RUNNING",
+  SUCCESS: "SUCCESS",
+  FAILED: "FAILED",
+  CANCELLED: "CANCELLED",
+} as const;
+export type StatusAmazonSyncJob =
+  (typeof StatusAmazonSyncJob)[keyof typeof StatusAmazonSyncJob];
+
 export const StatusAmazonReviewSolicitation = {
   PENDENTE: "PENDENTE",
+  AGUARDANDO: "AGUARDANDO",
   ELEGIVEL: "ELEGIVEL",
   ENVIADO: "ENVIADO",
+  JA_SOLICITADO: "JA_SOLICITADO",
   NAO_ELEGIVEL: "NAO_ELEGIVEL",
+  EXPIRADO: "EXPIRADO",
   ERRO: "ERRO",
 } as const;
 export type StatusAmazonReviewSolicitation =
   (typeof StatusAmazonReviewSolicitation)[keyof typeof StatusAmazonReviewSolicitation];
+
+export const OrigemAmazonReviewSolicitation = {
+  BACKFILL: "BACKFILL",
+  DAILY: "DAILY",
+  MANUAL: "MANUAL",
+} as const;
+export type OrigemAmazonReviewSolicitation =
+  (typeof OrigemAmazonReviewSolicitation)[keyof typeof OrigemAmazonReviewSolicitation];
 
 // Derivado em runtime, nunca persistido no banco
 export const StatusReposicao = {

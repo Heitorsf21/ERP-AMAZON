@@ -14,47 +14,73 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     const pagina = Math.max(1, Number(searchParams.get("pagina") ?? "1"));
     const porPagina = 50;
 
-    const where: Prisma.VendaFBAWhereInput = {};
+    const where: Prisma.VendaAmazonWhereInput = {};
 
     if (de || ate) {
-      where.dataCompra = {};
-      if (de) where.dataCompra.gte = new Date(de);
+      where.dataVenda = {};
+      if (de) where.dataVenda.gte = new Date(de);
       if (ate) {
         const fim = new Date(ate);
         fim.setHours(23, 59, 59, 999);
-        where.dataCompra.lte = fim;
+        where.dataVenda.lte = fim;
       }
     }
     if (sku) {
-      where.skuExterno = { contains: sku };
+      where.sku = { contains: sku };
     }
     if (status && status !== "todos") {
-      where.status = status;
+      where.OR = [{ statusPedido: status }, { statusFinanceiro: status }];
     }
 
     const [total, vendas] = await Promise.all([
-      db.vendaFBA.count({ where }),
-      db.vendaFBA.findMany({
+      db.vendaAmazon.count({ where }),
+      db.vendaAmazon.findMany({
         where,
-        orderBy: { dataCompra: "desc" },
+        orderBy: { dataVenda: "desc" },
         skip: (pagina - 1) * porPagina,
         take: porPagina,
         select: {
           id: true,
-          numeroPedido: true,
+          amazonOrderId: true,
+          orderItemId: true,
           marketplace: true,
-          status: true,
-          dataCompra: true,
-          skuExterno: true,
+          statusPedido: true,
+          statusFinanceiro: true,
+          dataVenda: true,
+          sku: true,
+          asin: true,
           titulo: true,
           quantidade: true,
           precoUnitarioCentavos: true,
-          totalCentavos: true,
+          valorBrutoCentavos: true,
+          taxasCentavos: true,
+          fretesCentavos: true,
+          liquidoMarketplaceCentavos: true,
+          custoUnitarioCentavos: true,
+          liquidacaoId: true,
+          fulfillmentChannel: true,
+          ultimaSyncEm: true,
         },
       }),
     ]);
 
-    return NextResponse.json({ vendas, total, pagina, porPagina });
+    const vendasFormatadas = vendas.map((venda) => ({
+      ...venda,
+      numeroPedido: venda.amazonOrderId,
+      status: venda.statusPedido,
+      dataCompra: venda.dataVenda,
+      skuExterno: venda.sku,
+      totalCentavos:
+        venda.valorBrutoCentavos ??
+        venda.precoUnitarioCentavos * venda.quantidade,
+    }));
+
+    return NextResponse.json({
+      vendas: vendasFormatadas,
+      total,
+      pagina,
+      porPagina,
+    });
   } catch (err) {
     console.error("[GET /api/vendas]", err);
     return NextResponse.json({ erro: "Erro interno" }, { status: 500 });

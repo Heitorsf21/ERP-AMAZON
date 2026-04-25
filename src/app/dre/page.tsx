@@ -9,6 +9,8 @@ import {
   BarChart3,
   Minus,
   ChevronRight,
+  Printer,
+  CalendarDays,
 } from "lucide-react";
 import {
   BarChart,
@@ -56,7 +58,27 @@ type DREData = {
   quantidadeLiquidacoes: number;
 };
 
-type Preset = "mes-atual" | "mes-anterior" | "trimestre" | "ano" | "custom";
+type Preset = "mes-atual" | "mes-anterior" | "trimestre" | "ano" | "custom" | "anual";
+
+type MesDRE = {
+  mes: number;
+  nome: string;
+  de: string;
+  ate: string;
+  vazio: boolean;
+  totalReceitas?: number;
+  receitaLiquida?: number;
+  margemBruta?: number;
+  resultadoFinal?: number;
+  custoMercadorias?: number;
+  roi?: number;
+  percentualMargemBruta?: number;
+};
+
+type DREAnualData = {
+  ano: number;
+  meses: MesDRE[];
+};
 
 // ── Helpers de período ─────────────────────────────────────────────────────────
 function pad(n: number) {
@@ -222,9 +244,13 @@ export default function DREPage() {
   const [preset, setPreset] = React.useState<Preset>("mes-atual");
   const [customDe, setCustomDe] = React.useState("");
   const [customAte, setCustomAte] = React.useState("");
+  const [anoAnual, setAnoAnual] = React.useState(new Date().getFullYear());
+
+  const modoAnual = preset === "anual";
 
   const { de, ate } = React.useMemo(() => {
     if (preset === "custom") return { de: customDe, ate: customAte };
+    if (preset === "anual") return { de: "", ate: "" };
     return getPeriodo(preset);
   }, [preset, customDe, customAte]);
 
@@ -235,7 +261,13 @@ export default function DREPage() {
   const { data, isLoading } = useQuery<DREData>({
     queryKey: ["dre-resumo", de, ate],
     queryFn: () => fetchJSON<DREData>(`/api/dre/resumo?${params.toString()}`),
-    enabled: !!de && !!ate,
+    enabled: !modoAnual && !!de && !!ate,
+  });
+
+  const { data: dataAnual, isLoading: isLoadingAnual } = useQuery<DREAnualData>({
+    queryKey: ["dre-anual", anoAnual],
+    queryFn: () => fetchJSON<DREAnualData>(`/api/dre/resumo?modo=mensal&ano=${anoAnual}`),
+    enabled: modoAnual,
   });
 
   const presets: { key: Preset; label: string }[] = [
@@ -243,6 +275,7 @@ export default function DREPage() {
     { key: "mes-anterior", label: "Mês anterior" },
     { key: "trimestre", label: "Este trimestre" },
     { key: "ano", label: "Este ano" },
+    { key: "anual", label: "Anual (12 meses)" },
     { key: "custom", label: "Personalizado" },
   ];
 
@@ -268,10 +301,21 @@ export default function DREPage() {
         title="DRE"
         description="Demonstração do Resultado do Exercício — visão financeira consolidada."
       >
-        <Badge variant="outline" className="gap-1">
-          <BarChart3 className="h-3 w-3" />
-          Analítico
-        </Badge>
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => window.print()}
+            className="print:hidden"
+          >
+            <Printer className="mr-2 h-4 w-4" />
+            Imprimir
+          </Button>
+          <Badge variant="outline" className="gap-1">
+            <BarChart3 className="h-3 w-3" />
+            Analítico
+          </Badge>
+        </div>
       </PageHeader>
 
       {/* Seletor de período */}
@@ -311,7 +355,138 @@ export default function DREPage() {
         </div>
       )}
 
-      {isLoading && (
+      {/* Modo anual: seletor de ano + tabela comparativa */}
+      {modoAnual && (
+        <div className="flex items-center gap-3 print:hidden">
+          <Button
+            variant="outline"
+            size="icon"
+            className="h-8 w-8"
+            onClick={() => setAnoAnual((a) => a - 1)}
+          >
+            &lt;
+          </Button>
+          <span className="w-16 text-center text-sm font-medium">{anoAnual}</span>
+          <Button
+            variant="outline"
+            size="icon"
+            className="h-8 w-8"
+            onClick={() => setAnoAnual((a) => a + 1)}
+            disabled={anoAnual >= new Date().getFullYear()}
+          >
+            &gt;
+          </Button>
+        </div>
+      )}
+
+      {modoAnual && (isLoadingAnual ? (
+        <Skeleton className="h-64 w-full rounded-xl" />
+      ) : dataAnual ? (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <CalendarDays className="h-4 w-4 text-muted-foreground" />
+              Comparativo Mensal — {dataAnual.ano}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-0 overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="border-b border-border bg-muted/40">
+                  <th className="py-2.5 pl-4 text-left font-medium text-muted-foreground w-28">Métrica</th>
+                  {dataAnual.meses.map((m) => (
+                    <th key={m.mes} className="py-2.5 px-3 text-right font-medium text-muted-foreground min-w-[80px]">
+                      {m.nome}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {[
+                  {
+                    label: "Receita bruta",
+                    key: "totalReceitas" as keyof MesDRE,
+                    fmt: "brl",
+                  },
+                  {
+                    label: "Receita líquida",
+                    key: "receitaLiquida" as keyof MesDRE,
+                    fmt: "brl",
+                  },
+                  {
+                    label: "CMV",
+                    key: "custoMercadorias" as keyof MesDRE,
+                    fmt: "brl",
+                    negativo: true,
+                  },
+                  {
+                    label: "Margem bruta",
+                    key: "margemBruta" as keyof MesDRE,
+                    fmt: "brl",
+                    colorir: true,
+                  },
+                  {
+                    label: "Margem %",
+                    key: "percentualMargemBruta" as keyof MesDRE,
+                    fmt: "pct",
+                    colorir: true,
+                  },
+                  {
+                    label: "Resultado",
+                    key: "resultadoFinal" as keyof MesDRE,
+                    fmt: "brl",
+                    colorir: true,
+                    negrito: true,
+                  },
+                  {
+                    label: "ROI",
+                    key: "roi" as keyof MesDRE,
+                    fmt: "pct",
+                    colorir: true,
+                  },
+                ].map((row) => (
+                  <tr
+                    key={row.key}
+                    className={cn(
+                      "border-t border-border/30 hover:bg-muted/20",
+                      row.negrito && "bg-muted/30 font-semibold",
+                    )}
+                  >
+                    <td className={cn("py-2 pl-4 text-muted-foreground", row.negrito && "font-semibold text-foreground")}>
+                      {row.label}
+                    </td>
+                    {dataAnual.meses.map((m) => {
+                      const val = m.vazio ? null : (m[row.key] as number | undefined) ?? null;
+                      const texto =
+                        val == null
+                          ? "—"
+                          : row.fmt === "brl"
+                            ? formatBRL(Math.abs(val))
+                            : `${val.toFixed(1)}%`;
+                      const positivo = val != null && val >= 0;
+                      return (
+                        <td
+                          key={m.mes}
+                          className={cn(
+                            "py-2 px-3 text-right tabular-nums",
+                            val == null && "text-muted-foreground/40",
+                            row.colorir && val != null && positivo && "text-emerald-600 dark:text-emerald-400",
+                            row.colorir && val != null && !positivo && "text-destructive",
+                          )}
+                        >
+                          {row.negativo && val ? `−${texto}` : texto}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </CardContent>
+        </Card>
+      ) : null)}
+
+      {!modoAnual && isLoading && (
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
             {Array.from({ length: 4 }).map((_, i) => (
@@ -322,7 +497,7 @@ export default function DREPage() {
         </div>
       )}
 
-      {!isLoading && d && (
+      {!modoAnual && !isLoading && d && (
         <>
           {/* KPI Cards */}
           <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
@@ -647,7 +822,7 @@ export default function DREPage() {
         </>
       )}
 
-      {!isLoading && !d && (
+      {!modoAnual && !isLoading && !d && (
         <div className="flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed bg-muted/20 py-20 text-center">
           <BarChart3 className="h-8 w-8 text-muted-foreground/40" />
           <p className="text-sm text-muted-foreground">

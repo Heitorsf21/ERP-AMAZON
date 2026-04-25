@@ -1,0 +1,1017 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ERP Amazon - Conceitos Visuais</title>
+  <script>
+    document.documentElement.dataset.view =
+      new URLSearchParams(location.search).get("view") || "atlas";
+  </script>
+  <style>
+    :root {
+      --font: "Bahnschrift", "Aptos", "Segoe UI Variable", "Segoe UI", sans-serif;
+      --mono: "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      margin: 0;
+      min-height: 100%;
+      font-family: var(--font);
+      letter-spacing: 0;
+    }
+
+    body {
+      display: grid;
+      place-items: center;
+      background: #111;
+    }
+
+    .concept {
+      width: 1600px;
+      height: 1080px;
+      overflow: hidden;
+    }
+
+    html[data-view="atlas"] .concept:not(#atlas),
+    html[data-view="night"] .concept:not(#night),
+    html[data-view="studio"] .concept:not(#studio) {
+      display: none;
+    }
+
+    .screen {
+      display: grid;
+      width: 100%;
+      height: 100%;
+    }
+
+    .sidebar {
+      padding: 22px 18px;
+      color: white;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 34px;
+    }
+
+    .mark {
+      display: grid;
+      width: 40px;
+      height: 40px;
+      place-items: center;
+      border-radius: 8px;
+      font-weight: 800;
+    }
+
+    .brand strong {
+      display: block;
+      font-size: 15px;
+      line-height: 1;
+    }
+
+    .brand span {
+      display: block;
+      margin-top: 5px;
+      font-size: 10px;
+      letter-spacing: .18em;
+      text-transform: uppercase;
+      opacity: .54;
+    }
+
+    .nav-section {
+      margin: 20px 0 10px;
+      padding-left: 10px;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: .17em;
+      text-transform: uppercase;
+      opacity: .42;
+    }
+
+    .nav-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      height: 40px;
+      padding: 0 12px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 700;
+      color: currentColor;
+      opacity: .78;
+    }
+
+    .nav-item.active {
+      opacity: 1;
+    }
+
+    .nav-dot {
+      width: 18px;
+      height: 18px;
+      border-radius: 6px;
+      border: 1px solid currentColor;
+      opacity: .7;
+    }
+
+    .content {
+      min-width: 0;
+      padding: 28px 34px 34px;
+    }
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 56px;
+      margin-bottom: 26px;
+    }
+
+    .search {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-width: 410px;
+      height: 40px;
+      padding: 0 14px;
+      border-radius: 8px;
+      font-size: 13px;
+    }
+
+    .profile {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .avatar {
+      display: grid;
+      width: 34px;
+      height: 34px;
+      place-items: center;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    .hero {
+      display: grid;
+      grid-template-columns: 1.1fr .9fr;
+      gap: 24px;
+      min-height: 178px;
+      padding: 26px;
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    .eyebrow {
+      margin: 0 0 10px;
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: .2em;
+      text-transform: uppercase;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 40px;
+      line-height: 1.05;
+      letter-spacing: 0;
+    }
+
+    .hero-copy {
+      margin: 12px 0 0;
+      max-width: 620px;
+      font-size: 15px;
+      line-height: 1.5;
+    }
+
+    .actions {
+      display: flex;
+      gap: 10px;
+      margin-top: 22px;
+    }
+
+    .button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      height: 38px;
+      padding: 0 15px;
+      border-radius: 8px;
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    .hero-panel {
+      align-self: stretch;
+      padding: 18px;
+      border-radius: 8px;
+    }
+
+    .mini-label {
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+      opacity: .6;
+    }
+
+    .mini-value {
+      margin-top: 8px;
+      font-size: 28px;
+      font-weight: 800;
+      line-height: 1;
+    }
+
+    .sparkline {
+      position: relative;
+      height: 54px;
+      margin-top: 18px;
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    .sparkline svg {
+      width: 100%;
+      height: 100%;
+    }
+
+    .kpis {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 14px;
+      margin-top: 18px;
+    }
+
+    .kpi,
+    .panel,
+    .table-panel,
+    .metric-card,
+    .seller-card {
+      border-radius: 8px;
+    }
+
+    .kpi {
+      position: relative;
+      min-height: 116px;
+      padding: 16px;
+      overflow: hidden;
+    }
+
+    .kpi .label {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 18px;
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+    }
+
+    .kpi .value {
+      font-size: 26px;
+      font-weight: 800;
+      line-height: 1;
+      white-space: nowrap;
+    }
+
+    .kpi .sub {
+      margin-top: 8px;
+      font-size: 12px;
+    }
+
+    .main-grid {
+      display: grid;
+      grid-template-columns: 1.45fr .9fr;
+      gap: 18px;
+      margin-top: 18px;
+    }
+
+    .panel {
+      padding: 20px;
+    }
+
+    .panel-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 18px;
+    }
+
+    .panel h2 {
+      margin: 0;
+      font-size: 17px;
+      letter-spacing: 0;
+    }
+
+    .panel small {
+      font-size: 12px;
+      opacity: .56;
+    }
+
+    .chart {
+      position: relative;
+      height: 245px;
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    .chart svg {
+      width: 100%;
+      height: 100%;
+    }
+
+    .chart-axis {
+      position: absolute;
+      inset: 18px 16px 28px 42px;
+      opacity: .25;
+      background-image:
+        linear-gradient(to right, currentColor 1px, transparent 1px),
+        linear-gradient(to bottom, currentColor 1px, transparent 1px);
+      background-size: 78px 42px;
+    }
+
+    .stack {
+      display: grid;
+      gap: 12px;
+    }
+
+    .task {
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      align-items: center;
+      gap: 12px;
+      padding: 12px;
+      border-radius: 8px;
+    }
+
+    .status {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      height: 24px;
+      padding: 0 9px;
+      border-radius: 999px;
+      font-size: 10px;
+      font-weight: 800;
+      letter-spacing: .06em;
+      text-transform: uppercase;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+    }
+
+    th {
+      padding: 0 0 10px;
+      text-align: left;
+      font-size: 10px;
+      font-weight: 800;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+      opacity: .46;
+    }
+
+    td {
+      padding: 12px 0;
+      border-top: 1px solid currentColor;
+    }
+
+    .right {
+      text-align: right;
+    }
+
+    /* Concept 1: Atlas Executive */
+    #atlas {
+      background: #f2f0e8;
+      color: #171915;
+    }
+
+    #atlas .screen {
+      grid-template-columns: 256px 1fr;
+      background:
+        linear-gradient(90deg, rgba(25, 25, 22, .035) 1px, transparent 1px),
+        linear-gradient(180deg, rgba(25, 25, 22, .035) 1px, transparent 1px),
+        #f2f0e8;
+      background-size: 28px 28px;
+    }
+
+    #atlas .sidebar {
+      background: #141511;
+      border-right: 1px solid rgba(255, 255, 255, .08);
+    }
+
+    #atlas .mark {
+      background: #ff9900;
+      color: #141511;
+      box-shadow: 0 0 0 1px rgba(255, 255, 255, .14) inset;
+    }
+
+    #atlas .nav-item.active {
+      background: #fff7df;
+      color: #181610;
+    }
+
+    #atlas .nav-item:not(.active) {
+      color: rgba(255, 255, 255, .78);
+    }
+
+    #atlas .topbar {
+      color: #171915;
+    }
+
+    #atlas .search {
+      background: rgba(255, 255, 255, .74);
+      border: 1px solid rgba(32, 31, 26, .12);
+      box-shadow: 0 10px 32px rgba(45, 38, 22, .06);
+      color: rgba(23, 25, 21, .58);
+    }
+
+    #atlas .avatar {
+      background: #141511;
+      color: #ffcc73;
+    }
+
+    #atlas .hero,
+    #atlas .kpi,
+    #atlas .panel {
+      background: rgba(255, 255, 255, .82);
+      border: 1px solid rgba(35, 31, 23, .1);
+      box-shadow: 0 18px 50px rgba(34, 31, 23, .09);
+    }
+
+    #atlas .hero {
+      background:
+        linear-gradient(135deg, rgba(255, 153, 0, .18), transparent 37%),
+        linear-gradient(120deg, rgba(17, 25, 21, .97), rgba(25, 29, 24, .93)),
+        #171915;
+      color: #fffaf0;
+    }
+
+    #atlas .eyebrow {
+      color: #ffbd4a;
+    }
+
+    #atlas .hero-copy {
+      color: rgba(255, 250, 240, .72);
+    }
+
+    #atlas .button.primary {
+      background: #ff9900;
+      color: #171915;
+    }
+
+    #atlas .button.secondary {
+      border: 1px solid rgba(255, 255, 255, .18);
+      color: #fffaf0;
+    }
+
+    #atlas .hero-panel {
+      background: rgba(255, 255, 255, .08);
+      border: 1px solid rgba(255, 255, 255, .14);
+    }
+
+    #atlas .sparkline {
+      background: rgba(255, 255, 255, .08);
+      color: #ffbd4a;
+    }
+
+    #atlas .kpi .label {
+      color: rgba(23, 25, 21, .54);
+    }
+
+    #atlas .kpi .sub {
+      color: rgba(23, 25, 21, .55);
+    }
+
+    #atlas .kpi::before {
+      content: "";
+      position: absolute;
+      inset: 0 auto 0 0;
+      width: 4px;
+      background: var(--accent);
+    }
+
+    #atlas .chart {
+      color: #171915;
+      background: #fbfaf5;
+    }
+
+    #atlas .task {
+      background: #f7f4ea;
+      border: 1px solid rgba(35, 31, 23, .08);
+    }
+
+    #atlas .status.ok {
+      background: rgba(15, 159, 110, .12);
+      color: #0b7c55;
+    }
+
+    #atlas .status.warn {
+      background: rgba(255, 153, 0, .16);
+      color: #8b5700;
+    }
+
+    #atlas td {
+      border-color: rgba(23, 25, 21, .09);
+    }
+
+    /* Concept 2: Night Ops */
+    #night {
+      background: #070706;
+      color: #f5efe2;
+    }
+
+    #night .screen {
+      grid-template-columns: 92px 1fr;
+      background:
+        radial-gradient(circle at 50% 0%, rgba(255, 176, 32, .13), transparent 33%),
+        linear-gradient(135deg, #070706, #11100d 55%, #090907);
+    }
+
+    #night .sidebar {
+      padding: 24px 14px;
+      background: #090908;
+      border-right: 1px solid rgba(255, 255, 255, .09);
+    }
+
+    #night .brand {
+      justify-content: center;
+      margin-bottom: 38px;
+    }
+
+    #night .brand div:not(.mark),
+    #night .nav-section,
+    #night .nav-item span {
+      display: none;
+    }
+
+    #night .mark {
+      background: #f5efe2;
+      color: #090908;
+    }
+
+    #night .nav-item {
+      justify-content: center;
+      width: 50px;
+      height: 50px;
+      margin: 0 auto 10px;
+      padding: 0;
+      border-radius: 8px;
+      color: rgba(245, 239, 226, .52);
+    }
+
+    #night .nav-item.active {
+      background: #ffb020;
+      color: #090908;
+      box-shadow: 0 20px 50px rgba(255, 176, 32, .22);
+    }
+
+    #night .nav-dot {
+      width: 20px;
+      height: 20px;
+    }
+
+    #night .content {
+      padding: 28px 36px 36px;
+    }
+
+    #night .search {
+      background: rgba(255, 255, 255, .06);
+      border: 1px solid rgba(255, 255, 255, .1);
+      color: rgba(245, 239, 226, .62);
+    }
+
+    #night .avatar {
+      background: #ffb020;
+      color: #090908;
+    }
+
+    #night .hero {
+      grid-template-columns: 1fr 360px;
+      background:
+        linear-gradient(90deg, rgba(255, 176, 32, .16), transparent),
+        #11100d;
+      border: 1px solid rgba(255, 255, 255, .1);
+      box-shadow: 0 24px 70px rgba(0, 0, 0, .35);
+    }
+
+    #night .eyebrow {
+      color: #ffb020;
+    }
+
+    #night .hero-copy {
+      color: rgba(245, 239, 226, .64);
+    }
+
+    #night .button.primary {
+      background: #f5efe2;
+      color: #090908;
+    }
+
+    #night .button.secondary {
+      border: 1px solid rgba(245, 239, 226, .18);
+      color: #f5efe2;
+    }
+
+    #night .hero-panel,
+    #night .kpi,
+    #night .panel {
+      background: rgba(255, 255, 255, .055);
+      border: 1px solid rgba(255, 255, 255, .1);
+      box-shadow: 0 22px 55px rgba(0, 0, 0, .24);
+    }
+
+    #night .sparkline,
+    #night .chart {
+      background: rgba(0, 0, 0, .2);
+      color: rgba(255, 176, 32, .7);
+    }
+
+    #night .kpi .label,
+    #night .kpi .sub,
+    #night .panel small,
+    #night th {
+      color: rgba(245, 239, 226, .5);
+    }
+
+    #night .task {
+      background: rgba(255, 255, 255, .045);
+      border: 1px solid rgba(255, 255, 255, .07);
+    }
+
+    #night .status.ok {
+      background: rgba(40, 214, 143, .13);
+      color: #63e6aa;
+    }
+
+    #night .status.warn {
+      background: rgba(255, 176, 32, .14);
+      color: #ffcb67;
+    }
+
+    #night td {
+      border-color: rgba(245, 239, 226, .1);
+    }
+
+    /* Concept 3: Seller Studio */
+    #studio {
+      background: #f7f8fb;
+      color: #152027;
+    }
+
+    #studio .screen {
+      grid-template-columns: 248px 1fr;
+      background:
+        linear-gradient(180deg, rgba(250, 182, 49, .11), transparent 22%),
+        #f7f8fb;
+    }
+
+    #studio .sidebar {
+      color: #152027;
+      background: #ffffff;
+      border-right: 1px solid rgba(21, 32, 39, .08);
+    }
+
+    #studio .mark {
+      background: #21343b;
+      color: #ffffff;
+    }
+
+    #studio .brand span,
+    #studio .nav-section {
+      opacity: .46;
+    }
+
+    #studio .nav-item {
+      color: #45545c;
+    }
+
+    #studio .nav-item.active {
+      background: #21343b;
+      color: #ffffff;
+      box-shadow: 0 16px 34px rgba(33, 52, 59, .14);
+    }
+
+    #studio .search {
+      background: #ffffff;
+      border: 1px solid rgba(21, 32, 39, .09);
+      box-shadow: 0 12px 34px rgba(22, 33, 40, .06);
+      color: rgba(21, 32, 39, .55);
+    }
+
+    #studio .avatar {
+      background: #ef7d4b;
+      color: white;
+    }
+
+    #studio .hero {
+      grid-template-columns: 1fr 440px;
+      background:
+        linear-gradient(118deg, rgba(33, 52, 59, .96), rgba(29, 78, 86, .92)),
+        #21343b;
+      color: #ffffff;
+      box-shadow: 0 24px 60px rgba(33, 52, 59, .2);
+    }
+
+    #studio .eyebrow {
+      color: #ffd064;
+    }
+
+    #studio .hero-copy {
+      color: rgba(255, 255, 255, .7);
+    }
+
+    #studio .button.primary {
+      background: #ffd064;
+      color: #21343b;
+    }
+
+    #studio .button.secondary {
+      border: 1px solid rgba(255, 255, 255, .18);
+      color: #ffffff;
+    }
+
+    #studio .hero-panel {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 12px;
+      padding: 0;
+      background: transparent;
+    }
+
+    #studio .seller-card {
+      min-height: 88px;
+      padding: 14px;
+      background: rgba(255, 255, 255, .1);
+      border: 1px solid rgba(255, 255, 255, .14);
+    }
+
+    #studio .kpi,
+    #studio .panel {
+      background: #ffffff;
+      border: 1px solid rgba(21, 32, 39, .08);
+      box-shadow: 0 16px 45px rgba(22, 33, 40, .07);
+    }
+
+    #studio .kpi .label,
+    #studio .kpi .sub,
+    #studio .panel small,
+    #studio th {
+      color: rgba(21, 32, 39, .54);
+    }
+
+    #studio .chart {
+      background: #f3f7f6;
+      color: #21343b;
+    }
+
+    #studio .task {
+      background: #f7f8fb;
+      border: 1px solid rgba(21, 32, 39, .07);
+    }
+
+    #studio .status.ok {
+      background: rgba(30, 140, 100, .11);
+      color: #176e50;
+    }
+
+    #studio .status.warn {
+      background: rgba(239, 125, 75, .13);
+      color: #a94e2a;
+    }
+
+    #studio td {
+      border-color: rgba(21, 32, 39, .09);
+    }
+  </style>
+</head>
+<body>
+  <section class="concept" id="atlas" aria-label="Conceito Atlas Executive">
+    <div class="screen">
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="mark">EA</div>
+          <div>
+            <strong>ERP AMAZON</strong>
+            <span>Central interna</span>
+          </div>
+        </div>
+        <div class="nav-section">Principal</div>
+        <div class="nav-item active"><i class="nav-dot"></i><span>Home</span></div>
+        <div class="nav-section">Financeiro</div>
+        <div class="nav-item"><i class="nav-dot"></i><span>Dashboard</span></div>
+        <div class="nav-item"><i class="nav-dot"></i><span>Caixa</span></div>
+        <div class="nav-item"><i class="nav-dot"></i><span>Contas a pagar</span></div>
+        <div class="nav-item"><i class="nav-dot"></i><span>Contas a receber</span></div>
+        <div class="nav-section">E-commerce</div>
+        <div class="nav-item"><i class="nav-dot"></i><span>Vendas</span></div>
+        <div class="nav-item"><i class="nav-dot"></i><span>Estoque</span></div>
+        <div class="nav-item"><i class="nav-dot"></i><span>Compras</span></div>
+        <div class="nav-section">Sistema</div>
+        <div class="nav-item"><i class="nav-dot"></i><span>Conector Amazon</span></div>
+      </aside>
+      <main class="content">
+        <div class="topbar">
+          <div class="search">Buscar paginas, pedidos, SKUs e acoes... <b style="margin-left:auto;font-family:var(--mono);font-size:11px;">CTRL K</b></div>
+          <div class="profile"><span>Heitor</span><div class="avatar">HM</div></div>
+        </div>
+        <section class="hero">
+          <div>
+            <p class="eyebrow">Command center</p>
+            <h1>Bom dia, Heitor. Sua operacao esta sob controle.</h1>
+            <p class="hero-copy">Um cockpit executivo para financeiro, Amazon, estoque e compras, com alertas claros e decisoes a um clique.</p>
+            <div class="actions">
+              <div class="button primary">Sincronizar Amazon</div>
+              <div class="button secondary">Nova movimentacao</div>
+            </div>
+          </div>
+          <div class="hero-panel">
+            <div class="mini-label">Pulso operacional</div>
+            <div class="mini-value">R$ 286.440</div>
+            <p style="margin:8px 0 0;color:rgba(255,250,240,.62);font-size:12px;">Receita prevista nos proximos 30 dias</p>
+            <div class="sparkline">
+              <svg viewBox="0 0 360 72" preserveAspectRatio="none">
+                <path d="M0 58 C45 40 60 44 92 30 S152 40 182 22 232 8 270 28 326 33 360 15" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round"/>
+                <path d="M0 72 L0 58 C45 40 60 44 92 30 S152 40 182 22 232 8 270 28 326 33 360 15 L360 72 Z" fill="currentColor" opacity=".16"/>
+              </svg>
+            </div>
+          </div>
+        </section>
+        <section class="kpis">
+          <div class="kpi" style="--accent:#0f9f6e"><div class="label">Saldo livre <span>+8%</span></div><div class="value">R$ 124,5k</div><div class="sub">R$ 38,2k comprometido</div></div>
+          <div class="kpi" style="--accent:#ff9900"><div class="label">A receber <span>Amazon</span></div><div class="value">R$ 83,4k</div><div class="sub">6 liquidacoes pendentes</div></div>
+          <div class="kpi" style="--accent:#276ef1"><div class="label">Lucro pos Ads <span>30d</span></div><div class="value">R$ 42,8k</div><div class="sub">Margem operacional 18,4%</div></div>
+          <div class="kpi" style="--accent:#d65a31"><div class="label">Estoque critico <span>12</span></div><div class="value">4 SKUs</div><div class="sub">2 precisam reposicao urgente</div></div>
+        </section>
+        <section class="main-grid">
+          <div class="panel">
+            <div class="panel-header"><div><h2>Fluxo financeiro projetado</h2><small>Recebimentos, compromissos e caixa livre</small></div><span class="status ok">Saudavel</span></div>
+            <div class="chart">
+              <div class="chart-axis"></div>
+              <svg viewBox="0 0 850 270" preserveAspectRatio="none">
+                <path d="M0 222 C85 194 125 218 176 172 S292 125 360 148 480 205 555 134 690 56 850 94" fill="none" stroke="#0f9f6e" stroke-width="5" stroke-linecap="round"/>
+                <path d="M0 234 C120 228 190 190 274 208 S432 248 518 198 690 154 850 166" fill="none" stroke="#ff9900" stroke-width="4" stroke-linecap="round" opacity=".9"/>
+                <path d="M0 270 L0 222 C85 194 125 218 176 172 S292 125 360 148 480 205 555 134 690 56 850 94 L850 270 Z" fill="#0f9f6e" opacity=".09"/>
+              </svg>
+            </div>
+          </div>
+          <div class="panel">
+            <div class="panel-header"><div><h2>Pendencias inteligentes</h2><small>Ordenadas por impacto</small></div></div>
+            <div class="stack">
+              <div class="task"><span class="status warn">Hoje</span><div><b>Conferir liquidação Amazon</b><br><small>R$ 18.920 aguardando conciliação</small></div><b>Ver</b></div>
+              <div class="task"><span class="status ok">OK</span><div><b>Caixa positivo 30 dias</b><br><small>Reserva operacional preservada</small></div><b>Detalhes</b></div>
+              <div class="task"><span class="status warn">SKU</span><div><b>Reposição próxima</b><br><small>Kit Cozinha FBA abaixo do mínimo</small></div><b>Comprar</b></div>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+  </section>
+
+  <section class="concept" id="night" aria-label="Conceito Night Ops">
+    <div class="screen">
+      <aside class="sidebar">
+        <div class="brand"><div class="mark">EA</div><div><strong>ERP AMAZON</strong><span>Ops</span></div></div>
+        <div class="nav-section">x</div>
+        <div class="nav-item active"><i class="nav-dot"></i><span>Home</span></div>
+        <div class="nav-item"><i class="nav-dot"></i><span>Dashboard</span></div>
+        <div class="nav-item"><i class="nav-dot"></i><span>Caixa</span></div>
+        <div class="nav-item"><i class="nav-dot"></i><span>Vendas</span></div>
+        <div class="nav-item"><i class="nav-dot"></i><span>Estoque</span></div>
+        <div class="nav-item"><i class="nav-dot"></i><span>Amazon</span></div>
+      </aside>
+      <main class="content">
+        <div class="topbar">
+          <div class="search">Comando rapido: pedido, SKU, fornecedor, boleto...</div>
+          <div class="profile"><span>Modo executivo</span><div class="avatar">HM</div></div>
+        </div>
+        <section class="hero">
+          <div>
+            <p class="eyebrow">Night ops</p>
+            <h1>Painel premium para decisoes em tempo real.</h1>
+            <p class="hero-copy">Uma experiencia escura, sofisticada e cinematica, ideal para dashboards de margem, ADS, riscos e operacao Amazon.</p>
+            <div class="actions"><div class="button primary">Analisar margem</div><div class="button secondary">Abrir alertas</div></div>
+          </div>
+          <div class="hero-panel">
+            <div class="mini-label">Indice de controle</div>
+            <div class="mini-value">92/100</div>
+            <p style="margin:8px 0 0;color:rgba(245,239,226,.58);font-size:12px;">Financeiro saudavel, 3 alertas operacionais</p>
+            <div class="sparkline">
+              <svg viewBox="0 0 360 72" preserveAspectRatio="none">
+                <path d="M0 50 C44 54 70 20 113 24 S180 76 225 34 292 18 360 24" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round"/>
+              </svg>
+            </div>
+          </div>
+        </section>
+        <section class="kpis">
+          <div class="kpi"><div class="label">TACOS <span>-1,2%</span></div><div class="value" style="color:#ffb020;">7,8%</div><div class="sub">Ads sob controle</div></div>
+          <div class="kpi"><div class="label">ROI pos Ads <span>30d</span></div><div class="value">3,4x</div><div class="sub">Acima da meta mensal</div></div>
+          <div class="kpi"><div class="label">Receita liquida <span>Hoje</span></div><div class="value">R$ 18,7k</div><div class="sub">126 pedidos processados</div></div>
+          <div class="kpi"><div class="label">Risco ruptura <span>Alerta</span></div><div class="value" style="color:#ffcb67;">6 SKUs</div><div class="sub">Priorizar reposicao</div></div>
+        </section>
+        <section class="main-grid">
+          <div class="panel">
+            <div class="panel-header"><div><h2>Margem por canal</h2><small>Faturamento, taxas, ADS e lucro liquido</small></div><span class="status ok">Ao vivo</span></div>
+            <div class="chart">
+              <div class="chart-axis"></div>
+              <svg viewBox="0 0 850 270" preserveAspectRatio="none">
+                <path d="M0 220 C90 150 146 188 215 108 S340 64 408 110 520 206 604 124 720 72 850 58" fill="none" stroke="#ffb020" stroke-width="5" stroke-linecap="round"/>
+                <path d="M0 250 C88 236 148 214 218 222 S355 242 420 190 558 156 642 178 750 150 850 116" fill="none" stroke="#63e6aa" stroke-width="4" stroke-linecap="round"/>
+                <path d="M0 270 L0 220 C90 150 146 188 215 108 S340 64 408 110 520 206 604 124 720 72 850 58 L850 270 Z" fill="#ffb020" opacity=".12"/>
+              </svg>
+            </div>
+          </div>
+          <div class="panel">
+            <div class="panel-header"><div><h2>Fila de decisao</h2><small>O que merece sua atencao agora</small></div></div>
+            <div class="stack">
+              <div class="task"><span class="status warn">ADS</span><div><b>Campanha com ROI baixo</b><br><small>Produto Organizador premium</small></div><b>R$ 2,1k</b></div>
+              <div class="task"><span class="status ok">FBA</span><div><b>Envio confirmado</b><br><small>112 unidades a caminho</small></div><b>3d</b></div>
+              <div class="task"><span class="status warn">DRE</span><div><b>Taxas acima da media</b><br><small>Verificar ajustes marketplace</small></div><b>Ver</b></div>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+  </section>
+
+  <section class="concept" id="studio" aria-label="Conceito Seller Studio">
+    <div class="screen">
+      <aside class="sidebar">
+        <div class="brand"><div class="mark">EA</div><div><strong>ERP AMAZON</strong><span>Seller studio</span></div></div>
+        <div class="nav-section">Central</div>
+        <div class="nav-item active"><i class="nav-dot"></i><span>Visao geral</span></div>
+        <div class="nav-section">Marketplace</div>
+        <div class="nav-item"><i class="nav-dot"></i><span>Vendas</span></div>
+        <div class="nav-item"><i class="nav-dot"></i><span>Produtos</span></div>
+        <div class="nav-item"><i class="nav-dot"></i><span>Avaliacoes</span></div>
+        <div class="nav-section">Backoffice</div>
+        <div class="nav-item"><i class="nav-dot"></i><span>Financeiro</span></div>
+        <div class="nav-item"><i class="nav-dot"></i><span>Compras</span></div>
+        <div class="nav-item"><i class="nav-dot"></i><span>Configuracoes</span></div>
+      </aside>
+      <main class="content">
+        <div class="topbar">
+          <div class="search">Buscar SKU, ASIN, pedido, campanha ou fornecedor...</div>
+          <div class="profile"><span>Heitor Martins</span><div class="avatar">HM</div></div>
+        </div>
+        <section class="hero">
+          <div>
+            <p class="eyebrow">Seller studio</p>
+            <h1>Seu e-commerce visto como um portifolio de produtos.</h1>
+            <p class="hero-copy">Uma direcao mais clara, editorial e comercial, com foco em produto, performance e tarefas de crescimento.</p>
+            <div class="actions"><div class="button primary">Ver produtos campeoes</div><div class="button secondary">Planejar compras</div></div>
+          </div>
+          <div class="hero-panel">
+            <div class="seller-card"><div class="mini-label">Top SKU</div><div class="mini-value">Kit Casa</div><p style="margin:8px 0 0;font-size:12px;color:rgba(255,255,255,.62)">24% do faturamento</p></div>
+            <div class="seller-card"><div class="mini-label">Reviews</div><div class="mini-value">4,7</div><p style="margin:8px 0 0;font-size:12px;color:rgba(255,255,255,.62)">+38 no mes</p></div>
+            <div class="seller-card"><div class="mini-label">Pedidos</div><div class="mini-value">1.248</div><p style="margin:8px 0 0;font-size:12px;color:rgba(255,255,255,.62)">30 dias</p></div>
+            <div class="seller-card"><div class="mini-label">Reposicao</div><div class="mini-value">R$ 31k</div><p style="margin:8px 0 0;font-size:12px;color:rgba(255,255,255,.62)">sugerida</p></div>
+          </div>
+        </section>
+        <section class="kpis">
+          <div class="kpi"><div class="label">Faturamento <span>30d</span></div><div class="value">R$ 238,9k</div><div class="sub">+11,4% versus periodo anterior</div></div>
+          <div class="kpi"><div class="label">Ticket medio <span>Pedidos</span></div><div class="value">R$ 191</div><div class="sub">Alta em kits e combos</div></div>
+          <div class="kpi"><div class="label">Produtos ativos <span>FBA</span></div><div class="value">68</div><div class="sub">14 com giro acelerado</div></div>
+          <div class="kpi"><div class="label">Avaliacoes <span>Qualidade</span></div><div class="value">4,6</div><div class="sub">3 produtos pedem resposta</div></div>
+        </section>
+        <section class="main-grid">
+          <div class="panel">
+            <div class="panel-header"><div><h2>Ranking de produtos</h2><small>Margem, estoque e representatividade no faturamento</small></div><span class="status ok">15 SKUs</span></div>
+            <table>
+              <thead><tr><th>Produto</th><th>Canal</th><th class="right">Margem</th><th class="right">Receita</th></tr></thead>
+              <tbody>
+                <tr><td><b>Kit Casa Organizada</b></td><td>FBA</td><td class="right">24,8%</td><td class="right">R$ 57,4k</td></tr>
+                <tr><td><b>Suporte Multiuso Premium</b></td><td>FBA</td><td class="right">19,3%</td><td class="right">R$ 41,8k</td></tr>
+                <tr><td><b>Organizador Compacto</b></td><td>FBM</td><td class="right">16,1%</td><td class="right">R$ 28,9k</td></tr>
+                <tr><td><b>Combo Reposicao Rapida</b></td><td>FBA</td><td class="right">21,5%</td><td class="right">R$ 24,2k</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="panel">
+            <div class="panel-header"><div><h2>Agenda seller</h2><small>Acoes recomendadas por impacto</small></div></div>
+            <div class="stack">
+              <div class="task"><span class="status warn">Compra</span><div><b>Gerar pedido sugerido</b><br><small>4 SKUs com ruptura prevista</small></div><b>R$ 31k</b></div>
+              <div class="task"><span class="status ok">Reviews</span><div><b>Responder avaliacoes novas</b><br><small>3 respostas pendentes</small></div><b>12 min</b></div>
+              <div class="task"><span class="status warn">ADS</span><div><b>Ajustar campanha</b><br><small>Produto com TACOS acima da meta</small></div><b>7,8%</b></div>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+  </section>
+</body>
+</html>

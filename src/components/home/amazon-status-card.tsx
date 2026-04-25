@@ -16,10 +16,13 @@ type SyncLog = {
   id: string;
   tipo: string;
   status: "SUCESSO" | "ERRO" | "EM_ANDAMENTO" | string;
-  iniciadoEm: string;
-  finalizadoEm: string | null;
-  registrosProcessados: number | null;
-  erro: string | null;
+  iniciadoEm?: string | null;
+  finalizadoEm?: string | null;
+  createdAt?: string | null;
+  registrosProcessados?: number | null;
+  registros?: number | null;
+  erro?: string | null;
+  mensagem?: string | null;
 };
 
 export function AmazonStatusCard() {
@@ -89,11 +92,9 @@ function UltimaSync({ log }: { log: SyncLog }) {
         ? "Falha"
         : "Em andamento";
 
-  const quando = formatInTimeZone(
-    new Date(log.iniciadoEm),
-    TZ,
-    "dd/MM 'às' HH:mm",
-  );
+  const quando = formatarDataSync(log.iniciadoEm ?? log.createdAt);
+  const registros = log.registrosProcessados ?? log.registros;
+  const erro = log.erro ?? log.mensagem;
 
   return (
     <div className="space-y-2 text-xs">
@@ -114,15 +115,24 @@ function UltimaSync({ log }: { log: SyncLog }) {
       </div>
       <div className="flex items-center justify-between text-muted-foreground">
         <span>{quando}</span>
-        {log.registrosProcessados != null && (
-          <span>{log.registrosProcessados} registros</span>
+        {registros != null && (
+          <span>{registros} registros</span>
         )}
       </div>
-      {log.status === "ERRO" && log.erro && (
+      {log.status === "ERRO" && erro && (
         <p className="rounded border border-destructive/30 bg-destructive/5 p-2 text-[11px] text-destructive">
-          {log.erro}
+          {erro}
         </p>
       )}
     </div>
   );
+}
+
+function formatarDataSync(value?: string | null): string {
+  if (!value) return "Data indisponivel";
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Data indisponivel";
+
+  return formatInTimeZone(date, TZ, "dd/MM 'as' HH:mm");
 }

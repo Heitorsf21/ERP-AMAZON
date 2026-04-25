@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   AmazonTransactionStatus,
+  converterParaReembolsosAmazon,
   converterParaVendasAmazon,
   parseAmazonReportDate,
   parseAmazonUnifiedTransactionCsv,
@@ -12,6 +13,10 @@ const CSV_EXEMPLO = `"Inclui transacoes da Amazon"
 "26 de mar. de 2026 06:46:03 GMT-7","261","Pedido","701-1","MFS-0032","Produto A","1","amazon.com.br","Visa","Amazon","Sao Paulo","SP","01000","59,99","0","0","0","0","-7,20","-5,00","0","0","47,79","Diferido",""
 "27 de mar. de 2026 06:46:03 GMT-7","262","Pedido","701-2","MFS-0017","Produto B","2","amazon.com.br","Visa","Amazon","Sao Paulo","SP","01000","100,00","10,00","0","-10,00","0","-12,00","-5,00","0","0","83,00","Liberado","28 de mar. de 2026 06:46:03 GMT-7"
 "28 de mar. de 2026 06:46:03 GMT-7","263","Transferir","","","Transferencia para conta bancaria","","Amazon.com.br","Visa","","","","","0","0","0","0","0","0","0","0","-50,00","-50,00","Liberado","28 de mar. de 2026 06:46:03 GMT-7"`;
+
+const CSV_REEMBOLSO = `"Inclui transacoes da Amazon"
+"data/hora","id de liquidaÃ§Ã£o","tipo","id do pedido","sku","descriÃ§Ã£o","quantidade","mercado","tipo de conta","atendimento","cidade do pedido","estado do pedido","postal do pedido","vendas do produto","crÃ©ditos de remessa","crÃ©ditos de embalagem de presente","descontos promocionais","imposto de vendas coletados","tarifas de venda","taxas fba","taxas de outras transaÃ§Ãµes","outro","total","Status da transaÃ§Ã£o","Data de liberaÃ§Ã£o da transaÃ§Ã£o"
+"29 de mar. de 2026 06:46:03 GMT-7","264","Reembolso","701-2","MFS-0017","Produto B","1","amazon.com.br","Visa","Amazon","Sao Paulo","SP","01000","-50,00","0","0","0","0","6,00","2,50","0","0","-41,50","Liberado","30 de mar. de 2026 06:46:03 GMT-7"`;
 
 describe("Amazon unified transactions", () => {
   it("parseia o CSV com preambulo e colunas em portugues", () => {
@@ -57,10 +62,30 @@ describe("Amazon unified transactions", () => {
     expect(vendas[0]).toMatchObject({
       sku: "MFS-0017",
       quantidade: 2,
+      precoUnitarioCentavos: 5000,
       valorBrutoCentavos: 11000,
-      taxasCentavos: 2700,
+      taxasCentavos: 1200,
+      fretesCentavos: 500,
+      liquidoMarketplaceCentavos: 8300,
       marketplace: "amazon.com.br",
       referenciaExterna: "701-2",
+    });
+  });
+
+  it("converte reembolsos para eventos separados", () => {
+    const { transactions } = parseAmazonUnifiedTransactionCsv(CSV_REEMBOLSO);
+    const reembolsos = converterParaReembolsosAmazon(transactions);
+
+    expect(reembolsos).toHaveLength(1);
+    expect(reembolsos[0]).toMatchObject({
+      amazonOrderId: "701-2",
+      sku: "MFS-0017",
+      quantidade: 1,
+      valorReembolsadoCentavos: 4150,
+      taxasReembolsadasCentavos: 850,
+      marketplace: "amazon.com.br",
+      referenciaExterna:
+        "701-2:29 de mar. de 2026 06:46:03 GMT-7:MFS-0017:refund",
     });
   });
 

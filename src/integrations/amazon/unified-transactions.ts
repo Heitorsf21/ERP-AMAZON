@@ -1,6 +1,6 @@
 import { parse } from "csv-parse/sync";
 import { parseValorBRParaCentavos } from "../../lib/money";
-import type { VendaAmazon } from "./importer.contract";
+import type { AmazonReembolso, VendaAmazon } from "./importer.contract";
 
 export const AmazonTransactionStatus = {
   LIBERADO: "LIBERADO",
@@ -272,19 +272,73 @@ export function converterParaVendasAmazon(
       }
 
       const valorBrutoCentavos = valorBrutoDaVenda(tx);
-      const taxasCentavos = Math.max(0, valorBrutoCentavos - tx.totalCentavos);
+      const faturamentoCentavos = Math.max(0, tx.vendasProdutoCentavos);
+      const precoUnitarioCentavos =
+        tx.quantidade > 0
+          ? Math.round(faturamentoCentavos / tx.quantidade)
+          : faturamentoCentavos;
+      const taxasCentavos =
+        Math.abs(tx.tarifasVendaCentavos) +
+        Math.abs(tx.taxasOutrasTransacoesCentavos);
+      const fretesCentavos = Math.abs(tx.taxasFbaCentavos);
+      const liquidoMarketplaceCentavos = tx.totalCentavos;
 
       return {
+        amazonOrderId:
+          tx.idPedido || `${tx.idLiquidacao}:${tx.dataHoraOriginal}:${tx.sku}`,
         sku: tx.sku,
+        titulo: tx.descricao || undefined,
         quantidade: tx.quantidade,
+        precoUnitarioCentavos,
         valorBrutoCentavos,
         taxasCentavos,
+        fretesCentavos,
+        liquidoMarketplaceCentavos,
+        liquidacaoId: tx.idLiquidacao || undefined,
+        fulfillmentChannel: tx.atendimento || undefined,
+        statusPedido: "ORDERED",
+        statusFinanceiro: tx.statusNormalizado,
         dataVenda: tx.dataHora,
         marketplace: tx.mercado || "amazon.com.br",
         referenciaExterna:
           tx.idPedido || `${tx.idLiquidacao}:${tx.dataHoraOriginal}:${tx.sku}`,
       };
     });
+}
+
+export function converterParaReembolsosAmazon(
+  transactions: AmazonUnifiedTransaction[],
+): AmazonReembolso[] {
+  return transactions.filter(isReembolso).map((tx) => {
+    if (!tx.dataHora) {
+      throw new Error(`data invalida no reembolso Amazon ${tx.idPedido}`);
+    }
+
+    const valorReembolsadoCentavos = Math.abs(
+      tx.totalCentavos || valorBrutoDaVenda(tx),
+    );
+    const taxasReembolsadasCentavos =
+      Math.abs(tx.tarifasVendaCentavos) +
+      Math.abs(tx.taxasFbaCentavos) +
+      Math.abs(tx.taxasOutrasTransacoesCentavos);
+    const fallbackId = `${tx.idLiquidacao}:${tx.dataHoraOriginal}:${tx.sku}`;
+
+    return {
+      amazonOrderId: tx.idPedido || fallbackId,
+      sku: tx.sku,
+      titulo: tx.descricao || undefined,
+      quantidade: Math.abs(tx.quantidade) || 1,
+      valorReembolsadoCentavos,
+      taxasReembolsadasCentavos,
+      dataReembolso: tx.dataHora,
+      liquidacaoId: tx.idLiquidacao || undefined,
+      marketplace: tx.mercado || "amazon.com.br",
+      referenciaExterna: `${tx.idPedido || fallbackId}:${tx.dataHoraOriginal}:${
+        tx.sku || "sem-sku"
+      }:refund`,
+      statusFinanceiro: tx.statusNormalizado,
+    };
+  });
 }
 
 export function parseAmazonReportDate(value: string): Date | null {
@@ -370,6 +424,11 @@ function normalizarStatus(value: string): AmazonTransactionStatus {
 
 function isPedido(tx: AmazonUnifiedTransaction): boolean {
   return normalizar(tx.tipo) === "pedido" || normalizar(tx.tipo) === "order";
+}
+
+function isReembolso(tx: AmazonUnifiedTransaction): boolean {
+  const tipo = normalizar(tx.tipo);
+  return tipo === "reembolso" || tipo === "refund";
 }
 
 function isTransferencia(tx: AmazonUnifiedTransaction): boolean {

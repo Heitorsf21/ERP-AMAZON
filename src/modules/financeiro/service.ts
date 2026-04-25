@@ -75,15 +75,17 @@ export const financeiroService = {
 
     const projecao = [0, 7, 15, 30].map((dias) => {
       const limite = fimDoDiaSP(somarDias(agora, dias));
-      const saidaProjetada = saldoProjetado(saldoAtual, contasAbertas, limite);
-      const entradasPrevistas = recebiveis
+      const saldoBase = saldoProjetado(saldoAtual, contasAbertas, limite);
+      const amazonPrevistas = recebiveis
         .filter((c) => c.dataPrevisao && c.dataPrevisao <= limite)
         .reduce((acc: number, c) => acc + c.valor, 0);
 
       return {
         label: dias === 0 ? "Hoje" : `+${dias}d`,
         dias,
-        saldoCentavos: saidaProjetada + entradasPrevistas,
+        saldoBaseCentavos: saldoBase,
+        amazonPrevistasCentavos: amazonPrevistas,
+        saldoCentavos: saldoBase + amazonPrevistas,
       };
     });
 

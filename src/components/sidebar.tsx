@@ -20,15 +20,26 @@ import {
   Home,
   ShoppingBag,
   Settings,
+  Star,
   UserCircle,
   Banknote,
   Store,
   Cog,
   Menu,
+  Bell,
+  Megaphone,
 } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { fetchJSON } from "@/lib/fetcher";
 import { cn } from "@/lib/utils";
 import { ThemeToggle } from "@/components/theme-toggle";
-import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import {
   Tooltip,
@@ -42,6 +53,7 @@ type LeafItem = {
   label: string;
   icon: React.ComponentType<{ className?: string }>;
   hint?: string;
+  badge?: number;
 };
 
 type Group = {
@@ -72,9 +84,12 @@ const groups: Group[] = [
     label: "E-commerce",
     icon: Store,
     items: [
+      { href: "/dashboard-ecommerce" as Route, label: "Dashboard", icon: BarChart3 },
       { href: "/estoque" as Route, label: "Estoque", icon: Package },
       { href: "/vendas" as Route, label: "Vendas", icon: ShoppingBag },
       { href: "/compras" as Route, label: "Compras", icon: ShoppingCart },
+      { href: "/avaliacoes" as Route, label: "Avaliações", icon: Star },
+      { href: "/publicidade" as Route, label: "Publicidade", icon: Megaphone },
     ],
   },
   {
@@ -83,6 +98,7 @@ const groups: Group[] = [
     icon: Cog,
     items: [
       { href: "/amazon" as Route, label: "Conector Amazon", icon: Globe },
+      { href: "/notificacoes" as Route, label: "Notificações", icon: Bell },
       { href: "/perfil" as Route, label: "Perfil", icon: UserCircle },
       { href: "/configuracoes" as Route, label: "Configurações", icon: Settings },
     ],
@@ -104,6 +120,7 @@ function NavLeaf({
   collapsed: boolean;
 }) {
   const Icon = item.icon;
+  const badgeCount = item.badge ?? 0;
 
   const inner = (
     <div
@@ -118,8 +135,20 @@ function NavLeaf({
       {active && !collapsed && (
         <span className="absolute left-0 top-1/2 h-4 w-[2px] -translate-y-1/2 rounded-full bg-white" />
       )}
-      <Icon className={cn("shrink-0", collapsed ? "h-[18px] w-[18px]" : "h-4 w-4")} />
+      <span className="relative shrink-0">
+        <Icon className={cn(collapsed ? "h-[18px] w-[18px]" : "h-4 w-4")} />
+        {badgeCount > 0 && collapsed && (
+          <span className="absolute -right-1 -top-1 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-red-500 text-[9px] font-bold text-white">
+            {badgeCount > 9 ? "9+" : badgeCount}
+          </span>
+        )}
+      </span>
       {!collapsed && <span className="flex-1 truncate">{item.label}</span>}
+      {!collapsed && badgeCount > 0 && (
+        <span className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white">
+          {badgeCount > 99 ? "99+" : badgeCount}
+        </span>
+      )}
     </div>
   );
 
@@ -254,6 +283,23 @@ export function SidebarContent({ collapsed = false }: { collapsed?: boolean }) {
   const pathname = usePathname();
   const { state: groupsExpanded, toggle } = useGroupsState();
 
+  const { data: notifCount } = useQuery<{ total: number }>({
+    queryKey: ["notificacoes-count"],
+    queryFn: () => fetchJSON("/api/notificacoes/contar"),
+    refetchInterval: 60_000,
+    staleTime: 30_000,
+  });
+
+  const groupsComBadge = React.useMemo(() => {
+    const count = notifCount?.total ?? 0;
+    return groups.map((g) => ({
+      ...g,
+      items: g.items.map((item) =>
+        item.href === "/notificacoes" ? { ...item, badge: count } : item,
+      ),
+    }));
+  }, [notifCount]);
+
   return (
     <div
       className={cn(
@@ -305,7 +351,7 @@ export function SidebarContent({ collapsed = false }: { collapsed?: boolean }) {
           )}
 
           <div className={cn("space-y-3", collapsed && "space-y-2")}>
-            {groups.map((group, idx) => (
+            {groupsComBadge.map((group, idx) => (
               <React.Fragment key={group.id}>
                 {collapsed && idx > 0 && (
                   <div className="mx-2 h-px bg-[hsl(var(--sidebar-border))]/70" />
@@ -408,6 +454,10 @@ export function SidebarMobileSheet() {
         </Button>
       </SheetTrigger>
       <SheetContent side="left" className="w-[260px] border-r-0 p-0">
+        <SheetTitle className="sr-only">Menu principal</SheetTitle>
+        <SheetDescription className="sr-only">
+          Navegação principal do ERP Amazon.
+        </SheetDescription>
         <SidebarContent collapsed={false} />
       </SheetContent>
     </Sheet>

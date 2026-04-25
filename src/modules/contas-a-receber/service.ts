@@ -9,6 +9,7 @@ import {
   resumirImportacao,
   type ResumoImportacao,
 } from "./amazon-parser";
+import { dashboardEcommerceService } from "@/modules/dashboard-ecommerce/service";
 
 // Ciclo médio observado nos relatórios: ~14 dias do pedido até transferência.
 const CICLO_LIQUIDACAO_DIAS = 14;
@@ -27,6 +28,7 @@ export const contasReceberService = {
     }
 
     const resumo = resumirImportacao(transacoes);
+    await dashboardEcommerceService.importarVendasAmazonCSV(conteudo);
 
     // Cria/atualiza ContaReceber para liquidações pendentes ou parciais
     for (const liq of resumo.liquidacoes) {

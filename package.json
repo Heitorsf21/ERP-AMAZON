@@ -15,6 +15,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "amazon:analisar": "tsx scripts/amazon-analisar-relatorio.ts",
+    "amazon:worker": "tsx scripts/amazon-worker.ts",
+    "amazon:worker:once": "tsx scripts/amazon-worker.ts --once",
     "prisma:generate": "prisma generate",
     "prisma:push": "prisma db push",
     "prisma:studio": "prisma studio",

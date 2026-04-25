@@ -1,0 +1,21 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "crons": [
+    {
+      "path": "/api/amazon/cron-orders",
+      "schedule": "* * * * *"
+    },
+    {
+      "path": "/api/amazon/cron-inventory",
+      "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/amazon/cron-finances",
+      "schedule": "*/30 * * * *"
+    },
+    {
+      "path": "/api/amazon/reviews/cron-daily",
+      "schedule": "0 11 * * *"
+    }
+  ]
+}

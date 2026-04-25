@@ -2,7 +2,7 @@
 
 import { useState, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { CheckCircle2, Upload, X } from "lucide-react";
+import { CheckCircle2, Upload, X, ChevronDown, ChevronRight, TrendingDown } from "lucide-react";
 import { toast } from "sonner";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -53,6 +53,20 @@ type ResumoImportacao = {
   diferidos: { quantidade: number; totalCentavos: number };
 };
 
+type Composicao = {
+  liquidacaoId: string;
+  totalPedidos: number;
+  totalReembolsos: number;
+  receitaBrutaCentavos: number;
+  taxasMarketplaceCentavos: number;
+  fretesFBACentavos: number;
+  reembolsosCentavos: number;
+  taxasReembolsoCentavos: number;
+  liquidoCalculadoCentavos: number;
+  valorRegistradoCentavos: number;
+  divergenciaCentavos: number;
+};
+
 type Aba = "PENDENTE" | "RECEBIDA" | "TODAS";
 
 function formatData(iso: string | null): string {
@@ -70,11 +84,140 @@ function StatusBadge({ status }: { status: string }) {
   return <Badge variant="warning">Pendente</Badge>;
 }
 
+function LinhaComposicao({
+  label,
+  valorCentavos,
+  tipo,
+}: {
+  label: string;
+  valorCentavos: number;
+  tipo: "receita" | "deducao" | "resultado" | "info";
+}) {
+  return (
+    <div
+      className={cn(
+        "flex items-center justify-between gap-4 py-1 text-sm",
+        tipo === "resultado" && "border-t border-dashed font-semibold mt-1 pt-2",
+        tipo === "info" && "text-muted-foreground text-xs",
+      )}
+    >
+      <span className={cn(tipo === "deducao" && "text-muted-foreground")}>
+        {label}
+      </span>
+      <span
+        className={cn(
+          "tabular-nums font-mono",
+          tipo === "receita" && "text-foreground",
+          tipo === "deducao" && "text-red-600 dark:text-red-400",
+          tipo === "resultado" && valorCentavos >= 0
+            ? "text-emerald-600 dark:text-emerald-400"
+            : "text-red-600 dark:text-red-400",
+        )}
+      >
+        {tipo === "deducao" && valorCentavos > 0 ? "-" : ""}
+        {formatBRL(Math.abs(valorCentavos))}
+      </span>
+    </div>
+  );
+}
+
+function PainelComposicao({ contaId }: { contaId: string }) {
+  const { data, isLoading, isError } = useQuery<Composicao>({
+    queryKey: ["composicao-liquidacao", contaId],
+    queryFn: () => fetchJSON<Composicao>(`/api/contas-a-receber/${contaId}/composicao`),
+    staleTime: 10 * 60 * 1000,
+  });
+
+  if (isLoading) {
+    return (
+      <div className="px-4 py-3 text-xs text-muted-foreground animate-pulse">
+        Carregando composição…
+      </div>
+    );
+  }
+
+  if (isError || !data) {
+    return (
+      <div className="px-4 py-3 text-xs text-muted-foreground">
+        Dados de composição não disponíveis para esta liquidação.
+      </div>
+    );
+  }
+
+  const divergencia = data.divergenciaCentavos;
+  const temDivergencia = Math.abs(divergencia) > 100; // > R$ 1,00
+
+  return (
+    <div className="bg-muted/20 border-t px-6 py-4">
+      <div className="max-w-sm">
+        <p className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+          Composição da Liquidação — {data.totalPedidos} pedido(s)
+          {data.totalReembolsos > 0 && ` · ${data.totalReembolsos} reembolso(s)`}
+        </p>
+
+        <LinhaComposicao
+          label="Receita bruta dos pedidos"
+          valorCentavos={data.receitaBrutaCentavos}
+          tipo="receita"
+        />
+        {data.taxasMarketplaceCentavos > 0 && (
+          <LinhaComposicao
+            label="(−) Taxas Amazon / Referral"
+            valorCentavos={data.taxasMarketplaceCentavos}
+            tipo="deducao"
+          />
+        )}
+        {data.fretesFBACentavos > 0 && (
+          <LinhaComposicao
+            label="(−) Fretes / Taxas FBA"
+            valorCentavos={data.fretesFBACentavos}
+            tipo="deducao"
+          />
+        )}
+        {data.reembolsosCentavos > 0 && (
+          <LinhaComposicao
+            label={`(−) Reembolsos${data.taxasReembolsoCentavos > 0 ? " (bruto)" : ""}`}
+            valorCentavos={data.reembolsosCentavos}
+            tipo="deducao"
+          />
+        )}
+        {data.taxasReembolsoCentavos > 0 && (
+          <LinhaComposicao
+            label="(+) Taxas devolvidas (reembolso)"
+            valorCentavos={-data.taxasReembolsoCentavos}
+            tipo="deducao"
+          />
+        )}
+
+        <LinhaComposicao
+          label="= Líquido calculado"
+          valorCentavos={data.liquidoCalculadoCentavos}
+          tipo="resultado"
+        />
+
+        <LinhaComposicao
+          label="Valor registrado no ERP"
+          valorCentavos={data.valorRegistradoCentavos}
+          tipo="info"
+        />
+
+        {temDivergencia && (
+          <div className="mt-2 flex items-center gap-1.5 rounded-md border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs text-amber-800 dark:border-amber-800/40 dark:bg-amber-900/20 dark:text-amber-300">
+            <TrendingDown className="h-3.5 w-3.5 shrink-0" />
+            Divergência de {formatBRL(Math.abs(divergencia))} entre cálculo e valor registrado.
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function ContasAReceberPage() {
   const qc = useQueryClient();
   const fileRef = useRef<HTMLInputElement>(null);
   const [aba, setAba] = useState<Aba>("PENDENTE");
   const [resumo, setResumo] = useState<ResumoImportacao | null>(null);
+  const [expandidoId, setExpandidoId] = useState<string | null>(null);
 
   const statusParam = aba === "TODAS" ? "" : aba;
 
@@ -129,6 +272,10 @@ export default function ContasAReceberPage() {
     },
     onError: () => toast.error("Erro ao marcar como recebida"),
   });
+
+  function toggleExpand(id: string) {
+    setExpandidoId((prev) => (prev === id ? null : id));
+  }
 
   return (
     <div className="space-y-6">
@@ -279,6 +426,7 @@ export default function ContasAReceberPage() {
           <Table>
             <TableHeader>
               <TableRow>
+                <TableHead className="w-[32px]" />
                 <TableHead className="w-[160px]">Liquidação</TableHead>
                 <TableHead className="w-[80px] text-right">Pedidos</TableHead>
                 <TableHead className="w-[140px] text-right">Valor líquido</TableHead>
@@ -292,54 +440,83 @@ export default function ContasAReceberPage() {
             <TableBody>
               {contas.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={6} className="py-12 text-center text-muted-foreground">
+                  <TableCell colSpan={7} className="py-12 text-center text-muted-foreground">
                     Nenhuma conta {aba !== "TODAS" ? (aba === "PENDENTE" ? "pendente" : "recebida") : ""}.
                     {aba === "PENDENTE" && " Importe um relatório Amazon acima."}
                   </TableCell>
                 </TableRow>
               )}
-              {contas.map((c) => (
-                <TableRow key={c.id} className="even:bg-muted/30">
-                  <TableCell className="font-mono text-xs text-muted-foreground">
-                    {c.liquidacaoId ?? c.id.slice(0, 10)}
-                  </TableCell>
-                  <TableCell className="text-right text-sm tabular-nums">
-                    {c.totalPedidos > 0 ? c.totalPedidos : "—"}
-                  </TableCell>
-                  <TableCell
-                    className={cn(
-                      "text-right font-mono font-semibold tabular-nums text-sm",
-                      c.status === "PENDENTE"
-                        ? "text-warning"
-                        : "text-success",
-                    )}
-                  >
-                    {formatBRL(c.valor)}
-                  </TableCell>
-                  <TableCell className="text-sm text-muted-foreground">
-                    {c.status === "RECEBIDA"
-                      ? formatData(c.dataRecebimento)
-                      : formatData(c.dataPrevisao)}
-                  </TableCell>
-                  <TableCell>
-                    <StatusBadge status={c.status} />
-                  </TableCell>
-                  <TableCell>
-                    {c.status === "PENDENTE" && (
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        title="Marcar como recebida"
-                        disabled={marcarRecebida.isPending}
-                        onClick={() => marcarRecebida.mutate(c.id)}
-                        className="text-success hover:bg-success/10"
+              {contas.map((c) => {
+                const expandido = expandidoId === c.id;
+                const temLiquidacao = !!c.liquidacaoId;
+                return (
+                  <>
+                    <TableRow key={c.id} className={cn("even:bg-muted/30", expandido && "bg-muted/40")}>
+                      <TableCell className="pl-3">
+                        {temLiquidacao && (
+                          <button
+                            type="button"
+                            onClick={() => toggleExpand(c.id)}
+                            className="flex items-center justify-center rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+                            title={expandido ? "Fechar detalhes" : "Ver composição"}
+                          >
+                            {expandido ? (
+                              <ChevronDown className="h-3.5 w-3.5" />
+                            ) : (
+                              <ChevronRight className="h-3.5 w-3.5" />
+                            )}
+                          </button>
+                        )}
+                      </TableCell>
+                      <TableCell className="font-mono text-xs text-muted-foreground">
+                        {c.liquidacaoId ?? c.id.slice(0, 10)}
+                      </TableCell>
+                      <TableCell className="text-right text-sm tabular-nums">
+                        {c.totalPedidos > 0 ? c.totalPedidos : "—"}
+                      </TableCell>
+                      <TableCell
+                        className={cn(
+                          "text-right font-mono font-semibold tabular-nums text-sm",
+                          c.status === "PENDENTE"
+                            ? "text-warning"
+                            : "text-success",
+                        )}
                       >
-                        <CheckCircle2 className="h-4 w-4" />
-                      </Button>
+                        {formatBRL(c.valor)}
+                      </TableCell>
+                      <TableCell className="text-sm text-muted-foreground">
+                        {c.status === "RECEBIDA"
+                          ? formatData(c.dataRecebimento)
+                          : formatData(c.dataPrevisao)}
+                      </TableCell>
+                      <TableCell>
+                        <StatusBadge status={c.status} />
+                      </TableCell>
+                      <TableCell>
+                        {c.status === "PENDENTE" && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            title="Marcar como recebida"
+                            disabled={marcarRecebida.isPending}
+                            onClick={() => marcarRecebida.mutate(c.id)}
+                            className="text-success hover:bg-success/10"
+                          >
+                            <CheckCircle2 className="h-4 w-4" />
+                          </Button>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                    {expandido && (
+                      <TableRow key={`${c.id}-composicao`} className="hover:bg-transparent">
+                        <TableCell colSpan={7} className="p-0">
+                          <PainelComposicao contaId={c.id} />
+                        </TableCell>
+                      </TableRow>
                     )}
-                  </TableCell>
-                </TableRow>
-              ))}
+                  </>
+                );
+              })}
             </TableBody>
           </Table>
         )}

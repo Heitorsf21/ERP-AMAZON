@@ -10,10 +10,7 @@ import {
   EyeOff,
   Globe,
   Loader2,
-  MessageSquare,
   RefreshCw,
-  Search,
-  Send,
   Settings,
   XCircle,
 } from "lucide-react";
@@ -44,18 +41,10 @@ type SyncLog = {
   createdAt: string;
 };
 
-type ReviewSolicitation = {
-  id: string;
-  amazonOrderId: string;
-  marketplaceId: string;
-  status: string;
-  asin: string | null;
-  sku: string | null;
-  checkedAt: string | null;
-  sentAt: string | null;
-  errorMessage: string | null;
-  createdAt: string;
-  updatedAt: string;
+type QueueSummary = {
+  queued: number;
+  running: number;
+  failed: number;
 };
 
 const CAMPOS_CONFIG = [
@@ -95,21 +84,6 @@ function StatusBadge({ status }: { status: string }) {
   if (status === "SUCESSO") return <Badge variant="success">Sucesso</Badge>;
   if (status === "ERRO") return <Badge variant="destructive">Erro</Badge>;
   return <Badge variant="secondary">Processando</Badge>;
-}
-
-function ReviewStatusBadge({ status }: { status: string }) {
-  const labels: Record<string, string> = {
-    PENDENTE: "Pendente",
-    ELEGIVEL: "Elegível",
-    ENVIADO: "Enviado",
-    NAO_ELEGIVEL: "Não elegível",
-    ERRO: "Erro",
-  };
-
-  if (status === "ENVIADO") return <Badge variant="success">{labels[status]}</Badge>;
-  if (status === "ERRO") return <Badge variant="destructive">{labels[status]}</Badge>;
-  if (status === "ELEGIVEL") return <Badge variant="outline">{labels[status]}</Badge>;
-  return <Badge variant="secondary">{labels[status] ?? status}</Badge>;
 }
 
 function TipoBadge({ tipo }: { tipo: string }) {
@@ -160,7 +134,6 @@ export default function AmazonPage() {
   const [formValues, setFormValues] = React.useState<Record<string, string>>({});
   const [camposVisiveis, setCamposVisiveis] = React.useState<Set<string>>(new Set());
   const [diasAtras, setDiasAtras] = React.useState(30);
-  const [reviewOrderId, setReviewOrderId] = React.useState("");
 
   const { data: configData, isLoading: loadingConfig } = useQuery<ConfigResponse>({
     queryKey: ["amazon-config"],
@@ -173,12 +146,10 @@ export default function AmazonPage() {
     refetchInterval: 8_000,
   });
 
-  const { data: reviews = [], isLoading: loadingReviews } = useQuery<
-    ReviewSolicitation[]
-  >({
-    queryKey: ["amazon-reviews"],
-    queryFn: () => fetchJSON<ReviewSolicitation[]>("/api/amazon/reviews"),
-    refetchInterval: 10_000,
+  const { data: queue } = useQuery<QueueSummary>({
+    queryKey: ["amazon-jobs"],
+    queryFn: () => fetchJSON<QueueSummary>("/api/amazon/jobs"),
+    refetchInterval: 8_000,
   });
 
   React.useEffect(() => {
@@ -226,7 +197,8 @@ export default function AmazonPage() {
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["amazon-logs"] });
-      toast.success("Pedidos lidos pela SP-API.");
+      qc.invalidateQueries({ queryKey: ["amazon-jobs"] });
+      toast.success("Sincronizacao de pedidos enfileirada.");
     },
     onError: (e) =>
       toast.error(e instanceof Error ? e.message : "Erro na sincronização"),
@@ -246,57 +218,6 @@ export default function AmazonPage() {
       toast.error(e instanceof Error ? e.message : "Erro ao verificar inventário"),
   });
 
-  const verificarReview = useMutation({
-    mutationFn: () =>
-      fetchJSON<ReviewSolicitation>("/api/amazon/reviews/check", {
-        method: "POST",
-        body: JSON.stringify({ amazonOrderId: reviewOrderId.trim() }),
-      }),
-    onSuccess: (data) => {
-      qc.invalidateQueries({ queryKey: ["amazon-reviews"] });
-      toast.success(
-        data.status === "ELEGIVEL"
-          ? "Pedido elegível para solicitação oficial."
-          : "Pedido verificado.",
-      );
-    },
-    onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao verificar"),
-  });
-
-  const enviarReview = useMutation({
-    mutationFn: () =>
-      fetchJSON<ReviewSolicitation>("/api/amazon/reviews/send", {
-        method: "POST",
-        body: JSON.stringify({ amazonOrderId: reviewOrderId.trim(), confirm: true }),
-      }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["amazon-reviews"] });
-      qc.invalidateQueries({ queryKey: ["amazon-logs"] });
-      toast.success("Solicitação oficial enviada pela Amazon.");
-    },
-    onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao enviar"),
-  });
-
-  const processarReviews = useMutation({
-    mutationFn: () =>
-      fetchJSON<{ verificados: number; enviados: number; ignorados: number }>(
-        "/api/amazon/reviews/auto",
-        {
-          method: "POST",
-          body: JSON.stringify({ diasAtras }),
-        },
-      ),
-    onSuccess: (data) => {
-      qc.invalidateQueries({ queryKey: ["amazon-reviews"] });
-      qc.invalidateQueries({ queryKey: ["amazon-logs"] });
-      toast.success(
-        `${data.enviados} enviados, ${data.verificados} verificados, ${data.ignorados} ignorados.`,
-      );
-    },
-    onError: (e) =>
-      toast.error(e instanceof Error ? e.message : "Erro no processamento"),
-  });
-
   function toggleVisivel(key: string) {
     setCamposVisiveis((prev) => {
       const next = new Set(prev);
@@ -306,25 +227,10 @@ export default function AmazonPage() {
     });
   }
 
-  function confirmarEnvioManual() {
-    if (!reviewOrderId.trim()) {
-      toast.error("Informe o número do pedido Amazon.");
-      return;
-    }
-
-    const ok = window.confirm(
-      "Enviar a solicitação oficial da Amazon para este pedido? Essa ação é real e não deve ser repetida.",
-    );
-    if (ok) enviarReview.mutate();
-  }
-
   const qualquerSyncAtivo =
     sincronizarPedidos.isPending ||
     sincronizarInventario.isPending ||
-    testarConexao.isPending ||
-    verificarReview.isPending ||
-    enviarReview.isPending ||
-    processarReviews.isPending;
+    testarConexao.isPending;
 
   return (
     <div className="space-y-8">
@@ -336,6 +242,11 @@ export default function AmazonPage() {
           {configData && (
             <Badge variant={configData.configurado ? "success" : "secondary"}>
               {configData.configurado ? "Configurado" : "Não configurado"}
+            </Badge>
+          )}
+          {queue && (
+            <Badge variant="outline">
+              Fila: {queue.queued} pend. / {queue.running} rodando
             </Badge>
           )}
         </div>
@@ -350,10 +261,6 @@ export default function AmazonPage() {
           <TabsTrigger value="sync" className="gap-2">
             <RefreshCw className="h-4 w-4" />
             Sincronização
-          </TabsTrigger>
-          <TabsTrigger value="reviews" className="gap-2">
-            <MessageSquare className="h-4 w-4" />
-            Avaliações
           </TabsTrigger>
           <TabsTrigger value="logs" className="gap-2">
             <Activity className="h-4 w-4" />
@@ -536,118 +443,6 @@ export default function AmazonPage() {
                       ? "Tentar novamente"
                       : "Verificar Inventário"}
               </Button>
-            </div>
-          </div>
-        </TabsContent>
-
-        <TabsContent value="reviews" className="mt-4">
-          <div className="space-y-4">
-            <div className="rounded-xl border bg-card p-5">
-              <div className="mb-1 flex items-start justify-between gap-3">
-                <h3 className="text-sm font-semibold">Solicitação oficial Amazon</h3>
-                {!loadingLogs && <LastSync logs={logs} tipo="REVIEWS" />}
-              </div>
-              <p className="mb-4 text-sm text-muted-foreground">
-                Verifica elegibilidade e envia o modelo oficial da Amazon para review do produto e feedback do vendedor.
-              </p>
-
-              <div className="grid gap-3 md:grid-cols-[minmax(240px,1fr)_auto_auto]">
-                <Input
-                  placeholder="Ex: 702-1234567-1234567"
-                  value={reviewOrderId}
-                  onChange={(e) => setReviewOrderId(e.target.value)}
-                />
-                <Button
-                  variant="outline"
-                  onClick={() => verificarReview.mutate()}
-                  disabled={qualquerSyncAtivo || !reviewOrderId.trim()}
-                >
-                  {verificarReview.isPending ? (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  ) : (
-                    <Search className="mr-2 h-4 w-4" />
-                  )}
-                  Verificar
-                </Button>
-                <Button
-                  onClick={confirmarEnvioManual}
-                  disabled={qualquerSyncAtivo || !reviewOrderId.trim()}
-                >
-                  {enviarReview.isPending ? (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  ) : (
-                    <Send className="mr-2 h-4 w-4" />
-                  )}
-                  Enviar
-                </Button>
-              </div>
-            </div>
-
-            <div className="rounded-xl border bg-card p-5">
-              <h3 className="mb-1 text-sm font-semibold">Processamento em lote</h3>
-              <p className="mb-4 text-sm text-muted-foreground">
-                Processa até 20 pedidos recentes por vez, respeitando o limite conservador de uma chamada por segundo.
-              </p>
-              <Button
-                variant="outline"
-                onClick={() => processarReviews.mutate()}
-                disabled={qualquerSyncAtivo}
-              >
-                {processarReviews.isPending ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                ) : (
-                  <RefreshCw className="mr-2 h-4 w-4" />
-                )}
-                Processar pedidos elegíveis
-              </Button>
-            </div>
-
-            <div className="rounded-xl border bg-card">
-              <div className="border-b p-4">
-                <h3 className="text-sm font-semibold">Histórico de solicitações</h3>
-              </div>
-
-              {loadingReviews ? (
-                <div className="space-y-2 p-4">
-                  {Array.from({ length: 5 }).map((_, i) => (
-                    <Skeleton key={i} className="h-14 w-full" />
-                  ))}
-                </div>
-              ) : reviews.length === 0 ? (
-                <div className="flex flex-col items-center justify-center gap-2 py-12 text-center">
-                  <MessageSquare className="h-8 w-8 text-muted-foreground/40" />
-                  <p className="text-sm text-muted-foreground">
-                    Nenhuma solicitação verificada ainda.
-                  </p>
-                </div>
-              ) : (
-                <div className="divide-y">
-                  {reviews.map((review) => (
-                    <div
-                      key={review.id}
-                      className="grid gap-3 p-4 md:grid-cols-[1.3fr_.8fr_.8fr_.8fr] md:items-center"
-                    >
-                      <div className="min-w-0">
-                        <p className="truncate font-mono text-sm">{review.amazonOrderId}</p>
-                        <p className="truncate text-xs text-muted-foreground">
-                          {review.sku ?? "SKU não informado"}
-                          {review.asin ? ` - ${review.asin}` : ""}
-                        </p>
-                      </div>
-                      <ReviewStatusBadge status={review.status} />
-                      <div className="text-xs text-muted-foreground">
-                        <p>Checado: {formatDate(review.checkedAt)}</p>
-                        <p>Enviado: {formatDate(review.sentAt)}</p>
-                      </div>
-                      {review.errorMessage ? (
-                        <p className="text-xs text-destructive">{review.errorMessage}</p>
-                      ) : (
-                        <p className="text-xs text-muted-foreground">Sem erro registrado.</p>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
             </div>
           </div>
         </TabsContent>

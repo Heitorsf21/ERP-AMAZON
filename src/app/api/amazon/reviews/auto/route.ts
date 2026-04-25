@@ -1,12 +1,25 @@
-import { NextRequest } from "next/server";
 import { handle, ok } from "@/lib/api";
-import { processEligibleReviewSolicitations } from "@/modules/amazon/service";
+import { enqueueAmazonSyncJob } from "@/modules/amazon/jobs";
+import { TipoAmazonSyncJob } from "@/modules/shared/domain";
 
 export const dynamic = "force-dynamic";
 
-export const POST = handle(async (req: NextRequest) => {
-  const body = (await req.json().catch(() => ({}))) as { diasAtras?: number };
-  const result = await processEligibleReviewSolicitations(body.diasAtras ?? 30);
-  return ok(result);
+export const POST = handle(async () => {
+  const discovery = await enqueueAmazonSyncJob(
+    TipoAmazonSyncJob.REVIEWS_DISCOVERY,
+    {},
+    {
+      priority: 50,
+      dedupeKey: `manual:${TipoAmazonSyncJob.REVIEWS_DISCOVERY}`,
+    },
+  );
+  const send = await enqueueAmazonSyncJob(
+    TipoAmazonSyncJob.REVIEWS_SEND,
+    {},
+    {
+      priority: 49,
+      dedupeKey: `manual:${TipoAmazonSyncJob.REVIEWS_SEND}`,
+    },
+  );
+  return ok({ ok: true, queued: true, jobs: [discovery, send] });
 });
-

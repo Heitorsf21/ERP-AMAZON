@@ -1,0 +1,637 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Mundo F&S - Proposta Visual Studio</title>
+  <style>
+    :root {
+      --ink: #10282c;
+      --deep: #193b3f;
+      --forest: #275a50;
+      --leaf: #87d5b0;
+      --gold: #dba84a;
+      --clay: #c56f50;
+      --paper: #f8f3e8;
+      --soft: #fffaf0;
+      --line: rgba(16, 40, 44, .12);
+      --shadow: 0 22px 60px rgba(16, 40, 44, .14);
+      --radius: 8px;
+      --font: "Aptos", "Segoe UI Variable", "Segoe UI", sans-serif;
+      --serif: Georgia, "Times New Roman", serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: var(--paper);
+      color: var(--ink);
+      font-family: var(--font);
+      letter-spacing: 0;
+    }
+
+    .preview {
+      width: 1440px;
+      min-height: 1120px;
+      margin: 0 auto;
+      overflow: hidden;
+      background:
+        linear-gradient(90deg, rgba(16, 40, 44, .045) 1px, transparent 1px),
+        linear-gradient(180deg, rgba(16, 40, 44, .04) 1px, transparent 1px),
+        var(--paper);
+      background-size: 44px 44px;
+    }
+
+    .topbar {
+      position: relative;
+      z-index: 5;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      width: min(1180px, calc(100% - 64px));
+      height: 86px;
+      margin: 0 auto;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 13px;
+      min-width: 260px;
+      color: var(--ink);
+      text-decoration: none;
+    }
+
+    .brand:visited {
+      color: var(--ink);
+    }
+
+    .brand img {
+      width: 56px;
+      height: 56px;
+      object-fit: contain;
+      border: 1px solid rgba(16, 40, 44, .1);
+      border-radius: var(--radius);
+      background: var(--soft);
+      box-shadow: 0 12px 28px rgba(16, 40, 44, .12);
+    }
+
+    .brand strong {
+      display: block;
+      font-family: var(--serif);
+      font-size: 24px;
+      line-height: 1;
+    }
+
+    .brand small {
+      display: block;
+      margin-top: 5px;
+      color: var(--forest);
+      font-size: 11px;
+      font-weight: 900;
+      letter-spacing: .16em;
+      text-transform: uppercase;
+    }
+
+    .nav {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      padding: 6px;
+      border: 1px solid rgba(16, 40, 44, .1);
+      border-radius: var(--radius);
+      background: rgba(255, 250, 240, .72);
+      box-shadow: 0 16px 36px rgba(16, 40, 44, .08);
+      backdrop-filter: blur(14px);
+    }
+
+    .nav a,
+    .nav button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 38px;
+      padding: 0 13px;
+      border: 0;
+      border-radius: 7px;
+      background: transparent;
+      color: rgba(16, 40, 44, .72);
+      font: inherit;
+      font-size: 13px;
+      font-weight: 850;
+      text-decoration: none;
+    }
+
+    .nav .active {
+      background: var(--deep);
+      color: white;
+    }
+
+    .hero {
+      position: relative;
+      width: min(1180px, calc(100% - 64px));
+      min-height: 710px;
+      margin: 12px auto 0;
+      border: 1px solid rgba(16, 40, 44, .12);
+      border-radius: var(--radius);
+      overflow: hidden;
+      box-shadow: var(--shadow);
+      color: white;
+      background: var(--deep);
+    }
+
+    .hero::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background:
+        linear-gradient(90deg, rgba(12, 32, 35, .98) 0%, rgba(12, 32, 35, .86) 42%, rgba(12, 32, 35, .42) 70%, rgba(12, 32, 35, .12) 100%),
+        linear-gradient(180deg, rgba(12, 32, 35, .08), rgba(12, 32, 35, .62));
+      z-index: 2;
+    }
+
+    .hero img.bg {
+      position: absolute;
+      inset: 0 0 0 auto;
+      width: 72%;
+      height: 100%;
+      object-fit: cover;
+      object-position: center;
+      filter: saturate(.9) contrast(.96);
+      opacity: .92;
+    }
+
+    .hero-grid {
+      position: absolute;
+      inset: 0;
+      z-index: 3;
+      pointer-events: none;
+      background:
+        linear-gradient(90deg, rgba(255, 250, 240, .07) 1px, transparent 1px),
+        linear-gradient(180deg, rgba(255, 250, 240, .06) 1px, transparent 1px);
+      background-size: 58px 58px;
+      mask-image: linear-gradient(90deg, black 0%, rgba(0, 0, 0, .72) 50%, transparent 100%);
+    }
+
+    .hero-content {
+      position: relative;
+      z-index: 4;
+      max-width: 660px;
+      padding: 72px 0 0 64px;
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      height: 36px;
+      padding: 0 13px;
+      border: 1px solid rgba(135, 213, 176, .34);
+      border-left: 5px solid var(--gold);
+      border-radius: var(--radius);
+      background: rgba(255, 250, 240, .08);
+      color: #a8e6c8;
+      font-size: 12px;
+      font-weight: 950;
+      letter-spacing: .14em;
+      text-transform: uppercase;
+    }
+
+    h1 {
+      margin: 24px 0 0;
+      font-family: var(--serif);
+      font-size: 62px;
+      line-height: .98;
+      letter-spacing: 0;
+    }
+
+    .hero p {
+      max-width: 560px;
+      margin: 26px 0 0;
+      color: rgba(255, 250, 240, .78);
+      font-size: 20px;
+      line-height: 1.54;
+    }
+
+    .actions {
+      display: flex;
+      gap: 12px;
+      margin-top: 34px;
+    }
+
+    .button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      min-height: 50px;
+      padding: 0 19px;
+      border-radius: var(--radius);
+      font-size: 14px;
+      font-weight: 950;
+      text-decoration: none;
+    }
+
+    .button.primary {
+      background: var(--leaf);
+      color: #0b2427;
+      box-shadow: 0 18px 42px rgba(0, 0, 0, .24);
+    }
+
+    .button.secondary {
+      border: 1px solid rgba(255, 250, 240, .22);
+      color: white;
+      background: rgba(255, 250, 240, .07);
+    }
+
+    .trust-strip {
+      position: absolute;
+      left: 64px;
+      right: 64px;
+      bottom: 30px;
+      z-index: 4;
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 10px;
+    }
+
+    .trust-item {
+      min-height: 84px;
+      padding: 15px;
+      border: 1px solid rgba(255, 250, 240, .14);
+      border-radius: var(--radius);
+      background: rgba(20, 47, 50, .94);
+      box-shadow: 0 14px 34px rgba(0, 0, 0, .16);
+    }
+
+    .trust-item span,
+    .section-label,
+    .metric span,
+    .flow-card span {
+      display: block;
+      color: rgba(255, 250, 240, .6);
+      font-size: 11px;
+      font-weight: 950;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+    }
+
+    .trust-item strong {
+      display: block;
+      margin-top: 8px;
+      color: white;
+      font-family: var(--serif);
+      font-size: 20px;
+      line-height: 1.1;
+    }
+
+    .intro {
+      width: min(1180px, calc(100% - 64px));
+      margin: 28px auto 0;
+      display: grid;
+      grid-template-columns: .94fr 1.06fr;
+      gap: 24px;
+      align-items: stretch;
+    }
+
+    .statement,
+    .metrics,
+    .flow,
+    .contact {
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: rgba(255, 250, 240, .78);
+      box-shadow: 0 16px 44px rgba(16, 40, 44, .08);
+    }
+
+    .statement {
+      padding: 36px;
+    }
+
+    .section-label {
+      color: var(--forest);
+    }
+
+    h2 {
+      margin: 16px 0 0;
+      font-family: var(--serif);
+      font-size: 44px;
+      line-height: 1.02;
+      letter-spacing: 0;
+    }
+
+    .statement p {
+      margin: 18px 0 0;
+      color: rgba(16, 40, 44, .7);
+      font-size: 17px;
+      line-height: 1.62;
+    }
+
+    .metrics {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 1px;
+      overflow: hidden;
+      background: rgba(16, 40, 44, .1);
+    }
+
+    .metric {
+      min-height: 150px;
+      padding: 26px;
+      background: rgba(255, 250, 240, .88);
+    }
+
+    .metric span {
+      color: rgba(16, 40, 44, .48);
+    }
+
+    .metric strong {
+      display: block;
+      margin-top: 12px;
+      font-family: var(--serif);
+      font-size: 32px;
+      line-height: 1;
+    }
+
+    .metric p {
+      margin: 9px 0 0;
+      color: rgba(16, 40, 44, .62);
+      font-size: 14px;
+      line-height: 1.42;
+    }
+
+    .lower {
+      width: min(1180px, calc(100% - 64px));
+      margin: 24px auto 70px;
+      display: grid;
+      grid-template-columns: 1.38fr .82fr;
+      gap: 24px;
+    }
+
+    .flow {
+      padding: 30px;
+    }
+
+    .flow-head {
+      display: flex;
+      align-items: end;
+      justify-content: space-between;
+      gap: 24px;
+      margin-bottom: 22px;
+    }
+
+    .flow-head h2 {
+      max-width: 560px;
+      font-size: 36px;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      height: 32px;
+      padding: 0 12px;
+      border-radius: 999px;
+      background: rgba(135, 213, 176, .22);
+      color: var(--forest);
+      font-size: 11px;
+      font-weight: 950;
+      letter-spacing: .1em;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+
+    .flow-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+    }
+
+    .flow-card {
+      min-height: 185px;
+      padding: 22px;
+      border: 1px solid rgba(16, 40, 44, .11);
+      border-radius: var(--radius);
+      background: #fffdf7;
+    }
+
+    .flow-card .number {
+      display: grid;
+      width: 42px;
+      height: 42px;
+      place-items: center;
+      margin-bottom: 22px;
+      border-radius: var(--radius);
+      background: var(--deep);
+      color: #a8e6c8;
+      font-weight: 950;
+    }
+
+    .flow-card span {
+      color: rgba(16, 40, 44, .48);
+    }
+
+    .flow-card strong {
+      display: block;
+      margin-top: 8px;
+      font-family: var(--serif);
+      font-size: 22px;
+      line-height: 1.12;
+    }
+
+    .contact {
+      padding: 30px;
+      background:
+        linear-gradient(180deg, rgba(39, 90, 80, .96), rgba(25, 59, 63, .96)),
+        var(--deep);
+      color: white;
+    }
+
+    .contact h2 {
+      font-size: 36px;
+    }
+
+    .contact p {
+      margin: 16px 0 0;
+      color: rgba(255, 250, 240, .72);
+      line-height: 1.55;
+    }
+
+    .contact-list {
+      display: grid;
+      gap: 12px;
+      margin-top: 26px;
+    }
+
+    .contact-row {
+      padding: 16px;
+      border: 1px solid rgba(255, 250, 240, .14);
+      border-radius: var(--radius);
+      background: rgba(255, 250, 240, .08);
+    }
+
+    .contact-row span {
+      display: block;
+      color: #a8e6c8;
+      font-size: 11px;
+      font-weight: 950;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+    }
+
+    .contact-row strong {
+      display: block;
+      margin-top: 4px;
+      overflow-wrap: anywhere;
+    }
+  </style>
+</head>
+<body>
+  <div class="preview">
+    <header class="topbar">
+      <a class="brand" href="#">
+        <img src="logo.png" alt="Logo Mundo F&S" />
+        <span>
+          <strong>Mundo F&S</strong>
+          <small>Ecommerce</small>
+        </span>
+      </a>
+
+      <nav class="nav" aria-label="Navegacao principal">
+        <a class="active" href="#">Operacao</a>
+        <a href="#">Seguranca</a>
+        <a href="#">Termos</a>
+        <a href="#">Contato</a>
+        <a href="#">EN</a>
+        <button type="button">Tema</button>
+      </nav>
+    </header>
+
+    <main>
+      <section class="hero">
+        <img class="bg" src="marketplace-operation.png" alt="Operacao marketplace" />
+        <div class="hero-grid"></div>
+        <div class="hero-content">
+          <div class="eyebrow">Distribuicao em marketplace</div>
+          <h1>Presenca digital para marcas que vendem melhor.</h1>
+          <p>
+            A Mundo F&S estrutura catalogo, disponibilidade, anuncios e logistica
+            para operacoes em marketplaces, com foco em Amazon Brasil.
+          </p>
+          <div class="actions">
+            <a class="button primary" href="#">Contato oficial</a>
+            <a class="button secondary" href="#">Ver seguranca</a>
+          </div>
+        </div>
+
+        <div class="trust-strip">
+          <div class="trust-item">
+            <span>Foco operacional</span>
+            <strong>Amazon Brasil</strong>
+          </div>
+          <div class="trust-item">
+            <span>Logistica</span>
+            <strong>FBA Classic</strong>
+          </div>
+          <div class="trust-item">
+            <span>Modelo</span>
+            <strong>Distribuicao digital</strong>
+          </div>
+          <div class="trust-item">
+            <span>Governanca</span>
+            <strong>Canais oficiais</strong>
+          </div>
+        </div>
+      </section>
+
+      <section class="intro">
+        <article class="statement">
+          <span class="section-label">Empresa e operacao</span>
+          <h2>Mais clareza comercial, menos aparência de documento.</h2>
+          <p>
+            A nova direcao mantem a seriedade juridica do site, mas apresenta a
+            Mundo F&S como uma operacao viva: confiavel, acessivel e preparada
+            para conversas comerciais.
+          </p>
+        </article>
+
+        <div class="metrics">
+          <div class="metric">
+            <span>Catalogo</span>
+            <strong>Ofertas estruturadas</strong>
+            <p>Texto mais direto para parceiros entenderem o que a empresa faz.</p>
+          </div>
+          <div class="metric">
+            <span>Marketplace</span>
+            <strong>Amazon Brasil</strong>
+            <p>Foco aparece cedo, com disclaimer visual mais elegante.</p>
+          </div>
+          <div class="metric">
+            <span>Confianca</span>
+            <strong>Politicas visiveis</strong>
+            <p>Privacidade, termos e seguranca continuam presentes no topo.</p>
+          </div>
+          <div class="metric">
+            <span>Contato</span>
+            <strong>Caminho simples</strong>
+            <p>CTA principal vira contato oficial, com menor ruido.</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="lower">
+        <article class="flow">
+          <div class="flow-head">
+            <div>
+              <span class="section-label">Fluxo comercial</span>
+              <h2>Da curadoria ao marketplace, com rastreabilidade.</h2>
+            </div>
+            <span class="pill">Operacao independente</span>
+          </div>
+
+          <div class="flow-grid">
+            <div class="flow-card">
+              <div class="number">01</div>
+              <span>Curadoria</span>
+              <strong>Produtos e fornecedores selecionados</strong>
+            </div>
+            <div class="flow-card">
+              <div class="number">02</div>
+              <span>Catalogo</span>
+              <strong>Anuncios, ofertas e disponibilidade</strong>
+            </div>
+            <div class="flow-card">
+              <div class="number">03</div>
+              <span>Logistica</span>
+              <strong>Preparacao e acompanhamento FBA</strong>
+            </div>
+          </div>
+        </article>
+
+        <aside class="contact">
+          <span class="eyebrow">Canais oficiais</span>
+          <h2>Contato sem friccao.</h2>
+          <p>
+            A area de contato fica mais humana e objetiva, preservando os dados
+            oficiais da empresa e separando o site publico dos sistemas internos.
+          </p>
+          <div class="contact-list">
+            <div class="contact-row">
+              <span>E-mail</span>
+              <strong>Admfsmundo@gmail.com</strong>
+            </div>
+            <div class="contact-row">
+              <span>Telefones</span>
+              <strong>(31) 99771-0655 / (31) 99855-7225</strong>
+            </div>
+          </div>
+        </aside>
+      </section>
+    </main>
+  </div>
+</body>
+</html>

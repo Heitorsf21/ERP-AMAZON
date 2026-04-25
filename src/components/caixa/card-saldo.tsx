@@ -8,6 +8,8 @@ type PontoProjecao = {
   label: string;
   dias: number;
   saldoCentavos: number;
+  saldoBaseCentavos: number;
+  amazonPrevistasCentavos: number;
 };
 
 export type SaldoResposta = {

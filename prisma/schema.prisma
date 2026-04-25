@@ -43,29 +43,29 @@ model Usuario {
 }
 
 model Categoria {
-  id            String   @id @default(cuid())
-  nome          String   @unique
+  id        String   @id @default(cuid())
+  nome      String   @unique
   // RECEITA | DESPESA | AMBAS
-  tipo          String
-  cor           String?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  tipo      String
+  cor       String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   movimentacoes Movimentacao[]
   contas        ContaPagar[]
 }
 
 model Fornecedor {
-  id         String   @id @default(cuid())
-  nome       String   @unique
-  documento  String?
-  contato    String?
+  id          String   @id @default(cuid())
+  nome        String   @unique
+  documento   String?
+  contato     String?
   observacoes String?
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
-  contas     ContaPagar[]
-  pedidos    PedidoCompra[]
+  contas  ContaPagar[]
+  pedidos PedidoCompra[]
 }
 
 // Movimentação de caixa (entrada ou saída realizada).
@@ -94,9 +94,9 @@ model Movimentacao {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
-  categoria       Categoria     @relation(fields: [categoriaId], references: [id])
-  contaPaga       ContaPagar?   @relation("ContaPagaMovimentacao")
-  contaReceber    ContaReceber? @relation("ContaReceberMovimentacao")
+  categoria    Categoria     @relation(fields: [categoriaId], references: [id])
+  contaPaga    ContaPagar?   @relation("ContaPagaMovimentacao")
+  contaReceber ContaReceber? @relation("ContaReceberMovimentacao")
 
   @@index([dataCaixa])
   @@index([tipo])
@@ -116,7 +116,7 @@ model Movimentacao {
 //   NENHUMA    — conta única
 //   MENSAL     — ao pagar, gera próxima instância (com contaPaiId apontando para a origem)
 model ContaPagar {
-  id             String   @id @default(cuid())
+  id             String    @id @default(cuid())
   fornecedorId   String
   categoriaId    String
   descricao      String
@@ -124,26 +124,26 @@ model ContaPagar {
   valor          Int
   vencimento     DateTime
   // ABERTA | VENCIDA | PAGA | CANCELADA
-  status         String   @default("ABERTA")
+  status         String    @default("ABERTA")
   // NENHUMA | MENSAL
-  recorrencia    String   @default("NENHUMA")
+  recorrencia    String    @default("NENHUMA")
   contaPaiId     String?
   pagoEm         DateTime?
-  movimentacaoId String?  @unique
+  movimentacaoId String?   @unique
   observacoes    String?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
-  fornecedor     Fornecedor    @relation(fields: [fornecedorId], references: [id])
-  categoria      Categoria     @relation(fields: [categoriaId], references: [id])
-  nfAnexo        String?
-  nfNome         String?
+  fornecedor Fornecedor @relation(fields: [fornecedorId], references: [id])
+  categoria  Categoria  @relation(fields: [categoriaId], references: [id])
+  nfAnexo    String?
+  nfNome     String?
 
-  contaPai       ContaPagar?   @relation("Recorrencia", fields: [contaPaiId], references: [id])
-  filhas         ContaPagar[]  @relation("Recorrencia")
-  movimentacao   Movimentacao? @relation("ContaPagaMovimentacao", fields: [movimentacaoId], references: [id])
+  contaPai         ContaPagar?       @relation("Recorrencia", fields: [contaPaiId], references: [id])
+  filhas           ContaPagar[]      @relation("Recorrencia")
+  movimentacao     Movimentacao?     @relation("ContaPagaMovimentacao", fields: [movimentacaoId], references: [id])
   dossieFinanceiro DossieFinanceiro?
-  pedidoCompra   PedidoCompra? @relation("PedidoContaPagar")
+  pedidoCompra     PedidoCompra?     @relation("PedidoContaPagar")
 
   @@index([status])
   @@index([vencimento])
@@ -154,20 +154,20 @@ model ContaPagar {
 // independentemente da ordem de entrada (boleto primeiro, NF depois, etc.).
 // Pode existir antes da ContaPagar e ser vinculada depois.
 model DossieFinanceiro {
-  id                  String   @id @default(cuid())
+  id                  String    @id @default(cuid())
   fornecedorNome      String?
   fornecedorDocumento String?
   descricao           String?
   valor               Int?
   vencimento          DateTime?
   numeroDocumento     String?
-  status              String   @default("PENDENTE")
-  contaPagarId        String?  @unique
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
+  status              String    @default("PENDENTE")
+  contaPagarId        String?   @unique
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
 
-  contaPagar          ContaPagar?          @relation(fields: [contaPagarId], references: [id])
-  documentos          DocumentoFinanceiro[]
+  contaPagar ContaPagar?           @relation(fields: [contaPagarId], references: [id])
+  documentos DocumentoFinanceiro[]
 
   @@index([status])
   @@index([fornecedorDocumento])
@@ -178,13 +178,13 @@ model DossieFinanceiro {
 // O arquivo sempre pertence a um DossieFinanceiro e pode acabar vinculado
 // indiretamente a uma ContaPagar quando o dossiê é conciliado.
 model DocumentoFinanceiro {
-  id                  String   @id @default(cuid())
+  id                  String    @id @default(cuid())
   dossieId            String
   tipo                String
   nomeArquivo         String
   caminhoArquivo      String
   mimeType            String
-  sha256              String   @unique
+  sha256              String    @unique
   textoExtraido       String?
   fornecedorNome      String?
   fornecedorDocumento String?
@@ -195,11 +195,11 @@ model DocumentoFinanceiro {
   chaveAcesso         String?
   linhaDigitavel      String?
   dataEmissao         DateTime?
-  protegidoPorSenha   Boolean  @default(false)
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
+  protegidoPorSenha   Boolean   @default(false)
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
 
-  dossie              DossieFinanceiro @relation(fields: [dossieId], references: [id], onDelete: Cascade)
+  dossie DossieFinanceiro @relation(fields: [dossieId], references: [id], onDelete: Cascade)
 
   @@index([dossieId])
   @@index([tipo])
@@ -220,23 +220,23 @@ model DocumentoFinanceiro {
 //
 // liquidacaoId: ID de liquidação da Amazon (agrupa pedidos do mesmo lote).
 model ContaReceber {
-  id                String   @id @default(cuid())
-  descricao         String
-  valor             Int      // centavos, líquido (após taxas Amazon)
-  dataPrevisao      DateTime?
-  dataRecebimento   DateTime?
+  id              String    @id @default(cuid())
+  descricao       String
+  valor           Int // centavos, líquido (após taxas Amazon)
+  dataPrevisao    DateTime?
+  dataRecebimento DateTime?
   // PENDENTE | RECEBIDA | CANCELADA
-  status            String   @default("PENDENTE")
+  status          String    @default("PENDENTE")
   // AMAZON | MANUAL
-  origem            String   @default("AMAZON")
-  liquidacaoId      String?  // Amazon settlement ID
-  totalPedidos      Int      @default(0)
-  movimentacaoId    String?  @unique
-  observacoes       String?
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  origem          String    @default("AMAZON")
+  liquidacaoId    String? // Amazon settlement ID
+  totalPedidos    Int       @default(0)
+  movimentacaoId  String?   @unique
+  observacoes     String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
-  movimentacao      Movimentacao? @relation("ContaReceberMovimentacao", fields: [movimentacaoId], references: [id])
+  movimentacao Movimentacao? @relation("ContaReceberMovimentacao", fields: [movimentacaoId], references: [id])
 
   @@index([status])
   @@index([dataPrevisao])
@@ -252,31 +252,139 @@ model ContaReceber {
 //
 // statusReposicao (OK/ATENCAO/REPOR) é derivado — nunca persistido.
 model Produto {
-  id              String   @id @default(cuid())
-  sku             String   @unique
-  asin            String?
-  nome            String
-  descricao       String?
+  id                    String   @id @default(cuid())
+  sku                   String   @unique
+  asin                  String?
+  nome                  String
+  descricao             String?
   // custo unitário em centavos
-  custoUnitario   Int?
+  custoUnitario         Int?
   // preço de venda em centavos (informativo)
-  precoVenda      Int?
-  estoqueAtual    Int      @default(0)
-  estoqueMinimo   Int      @default(0)
-  unidade         String   @default("un")
-  ativo           Boolean  @default(true)
-  imagemUrl       String?
-  observacoes     String?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  precoVenda            Int?
+  // Snapshots vindos da Amazon FBA Inventory API.
+  amazonEstoqueDisponivel Int?
+  amazonEstoqueReservado  Int?
+  amazonEstoqueInbound    Int?
+  amazonEstoqueTotal      Int?
+  amazonUltimaSyncEm      DateTime?
+  estoqueAtual          Int      @default(0)
+  estoqueMinimo         Int      @default(0)
+  unidade               String   @default("un")
+  ativo                 Boolean  @default(true)
+  // Controle de solicitação automática de avaliações por SKU.
+  // true = elegível para o cron diário; false = pausado pelo usuário.
+  solicitarReviewsAtivo Boolean  @default(true)
+  imagemUrl             String?
+  observacoes           String?
+  // Catálogo Amazon (Catalog Items API v2022-04-01)
+  amazonImagemUrl       String?
+  amazonTituloOficial   String?
+  amazonCategoria       String?
+  amazonCatalogSyncEm   DateTime?
+  // Buybox (Product Pricing API v2022-05-01)
+  buyboxGanho           Boolean?
+  buyboxPreco           Int?      // centavos
+  buyboxConcorrentes    Int?
+  buyboxUltimaSyncEm    DateTime?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
 
-  movimentacoes   MovimentacaoEstoque[]
-  itensPedido     ItemPedidoCompra[]
-  metricas        ProdutoMetricaGestorSeller[]
+  movimentacoes    MovimentacaoEstoque[]
+  itensPedido      ItemPedidoCompra[]
+  metricas         ProdutoMetricaGestorSeller[]
+  adsGastosManuais AdsGastoManual[]
+  reembolsosAmazon AmazonReembolso[]
 
   @@index([sku])
   @@index([asin])
   @@index([ativo])
+  @@index([amazonUltimaSyncEm])
+}
+
+// Venda analitica Amazon item-a-item, alimentada inicialmente pelo CSV
+// Unified Transaction e preparada para receber Orders/Reports/Finances API.
+model VendaAmazon {
+  id                    String   @id @default(cuid())
+  amazonOrderId         String
+  orderItemId           String?
+  sku                   String
+  asin                  String?
+  titulo                String?
+  quantidade            Int
+  precoUnitarioCentavos Int
+  valorBrutoCentavos    Int?
+  taxasCentavos         Int      @default(0)
+  fretesCentavos        Int      @default(0)
+  liquidoMarketplaceCentavos Int?
+  custoUnitarioCentavos Int?
+  liquidacaoId          String?
+  marketplace           String?
+  fulfillmentChannel    String?
+  statusPedido          String   @default("UNKNOWN")
+  statusFinanceiro      String   @default("PENDENTE")
+  dataVenda             DateTime
+  ultimaSyncEm          DateTime?
+  criadoEm              DateTime @default(now())
+  atualizadoEm          DateTime @updatedAt
+
+  @@unique([amazonOrderId, sku])
+  @@index([orderItemId])
+  @@index([dataVenda])
+  @@index([sku])
+  @@index([liquidacaoId])
+  @@index([statusPedido])
+  @@index([statusFinanceiro])
+  @@index([ultimaSyncEm])
+}
+
+// Evento financeiro de reembolso Amazon. Separado de VendaAmazon para suportar
+// reembolsos parciais e mÃºltiplos eventos no mesmo pedido/produto.
+model AmazonReembolso {
+  id                         String   @id @default(cuid())
+  amazonOrderId              String
+  orderItemId                String?
+  sku                        String
+  asin                       String?
+  titulo                     String?
+  quantidade                 Int      @default(0)
+  valorReembolsadoCentavos   Int
+  taxasReembolsadasCentavos  Int      @default(0)
+  dataReembolso              DateTime
+  liquidacaoId               String?
+  marketplace                String?
+  referenciaExterna          String   @unique
+  statusFinanceiro           String?
+  // CUSTOMER_RETURN | DEFECTIVE | NOT_AS_DESCRIBED | DAMAGED_BY_FC | SWITCHEROO | OTHER
+  motivoCategoria            String?
+  produtoId                  String?
+  criadoEm                   DateTime @default(now())
+  atualizadoEm               DateTime @updatedAt
+
+  produto Produto? @relation(fields: [produtoId], references: [id], onDelete: SetNull)
+
+  @@index([amazonOrderId])
+  @@index([orderItemId])
+  @@index([sku])
+  @@index([dataReembolso])
+  @@index([liquidacaoId])
+  @@index([produtoId])
+  @@index([motivoCategoria])
+}
+
+// Gasto manual de Ads enquanto a Amazon Advertising API nao esta aprovada.
+// produtoId null representa gasto geral a ser rateado por faturamento.
+model AdsGastoManual {
+  id            String   @id @default(cuid())
+  periodoInicio DateTime
+  periodoFim    DateTime
+  produtoId     String?
+  valorCentavos Int
+  criadoEm      DateTime @default(now())
+
+  produto Produto? @relation(fields: [produtoId], references: [id], onDelete: SetNull)
+
+  @@index([periodoInicio, periodoFim])
+  @@index([produtoId])
 }
 
 // Movimentação de estoque (entrada ou saída de produto).
@@ -301,7 +409,7 @@ model MovimentacaoEstoque {
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
-  produto          Produto  @relation(fields: [produtoId], references: [id])
+  produto Produto @relation(fields: [produtoId], references: [id])
 
   @@index([produtoId])
   @@index([dataMovimentacao])
@@ -319,24 +427,24 @@ model MovimentacaoEstoque {
 //   RECEBIDO   — mercadoria chegou; cria MovimentacaoEstoque ENTRADA por item
 //   CANCELADO  — cancelado
 model PedidoCompra {
-  id              String    @id @default(cuid())
+  id              String             @id @default(cuid())
   numero          String?
   fornecedorId    String?
-  fornecedor      Fornecedor? @relation(fields: [fornecedorId], references: [id])
+  fornecedor      Fornecedor?        @relation(fields: [fornecedorId], references: [id])
   // RASCUNHO | CONFIRMADO | RECEBIDO | CANCELADO
-  status          String    @default("RASCUNHO")
-  dataEmissao     DateTime  @default(now())
+  status          String             @default("RASCUNHO")
+  dataEmissao     DateTime           @default(now())
   dataPrevisao    DateTime?
   dataRecebimento DateTime?
   // total em centavos (desnormalizado para queries rápidas)
-  totalCentavos   Int       @default(0)
+  totalCentavos   Int                @default(0)
   observacoes     String?
   // contaPagar criada ao confirmar
-  contaPagarId    String?   @unique
-  contaPagar      ContaPagar? @relation("PedidoContaPagar", fields: [contaPagarId], references: [id])
+  contaPagarId    String?            @unique
+  contaPagar      ContaPagar?        @relation("PedidoContaPagar", fields: [contaPagarId], references: [id])
   itens           ItemPedidoCompra[]
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
 
   @@index([status])
   @@index([dataEmissao])
@@ -345,15 +453,15 @@ model PedidoCompra {
 
 // Item de um PedidoCompra (produto + quantidade + custo negociado).
 model ItemPedidoCompra {
-  id              String   @id @default(cuid())
-  pedidoId        String
-  pedido          PedidoCompra @relation(fields: [pedidoId], references: [id], onDelete: Cascade)
-  produtoId       String
-  produto         Produto  @relation(fields: [produtoId], references: [id])
-  quantidade      Int
-  custoUnitario   Int      // centavos
-  subtotal        Int      // quantidade * custoUnitario (desnormalizado)
-  createdAt       DateTime @default(now())
+  id            String       @id @default(cuid())
+  pedidoId      String
+  pedido        PedidoCompra @relation(fields: [pedidoId], references: [id], onDelete: Cascade)
+  produtoId     String
+  produto       Produto      @relation(fields: [produtoId], references: [id])
+  quantidade    Int
+  custoUnitario Int // centavos
+  subtotal      Int // quantidade * custoUnitario (desnormalizado)
+  createdAt     DateTime     @default(now())
 
   @@index([pedidoId])
   @@index([produtoId])
@@ -369,7 +477,7 @@ model AmazonSyncLog {
   // PROCESSANDO | SUCESSO | ERRO
   status    String
   mensagem  String?
-  detalhes  String?  // JSON stringificado com detalhes do resultado
+  detalhes  String? // JSON stringificado com detalhes do resultado
   registros Int      @default(0)
   createdAt DateTime @default(now())
 
@@ -378,24 +486,87 @@ model AmazonSyncLog {
   @@index([status])
 }
 
+// Fila persistente para sincronizacoes Amazon processadas por worker.
+model AmazonSyncJob {
+  id          String    @id @default(cuid())
+  // ORDERS_SYNC | FINANCES_SYNC | INVENTORY_SYNC | REFUNDS_SYNC | REVIEWS_DISCOVERY | REVIEWS_SEND | REPORTS_BACKFILL
+  tipo        String
+  // QUEUED | RUNNING | SUCCESS | FAILED | CANCELLED
+  status      String    @default("QUEUED")
+  priority    Int       @default(0)
+  payload     String?
+  result      String?
+  error       String?
+  attempts    Int       @default(0)
+  maxAttempts Int       @default(5)
+  runAfter    DateTime  @default(now())
+  startedAt   DateTime?
+  finishedAt  DateTime?
+  lockedAt    DateTime?
+  lockedBy    String?
+  dedupeKey   String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([status, runAfter, priority])
+  @@index([tipo])
+  @@index([dedupeKey])
+  @@index([createdAt])
+  @@index([lockedAt])
+}
+
+// Cooldown local por operacao SP-API, espelhando o token bucket da Amazon.
+model AmazonApiQuota {
+  id                 String    @id @default(cuid())
+  operation          String    @unique
+  nextAllowedAt      DateTime?
+  rateLimitPerSecond Float?
+  burst              Int?
+  lastStatus         Int?
+  lastError          String?
+  lastAttemptAt      DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  @@index([nextAllowedAt])
+}
+
 // Controle das solicitações oficiais de avaliação/feedback enviadas pela
 // Solicitations API. Garante idempotência por pedido Amazon.
 model AmazonReviewSolicitation {
-  id            String   @id @default(cuid())
-  amazonOrderId String   @unique
-  marketplaceId String
-  // PENDENTE | ELEGIVEL | ENVIADO | NAO_ELEGIVEL | ERRO
-  status        String   @default("PENDENTE")
-  asin          String?
-  sku           String?
-  checkedAt     DateTime?
-  sentAt        DateTime?
-  errorMessage  String?
-  rawResponse   String?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id                  String    @id @default(cuid())
+  amazonOrderId       String    @unique
+  marketplaceId       String
+  // PENDENTE | AGUARDANDO | ELEGIVEL | ENVIADO | JA_SOLICITADO | NAO_ELEGIVEL | EXPIRADO | ERRO
+  status              String    @default("PENDENTE")
+  // BACKFILL | DAILY | MANUAL
+  origem              String    @default("DAILY")
+  asin                String?
+  sku                 String?
+  orderCreatedAt      DateTime?
+  eligibleFrom        DateTime?
+  deliveryWindowStart DateTime?
+  deliveryWindowEnd   DateTime?
+  nextCheckAt         DateTime?
+  attempts            Int       @default(0)
+  lastAttemptAt       DateTime?
+  qualificationReason String?
+  resolvedReason      String?
+  lastCheckedAction   String?
+  checkedAt           DateTime?
+  sentAt              DateTime?
+  errorMessage        String?
+  rawResponse         String?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
 
   @@index([status])
+  @@index([origem])
+  @@index([orderCreatedAt])
+  @@index([eligibleFrom])
+  @@index([deliveryWindowEnd])
+  @@index([nextCheckAt])
+  @@index([lastAttemptAt])
   @@index([sentAt])
   @@index([createdAt])
   @@index([marketplaceId])
@@ -424,7 +595,7 @@ model LoteImportacaoFBA {
   produtosAtualizados Int       @default(0)
   createdAt           DateTime  @default(now())
 
-  vendas              VendaFBA[]
+  vendas VendaFBA[]
 
   @@index([tipo])
   @@index([createdAt])
@@ -450,7 +621,7 @@ model VendaFBA {
   loteId                String
   createdAt             DateTime @default(now())
 
-  lote                  LoteImportacaoFBA @relation(fields: [loteId], references: [id], onDelete: Cascade)
+  lote LoteImportacaoFBA @relation(fields: [loteId], references: [id], onDelete: Cascade)
 
   @@unique([numeroPedido, skuExterno])
   @@index([skuExterno])
@@ -468,7 +639,7 @@ model LoteMetricaGS {
   nomeArquivo String
   createdAt   DateTime @default(now())
 
-  metricas    ProdutoMetricaGestorSeller[]
+  metricas ProdutoMetricaGestorSeller[]
 
   @@index([createdAt])
 }
@@ -500,8 +671,8 @@ model ProdutoMetricaGestorSeller {
   mpaPercentual          Float    @default(0)
   createdAt              DateTime @default(now())
 
-  lote     LoteMetricaGS @relation(fields: [loteId], references: [id], onDelete: Cascade)
-  produto  Produto?      @relation(fields: [produtoId], references: [id])
+  lote    LoteMetricaGS @relation(fields: [loteId], references: [id], onDelete: Cascade)
+  produto Produto?      @relation(fields: [produtoId], references: [id])
 
   @@unique([loteId, sku])
   @@index([sku])
@@ -514,12 +685,78 @@ model ProdutoMetricaGestorSeller {
 // Permite listar o histórico de arquivos importados e remover o lote
 // inteiro (junto com as movimentações vinculadas) quando preciso refazer.
 model ImportacaoLote {
-  id           String   @id @default(cuid())
-  nomeArquivo  String
+  id          String   @id @default(cuid())
+  nomeArquivo String
   // GENERICO | NUBANK (string para manter compat com SQLite)
-  formato      String
-  totalLinhas  Int
-  criadoEm     DateTime @default(now())
+  formato     String
+  totalLinhas Int
+  criadoEm    DateTime @default(now())
 
   @@index([criadoEm])
+}
+
+// Campanha de Ads importada via relatório CSV da Amazon Advertising.
+// Cada linha do relatório de campanha vira um registro aqui.
+// acosPercentual = gastoCentavos / vendasAtribuidasCentavos * 100
+model AdsCampanha {
+  id                       String   @id @default(cuid())
+  periodoInicio            DateTime
+  periodoFim               DateTime
+  nomeCampanha             String
+  asin                     String?
+  sku                      String?
+  impressoes               Int      @default(0)
+  cliques                  Int      @default(0)
+  gastoCentavos            Int
+  vendasAtribuidasCentavos Int      @default(0)
+  pedidos                  Int      @default(0)
+  unidades                 Int      @default(0)
+  acosPercentual           Float?
+  roas                     Float?
+  criadoEm                 DateTime @default(now())
+  updatedAt                DateTime @updatedAt
+
+  @@index([periodoInicio, periodoFim])
+  @@index([sku])
+  @@index([nomeCampanha])
+}
+
+// Notificação interna gerada automaticamente pelo ERP.
+// dedupeKey evita duplicatas do mesmo alerta no mesmo dia.
+model Notificacao {
+  id          String   @id @default(cuid())
+  // ESTOQUE_CRITICO | BUYBOX_PERDIDO | REEMBOLSO_ALTO | ACOS_ALTO | LIQUIDACAO_ATRASADA | CUSTO_AUSENTE
+  tipo        String
+  titulo      String
+  descricao   String
+  lida        Boolean  @default(false)
+  linkRef     String?
+  dedupeKey   String?  @unique
+  criadaEm    DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([lida])
+  @@index([tipo])
+  @@index([criadaEm])
+}
+
+// Registro de Settlement Report baixado via Reports API.
+// Cada liquidação Amazon gera um relatório GET_V2_SETTLEMENT_REPORT_DATA_FLAT_FILE.
+// processadoEm null = ainda não reconciliado com ContaReceber.
+model AmazonSettlementReport {
+  id                  String    @id @default(cuid())
+  reportId            String    @unique
+  reportDocumentId    String?
+  settlementId        String?   @unique
+  periodoInicio       DateTime?
+  periodoFim          DateTime?
+  depositDate         DateTime?
+  totalAmountCentavos Int?
+  processadoEm        DateTime?
+  criadoEm            DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  @@index([settlementId])
+  @@index([depositDate])
+  @@index([processadoEm])
 }
