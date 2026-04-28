@@ -11,6 +11,20 @@ build/
 .dev-server.pid
 .dev-server.current
 
+# Segredos locais (nunca versionar credenciais reais)
+.env
+.env.*
+!.env.example
+
+# Dados locais/sensÃ­veis
+prisma/*.db
+prisma/*.db-*
+uploads/
+*.ofx
+*.pdf
+NU_*.csv
+*UnifiedTransaction*.csv
+
 # TypeScript gerado
 *.tsbuildinfo
 next-env.d.ts

@@ -1,3 +1,9 @@
+// Carrega .env / .env.local / .env.production usando o mesmo loader do Next.js.
+// tsx não auto-carrega .env, e em prod o PM2 só herda o env do shell que disparou
+// o `pm2 start` — sem isto o worker entrava sem DATABASE_URL/INTERNAL_HEALTH_TOKEN/etc.
+import { loadEnvConfig } from "@next/env";
+loadEnvConfig(process.cwd());
+
 import { processAmazonSyncJobs } from "../src/modules/amazon/worker";
 
 const once = process.argv.includes("--once");

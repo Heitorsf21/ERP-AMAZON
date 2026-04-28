@@ -13,6 +13,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { fileMatchesDeclaredMime } from "@/lib/file-validation";
 
 export const dynamic = "force-dynamic";
 
@@ -60,7 +61,11 @@ export async function POST(req: Request, { params }: Params) {
   const filename = `${id}.${ext}`;
   const fullPath = path.join(UPLOADS_ROOT, filename);
   const ab = await file.arrayBuffer();
-  await fs.writeFile(fullPath, Buffer.from(ab));
+  const buffer = Buffer.from(ab);
+  if (!fileMatchesDeclaredMime(buffer, file.type)) {
+    return NextResponse.json({ erro: "Conteudo de imagem invalido" }, { status: 400 });
+  }
+  await fs.writeFile(fullPath, buffer);
 
   const relativePath = `uploads/produtos/${filename}`;
   await db.produto.update({

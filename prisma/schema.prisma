@@ -273,6 +273,7 @@ model Produto {
   adsGastosManuais AdsGastoManual[]
   reembolsosAmazon AmazonReembolso[]
   buyboxSnapshots  BuyBoxSnapshot[]
+  inventorySnapshots InventorySnapshot[]
 
   @@index([sku])
   @@index([asin])
@@ -704,4 +705,57 @@ model BuyBoxSnapshot {
   @@index([sku, capturadoEm])
   @@index([produtoId])
   @@index([capturadoEm])
+}
+
+// ── Sprint 2: backfill que sustenta a DRE ───────────────────────────
+
+// Tabela bruta de transações financeiras Amazon (Finances API listTransactions).
+// Guardamos o payload completo (`payload`: String em SQLite, Json/jsonb em PG —
+// mesma convenção de AmazonSyncJob.payload) para reprocessar/derivar
+// taxas/fretes/refund mesmo se a Amazon mudar o shape. Idempotência por
+// transactionId @unique.
+model AmazonFinanceTransaction {
+  id                  String    @id @default(cuid())
+  transactionId       String    @unique
+  transactionType     String?
+  transactionStatus   String?
+  description         String?
+  postedDate          DateTime?
+  marketplaceId       String?
+  amazonOrderId       String?
+  sku                 String?
+  totalAmountCentavos Int?
+  totalAmountCurrency String?
+  payload             String
+  criadoEm            DateTime  @default(now())
+  atualizadoEm        DateTime  @updatedAt
+
+  @@index([postedDate])
+  @@index([transactionType])
+  @@index([amazonOrderId])
+  @@index([sku])
+}
+
+// Snapshot diário de inventário FBA por SKU.
+// Histórico não volta pela API — quem grava daqui pra frente cria a série temporal.
+// dataSnapshot é truncado a 00:00 UTC do dia para garantir 1 row/SKU/dia idempotente.
+model InventorySnapshot {
+  id                     String   @id @default(cuid())
+  produtoId              String?
+  sku                    String
+  asin                   String?
+  fnSku                  String?
+  fulfillableQuantity    Int      @default(0)
+  inboundWorkingQuantity Int      @default(0)
+  reservedQuantity       Int      @default(0)
+  totalQuantity          Int      @default(0)
+  dataSnapshot           DateTime
+  capturadoEm            DateTime @default(now())
+
+  produto Produto? @relation(fields: [produtoId], references: [id], onDelete: SetNull)
+
+  @@unique([sku, dataSnapshot])
+  @@index([sku])
+  @@index([dataSnapshot])
+  @@index([produtoId])
 }

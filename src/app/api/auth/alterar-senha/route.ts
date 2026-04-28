@@ -3,16 +3,14 @@ import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { getSession } from "@/lib/auth";
+import { strongPasswordSchema } from "@/lib/password-policy";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const schema = z.object({
   senhaAtual: z.string().min(1).max(200),
-  senhaNova: z
-    .string()
-    .min(8, "Senha nova deve ter ao menos 8 caracteres")
-    .max(200),
+  senhaNova: strongPasswordSchema,
 });
 
 export async function POST(req: Request) {

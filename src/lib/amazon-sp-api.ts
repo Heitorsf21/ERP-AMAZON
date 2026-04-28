@@ -342,6 +342,7 @@ export interface SPReportDocument {
 export async function getSettlementReports(
   creds: SPAPICredentials,
   maxPages = 3,
+  options: { createdSince?: Date; createdUntil?: Date } = {},
 ): Promise<SPReport[]> {
   type ReportsListResponse = {
     reports?: SPReport[];
@@ -361,8 +362,17 @@ export async function getSettlementReports(
         params: nextToken
           ? { nextToken }
           : {
-              reportTypes: "GET_V2_SETTLEMENT_REPORT_DATA_FLAT_FILE",
+              // V2 primeiro (default a partir de 2026-11-11, quando o flat file legado
+              // será descontinuado pela Amazon). FLAT_FILE legado fica como fallback.
+              reportTypes:
+                "GET_V2_SETTLEMENT_REPORT_DATA_FLAT_FILE_V2,GET_V2_SETTLEMENT_REPORT_DATA_FLAT_FILE",
               pageSize: 10,
+              ...(options.createdSince
+                ? { createdSince: options.createdSince.toISOString() }
+                : {}),
+              ...(options.createdUntil
+                ? { createdUntil: options.createdUntil.toISOString() }
+                : {}),
             },
       },
     );

@@ -7,19 +7,22 @@
  *
  * Cada handler é chamado pelo worker em src/modules/amazon/worker.ts.
  */
-import { gunzipSync } from "node:zlib";
 import { db } from "@/lib/db";
 import {
-  createReport,
   getCatalogItem,
+  getInventorySummaries,
   getProductOffers,
-  getReport,
-  getReportDocument,
   getSettlementReports,
+  listFinancialTransactions,
   type SPAPICredentials,
   type SPCatalogItem,
+  type SPFinanceTransaction,
 } from "@/lib/amazon-sp-api";
 import { parseAllOrdersTsv } from "@/modules/amazon/parsers/all-orders-tsv";
+import {
+  downloadReportDocument,
+  stepReportLifecycle,
+} from "@/modules/amazon/report-runner";
 import {
   notificarBuyboxPerdido,
   notificarBuyboxRecuperado,
@@ -62,13 +65,18 @@ export async function syncSettlementReports(creds: SPAPICredentials) {
     if (existente?.processadoEm) continue;
 
     try {
-      const doc = await getReportDocument(creds, report.reportDocumentId);
-      if (!doc?.url) {
+      // Settlement reports já são criados pela Amazon — só precisamos baixar.
+      // stepReportLifecycle aceita reportId em estado DONE e devolve o buffer.
+      const lifecycle = await stepReportLifecycle(creds, {
+        pendingReportId: report.reportId,
+        reportType: report.reportType,
+      });
+      if (lifecycle.status !== "DONE") {
         erros++;
         continue;
       }
 
-      const csvBuffer = await downloadReportDocument(doc.url, doc.compressionAlgorithm);
+      const csvBuffer = lifecycle.buffer;
       const resumo = await contasReceberService.importarAmazonCSV(csvBuffer);
       baixados++;
 
@@ -114,17 +122,8 @@ export async function syncSettlementReports(creds: SPAPICredentials) {
   return { ok: true, reports: reports.length, baixados, novos, erros };
 }
 
-async function downloadReportDocument(
-  url: string,
-  compression?: string,
-): Promise<Buffer> {
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`download settlement ${res.status}`);
-  const ab = await res.arrayBuffer();
-  let buffer = Buffer.from(ab);
-  if (compression === "GZIP") buffer = gunzipSync(buffer);
-  return buffer;
-}
+// downloadReportDocument agora vive em ./report-runner (compartilhado com os
+// handlers de backfill da Sprint 2 e futuros handlers da Sprint 3).
 
 // ─────────────────────────────────────────────────────────────────────
 // BUYBOX_CHECK
@@ -435,86 +434,72 @@ export async function syncOrdersHistoryReport(creds: SPAPICredentials) {
     };
   }
 
-  // 1) Já temos um report pendente? Faz polling.
   const pendingId = await getCfg(ORDERS_HISTORY_PENDING_KEY);
-  if (pendingId) {
-    const report = await getReport(creds, pendingId);
-    const status = report.processingStatus ?? "UNKNOWN";
-
-    if (status === "IN_QUEUE" || status === "IN_PROGRESS") {
-      return {
-        ok: true,
-        pending: true,
-        reportId: pendingId,
-        status,
-        mensagem: `Report ${pendingId} ainda ${status}. Re-tentando em próximo slot.`,
-      };
-    }
-
-    if (status === "FATAL" || status === "CANCELLED") {
-      await delCfg(ORDERS_HISTORY_PENDING_KEY);
-      await delCfg(ORDERS_HISTORY_PENDING_END_KEY);
-      return {
-        ok: false,
-        mensagem: `Report ${pendingId} terminou em ${status}. Limpo para retry.`,
-      };
-    }
-
-    // DONE — baixar e processar.
-    if (!report.reportDocumentId) {
-      await delCfg(ORDERS_HISTORY_PENDING_KEY);
-      await delCfg(ORDERS_HISTORY_PENDING_END_KEY);
-      return { ok: false, mensagem: `Report ${pendingId} DONE sem documentId.` };
-    }
-
-    const doc = await getReportDocument(creds, report.reportDocumentId);
-    if (!doc?.url) {
-      return { ok: false, mensagem: `Falha ao obter URL do report ${pendingId}.` };
-    }
-
-    const buffer = await downloadReportDocument(doc.url, doc.compressionAlgorithm);
-    const rows = parseAllOrdersTsv(buffer);
-    const stats = await upsertOrdersHistoryRows(rows, creds.marketplaceId);
-
-    // Avança cursor para o dataEndTime do report (ou o que tínhamos persistido).
-    const windowEndIso =
-      report.dataEndTime ??
-      (await getCfg(ORDERS_HISTORY_PENDING_END_KEY)) ??
-      endLimit.toISOString();
-    await setCfg(ORDERS_HISTORY_CURSOR_KEY, new Date(windowEndIso).toISOString());
-    await delCfg(ORDERS_HISTORY_PENDING_KEY);
-    await delCfg(ORDERS_HISTORY_PENDING_END_KEY);
-
-    return {
-      ok: true,
-      processado: true,
-      reportId: pendingId,
-      janelaAte: windowEndIso,
-      ...stats,
-    };
-  }
-
-  // 2) Sem report pendente — cria um para a próxima janela.
   const windowStart = cursor;
   const proposedEnd = addDays(windowStart, ORDERS_HISTORY_WINDOW_DAYS);
   const windowEnd = proposedEnd > endLimit ? endLimit : proposedEnd;
 
-  const created = await createReport(creds, {
+  const result = await stepReportLifecycle(creds, {
+    pendingReportId: pendingId,
     reportType: ORDERS_HISTORY_REPORT_TYPE,
     dataStartTime: windowStart,
     dataEndTime: windowEnd,
   });
 
-  await setCfg(ORDERS_HISTORY_PENDING_KEY, created.reportId);
-  await setCfg(ORDERS_HISTORY_PENDING_END_KEY, windowEnd.toISOString());
+  if (result.status === "PENDING_NEW") {
+    await setCfg(ORDERS_HISTORY_PENDING_KEY, result.reportId);
+    await setCfg(ORDERS_HISTORY_PENDING_END_KEY, windowEnd.toISOString());
+    return {
+      ok: true,
+      pending: true,
+      created: true,
+      reportId: result.reportId,
+      janelaInicio: windowStart.toISOString(),
+      janelaFim: windowEnd.toISOString(),
+    };
+  }
+
+  if (result.status === "PENDING_PROCESSING") {
+    return {
+      ok: true,
+      pending: true,
+      reportId: result.reportId,
+      status: result.processingStatus,
+      mensagem: `Report ${result.reportId} ainda ${result.processingStatus}. Re-tentando em próximo slot.`,
+    };
+  }
+
+  if (result.status === "FAILED") {
+    await delCfg(ORDERS_HISTORY_PENDING_KEY);
+    await delCfg(ORDERS_HISTORY_PENDING_END_KEY);
+    return {
+      ok: false,
+      reportId: result.reportId,
+      mensagem: `Report ${result.reportId} terminou em ${result.processingStatus}. Limpo para retry.`,
+    };
+  }
+
+  // DONE
+  const rows = parseAllOrdersTsv(result.buffer);
+  const stats = await upsertOrdersHistoryRows(rows, creds.marketplaceId);
+
+  const windowEndIso =
+    result.report.dataEndTime ??
+    (await getCfg(ORDERS_HISTORY_PENDING_END_KEY)) ??
+    windowEnd.toISOString();
+  await setCfg(
+    ORDERS_HISTORY_CURSOR_KEY,
+    new Date(windowEndIso).toISOString(),
+  );
+  await delCfg(ORDERS_HISTORY_PENDING_KEY);
+  await delCfg(ORDERS_HISTORY_PENDING_END_KEY);
 
   return {
     ok: true,
-    pending: true,
-    created: true,
-    reportId: created.reportId,
-    janelaInicio: windowStart.toISOString(),
-    janelaFim: windowEnd.toISOString(),
+    processado: true,
+    reportId: result.reportId,
+    janelaAte: windowEndIso,
+    ...stats,
   };
 }
 
@@ -596,4 +581,342 @@ async function upsertOrdersHistoryRows(
   }
 
   return { linhas: rows.length, criadas, atualizadas, ignoradas };
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Sprint 2: FINANCES_BACKFILL — backfill de Finances API listTransactions
+// Cursor-based, janela de 14d, salva transações brutas em
+// AmazonFinanceTransaction com payload completo. Auto-desliga ao alcançar
+// `now - 2 dias`.
+// ─────────────────────────────────────────────────────────────────────
+
+const FINANCES_BACKFILL_CURSOR_KEY = "amazon_finances_backfill_cursor";
+const FINANCES_BACKFILL_WINDOW_DAYS = 14;
+const FINANCES_BACKFILL_END_OFFSET_DAYS = 2;
+const FINANCES_BACKFILL_MAX_PAGES = 20;
+
+export async function runFinancesBackfill(creds: SPAPICredentials) {
+  const now = new Date();
+  const endLimit = addDays(now, -FINANCES_BACKFILL_END_OFFSET_DAYS);
+
+  const lojaAbertaIso =
+    (await getCfg(LOJA_ABERTA_EM_KEY)) ?? LOJA_ABERTA_EM_DEFAULT;
+  const cursorIso = await getCfg(FINANCES_BACKFILL_CURSOR_KEY);
+  const cursor = new Date(cursorIso ?? lojaAbertaIso);
+
+  if (!Number.isFinite(cursor.getTime())) {
+    return {
+      ok: false,
+      mensagem: `Cursor inválido (${cursorIso ?? lojaAbertaIso})`,
+    };
+  }
+  if (cursor >= endLimit) {
+    return {
+      ok: true,
+      completo: true,
+      mensagem: `Backfill financeiro completo. Cursor em ${cursor.toISOString()}.`,
+    };
+  }
+
+  const windowStart = cursor;
+  const proposedEnd = addDays(windowStart, FINANCES_BACKFILL_WINDOW_DAYS);
+  const windowEnd = proposedEnd > endLimit ? endLimit : proposedEnd;
+
+  const transactions = await listFinancialTransactions(
+    creds,
+    windowStart,
+    windowEnd,
+    100,
+    { maxPages: FINANCES_BACKFILL_MAX_PAGES },
+  );
+
+  const stats = await upsertFinanceTransactions(transactions);
+
+  await setCfg(FINANCES_BACKFILL_CURSOR_KEY, windowEnd.toISOString());
+
+  return {
+    ok: true,
+    janelaInicio: windowStart.toISOString(),
+    janelaFim: windowEnd.toISOString(),
+    transacoes: transactions.length,
+    ...stats,
+  };
+}
+
+async function upsertFinanceTransactions(transactions: SPFinanceTransaction[]) {
+  let criadas = 0;
+  let atualizadas = 0;
+  let ignoradas = 0;
+
+  for (const tx of transactions) {
+    if (!tx.transactionId) {
+      ignoradas++;
+      continue;
+    }
+
+    const amazonOrderId = extractRelatedId(tx, "AmazonOrderId");
+    const sku = extractFirstSku(tx);
+    const totalAmount = parseAmountToCentavos(tx.totalAmount);
+
+    const data = {
+      transactionType: tx.transactionType ?? null,
+      transactionStatus: tx.transactionStatus ?? null,
+      description: tx.description ?? null,
+      postedDate: tx.postedDate ? new Date(tx.postedDate) : null,
+      marketplaceId: tx.marketplaceId ?? null,
+      amazonOrderId,
+      sku,
+      totalAmountCentavos: totalAmount.centavos,
+      totalAmountCurrency: totalAmount.currency,
+      // SQLite: String. Postgres: Json (Prisma serializa). Convenção do projeto
+      // é stringificar manualmente — ver AmazonSyncJob.payload.
+      payload: JSON.stringify(tx),
+    };
+
+    const existente = await db.amazonFinanceTransaction.findUnique({
+      where: { transactionId: tx.transactionId },
+    });
+
+    if (existente) {
+      await db.amazonFinanceTransaction.update({
+        where: { transactionId: tx.transactionId },
+        data,
+      });
+      atualizadas++;
+    } else {
+      await db.amazonFinanceTransaction.create({
+        data: { transactionId: tx.transactionId, ...data },
+      });
+      criadas++;
+    }
+  }
+
+  return { criadas, atualizadas, ignoradas };
+}
+
+function extractRelatedId(
+  tx: SPFinanceTransaction,
+  name: string,
+): string | null {
+  const found = tx.relatedIdentifiers?.find(
+    (id) => id.relatedIdentifierName === name,
+  );
+  return found?.relatedIdentifierValue ?? null;
+}
+
+function extractFirstSku(tx: SPFinanceTransaction): string | null {
+  for (const item of tx.transactionItems ?? []) {
+    if (!item || typeof item !== "object") continue;
+    const candidates = [
+      (item as Record<string, unknown>).sellerSKU,
+      (item as Record<string, unknown>).SKU,
+      (item as Record<string, unknown>).sku,
+    ];
+    for (const c of candidates) {
+      if (typeof c === "string" && c.length > 0) return c;
+    }
+  }
+  return null;
+}
+
+function parseAmountToCentavos(raw: unknown): {
+  centavos: number | null;
+  currency: string | null;
+} {
+  if (raw == null || typeof raw !== "object") {
+    return { centavos: null, currency: null };
+  }
+  const obj = raw as Record<string, unknown>;
+  const value = obj.currencyAmount ?? obj.amount ?? obj.value;
+  const currencyRaw = obj.currencyCode ?? obj.currency;
+  const currency = typeof currencyRaw === "string" ? currencyRaw : null;
+  if (typeof value !== "number") return { centavos: null, currency };
+  return { centavos: Math.round(value * 100), currency };
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Sprint 2: SETTLEMENT_BACKFILL — backfill de relatórios de liquidação
+// Cursor-based, janela de 60d (settlements ~14d cada → ~4 reports/janela).
+// Auto-desliga ao alcançar `now - 2 dias`.
+// ─────────────────────────────────────────────────────────────────────
+
+const SETTLEMENT_BACKFILL_CURSOR_KEY = "amazon_settlement_backfill_cursor";
+const SETTLEMENT_BACKFILL_WINDOW_DAYS = 60;
+const SETTLEMENT_BACKFILL_END_OFFSET_DAYS = 2;
+const SETTLEMENT_BACKFILL_MAX_PAGES_PER_WINDOW = 5;
+
+export async function runSettlementBackfill(creds: SPAPICredentials) {
+  const now = new Date();
+  const endLimit = addDays(now, -SETTLEMENT_BACKFILL_END_OFFSET_DAYS);
+
+  const lojaAbertaIso =
+    (await getCfg(LOJA_ABERTA_EM_KEY)) ?? LOJA_ABERTA_EM_DEFAULT;
+  const cursorIso = await getCfg(SETTLEMENT_BACKFILL_CURSOR_KEY);
+  const cursor = new Date(cursorIso ?? lojaAbertaIso);
+
+  if (!Number.isFinite(cursor.getTime())) {
+    return {
+      ok: false,
+      mensagem: `Cursor inválido (${cursorIso ?? lojaAbertaIso})`,
+    };
+  }
+  if (cursor >= endLimit) {
+    return {
+      ok: true,
+      completo: true,
+      mensagem: `Backfill de settlements completo. Cursor em ${cursor.toISOString()}.`,
+    };
+  }
+
+  const windowStart = cursor;
+  const proposedEnd = addDays(windowStart, SETTLEMENT_BACKFILL_WINDOW_DAYS);
+  const windowEnd = proposedEnd > endLimit ? endLimit : proposedEnd;
+
+  const reports = await getSettlementReports(
+    creds,
+    SETTLEMENT_BACKFILL_MAX_PAGES_PER_WINDOW,
+    { createdSince: windowStart, createdUntil: windowEnd },
+  );
+
+  let baixados = 0;
+  let novos = 0;
+  let erros = 0;
+
+  for (const report of reports) {
+    if (!report.reportDocumentId) continue;
+    if (!report.reportType || !SETTLEMENT_TYPES.includes(report.reportType))
+      continue;
+    if (report.processingStatus && report.processingStatus !== "DONE") continue;
+
+    const existente = await db.amazonSettlementReport.findUnique({
+      where: { reportId: report.reportId },
+    });
+    if (existente?.processadoEm) continue;
+
+    try {
+      const lifecycle = await stepReportLifecycle(creds, {
+        pendingReportId: report.reportId,
+        reportType: report.reportType,
+      });
+      if (lifecycle.status !== "DONE") {
+        erros++;
+        continue;
+      }
+      const csvBuffer = lifecycle.buffer;
+      const resumo = await contasReceberService.importarAmazonCSV(csvBuffer);
+      baixados++;
+
+      const settlementId = resumo.liquidacoes[0]?.liquidacaoId ?? null;
+      const valorTotal = resumo.liquidacoes.reduce(
+        (s, l) => s + l.totalLiquidoCentavos,
+        0,
+      );
+
+      await db.amazonSettlementReport.upsert({
+        where: { reportId: report.reportId },
+        create: {
+          reportId: report.reportId,
+          reportDocumentId: report.reportDocumentId,
+          settlementId,
+          totalAmountCentavos: valorTotal,
+          processadoEm: new Date(),
+          contasGeradas: resumo.liquidacoes.length,
+        },
+        update: {
+          reportDocumentId: report.reportDocumentId,
+          settlementId,
+          totalAmountCentavos: valorTotal,
+          processadoEm: new Date(),
+          contasGeradas: resumo.liquidacoes.length,
+        },
+      });
+      novos++;
+    } catch (err) {
+      console.warn("settlement-backfill erro:", err);
+      erros++;
+    }
+  }
+
+  await setCfg(SETTLEMENT_BACKFILL_CURSOR_KEY, windowEnd.toISOString());
+
+  return {
+    ok: true,
+    janelaInicio: windowStart.toISOString(),
+    janelaFim: windowEnd.toISOString(),
+    reports: reports.length,
+    baixados,
+    novos,
+    erros,
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Sprint 2: INVENTORY_SNAPSHOT — snapshot diário de inventário FBA por SKU
+// Histórico não volta pela API. Roda 24h, cria 1 row/SKU/dia (idempotente
+// via @@unique([sku, dataSnapshot])).
+// ─────────────────────────────────────────────────────────────────────
+
+export async function runInventorySnapshot(creds: SPAPICredentials) {
+  const summaries = await getInventorySummaries(creds);
+  const today = startOfUTCDay(new Date());
+
+  // Pré-carrega Produto.id por SKU para preencher FK.
+  const skus = Array.from(
+    new Set(summaries.map((s) => s.sellerSku).filter(Boolean) as string[]),
+  );
+  const produtos = skus.length
+    ? await db.produto.findMany({
+        where: { sku: { in: skus } },
+        select: { id: true, sku: true },
+      })
+    : [];
+  const produtoIdPorSku = new Map(produtos.map((p) => [p.sku, p.id]));
+
+  let salvos = 0;
+  let ignorados = 0;
+
+  for (const s of summaries) {
+    if (!s.sellerSku) {
+      ignorados++;
+      continue;
+    }
+    const fulfillable = s.inventoryDetails?.fulfillableQuantity ?? 0;
+    const inboundWorking = s.inventoryDetails?.inboundWorkingQuantity ?? 0;
+    const reserved =
+      s.inventoryDetails?.reservedQuantity?.totalReservedQuantity ?? 0;
+    const total = s.totalQuantity ?? 0;
+
+    const data = {
+      asin: s.asin ?? null,
+      fnSku: s.fnSku ?? null,
+      fulfillableQuantity: fulfillable,
+      inboundWorkingQuantity: inboundWorking,
+      reservedQuantity: reserved,
+      totalQuantity: total,
+      produtoId: produtoIdPorSku.get(s.sellerSku) ?? null,
+    };
+
+    await db.inventorySnapshot.upsert({
+      where: {
+        sku_dataSnapshot: { sku: s.sellerSku, dataSnapshot: today },
+      },
+      create: { sku: s.sellerSku, dataSnapshot: today, ...data },
+      update: data,
+    });
+    salvos++;
+  }
+
+  return {
+    ok: true,
+    snapshots: summaries.length,
+    salvos,
+    ignorados,
+    dataSnapshot: today.toISOString(),
+  };
+}
+
+function startOfUTCDay(d: Date): Date {
+  const copy = new Date(d);
+  copy.setUTCHours(0, 0, 0, 0);
+  return copy;
 }

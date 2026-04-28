@@ -7,6 +7,7 @@ import path from "node:path";
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getSession } from "@/lib/auth";
+import { fileMatchesDeclaredMime } from "@/lib/file-validation";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -52,7 +53,11 @@ export async function POST(req: Request) {
   const filename = `${session.uid}.${ext}`;
   const fullPath = path.join(UPLOADS_ROOT, filename);
   const ab = await file.arrayBuffer();
-  await fs.writeFile(fullPath, Buffer.from(ab));
+  const buffer = Buffer.from(ab);
+  if (!fileMatchesDeclaredMime(buffer, file.type)) {
+    return NextResponse.json({ erro: "Conteudo de imagem invalido" }, { status: 400 });
+  }
+  await fs.writeFile(fullPath, buffer);
 
   const relativePath = `uploads/avatars/${filename}`;
   await db.usuario.update({

@@ -27,6 +27,10 @@
     "prisma:migrate": "prisma migrate dev",
     "prisma:migrate:deploy": "prisma migrate deploy",
     "prisma:studio": "prisma studio",
+    "prisma:generate:pg": "prisma generate --schema prisma/schema.postgresql.prisma",
+    "prisma:migrate:pg": "prisma migrate dev --schema prisma/schema.postgresql.prisma",
+    "prisma:migrate:deploy:pg": "prisma migrate deploy --schema prisma/schema.postgresql.prisma",
+    "prisma:studio:pg": "prisma studio --schema prisma/schema.postgresql.prisma",
     "db:seed": "tsx prisma/seed.ts",
     "migrate:sqlite-to-postgres": "tsx scripts/migrate-sqlite-to-postgres.ts"
   },

@@ -85,6 +85,27 @@ const SCHEDULES: Array<{
     intervalMs: 24 * 60 * 60_000,
     priority: 5,
   },
+  // ── Sprint 2: backfill que sustenta a DRE ──
+  // Cada execução processa 1 janela e avança cursor; auto-desliga ao
+  // alcançar `now - 2 dias`. Prioridade baixa (5) para não competir com
+  // jobs operacionais.
+  {
+    tipo: TipoAmazonSyncJob.FINANCES_BACKFILL,
+    intervalMs: 30 * 60_000,
+    priority: 5,
+  },
+  {
+    tipo: TipoAmazonSyncJob.SETTLEMENT_BACKFILL,
+    intervalMs: 6 * 60 * 60_000,
+    priority: 5,
+  },
+  {
+    // Snapshot diário de inventário FBA. Histórico não volta pela API,
+    // a série temporal começa no dia em que este job rodar pela 1ª vez.
+    tipo: TipoAmazonSyncJob.INVENTORY_SNAPSHOT,
+    intervalMs: 24 * 60 * 60_000,
+    priority: 5,
+  },
 ];
 
 export async function enqueueAmazonSyncJob(

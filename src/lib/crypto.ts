@@ -35,13 +35,24 @@ export function isEncrypted(value: string | null | undefined): boolean {
   return typeof value === "string" && value.startsWith(PREFIX);
 }
 
+function requireEncryptionKeyForSecret() {
+  if (process.env.NODE_ENV === "production") {
+    throw new Error(
+      "CONFIG_ENCRYPTION_KEY ausente. Configure a chave antes de salvar credenciais sensiveis.",
+    );
+  }
+}
+
 /**
- * Criptografa um valor. Se a chave não estiver configurada, retorna o valor
- * em texto puro (modo permissivo para dev local). Em produção, exija a chave.
+ * Criptografa um valor. Em desenvolvimento sem chave, preserva compatibilidade
+ * com valores legados em texto puro; em producao, exige criptografia.
  */
 export function encryptConfigValue(plain: string): string {
   const key = getKey();
-  if (!key) return plain;
+  if (!key) {
+    requireEncryptionKeyForSecret();
+    return plain;
+  }
 
   const iv = randomBytes(IV_LEN);
   const cipher = createCipheriv(ALGO, key, iv);

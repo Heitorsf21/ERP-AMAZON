@@ -3,19 +3,25 @@
 
 import { google } from "googleapis";
 import { db } from "@/lib/db";
+import {
+  decryptConfigValue,
+  encryptConfigValue,
+  isSecretConfigKey,
+} from "@/lib/crypto";
 
 // ─── Config helpers ──────────────────────────────────────────────────────────
 
 async function cfg(chave: string): Promise<string | null> {
   const row = await db.configuracaoSistema.findUnique({ where: { chave } });
-  return row?.valor ?? null;
+  return decryptConfigValue(row?.valor) ?? null;
 }
 
 async function setCfg(chave: string, valor: string): Promise<void> {
+  const armazenado = isSecretConfigKey(chave) ? encryptConfigValue(valor) : valor;
   await db.configuracaoSistema.upsert({
     where: { chave },
-    update: { valor },
-    create: { chave, valor },
+    update: { valor: armazenado },
+    create: { chave, valor: armazenado },
   });
 }
 

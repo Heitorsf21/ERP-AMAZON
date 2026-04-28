@@ -1,10 +1,13 @@
 import { NextResponse } from "next/server";
+import { timingSafeEqual } from "node:crypto";
 import { db } from "@/lib/db";
+import { getSession } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 const HEARTBEAT_KEY = "worker_heartbeat_at";
+const INTERNAL_TOKEN_HEADER = "x-internal-health-token";
 
 type SyncSnapshot = {
   tipo: string;
@@ -13,7 +16,16 @@ type SyncSnapshot = {
   createdAt: string;
 };
 
-export async function GET() {
+function isInternalTokenValid(received: string | null): boolean {
+  const expected = process.env.INTERNAL_HEALTH_TOKEN;
+  if (!expected || !received) return false;
+  const a = Buffer.from(received);
+  const b = Buffer.from(expected);
+  if (a.length !== b.length) return false;
+  return timingSafeEqual(a, b);
+}
+
+export async function GET(request: Request) {
   const inicio = Date.now();
 
   const dbCheck = await db.$queryRaw`SELECT 1 as ok`
@@ -80,6 +92,20 @@ export async function GET() {
   const heartbeatAt = heartbeatRow?.valor ? new Date(heartbeatRow.valor) : null;
   const ageSec = heartbeatAt ? Math.floor((Date.now() - heartbeatAt.getTime()) / 1000) : null;
   const workerOk = ageSec !== null && ageSec <= 300;
+
+  const internalTokenOk = isInternalTokenValid(
+    request.headers.get(INTERNAL_TOKEN_HEADER),
+  );
+  const session = internalTokenOk ? null : await getSession();
+  const canSeeDetails = internalTokenOk || session?.role === "ADMIN";
+
+  if (!canSeeDetails) {
+    return NextResponse.json({
+      ok: dbCheck.ok && workerOk,
+      version: process.env.GIT_SHA ?? "dev",
+      elapsedMs: Date.now() - inicio,
+    });
+  }
 
   const cooldowns = quotas
     .filter((q) => q.nextAllowedAt && q.nextAllowedAt > new Date())

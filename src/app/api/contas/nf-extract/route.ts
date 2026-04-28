@@ -3,6 +3,7 @@ import OpenAI from "openai";
 import { writeFile, mkdir } from "fs/promises";
 import path from "path";
 import { contasService } from "@/modules/contas-a-pagar/service";
+import { fileMatchesDeclaredMime } from "@/lib/file-validation";
 
 // Tipos aceitos pelo endpoint.
 const MIME_ACEITOS = new Set([
@@ -12,6 +13,7 @@ const MIME_ACEITOS = new Set([
   "image/webp",
   "application/pdf",
 ]);
+const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 
 const PROMPT_EXTRACAO = `Você é um assistente especializado em extração de dados de notas fiscais e boletos brasileiros.
 
@@ -51,6 +53,12 @@ export async function POST(req: Request) {
   if (!arquivo) {
     return NextResponse.json({ error: "campo 'arquivo' obrigatório" }, { status: 400 });
   }
+  if (arquivo.size > MAX_UPLOAD_BYTES) {
+    return NextResponse.json(
+      { error: "arquivo muito grande (max 10MB)" },
+      { status: 413 },
+    );
+  }
 
   const mimeType = arquivo.type || "application/octet-stream";
   if (!MIME_ACEITOS.has(mimeType)) {
@@ -62,6 +70,9 @@ export async function POST(req: Request) {
 
   const bytes = await arquivo.arrayBuffer();
   const buffer = Buffer.from(bytes);
+  if (!fileMatchesDeclaredMime(buffer, mimeType)) {
+    return NextResponse.json({ error: "conteudo do arquivo invalido" }, { status: 400 });
+  }
   const base64 = buffer.toString("base64");
 
   // Persiste o arquivo em uploads/nf/ (fora do public — não exposto diretamente).
@@ -137,7 +148,10 @@ export async function POST(req: Request) {
   } catch {
     console.error("[nf-extract] JSON inválido retornado pelo modelo:", jsonText);
     return NextResponse.json(
-      { error: "não foi possível extrair dados da nota fiscal", raw: jsonText },
+      {
+        error: "não foi possível extrair dados da nota fiscal",
+        ...(process.env.NODE_ENV !== "production" ? { raw: jsonText } : {}),
+      },
       { status: 422 },
     );
   }

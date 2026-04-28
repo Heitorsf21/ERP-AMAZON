@@ -29,13 +29,18 @@ sudo -u erp npm ci
 # 4. .env
 sudo -u erp cp .env.example .env
 sudo -u erp $EDITOR .env
+sudo chmod 600 .env
 # DATABASE_URL="postgresql://erp_amazon:senha_forte_aqui@localhost:5432/erp_amazon?schema=public"
 # CONFIG_ENCRYPTION_KEY=$(node -e "console.log(require('crypto').randomBytes(32).toString('hex'))")
 # SESSION_SECRET=$(node -e "console.log(require('crypto').randomBytes(48).toString('hex'))")
+# INTERNAL_HEALTH_TOKEN=$(node -e "console.log(require('crypto').randomBytes(32).toString('hex'))")
 
 # 5. Migrations + build
-sudo -u erp npm run prisma:generate
-sudo -u erp npm run prisma:migrate:deploy
+# Em produção SEMPRE usar os scripts :pg para apontar explicitamente o schema
+# Postgres (prisma/schema.postgresql.prisma). Os scripts sem sufixo usam o
+# schema SQLite default e não devem rodar na VPS.
+sudo -u erp npm run prisma:generate:pg
+sudo -u erp npm run prisma:migrate:deploy:pg
 sudo -u erp npm run build
 
 # 6. Migrar dados do SQLite (rodar UMA VEZ se vier de instalação SQLite)
@@ -70,8 +75,10 @@ sudo -u erp crontab deploy/crontab.example
 | `pm2 reload erp-web` | Zero-downtime reload do app |
 | `curl https://seu-dominio.com/api/health` | Health check |
 | `bash deploy/backup-postgres.sh` | Backup imediato |
+| `bash deploy/restore-check.sh` | Restaura último backup num DB temporário e valida (rodar 1x por mês via cron) |
 | `tail -f /var/log/erp-backup.log` | Acompanha backup |
 | `tail -f /var/log/erp-watchdog.log` | Acompanha watchdog |
+| `curl -H "X-Internal-Health-Token: $TOK" http://127.0.0.1:3000/api/health` | Health detalhado (worker heartbeat, queue, quota) |
 
 ## Atualização (deploy de uma nova versão)
 
@@ -80,8 +87,8 @@ sudo -u erp bash -c '
   cd /opt/erp-amazon &&
   git pull --ff-only &&
   npm ci &&
-  npm run prisma:generate &&
-  npm run prisma:migrate:deploy &&
+  npm run prisma:generate:pg &&
+  npm run prisma:migrate:deploy:pg &&
   npm run build &&
   pm2 reload erp-web &&
   pm2 restart erp-worker

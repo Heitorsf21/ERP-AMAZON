@@ -26,6 +26,15 @@ if ! command -v pm2 >/dev/null; then
   npm install -g pm2@latest
 fi
 
+echo "==> pm2-logrotate (rotaciona ~/.pm2/logs para não estourar disco)"
+if ! pm2 list 2>/dev/null | grep -q "pm2-logrotate"; then
+  pm2 install pm2-logrotate
+fi
+pm2 set pm2-logrotate:max_size 50M
+pm2 set pm2-logrotate:retain 14
+pm2 set pm2-logrotate:compress true
+pm2 set pm2-logrotate:rotateInterval '0 0 * * *'
+
 echo "==> tsx (executor TypeScript do worker)"
 if ! command -v tsx >/dev/null; then
   npm install -g tsx
@@ -77,7 +86,7 @@ echo "==> Pronto. Proximos passos:"
 echo "  1. sudo -u postgres psql -f ${APP_DIR}/deploy/postgres-setup.sql"
 echo "  2. su - ${APP_USER} -c 'git clone <REPO> ${APP_DIR} && cd ${APP_DIR} && npm ci'"
 echo "  3. cp ${APP_DIR}/.env.example ${APP_DIR}/.env  (editar valores)"
-echo "  4. cd ${APP_DIR} && npm run prisma:generate && npm run prisma:migrate:deploy"
+echo "  4. cd ${APP_DIR} && npm run prisma:generate:pg && npm run prisma:migrate:deploy:pg"
 echo "  5. cd ${APP_DIR} && npm run build"
 echo "  6. cp ${APP_DIR}/deploy/nginx-erp.conf /etc/nginx/sites-available/erp.conf"
 echo "     ln -s /etc/nginx/sites-available/erp.conf /etc/nginx/sites-enabled/"

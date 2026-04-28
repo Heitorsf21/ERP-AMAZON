@@ -3,16 +3,14 @@ import bcrypt from "bcryptjs";
 import { z } from "zod";
 import crypto from "node:crypto";
 import { db } from "@/lib/db";
+import { strongPasswordSchema } from "@/lib/password-policy";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const schema = z.object({
   token: z.string().min(32).max(128),
-  novaSenha: z
-    .string()
-    .min(8, "Senha precisa ter ao menos 8 caracteres")
-    .max(200),
+  novaSenha: strongPasswordSchema,
 });
 
 function sha256(s: string): string {

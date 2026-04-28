@@ -161,6 +161,10 @@ export const TipoAmazonSyncJob = {
   SETTLEMENT_REPORT_SYNC: "SETTLEMENT_REPORT_SYNC",
   BUYBOX_CHECK: "BUYBOX_CHECK",
   CATALOG_REFRESH: "CATALOG_REFRESH",
+  // Sprint 2 — backfill que sustenta a DRE
+  FINANCES_BACKFILL: "FINANCES_BACKFILL",
+  SETTLEMENT_BACKFILL: "SETTLEMENT_BACKFILL",
+  INVENTORY_SNAPSHOT: "INVENTORY_SNAPSHOT",
 } as const;
 export type TipoAmazonSyncJob =
   (typeof TipoAmazonSyncJob)[keyof typeof TipoAmazonSyncJob];

@@ -505,9 +505,9 @@ export function FichaAmazonKpis({
             <p className="text-xs uppercase tracking-wide text-muted-foreground">
               Vendas 30d
             </p>
-            <p className="mt-1 text-2xl font-semibold tabular-nums">
+            <div className="mt-1 text-2xl font-semibold tabular-nums">
               {vendas?.totalUnidades ?? <Skeleton className="h-7 w-12" />}
-            </p>
+            </div>
           </CardContent>
         </Card>
         <Card>

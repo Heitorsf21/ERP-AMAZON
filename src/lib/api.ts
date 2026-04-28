@@ -10,6 +10,13 @@ export function erro(status: number, mensagem: string, detalhes?: unknown) {
   return NextResponse.json({ erro: mensagem, detalhes }, { status });
 }
 
+function sanitizeErrorMessage(message: string): string {
+  return message.replace(
+    /([A-Z0-9_]*(?:SECRET|TOKEN|PASSWORD|SENHA|KEY|AUTHORIZATION)[A-Z0-9_]*=)[^\s&]+/gi,
+    "$1[redacted]",
+  );
+}
+
 // Wrapper usado nas route handlers: normaliza erros (Zod -> 400, Error -> 400,
 // resto -> 500) e loga o suficiente para depurar.
 export function handle<Args extends unknown[]>(
@@ -23,8 +30,8 @@ export function handle<Args extends unknown[]>(
         return erro(400, "dados inválidos", e.flatten());
       }
       if (e instanceof Error) {
-        logger.warn({ err: e.message }, "api error");
-        return erro(400, e.message);
+        logger.warn({ err: sanitizeErrorMessage(e.message) }, "api error");
+        return erro(400, "requisicao invalida");
       }
       logger.error({ err: e }, "erro inesperado");
       return erro(500, "erro inesperado");

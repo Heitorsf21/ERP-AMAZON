@@ -102,6 +102,7 @@ export function buildSessionCookieOptions(remember = false) {
     secure: process.env.NODE_ENV === "production",
     path: "/",
     maxAge: remember ? THIRTY_DAYS_SECONDS : SEVEN_DAYS_SECONDS,
+    priority: "high" as const,
   };
 }
 

@@ -6,6 +6,7 @@ import OpenAI from "openai";
 import type { Prisma } from "@prisma/client";
 import { differenceInCalendarDays } from "date-fns";
 import { db } from "@/lib/db";
+import { fileMatchesDeclaredMime } from "@/lib/file-validation";
 import {
   TipoMovimentacao,
   StatusConta,
@@ -21,6 +22,7 @@ const MIME_ACEITOS = new Set([
   "image/webp",
   "application/pdf",
 ]);
+const MAX_UPLOAD_BYTES = 15 * 1024 * 1024;
 
 const LIMITE_TEXTO_IA = 45_000;
 const TOLERANCIA_TAXA_PAGAMENTO_CENTAVOS = 500; // R$ 5,00
@@ -1007,8 +1009,14 @@ export const documentosFinanceirosService = {
     if (!MIME_ACEITOS.has(mimeType)) {
       throw new Error(`tipo de arquivo nao suportado: ${mimeType}`);
     }
+    if (input.arquivo.size > MAX_UPLOAD_BYTES) {
+      throw new Error("arquivo muito grande (max 15MB)");
+    }
 
     const buffer = Buffer.from(await input.arquivo.arrayBuffer());
+    if (!fileMatchesDeclaredMime(buffer, mimeType)) {
+      throw new Error("conteudo do arquivo invalido");
+    }
     const hash = sha256(buffer);
 
     const documentoDuplicado = await db.documentoFinanceiro.findUnique({

@@ -6,3 +6,7 @@
 
 # Watchdog do worker a cada 5 min
 */5 * * * * /opt/erp-amazon/deploy/watchdog.sh >> /var/log/erp-watchdog.log 2>&1
+
+# Validação mensal de restore (dia 1 às 04:00) — restaura o último backup num
+# DB temporário, confere tabelas essenciais e dropa. Requer pg admin local.
+0 4 1 * * /opt/erp-amazon/deploy/restore-check.sh >> /var/log/erp-restore-check.log 2>&1

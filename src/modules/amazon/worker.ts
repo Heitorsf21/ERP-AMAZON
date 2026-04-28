@@ -21,6 +21,9 @@ import {
 import {
   runBuyboxCheck,
   runCatalogRefresh,
+  runFinancesBackfill,
+  runInventorySnapshot,
+  runSettlementBackfill,
   syncOrdersHistoryReport,
   syncSettlementReports,
   reconciliarRecebimentosAmazon,
@@ -181,6 +184,12 @@ async function processJob(
       return runCatalogRefresh(sp!);
     case TipoAmazonSyncJob.REPORTS_BACKFILL:
       return syncOrdersHistoryReport(sp!);
+    case TipoAmazonSyncJob.FINANCES_BACKFILL:
+      return runFinancesBackfill(sp!);
+    case TipoAmazonSyncJob.SETTLEMENT_BACKFILL:
+      return runSettlementBackfill(sp!);
+    case TipoAmazonSyncJob.INVENTORY_SNAPSHOT:
+      return runInventorySnapshot(sp!);
     default:
       throw new Error(`Tipo de job Amazon desconhecido: ${tipo}`);
   }

@@ -7,6 +7,15 @@ set -euo pipefail
 
 APP_DIR="${APP_DIR:-/opt/erp-amazon}"
 HEARTBEAT_LIMIT_SEC="${HEARTBEAT_LIMIT_SEC:-300}"
+HEALTH_URL="${HEALTH_URL:-http://127.0.0.1:3000/api/health}"
+
+# Token interno para receber detalhes do /api/health sem sessão.
+# Lido do .env do app se INTERNAL_HEALTH_TOKEN não estiver no ambiente.
+if [ -z "${INTERNAL_HEALTH_TOKEN:-}" ] && [ -f "$APP_DIR/.env" ]; then
+  # shellcheck disable=SC1090
+  INTERNAL_HEALTH_TOKEN="$(grep -E '^INTERNAL_HEALTH_TOKEN=' "$APP_DIR/.env" 2>/dev/null \
+    | tail -n1 | cut -d= -f2- | tr -d '"' | tr -d "'")"
+fi
 
 log() { echo "[$(date -Iseconds)] watchdog: $*"; }
 
@@ -24,7 +33,14 @@ if [ "$status" != "online" ]; then
 fi
 
 # Checa heartbeat (gravado pelo proprio worker).
-heartbeat=$(curl -fsS "http://127.0.0.1:3000/api/health" 2>/dev/null \
+# /api/health só devolve worker.lastHeartbeatAt para sessão ADMIN ou com header
+# X-Internal-Health-Token batendo com $INTERNAL_HEALTH_TOKEN.
+curl_args=(-fsS)
+if [ -n "${INTERNAL_HEALTH_TOKEN:-}" ]; then
+  curl_args+=(-H "X-Internal-Health-Token: ${INTERNAL_HEALTH_TOKEN}")
+fi
+
+heartbeat=$(curl "${curl_args[@]}" "$HEALTH_URL" 2>/dev/null \
   | node -e "
     let s=''; process.stdin.on('data', c => s+=c);
     process.stdin.on('end', () => {
@@ -34,7 +50,11 @@ heartbeat=$(curl -fsS "http://127.0.0.1:3000/api/health" 2>/dev/null \
   " || echo "")
 
 if [ -z "$heartbeat" ]; then
-  log "heartbeat ausente — sem dados, segue"
+  if [ -z "${INTERNAL_HEALTH_TOKEN:-}" ]; then
+    log "heartbeat ausente e INTERNAL_HEALTH_TOKEN não definido — configurar token no .env"
+  else
+    log "heartbeat ausente — sem dados, segue"
+  fi
   exit 0
 fi
 
