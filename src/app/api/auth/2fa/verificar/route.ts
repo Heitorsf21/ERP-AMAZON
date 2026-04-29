@@ -2,12 +2,14 @@ import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { db } from "@/lib/db";
+import { auditLog } from "@/lib/audit";
 import {
   SESSION_COOKIE_NAME,
   buildSessionCookieOptions,
   buildSessionExpiry,
   signSession,
 } from "@/lib/session";
+import { TipoAuditLog } from "@/modules/shared/domain";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -47,6 +49,13 @@ export async function POST(req: Request) {
     challenge.expiresAt < new Date() ||
     !challenge.usuario.ativo
   ) {
+    await auditLog({
+      req,
+      acao: TipoAuditLog.LOGIN_FALHA,
+      entidade: "Usuario",
+      entidadeId: challenge?.usuarioId ?? null,
+      metadata: { etapa: "2FA", motivo: "challenge_invalido" },
+    });
     return NextResponse.json(
       { erro: "CODIGO_INVALIDO_OU_EXPIRADO" },
       { status: 401 },
@@ -55,6 +64,13 @@ export async function POST(req: Request) {
 
   const codigoOk = await bcrypt.compare(codigo, challenge.codigoHash);
   if (!codigoOk) {
+    await auditLog({
+      req,
+      acao: TipoAuditLog.LOGIN_FALHA,
+      entidade: "Usuario",
+      entidadeId: challenge.usuarioId,
+      metadata: { etapa: "2FA", motivo: "codigo_incorreto" },
+    });
     return NextResponse.json({ erro: "CODIGO_INCORRETO" }, { status: 401 });
   }
 
@@ -75,6 +91,15 @@ export async function POST(req: Request) {
     nome: challenge.usuario.nome,
     role: challenge.usuario.role,
     exp: buildSessionExpiry(lembrar),
+  });
+
+  await auditLog({
+    session: { uid: challenge.usuario.id, email: challenge.usuario.email },
+    req,
+    acao: TipoAuditLog.LOGIN_SUCESSO,
+    entidade: "Usuario",
+    entidadeId: challenge.usuario.id,
+    metadata: { etapa: "2FA" },
   });
 
   const res = NextResponse.json({

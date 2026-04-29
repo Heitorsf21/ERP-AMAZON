@@ -36,6 +36,10 @@ const LABELS: Record<keyof typeof TipoNotificacao, { titulo: string; descricao: 
     titulo: "Reembolso alto",
     descricao: "Reembolsos acima do valor habitual para o SKU.",
   },
+  REIMBURSEMENT_FBA_RECEBIDO: {
+    titulo: "FBA reimbursement recebido",
+    descricao: "Ressarcimento FBA recebido acima do limiar configurado.",
+  },
   ACOS_ALTO: {
     titulo: "ACOS alto",
     descricao: "Campanha com ACOS acima do esperado.",

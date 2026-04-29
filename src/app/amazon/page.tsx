@@ -6,11 +6,15 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Activity,
   AlertTriangle,
+  Archive,
+  BarChart3,
   CheckCircle,
   Clock,
   ExternalLink,
   Loader2,
+  ReceiptText,
   RefreshCw,
+  RotateCcw,
   Settings,
   XCircle,
 } from "lucide-react";
@@ -45,6 +49,22 @@ type QueueSummary = {
   queued: number;
   running: number;
   failed: number;
+  lastJobs?: Array<{
+    id: string;
+    tipo: string;
+    status: string;
+    createdAt: string;
+    finishedAt: string | null;
+    error: string | null;
+  }>;
+};
+
+type Sprint3JobCard = {
+  tipo: "FBA_REIMBURSEMENTS_SYNC" | "RETURNS_SYNC" | "FBA_STORAGE_SYNC" | "TRAFFIC_SYNC";
+  titulo: string;
+  descricao: string;
+  icon: React.ComponentType<{ className?: string }>;
+  diasAtras?: number;
 };
 
 function StatusBadge({ status }: { status: string }) {
@@ -57,6 +77,10 @@ function TipoBadge({ tipo }: { tipo: string }) {
   const map: Record<string, string> = {
     ORDERS: "Pedidos",
     INVENTORY: "Inventario",
+    FBA_REIMBURSEMENTS_SYNC: "FBA Reimbursements",
+    RETURNS_SYNC: "Returns FBA",
+    FBA_STORAGE_SYNC: "Storage Fees",
+    TRAFFIC_SYNC: "Sales & Traffic",
     REVIEWS: "Avaliacoes",
     ALL: "Completo",
     TEST: "Teste",
@@ -84,6 +108,29 @@ function LastSync({ logs, tipo }: { logs: SyncLog[]; tipo: string }) {
   );
 }
 
+function LastJobSync({
+  queue,
+  tipo,
+}: {
+  queue: QueueSummary | undefined;
+  tipo: string;
+}) {
+  const last = queue?.lastJobs?.find((job) => job.tipo === tipo);
+  if (!last) return null;
+
+  const ago = formatDistanceToNow(new Date(last.finishedAt ?? last.createdAt), {
+    locale: ptBR,
+    addSuffix: true,
+  });
+
+  return (
+    <span className="flex items-center gap-1 text-xs text-muted-foreground">
+      <Clock className="h-3 w-3 shrink-0" />
+      {last.status.toLowerCase()} {ago}
+    </span>
+  );
+}
+
 function formatDate(value: string | null) {
   if (!value) return "-";
   return new Date(value).toLocaleString("pt-BR", {
@@ -99,6 +146,8 @@ function formatDate(value: string | null) {
 export default function AmazonPage() {
   const qc = useQueryClient();
   const [diasAtras, setDiasAtras] = React.useState(30);
+  const [diasReports, setDiasReports] = React.useState(90);
+  const [diasTraffic, setDiasTraffic] = React.useState(30);
 
   const { data: configData } = useQuery<ConfigResponse>({
     queryKey: ["amazon-config"],
@@ -146,8 +195,55 @@ export default function AmazonPage() {
       toast.error(e instanceof Error ? e.message : "Erro ao verificar inventario"),
   });
 
+  const sincronizarSprint3 = useMutation({
+    mutationFn: (job: Sprint3JobCard) =>
+      fetchJSON("/api/amazon/sync", {
+        method: "POST",
+        body: JSON.stringify({ tipo: job.tipo, diasAtras: job.diasAtras }),
+      }),
+    onSuccess: (_res, job) => {
+      qc.invalidateQueries({ queryKey: ["amazon-logs"] });
+      qc.invalidateQueries({ queryKey: ["amazon-jobs"] });
+      toast.success(`${job.titulo} enfileirado.`);
+    },
+    onError: (e) =>
+      toast.error(e instanceof Error ? e.message : "Erro ao enfileirar job"),
+  });
+
   const qualquerSyncAtivo =
-    sincronizarPedidos.isPending || sincronizarInventario.isPending;
+    sincronizarPedidos.isPending ||
+    sincronizarInventario.isPending ||
+    sincronizarSprint3.isPending;
+
+  const sprint3Jobs: Sprint3JobCard[] = [
+    {
+      tipo: "FBA_REIMBURSEMENTS_SYNC",
+      titulo: "FBA Reimbursements",
+      descricao: "Ressarcimentos de estoque perdido/danificado via FBA Reports.",
+      icon: ReceiptText,
+      diasAtras: diasReports,
+    },
+    {
+      tipo: "RETURNS_SYNC",
+      titulo: "Returns FBA",
+      descricao: "Devolucoes de clientes com estimativa de impacto financeiro.",
+      icon: RotateCcw,
+      diasAtras: diasReports,
+    },
+    {
+      tipo: "FBA_STORAGE_SYNC",
+      titulo: "Storage Fees",
+      descricao: "Taxas mensais de armazenagem FBA; processa o mes anterior uma vez.",
+      icon: Archive,
+    },
+    {
+      tipo: "TRAFFIC_SYNC",
+      titulo: "Sales & Traffic",
+      descricao: "Metricas por SKU/dia. Exige Brand Analytics ativo.",
+      icon: BarChart3,
+      diasAtras: diasTraffic,
+    },
+  ];
 
   const configurado = configData?.configurado ?? false;
 
@@ -294,8 +390,86 @@ export default function AmazonPage() {
                     ? "Verificado"
                     : sincronizarInventario.isError
                       ? "Tentar novamente"
-                      : "Verificar Inventario"}
+                : "Verificar Inventario"}
               </Button>
+            </div>
+
+            <div className="rounded-xl border bg-card p-5">
+              <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                <div>
+                  <h3 className="text-sm font-semibold">Reports financeiros Amazon</h3>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Sprint 3: reimbursements, returns, storage fees e Sales & Traffic.
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-3">
+                  <div className="flex items-center gap-2">
+                    <Label className="whitespace-nowrap text-xs">FBA</Label>
+                    <Input
+                      type="number"
+                      min={1}
+                      max={365}
+                      value={diasReports}
+                      onChange={(e) => setDiasReports(Number(e.target.value))}
+                      className="h-8 w-20"
+                    />
+                    <span className="text-xs text-muted-foreground">dias</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Label className="whitespace-nowrap text-xs">Traffic</Label>
+                    <Input
+                      type="number"
+                      min={1}
+                      max={90}
+                      value={diasTraffic}
+                      onChange={(e) => setDiasTraffic(Number(e.target.value))}
+                      className="h-8 w-20"
+                    />
+                    <span className="text-xs text-muted-foreground">dias</span>
+                  </div>
+                </div>
+              </div>
+              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                {sprint3Jobs.map((job) => {
+                  const Icon = job.icon;
+                  const ativo =
+                    sincronizarSprint3.isPending &&
+                    sincronizarSprint3.variables?.tipo === job.tipo;
+                  return (
+                    <div key={job.tipo} className="rounded-lg border bg-background/60 p-3">
+                      <div className="flex items-start gap-3">
+                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
+                          <Icon className="h-4 w-4" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center justify-between gap-2">
+                            <p className="text-sm font-semibold">{job.titulo}</p>
+                            <LastJobSync queue={queue} tipo={job.tipo} />
+                          </div>
+                          <p className="mt-1 min-h-[2.5rem] text-xs text-muted-foreground">
+                            {job.descricao}
+                          </p>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="mt-3 h-8 w-full gap-1.5"
+                            disabled={qualquerSyncAtivo || !configurado}
+                            onClick={() => sincronizarSprint3.mutate(job)}
+                          >
+                            {ativo ? (
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            ) : (
+                              <RefreshCw className="h-3.5 w-3.5" />
+                            )}
+                            {ativo ? "Enfileirando..." : "Enfileirar"}
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           </div>
         </TabsContent>

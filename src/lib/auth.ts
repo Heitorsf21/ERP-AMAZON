@@ -5,6 +5,7 @@ import {
   type SessionPayload,
   verifySession,
 } from "./session";
+import { UsuarioRole, type UsuarioRole as UsuarioRoleType } from "@/modules/shared/domain";
 
 export async function getSession(): Promise<SessionPayload | null> {
   const jar = await cookies();
@@ -22,3 +23,18 @@ export async function requireSession(): Promise<SessionPayload> {
   }
   return s;
 }
+
+export async function requireRole(
+  ...roles: UsuarioRoleType[]
+): Promise<SessionPayload> {
+  const session = await requireSession();
+  if (session.role === UsuarioRole.ADMIN || roles.includes(session.role as UsuarioRoleType)) {
+    return session;
+  }
+  throw new Response(JSON.stringify({ erro: "NAO_AUTORIZADO" }), {
+    status: 403,
+    headers: { "content-type": "application/json" },
+  });
+}
+
+export { UsuarioRole };

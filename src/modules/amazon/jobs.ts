@@ -19,6 +19,9 @@ const OPEN_JOB_STATUSES = [
   StatusAmazonSyncJob.RUNNING,
 ] as const;
 
+const SQS_PRIMARY =
+  process.env.AMAZON_SQS_PRIMARY === "true" && !!process.env.AMAZON_SQS_QUEUE_URL;
+
 // Intervalos otimizados ao máximo permitido pela SP-API.
 // ORDERS aceita 1/60s — 2min usa ~2.5% da quota.
 // INVENTORY aceita 2 rps — 5min é folgado para FBA.
@@ -31,13 +34,13 @@ const SCHEDULES: Array<{
 }> = [
   {
     tipo: TipoAmazonSyncJob.ORDERS_SYNC,
-    intervalMs: 2 * 60_000,
+    intervalMs: SQS_PRIMARY ? 15 * 60_000 : 2 * 60_000,
     priority: 30,
     payload: { diasAtras: 3, maxPages: 1 },
   },
   {
     tipo: TipoAmazonSyncJob.INVENTORY_SYNC,
-    intervalMs: 5 * 60_000,
+    intervalMs: SQS_PRIMARY ? 30 * 60_000 : 5 * 60_000,
     priority: 20,
   },
   {
@@ -77,7 +80,7 @@ const SCHEDULES: Array<{
   },
   {
     tipo: TipoAmazonSyncJob.BUYBOX_CHECK,
-    intervalMs: 15 * 60_000,
+    intervalMs: SQS_PRIMARY ? 60 * 60_000 : 15 * 60_000,
     priority: 15,
   },
   {
@@ -105,6 +108,30 @@ const SCHEDULES: Array<{
     tipo: TipoAmazonSyncJob.INVENTORY_SNAPSHOT,
     intervalMs: 24 * 60 * 60_000,
     priority: 5,
+  },
+  // Sprint 3: reports financeiros diretos.
+  {
+    tipo: TipoAmazonSyncJob.FBA_REIMBURSEMENTS_SYNC,
+    intervalMs: 6 * 60 * 60_000,
+    priority: 12,
+    payload: { diasAtras: 90 },
+  },
+  {
+    tipo: TipoAmazonSyncJob.RETURNS_SYNC,
+    intervalMs: 6 * 60 * 60_000,
+    priority: 11,
+    payload: { diasAtras: 90 },
+  },
+  {
+    tipo: TipoAmazonSyncJob.FBA_STORAGE_SYNC,
+    intervalMs: 24 * 60 * 60_000,
+    priority: 6,
+  },
+  {
+    tipo: TipoAmazonSyncJob.TRAFFIC_SYNC,
+    intervalMs: 24 * 60 * 60_000,
+    priority: 6,
+    payload: { diasAtras: 30 },
   },
 ];
 

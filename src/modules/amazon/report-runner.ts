@@ -47,6 +47,7 @@ export interface ReportLifecycleArgs {
   dataStartTime?: Date;
   dataEndTime?: Date;
   marketplaceIds?: string[];
+  reportOptions?: Record<string, string>;
 }
 
 /**
@@ -122,6 +123,7 @@ export async function stepReportLifecycle(
     dataStartTime: args.dataStartTime,
     dataEndTime: args.dataEndTime,
     marketplaceIds: args.marketplaceIds,
+    reportOptions: args.reportOptions,
   });
   return { status: "PENDING_NEW", reportId: created.reportId };
 }

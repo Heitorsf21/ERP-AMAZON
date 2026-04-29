@@ -3,6 +3,7 @@ import bcrypt from "bcryptjs";
 import { z } from "zod";
 import crypto from "node:crypto";
 import { db } from "@/lib/db";
+import { auditLog } from "@/lib/audit";
 import {
   SESSION_COOKIE_NAME,
   buildSessionCookieOptions,
@@ -10,6 +11,7 @@ import {
   signSession,
 } from "@/lib/session";
 import { enviarEmail } from "@/lib/email";
+import { TipoAuditLog } from "@/modules/shared/domain";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -42,6 +44,13 @@ export async function POST(req: Request) {
     : false;
 
   if (!user || !user.ativo || !senhaOk) {
+    await auditLog({
+      req,
+      acao: TipoAuditLog.LOGIN_FALHA,
+      entidade: "Usuario",
+      entidadeId: user?.id ?? null,
+      metadata: { email },
+    });
     return NextResponse.json(
       { erro: "CREDENCIAIS_INVALIDAS" },
       { status: 401 },
@@ -97,6 +106,14 @@ export async function POST(req: Request) {
     nome: user.nome,
     role: user.role,
     exp: buildSessionExpiry(lembrar),
+  });
+
+  await auditLog({
+    session: { uid: user.id, email: user.email },
+    req,
+    acao: TipoAuditLog.LOGIN_SUCESSO,
+    entidade: "Usuario",
+    entidadeId: user.id,
   });
 
   const res = NextResponse.json({

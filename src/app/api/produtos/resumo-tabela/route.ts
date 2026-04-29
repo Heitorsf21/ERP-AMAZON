@@ -5,12 +5,12 @@ import { db } from "@/lib/db";
 export const dynamic = "force-dynamic";
 
 // Resumo agregado por produto para enriquecer a tabela principal sem N+1.
-// Retorna { id, sku, vendido30d, buyboxPercent, reembolsoPercent } por produto ativo.
+// Retorna agregados comerciais e de trafego por produto ativo.
 export const GET = handle(async () => {
   const desde30d = subDays(new Date(), 30);
   const desde15dBuybox = subDays(new Date(), 15);
 
-  const [produtos, vendas, reembolsos, buybox] = await Promise.all([
+  const [produtos, vendas, reembolsos, buybox, traffic] = await Promise.all([
     db.produto.findMany({
       where: { ativo: true },
       select: { id: true, sku: true },
@@ -32,7 +32,20 @@ export const GET = handle(async () => {
       by: ["sku"],
       where: { capturadoEm: { gte: desde15dBuybox } },
       _count: { _all: true },
-      _sum: { numeroOfertas: true }, // não usado; placeholder p/ contagem
+      _sum: { numeroOfertas: true }, // nao usado; placeholder p/ contagem
+    }),
+    db.amazonSkuTrafficDaily.groupBy({
+      by: ["sku"],
+      where: { data: { gte: desde30d } },
+      _sum: {
+        sessoes: true,
+        pageViews: true,
+        unitsOrdered: true,
+        orderedRevenueCentavos: true,
+      },
+      _avg: {
+        buyBoxPercent: true,
+      },
     }),
   ]);
 
@@ -57,12 +70,19 @@ export const GET = handle(async () => {
   const ganhosPorSku = new Map(
     buyboxGanhos.map((b) => [b.sku, b._count._all]),
   );
+  const trafficPorSku = new Map(traffic.map((t) => [t.sku, t]));
 
   const resultado = produtos.map((p) => {
     const vendido30d = vendidoPorSku.get(p.sku) ?? 0;
     const devolvido = devolvidoPorSku.get(p.sku) ?? 0;
     const totalSnaps = totalSnapsPorSku.get(p.sku) ?? 0;
     const ganhos = ganhosPorSku.get(p.sku) ?? 0;
+    const trafficRow = trafficPorSku.get(p.sku);
+    const trafficSum = trafficRow?._sum;
+    const trafficAvg = trafficRow?._avg;
+    const sessions30d = trafficSum?.sessoes ?? 0;
+    const pageViews30d = trafficSum?.pageViews ?? 0;
+    const trafficUnitsOrdered30d = trafficSum?.unitsOrdered ?? 0;
 
     const denominador = vendido30d + devolvido;
     const reembolsoPercent =
@@ -78,6 +98,18 @@ export const GET = handle(async () => {
       vendido30d,
       buyboxPercent,
       reembolsoPercent,
+      sessions30d,
+      pageViews30d,
+      trafficUnitsOrdered30d,
+      trafficRevenueOrderedCentavos: trafficSum?.orderedRevenueCentavos ?? 0,
+      trafficConversionPercent:
+        sessions30d > 0
+          ? Math.round((trafficUnitsOrdered30d / sessions30d) * 1000) / 10
+          : null,
+      trafficBuyBoxPercent:
+        trafficAvg?.buyBoxPercent == null
+          ? null
+          : Math.round(trafficAvg.buyBoxPercent * 10) / 10,
     };
   });
 

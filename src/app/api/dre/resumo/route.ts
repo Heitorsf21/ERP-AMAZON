@@ -11,6 +11,9 @@ async function calcularDRE(de: Date, ate: Date) {
     contasPagas,
     vendasAmazonAgg,
     reembolsosAmazonAgg,
+    reimbursementsFbaAgg,
+    returnsAmazonAgg,
+    storageFeesAgg,
     saidasEstoque,
     adsCampanhasAgg,
     adsManualAgg,
@@ -46,6 +49,21 @@ async function calcularDRE(de: Date, ate: Date) {
       },
       _count: { _all: true },
     }),
+    db.amazonReimbursement.aggregate({
+      where: { approvalDate: { gte: de, lte: ate } },
+      _sum: { amountTotalCentavos: true },
+      _count: { _all: true },
+    }),
+    db.amazonReturn.aggregate({
+      where: { returnDate: { gte: de, lte: ate } },
+      _sum: { valorEstimadoCentavos: true, quantity: true },
+      _count: { _all: true },
+    }),
+    db.amazonStorageFee.aggregate({
+      where: { monthOfCharge: { gte: de, lte: ate } },
+      _sum: { storageFeeCentavos: true },
+      _count: { _all: true },
+    }),
     // CPV: cada SAÍDA de estoque × custo unitário histórico.
     db.movimentacaoEstoque.findMany({
       where: { tipo: "SAIDA", dataMovimentacao: { gte: de, lte: ate } },
@@ -66,7 +84,11 @@ async function calcularDRE(de: Date, ate: Date) {
     }),
   ]);
 
-  const receitaAmazon = contasReceber.reduce((s, c) => s + c.valor, 0);
+  const receitaAmazonBase = contasReceber.reduce((s, c) => s + c.valor, 0);
+  const reimbursementsFba = reimbursementsFbaAgg._sum.amountTotalCentavos ?? 0;
+  const returnsEstimados = returnsAmazonAgg._sum.valorEstimadoCentavos ?? 0;
+  const storageFees = storageFeesAgg._sum.storageFeeCentavos ?? 0;
+  const receitaAmazon = receitaAmazonBase + reimbursementsFba;
   const outrasReceitas = movEntradas.reduce((s, m) => s + m.valor, 0);
   const totalReceitas = receitaAmazon + outrasReceitas;
 
@@ -78,10 +100,12 @@ async function calcularDRE(de: Date, ate: Date) {
 
   const taxasPlataforma = porCategoria["Taxas de plataformas/pagamentos"] ?? 0;
   const fretes = porCategoria["Fretes e entregas"] ?? 0;
-  const totalDeducoes = taxasPlataforma + fretes;
+  const totalDeducoes = taxasPlataforma + fretes + returnsEstimados;
   const receitaLiquida = totalReceitas - totalDeducoes;
 
-  const custoMercadorias = porCategoria["Compra de mercadorias/produtos"] ?? 0;
+  const custoMercadoriasBase =
+    porCategoria["Compra de mercadorias/produtos"] ?? 0;
+  const custoMercadorias = custoMercadoriasBase + storageFees;
   const margemBruta = receitaLiquida - custoMercadorias;
   const percentualMargemBruta =
     receitaLiquida > 0 ? (margemBruta / receitaLiquida) * 100 : 0;
@@ -152,12 +176,21 @@ async function calcularDRE(de: Date, ate: Date) {
       fretes: fretesAmazon,
       reembolsos: reembolsosValor,
       reembolsosTaxas: reembolsosTaxas,
+      receitaLiquidacoes: receitaAmazonBase,
+      reimbursementsFba,
+      returnsEstimados,
+      storageFees,
       quantidadeVendas: vendasAmazonAgg._count._all ?? 0,
       quantidadeReembolsos: reembolsosAmazonAgg._count._all ?? 0,
+      quantidadeReimbursementsFba: reimbursementsFbaAgg._count._all ?? 0,
+      quantidadeReturns: returnsAmazonAgg._count._all ?? 0,
+      quantidadeStorageFees: storageFeesAgg._count._all ?? 0,
+      unidadesReturns: returnsAmazonAgg._sum.quantity ?? 0,
     },
     cpv: {
       calculado: cpvEstoqueCalculado,
-      contasPagas: custoMercadorias,
+      contasPagas: custoMercadoriasBase,
+      storageFees,
     },
     ads: {
       campanhas: adsCampanhasCentavos,

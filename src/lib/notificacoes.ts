@@ -162,6 +162,22 @@ export function notificarReembolsoAlto(args: {
   });
 }
 
+export function notificarReimbursementFbaRecebido(args: {
+  naturalKey: string;
+  sku?: string | null;
+  valor: number;
+  motivo?: string | null;
+}) {
+  const sku = args.sku ?? "SKU desconhecido";
+  return emitirNotificacao({
+    tipo: TipoNotificacao.REIMBURSEMENT_FBA_RECEBIDO,
+    titulo: `Ressarcimento FBA recebido: ${sku}`,
+    descricao: `R$ ${(args.valor / 100).toFixed(2)}${args.motivo ? ` (${args.motivo})` : ""}.`,
+    linkRef: `/financeiro/dashboard`,
+    dedupeKey: `reimbursement_fba:${args.naturalKey}`,
+  });
+}
+
 export function notificarReconciliado(args: {
   contaReceberId: string;
   valor: number;

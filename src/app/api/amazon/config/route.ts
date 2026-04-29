@@ -1,5 +1,7 @@
 import { NextRequest } from "next/server";
 import { handle, ok } from "@/lib/api";
+import { auditLog, redactForAudit } from "@/lib/audit";
+import { requireRole, UsuarioRole } from "@/lib/auth";
 import {
   AMAZON_CONFIG_KEYS,
   getAmazonConfig,
@@ -28,6 +30,8 @@ export const GET = handle(async () => {
 });
 
 export const POST = handle(async (req: NextRequest) => {
+  const session = await requireRole(UsuarioRole.ADMIN);
+  const antes = await getAmazonConfig();
   const body = await req.json() as Record<string, string>;
   // Aceitar apenas chaves conhecidas; ignorar campos extras
   const updates: Record<string, string> = {};
@@ -35,5 +39,15 @@ export const POST = handle(async (req: NextRequest) => {
     if (key in body) updates[key] = String(body[key] ?? "");
   }
   await saveAmazonConfig(updates);
+  const depois = await getAmazonConfig();
+  await auditLog({
+    session,
+    req,
+    acao: "CONFIG_ATUALIZADA",
+    entidade: "AmazonConfig",
+    antes: redactForAudit(antes),
+    depois: redactForAudit(depois),
+    metadata: { chaves: Object.keys(updates) },
+  });
   return ok({ ok: true });
 });

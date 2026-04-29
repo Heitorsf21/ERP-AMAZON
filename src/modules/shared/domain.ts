@@ -77,6 +77,16 @@ export const OrigemContaReceber = {
 export type OrigemContaReceber =
   (typeof OrigemContaReceber)[keyof typeof OrigemContaReceber];
 
+// Roles de usuário. O campo segue como String no Prisma para manter
+// compatibilidade SQLite/Postgres sem enum nativo.
+export const UsuarioRole = {
+  ADMIN: "ADMIN",
+  OPERADOR: "OPERADOR",
+  FINANCEIRO: "FINANCEIRO",
+  LEITURA: "LEITURA",
+} as const;
+export type UsuarioRole = (typeof UsuarioRole)[keyof typeof UsuarioRole];
+
 // Tipo de transação dentro do relatório Amazon
 export const TipoTransacaoAmazon = {
   PEDIDO: "Pedido",
@@ -165,9 +175,49 @@ export const TipoAmazonSyncJob = {
   FINANCES_BACKFILL: "FINANCES_BACKFILL",
   SETTLEMENT_BACKFILL: "SETTLEMENT_BACKFILL",
   INVENTORY_SNAPSHOT: "INVENTORY_SNAPSHOT",
+  // Sprint 3 — reports financeiros Amazon pendentes
+  FBA_REIMBURSEMENTS_SYNC: "FBA_REIMBURSEMENTS_SYNC",
+  RETURNS_SYNC: "RETURNS_SYNC",
+  FBA_STORAGE_SYNC: "FBA_STORAGE_SYNC",
+  TRAFFIC_SYNC: "TRAFFIC_SYNC",
 } as const;
 export type TipoAmazonSyncJob =
   (typeof TipoAmazonSyncJob)[keyof typeof TipoAmazonSyncJob];
+
+export const StatusFbmPicking = {
+  ABERTO: "ABERTO",
+  EM_SEPARACAO: "EM_SEPARACAO",
+  CONFERIDO: "CONFERIDO",
+  DESPACHADO: "DESPACHADO",
+  CANCELADO: "CANCELADO",
+} as const;
+export type StatusFbmPicking =
+  (typeof StatusFbmPicking)[keyof typeof StatusFbmPicking];
+
+export const StatusFbmPickingItem = {
+  PENDENTE: "PENDENTE",
+  SEPARADO: "SEPARADO",
+  CONFERIDO: "CONFERIDO",
+  DIVERGENTE: "DIVERGENTE",
+} as const;
+export type StatusFbmPickingItem =
+  (typeof StatusFbmPickingItem)[keyof typeof StatusFbmPickingItem];
+
+export const TipoAuditLog = {
+  LOGIN_SUCESSO: "LOGIN_SUCESSO",
+  LOGIN_FALHA: "LOGIN_FALHA",
+  CONFIG_ATUALIZADA: "CONFIG_ATUALIZADA",
+  AMAZON_SYNC_MANUAL: "AMAZON_SYNC_MANUAL",
+  PRODUTO_CRIADO: "PRODUTO_CRIADO",
+  PRODUTO_ATUALIZADO: "PRODUTO_ATUALIZADO",
+  PRODUTO_DESATIVADO: "PRODUTO_DESATIVADO",
+  LISTING_DIFF_CONSULTADO: "LISTING_DIFF_CONSULTADO",
+  PRODUTO_VARIACAO_CRIADA: "PRODUTO_VARIACAO_CRIADA",
+  PRODUTO_VARIACAO_REMOVIDA: "PRODUTO_VARIACAO_REMOVIDA",
+  FBM_PICKING_CRIADO: "FBM_PICKING_CRIADO",
+  FBM_PICKING_ATUALIZADO: "FBM_PICKING_ATUALIZADO",
+} as const;
+export type TipoAuditLog = (typeof TipoAuditLog)[keyof typeof TipoAuditLog];
 
 export const StatusAmazonSyncJob = {
   QUEUED: "QUEUED",
@@ -223,6 +273,7 @@ export const TipoNotificacao = {
   SETTLEMENT_NOVO: "SETTLEMENT_NOVO",
   RECEBIMENTO_RECONCILIADO: "RECEBIMENTO_RECONCILIADO",
   WORKER_REINICIADO: "WORKER_REINICIADO",
+  REIMBURSEMENT_FBA_RECEBIDO: "REIMBURSEMENT_FBA_RECEBIDO",
 } as const;
 export type TipoNotificacao =
   (typeof TipoNotificacao)[keyof typeof TipoNotificacao];

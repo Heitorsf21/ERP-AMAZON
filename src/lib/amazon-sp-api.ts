@@ -323,6 +323,34 @@ export interface SPProductOffersResponse {
   };
 }
 
+export interface SPListingsItemSummary {
+  marketplaceId?: string;
+  asin?: string;
+  productType?: string;
+  conditionType?: string;
+  status?: string[] | string;
+  itemName?: string;
+  createdDate?: string;
+  lastUpdatedDate?: string;
+  mainImage?: {
+    link?: string;
+    height?: number;
+    width?: number;
+  };
+}
+
+export interface SPListingsItem {
+  sku?: string;
+  summaries?: SPListingsItemSummary[];
+  attributes?: Record<string, unknown>;
+  issues?: Array<Record<string, unknown>>;
+  offers?: Array<Record<string, unknown>>;
+  fulfillmentAvailability?: Array<Record<string, unknown>>;
+  relationships?: Array<Record<string, unknown>>;
+  productTypes?: Array<Record<string, unknown>>;
+  [key: string]: unknown;
+}
+
 export interface SPReport {
   reportId: string;
   reportType?: string;
@@ -407,6 +435,7 @@ export async function createReport(
     dataStartTime: Date;
     dataEndTime: Date;
     marketplaceIds?: string[];
+    reportOptions?: Record<string, string>;
   },
 ): Promise<{ reportId: string }> {
   const body = {
@@ -414,6 +443,7 @@ export async function createReport(
     dataStartTime: args.dataStartTime.toISOString(),
     dataEndTime: args.dataEndTime.toISOString(),
     marketplaceIds: args.marketplaceIds ?? [creds.marketplaceId],
+    ...(args.reportOptions ? { reportOptions: args.reportOptions } : {}),
   };
   return spApiRequest<{ reportId: string }>(
     creds,
@@ -430,7 +460,7 @@ export async function getReport(
   return spApiRequest<SPReport>(
     creds,
     `/reports/2021-06-30/reports/${encodeURIComponent(reportId)}`,
-    { operation: AmazonSpApiOperation.REPORTS_GET },
+    { operation: AmazonSpApiOperation.REPORTS_GET_BY_ID },
   );
 }
 
@@ -570,6 +600,45 @@ export async function getProductOffers(
   } catch {
     return null;
   }
+}
+
+export async function getListingsItem(
+  creds: SPAPICredentials,
+  sellerId: string,
+  sku: string,
+  includedData = [
+    "summaries",
+    "attributes",
+    "issues",
+    "offers",
+    "fulfillmentAvailability",
+    "relationships",
+    "productTypes",
+  ],
+): Promise<SPListingsItem> {
+  return spApiRequest<SPListingsItem>(
+    creds,
+    `/listings/2021-08-01/items/${encodeURIComponent(
+      sellerId,
+    )}/${encodeURIComponent(sku)}`,
+    {
+      operation: AmazonSpApiOperation.LISTINGS_GET_ITEM,
+      params: {
+        marketplaceIds: creds.marketplaceId,
+        includedData: includedData.join(","),
+        issueLocale: "pt_BR",
+      },
+    },
+  );
+}
+
+export async function getListingsItemAttributes(
+  creds: SPAPICredentials,
+  sellerId: string,
+  sku: string,
+): Promise<Record<string, unknown>> {
+  const item = await getListingsItem(creds, sellerId, sku, ["attributes"]);
+  return item.attributes ?? {};
 }
 
 export interface SPOrderItemDetail {

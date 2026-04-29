@@ -186,9 +186,10 @@ export const dashboardEcommerceService = {
   },
 
   async obterKpis(periodo: IntervaloPeriodo) {
-    const [vendas, ads] = await Promise.all([
+    const [vendas, ads, traffic] = await Promise.all([
       buscarVendas(periodo),
       fetchAdsGasto(periodo),
+      buscarTraffic(periodo),
     ]);
     const agregado = agregarVendas(vendas);
     const lucroBrutoCentavos = calcularLucroBruto(agregado);
@@ -218,6 +219,12 @@ export const dashboardEcommerceService = {
         lucroPosAdsCentavos,
         agregado.custoTotalCentavos,
       ),
+      trafficSessions: traffic.sessions,
+      trafficPageViews: traffic.pageViews,
+      trafficUnitsOrdered: traffic.unitsOrdered,
+      trafficRevenueOrderedCentavos: traffic.revenueOrderedCentavos,
+      trafficConversionPercent: percentual(traffic.unitsOrdered, traffic.sessions),
+      trafficBuyBoxPercent: traffic.buyBoxPercent,
       custoTotalCentavos: agregado.custoCompleto
         ? agregado.custoTotalCentavos
         : null,
@@ -424,6 +431,37 @@ function buscarGastosManuais(periodo: IntervaloPeriodo): Promise<GastoManual[]> 
       valorCentavos: true,
     },
   });
+}
+
+async function buscarTraffic(periodo: IntervaloPeriodo) {
+  const agregado = await db.amazonSkuTrafficDaily.aggregate({
+    where: {
+      data: {
+        gte: periodo.de,
+        lte: periodo.ate,
+      },
+    },
+    _sum: {
+      sessoes: true,
+      pageViews: true,
+      unitsOrdered: true,
+      orderedRevenueCentavos: true,
+    },
+    _avg: {
+      buyBoxPercent: true,
+    },
+  });
+
+  return {
+    sessions: agregado._sum?.sessoes ?? 0,
+    pageViews: agregado._sum?.pageViews ?? 0,
+    unitsOrdered: agregado._sum?.unitsOrdered ?? 0,
+    revenueOrderedCentavos: agregado._sum?.orderedRevenueCentavos ?? 0,
+    buyBoxPercent:
+      agregado._avg?.buyBoxPercent == null
+        ? null
+        : Math.round(agregado._avg.buyBoxPercent * 10) / 10,
+  };
 }
 
 function agregarVendas(vendas: VendaDashboard[]) {

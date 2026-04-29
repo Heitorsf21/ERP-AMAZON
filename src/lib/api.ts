@@ -26,6 +26,9 @@ export function handle<Args extends unknown[]>(
     try {
       return await fn(...args);
     } catch (e) {
+      if (e instanceof Response) {
+        return e;
+      }
       if (e instanceof ZodError) {
         return erro(400, "dados inválidos", e.flatten());
       }

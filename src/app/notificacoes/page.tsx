@@ -40,6 +40,7 @@ const TIPO_CONFIG: Record<
   ESTOQUE_CRITICO: { label: "Estoque Crítico", icon: Package, color: "text-red-500" },
   BUYBOX_PERDIDO: { label: "Buybox Perdida", icon: TrendingDown, color: "text-orange-500" },
   REEMBOLSO_ALTO: { label: "Reembolso Alto", icon: ShoppingBag, color: "text-yellow-600" },
+  REIMBURSEMENT_FBA_RECEBIDO: { label: "FBA Reimbursement", icon: DollarSign, color: "text-emerald-600" },
   ACOS_ALTO: { label: "ACoS Elevado", icon: Zap, color: "text-purple-500" },
   LIQUIDACAO_ATRASADA: { label: "Liquidação Atrasada", icon: Clock, color: "text-blue-500" },
   CUSTO_AUSENTE: { label: "Custo Ausente", icon: DollarSign, color: "text-gray-500" },

@@ -19,23 +19,24 @@ datasource db {
 // ── Autenticação ────────────────────────────────────────────────────────────
 
 model Usuario {
-  id                String    @id @default(cuid())
-  email             String    @unique
-  senhaHash         String
-  nome              String
-  // ADMIN | MEMBRO
-  role              String    @default("ADMIN")
-  ativo             Boolean   @default(true)
-  avatarUrl         String?
-  ultimoAcesso      DateTime?
+  id               String    @id @default(cuid())
+  email            String    @unique
+  senhaHash        String
+  nome             String
+  // ADMIN | OPERADOR | FINANCEIRO | LEITURA
+  role             String    @default("ADMIN")
+  ativo            Boolean   @default(true)
+  avatarUrl        String?
+  ultimoAcesso     DateTime?
   // 2FA opcional por email
-  twoFactorEnabled  Boolean   @default(false)
-  twoFactorMethod   String?   // "EMAIL"
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
+  twoFactorEnabled Boolean   @default(false)
+  twoFactorMethod  String? // "EMAIL"
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 
   tokensRecuperacao TokenRecuperacaoSenha[]
   codigos2fa        CodigoVerificacao2FA[]
+  auditLogs         AuditLog[]
 
   @@index([email])
   @@index([ativo])
@@ -235,8 +236,8 @@ model ContaReceber {
 // ── Estoque ─────────────────────────────────────────────────────────────────
 
 model Produto {
-  id                      String   @id @default(cuid())
-  sku                     String   @unique
+  id                      String    @id @default(cuid())
+  sku                     String    @unique
   asin                    String?
   nome                    String
   descricao               String?
@@ -247,11 +248,11 @@ model Produto {
   amazonEstoqueInbound    Int?
   amazonEstoqueTotal      Int?
   amazonUltimaSyncEm      DateTime?
-  estoqueAtual            Int      @default(0)
-  estoqueMinimo           Int      @default(0)
-  unidade                 String   @default("un")
-  ativo                   Boolean  @default(true)
-  solicitarReviewsAtivo   Boolean  @default(true)
+  estoqueAtual            Int       @default(0)
+  estoqueMinimo           Int       @default(0)
+  unidade                 String    @default("un")
+  ativo                   Boolean   @default(true)
+  solicitarReviewsAtivo   Boolean   @default(true)
   imagemUrl               String?
   observacoes             String?
   // Catálogo Amazon
@@ -264,16 +265,21 @@ model Produto {
   buyboxPreco             Int?
   buyboxConcorrentes      Int?
   buyboxUltimaSyncEm      DateTime?
-  createdAt               DateTime @default(now())
-  updatedAt               DateTime @updatedAt
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
 
-  movimentacoes    MovimentacaoEstoque[]
-  itensPedido      ItemPedidoCompra[]
-  metricas         ProdutoMetricaGestorSeller[]
-  adsGastosManuais AdsGastoManual[]
-  reembolsosAmazon AmazonReembolso[]
-  buyboxSnapshots  BuyBoxSnapshot[]
+  movimentacoes      MovimentacaoEstoque[]
+  itensPedido        ItemPedidoCompra[]
+  metricas           ProdutoMetricaGestorSeller[]
+  adsGastosManuais   AdsGastoManual[]
+  reembolsosAmazon   AmazonReembolso[]
+  buyboxSnapshots    BuyBoxSnapshot[]
   inventorySnapshots InventorySnapshot[]
+  reimbursementsFba  AmazonReimbursement[]
+  returnsAmazon      AmazonReturn[]
+  skuTrafficDaily    AmazonSkuTrafficDaily[]
+  variacoesPai       ProdutoVariacao[] @relation("ProdutoVariacaoPai")
+  variacaoComoFilho  ProdutoVariacao?  @relation("ProdutoVariacaoFilho")
 
   @@index([sku])
   @@index([asin])
@@ -283,7 +289,7 @@ model Produto {
 }
 
 model VendaAmazon {
-  id                         String   @id @default(cuid())
+  id                         String    @id @default(cuid())
   amazonOrderId              String
   orderItemId                String?
   sku                        String
@@ -292,19 +298,19 @@ model VendaAmazon {
   quantidade                 Int
   precoUnitarioCentavos      Int
   valorBrutoCentavos         Int?
-  taxasCentavos              Int      @default(0)
-  fretesCentavos             Int      @default(0)
+  taxasCentavos              Int       @default(0)
+  fretesCentavos             Int       @default(0)
   liquidoMarketplaceCentavos Int?
   custoUnitarioCentavos      Int?
   liquidacaoId               String?
   marketplace                String?
   fulfillmentChannel         String?
-  statusPedido               String   @default("UNKNOWN")
-  statusFinanceiro           String   @default("PENDENTE")
+  statusPedido               String    @default("UNKNOWN")
+  statusFinanceiro           String    @default("PENDENTE")
   dataVenda                  DateTime
   ultimaSyncEm               DateTime?
-  criadoEm                   DateTime @default(now())
-  atualizadoEm               DateTime @updatedAt
+  criadoEm                   DateTime  @default(now())
+  atualizadoEm               DateTime  @updatedAt
 
   @@unique([amazonOrderId, sku])
   @@index([orderItemId])
@@ -314,6 +320,27 @@ model VendaAmazon {
   @@index([statusPedido])
   @@index([statusFinanceiro])
   @@index([ultimaSyncEm])
+}
+
+model ProdutoVariacao {
+  id              String   @id @default(cuid())
+  produtoPaiId    String
+  produtoFilhoId  String?  @unique
+  skuPai          String
+  skuFilho        String?
+  nome            String?
+  tipo            String?
+  atributosJson   String?
+  criadoEm        DateTime @default(now())
+  atualizadoEm    DateTime @updatedAt
+
+  produtoPai   Produto  @relation("ProdutoVariacaoPai", fields: [produtoPaiId], references: [id], onDelete: Cascade)
+  produtoFilho Produto? @relation("ProdutoVariacaoFilho", fields: [produtoFilhoId], references: [id], onDelete: SetNull)
+
+  @@unique([produtoPaiId, skuFilho])
+  @@index([produtoPaiId])
+  @@index([skuPai])
+  @@index([skuFilho])
 }
 
 model AmazonReembolso {
@@ -468,6 +495,27 @@ model AmazonSyncJob {
   @@index([lockedAt])
 }
 
+model AmazonNotification {
+  id               String    @id @default(cuid())
+  notificationId   String    @unique
+  notificationType String
+  eventTime        DateTime?
+  publishTime      DateTime?
+  payloadJson      String
+  rawJson          String
+  processadoEm     DateTime?
+  jobsCriadosIds   String?
+  erro             String?
+  criadoEm         DateTime  @default(now())
+  atualizadoEm     DateTime  @updatedAt
+
+  @@index([notificationType])
+  @@index([eventTime])
+  @@index([publishTime])
+  @@index([processadoEm])
+  @@index([criadoEm])
+}
+
 model AmazonApiQuota {
   id                 String    @id @default(cuid())
   operation          String    @unique
@@ -595,9 +643,6 @@ model ProdutoMetricaGestorSeller {
   precoVendaCentavos     Int?
   unidadesVendidasTotais Int      @default(0)
   vendasAmazonCentavos   Int      @default(0)
-  vendasMlCentavos       Int      @default(0)
-  vendasShopeeCentavos   Int      @default(0)
-  vendasTikTokCentavos   Int      @default(0)
   faturamentoCentavos    Int      @default(0)
   lucroCentavos          Int      @default(0)
   margemPercentual       Float    @default(0)
@@ -649,22 +694,87 @@ model AdsCampanha {
 }
 
 model Notificacao {
-  id          String   @id @default(cuid())
-  // ESTOQUE_CRITICO | BUYBOX_PERDIDO | BUYBOX_RECUPERADO | REEMBOLSO_ALTO | ACOS_ALTO |
+  id        String   @id @default(cuid())
+  // ESTOQUE_CRITICO | BUYBOX_PERDIDO | BUYBOX_RECUPERADO | REEMBOLSO_ALTO | REIMBURSEMENT_FBA_RECEBIDO | ACOS_ALTO |
   // LIQUIDACAO_ATRASADA | CUSTO_AUSENTE | JOB_FALHANDO | QUOTA_BLOQUEADA | SETTLEMENT_NOVO |
   // RECEBIMENTO_RECONCILIADO | WORKER_REINICIADO
-  tipo        String
-  titulo      String
-  descricao   String
-  lida        Boolean  @default(false)
-  linkRef     String?
-  dedupeKey   String?  @unique
-  criadaEm    DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  tipo      String
+  titulo    String
+  descricao String
+  lida      Boolean  @default(false)
+  linkRef   String?
+  dedupeKey String?  @unique
+  criadaEm  DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([lida])
   @@index([tipo])
   @@index([criadaEm])
+}
+
+model AuditLog {
+  id            String   @id @default(cuid())
+  usuarioId     String?
+  usuarioEmail  String?
+  acao          String
+  entidade      String
+  entidadeId    String?
+  antesJson     String?
+  depoisJson    String?
+  metadataJson  String?
+  ip            String?
+  userAgent     String?
+  criadoEm      DateTime @default(now())
+
+  usuario Usuario? @relation(fields: [usuarioId], references: [id], onDelete: SetNull)
+
+  @@index([usuarioId])
+  @@index([usuarioEmail])
+  @@index([acao])
+  @@index([entidade, entidadeId])
+  @@index([criadoEm])
+}
+
+model FbmPickingBatch {
+  id              String   @id @default(cuid())
+  codigo          String   @unique
+  status          String   @default("ABERTO")
+  etiquetaUrl     String?
+  observacoes     String?
+  criadoPorId     String?
+  criadoPorEmail  String?
+  criadoEm        DateTime @default(now())
+  atualizadoEm    DateTime @updatedAt
+
+  itens FbmPickingItem[]
+
+  @@index([status])
+  @@index([criadoEm])
+}
+
+model FbmPickingItem {
+  id             String   @id @default(cuid())
+  batchId        String
+  vendaAmazonId  String?
+  amazonOrderId  String
+  sku            String
+  asin           String?
+  titulo         String?
+  quantidade     Int      @default(1)
+  status         String   @default("PENDENTE")
+  checklistJson  String?
+  separadoEm     DateTime?
+  conferidoEm    DateTime?
+  criadoEm       DateTime @default(now())
+  atualizadoEm   DateTime @updatedAt
+
+  batch FbmPickingBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+
+  @@unique([batchId, amazonOrderId, sku])
+  @@index([batchId])
+  @@index([amazonOrderId])
+  @@index([sku])
+  @@index([status])
 }
 
 model AmazonSettlementReport {
@@ -689,16 +799,16 @@ model AmazonSettlementReport {
 // Histórico de buybox por SKU (medido em intervalos do BUYBOX_CHECK).
 // Permite gráficos de "% do tempo com buybox últimos N dias".
 model BuyBoxSnapshot {
-  id              String   @id @default(cuid())
-  produtoId       String?
-  sku             String
-  asin            String?
-  somosBuybox     Boolean
-  precoNosso      Int?
-  precoBuybox     Int?
-  sellerBuybox    String?
-  numeroOfertas   Int?
-  capturadoEm     DateTime @default(now())
+  id            String   @id @default(cuid())
+  produtoId     String?
+  sku           String
+  asin          String?
+  somosBuybox   Boolean
+  precoNosso    Int?
+  precoBuybox   Int?
+  sellerBuybox  String?
+  numeroOfertas Int?
+  capturadoEm   DateTime @default(now())
 
   produto Produto? @relation(fields: [produtoId], references: [id], onDelete: SetNull)
 
@@ -758,4 +868,132 @@ model InventorySnapshot {
   @@index([sku])
   @@index([dataSnapshot])
   @@index([produtoId])
+}
+
+// Sprint 3: ressarcimentos FBA (dinheiro que a Amazon deve/pagou por estoque
+// perdido/danificado). Diferente de AmazonReembolso, que e refund de pedido.
+model AmazonReimbursement {
+  id                        String    @id @default(cuid())
+  naturalKey                String    @unique
+  reportId                  String?
+  reimbursementId           String?
+  caseId                    String?
+  amazonOrderId             String?
+  approvalDate              DateTime?
+  sku                       String?
+  fnSku                     String?
+  asin                      String?
+  productName               String?
+  reason                    String?
+  condition                 String?
+  currency                  String?
+  amountPerUnitCentavos     Int?
+  amountTotalCentavos       Int       @default(0)
+  quantityCash              Int       @default(0)
+  quantityInventory         Int       @default(0)
+  quantityTotal             Int       @default(0)
+  originalReimbursementId   String?
+  originalReimbursementType String?
+  produtoId                 String?
+  payloadJson               String
+  criadoEm                  DateTime  @default(now())
+  atualizadoEm              DateTime  @updatedAt
+
+  produto Produto? @relation(fields: [produtoId], references: [id], onDelete: SetNull)
+
+  @@index([approvalDate])
+  @@index([sku])
+  @@index([asin])
+  @@index([reimbursementId])
+  @@index([produtoId])
+}
+
+model AmazonReturn {
+  id                    String    @id @default(cuid())
+  naturalKey            String    @unique
+  reportId              String?
+  tipoReport            String
+  returnDate            DateTime?
+  amazonOrderId         String?
+  sku                   String?
+  fnSku                 String?
+  asin                  String?
+  productName           String?
+  quantity              Int       @default(0)
+  fulfillmentCenterId   String?
+  detailedDisposition   String?
+  reason                String?
+  status                String?
+  licensePlateNumber    String?
+  customerComments      String?
+  valorEstimadoCentavos Int?
+  produtoId             String?
+  payloadJson           String
+  criadoEm              DateTime  @default(now())
+  atualizadoEm          DateTime  @updatedAt
+
+  produto Produto? @relation(fields: [produtoId], references: [id], onDelete: SetNull)
+
+  @@index([returnDate])
+  @@index([amazonOrderId])
+  @@index([sku])
+  @@index([asin])
+  @@index([produtoId])
+  @@index([tipoReport])
+}
+
+model AmazonStorageFee {
+  id                            String    @id @default(cuid())
+  naturalKey                    String    @unique
+  reportId                      String?
+  asin                          String?
+  fnSku                         String?
+  productName                   String?
+  fulfillmentCenter             String?
+  countryCode                   String?
+  monthOfCharge                 DateTime?
+  storageRate                   Float?
+  currency                      String?
+  averageQuantityOnHand         Float?
+  averageQuantityPendingRemoval Float?
+  estimatedTotalItemVolume      Float?
+  itemVolume                    Float?
+  volumeUnits                   String?
+  productSizeTier               String?
+  storageFeeCentavos            Int       @default(0)
+  dangerousGoodsStorageType     String?
+  payloadJson                   String
+  criadoEm                      DateTime  @default(now())
+  atualizadoEm                  DateTime  @updatedAt
+
+  @@index([monthOfCharge])
+  @@index([asin])
+  @@index([fnSku])
+}
+
+model AmazonSkuTrafficDaily {
+  id                     String   @id @default(cuid())
+  sku                    String
+  data                   DateTime
+  parentAsin             String?
+  childAsin              String?
+  sessoes                Int      @default(0)
+  pageViews              Int      @default(0)
+  unitsOrdered           Int      @default(0)
+  buyBoxPercent          Float?
+  conversaoPercent       Float?
+  orderedRevenueCentavos Int      @default(0)
+  currency               String?
+  produtoId              String?
+  payloadJson            String
+  criadoEm               DateTime @default(now())
+  atualizadoEm           DateTime @updatedAt
+
+  produto Produto? @relation(fields: [produtoId], references: [id], onDelete: SetNull)
+
+  @@unique([sku, data])
+  @@index([data])
+  @@index([sku])
+  @@index([produtoId])
+  @@index([childAsin])
 }

@@ -7,12 +7,14 @@ export const AmazonSpApiOperation = {
   INVENTORY_SUMMARIES: "INVENTORY_SUMMARIES",
   REPORTS_CREATE: "REPORTS_CREATE",
   REPORTS_GET: "REPORTS_GET",
+  REPORTS_GET_BY_ID: "REPORTS_GET_BY_ID",
   REPORTS_GET_DOCUMENT: "REPORTS_GET_DOCUMENT",
   SOLICITATIONS_GET_ACTIONS: "SOLICITATIONS_GET_ACTIONS",
   SOLICITATIONS_CREATE_REVIEW: "SOLICITATIONS_CREATE_REVIEW",
   CATALOG_GET_ITEM: "CATALOG_GET_ITEM",
   PRODUCT_PRICING_GET_OFFERS: "PRODUCT_PRICING_GET_OFFERS",
   SELLERS_GET: "SELLERS_GET",
+  LISTINGS_GET_ITEM: "LISTINGS_GET_ITEM",
 } as const;
 
 export type AmazonSpApiOperation =
@@ -55,6 +57,11 @@ const OPERATION_LIMITS: Record<AmazonSpApiOperation, OperationLimit> = {
     rateLimitPerSecond: 0.0222,
     burst: 10,
   },
+  // Reports API getReport (by ID / polling): 2 rps, burst 15 — limite separado.
+  [AmazonSpApiOperation.REPORTS_GET_BY_ID]: {
+    rateLimitPerSecond: 2,
+    burst: 15,
+  },
   // Reports API getReportDocument: 0.0167 rps, burst 15.
   [AmazonSpApiOperation.REPORTS_GET_DOCUMENT]: {
     rateLimitPerSecond: 0.0167,
@@ -84,6 +91,11 @@ const OPERATION_LIMITS: Record<AmazonSpApiOperation, OperationLimit> = {
   [AmazonSpApiOperation.SELLERS_GET]: {
     rateLimitPerSecond: 0.016,
     burst: 15,
+  },
+  // Listings Items v2021-08-01 getListingsItem: 5 rps, burst 10.
+  [AmazonSpApiOperation.LISTINGS_GET_ITEM]: {
+    rateLimitPerSecond: 5,
+    burst: 10,
   },
 };
 

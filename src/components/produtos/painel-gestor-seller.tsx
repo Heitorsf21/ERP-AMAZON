@@ -33,9 +33,6 @@ type MetricaProduto = {
   precoVendaCentavos: number | null;
   unidadesVendidasTotais: number;
   vendasAmazonCentavos: number;
-  vendasMlCentavos: number;
-  vendasShopeeCentavos: number;
-  vendasTikTokCentavos: number;
   faturamentoCentavos: number;
   lucroCentavos: number;
   margemPercentual: number;

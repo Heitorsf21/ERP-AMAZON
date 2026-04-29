@@ -21,6 +21,7 @@ import {
   Bell,
   Megaphone,
   Activity,
+  Truck,
 } from "lucide-react";
 import type { Route } from "next";
 
@@ -125,6 +126,12 @@ export const NAV_GROUPS: NavGroup[] = [
         label: "Compras",
         icon: ShoppingCart,
         keywords: ["pedido compra", "reposicao", "fornecedor", "purchase"],
+      },
+      {
+        href: "/expedicao" as Route,
+        label: "Expedicao",
+        icon: Truck,
+        keywords: ["fbm", "picking", "packing", "etiqueta", "despacho"],
       },
       {
         href: "/avaliacoes" as Route,

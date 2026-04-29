@@ -56,6 +56,21 @@ type DREData = {
   mpaPercentual: number;
   resultadoFinal: number;
   quantidadeLiquidacoes: number;
+  amazon: {
+    receitaLiquidacoes: number;
+    reimbursementsFba: number;
+    returnsEstimados: number;
+    storageFees: number;
+    quantidadeReimbursementsFba: number;
+    quantidadeReturns: number;
+    quantidadeStorageFees: number;
+    unidadesReturns: number;
+  };
+  cpv: {
+    calculado: number;
+    contasPagas: number;
+    storageFees: number;
+  };
 };
 
 type Preset = "mes-atual" | "mes-anterior" | "trimestre" | "ano" | "custom" | "anual";
@@ -548,9 +563,17 @@ export default function DREPage() {
                     {/* RECEITAS */}
                     <DRERow label="Receitas" valor={0} tipo="grupo" />
                     <DRERow
-                      label="Receita Amazon"
-                      valor={d.receitaAmazon}
-                      percentual={d.totalReceitas > 0 ? (d.receitaAmazon / d.totalReceitas) * 100 : 0}
+                      label="Receita Amazon (liquidacoes)"
+                      valor={d.amazon.receitaLiquidacoes}
+                      percentual={d.totalReceitas > 0 ? (d.amazon.receitaLiquidacoes / d.totalReceitas) * 100 : 0}
+                      tipo="item"
+                      indent
+                      sinal="positivo"
+                    />
+                    <DRERow
+                      label="FBA Reimbursements"
+                      valor={d.amazon.reimbursementsFba}
+                      percentual={d.totalReceitas > 0 ? (d.amazon.reimbursementsFba / d.totalReceitas) * 100 : 0}
                       tipo="item"
                       indent
                       sinal="positivo"
@@ -590,6 +613,14 @@ export default function DREPage() {
                       sinal="negativo"
                     />
                     <DRERow
+                      label="Returns FBA estimados"
+                      valor={d.amazon.returnsEstimados}
+                      percentual={d.totalReceitas > 0 ? (d.amazon.returnsEstimados / d.totalReceitas) * 100 : 0}
+                      tipo="item"
+                      indent
+                      sinal="negativo"
+                    />
+                    <DRERow
                       label="Receita Líquida"
                       valor={d.receitaLiquida}
                       percentual={d.totalReceitas > 0 ? (d.receitaLiquida / d.totalReceitas) * 100 : 0}
@@ -600,9 +631,17 @@ export default function DREPage() {
                     {/* CMV */}
                     <DRERow label="Custo das Mercadorias Vendidas" valor={0} tipo="grupo" />
                     <DRERow
-                      label="CMV"
-                      valor={d.custoMercadorias}
-                      percentual={d.totalReceitas > 0 ? (d.custoMercadorias / d.totalReceitas) * 100 : 0}
+                      label="CMV produtos"
+                      valor={d.cpv.contasPagas}
+                      percentual={d.totalReceitas > 0 ? (d.cpv.contasPagas / d.totalReceitas) * 100 : 0}
+                      tipo="item"
+                      indent
+                      sinal="negativo"
+                    />
+                    <DRERow
+                      label="Storage fees FBA"
+                      valor={d.amazon.storageFees}
+                      percentual={d.totalReceitas > 0 ? (d.amazon.storageFees / d.totalReceitas) * 100 : 0}
                       tipo="item"
                       indent
                       sinal="negativo"

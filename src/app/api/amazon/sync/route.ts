@@ -1,16 +1,27 @@
 import { NextRequest } from "next/server";
 import { handle, ok } from "@/lib/api";
+import { auditLog } from "@/lib/audit";
+import { requireRole, UsuarioRole } from "@/lib/auth";
 import { enqueueAmazonSyncJob } from "@/modules/amazon/jobs";
 import {
   testConnection,
 } from "@/modules/amazon/service";
-import { TipoAmazonSyncJob } from "@/modules/shared/domain";
+import { TipoAmazonSyncJob, TipoAuditLog } from "@/modules/shared/domain";
 
 export const dynamic = "force-dynamic";
 
 export const POST = handle(async (req: NextRequest) => {
+  const session = await requireRole(UsuarioRole.ADMIN);
   const body = await req.json().catch(() => ({})) as { tipo?: string; diasAtras?: number };
   const tipo = body.tipo ?? "ALL";
+
+  await auditLog({
+    session,
+    req,
+    acao: TipoAuditLog.AMAZON_SYNC_MANUAL,
+    entidade: "AmazonSyncJob",
+    metadata: { tipo, diasAtras: body.diasAtras ?? null },
+  });
 
   if (tipo === "TEST") {
     const result = await testConnection();
@@ -70,6 +81,57 @@ export const POST = handle(async (req: NextRequest) => {
       {
         priority: 60,
         dedupeKey: `manual:${TipoAmazonSyncJob.REPORTS_BACKFILL}`,
+      },
+    );
+    return ok({ ok: true, queued: true, job });
+  }
+
+  if (tipo === "FBA_REIMBURSEMENTS" || tipo === "FBA_REIMBURSEMENTS_SYNC") {
+    const diasAtras = body.diasAtras ?? 90;
+    const job = await enqueueAmazonSyncJob(
+      TipoAmazonSyncJob.FBA_REIMBURSEMENTS_SYNC,
+      { diasAtras },
+      {
+        priority: 60,
+        dedupeKey: `manual:${TipoAmazonSyncJob.FBA_REIMBURSEMENTS_SYNC}:${diasAtras}`,
+      },
+    );
+    return ok({ ok: true, queued: true, job });
+  }
+
+  if (tipo === "RETURNS" || tipo === "RETURNS_SYNC") {
+    const diasAtras = body.diasAtras ?? 90;
+    const job = await enqueueAmazonSyncJob(
+      TipoAmazonSyncJob.RETURNS_SYNC,
+      { diasAtras },
+      {
+        priority: 58,
+        dedupeKey: `manual:${TipoAmazonSyncJob.RETURNS_SYNC}:${diasAtras}`,
+      },
+    );
+    return ok({ ok: true, queued: true, job });
+  }
+
+  if (tipo === "FBA_STORAGE" || tipo === "FBA_STORAGE_SYNC") {
+    const job = await enqueueAmazonSyncJob(
+      TipoAmazonSyncJob.FBA_STORAGE_SYNC,
+      {},
+      {
+        priority: 56,
+        dedupeKey: `manual:${TipoAmazonSyncJob.FBA_STORAGE_SYNC}`,
+      },
+    );
+    return ok({ ok: true, queued: true, job });
+  }
+
+  if (tipo === "TRAFFIC" || tipo === "TRAFFIC_SYNC") {
+    const diasAtras = body.diasAtras ?? 30;
+    const job = await enqueueAmazonSyncJob(
+      TipoAmazonSyncJob.TRAFFIC_SYNC,
+      { diasAtras },
+      {
+        priority: 54,
+        dedupeKey: `manual:${TipoAmazonSyncJob.TRAFFIC_SYNC}:${diasAtras}`,
       },
     );
     return ok({ ok: true, queued: true, job });

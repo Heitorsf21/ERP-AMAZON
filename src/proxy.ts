@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { SESSION_COOKIE_NAME, verifySession } from "@/lib/session";
+import { UsuarioRole } from "@/modules/shared/domain";
 
 const MUTATING_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 const RATE_LIMIT_WINDOW_MS = 15 * 60_000;
@@ -45,6 +46,41 @@ const ADMIN_PATH_PREFIXES = [
   "/api/sistema",
   "/api/email",
   "/api/configuracoes",
+];
+
+const OPERATOR_PATH_PREFIXES = [
+  "/dashboard-ecommerce",
+  "/produtos",
+  "/vendas",
+  "/compras",
+  "/expedicao",
+  "/avaliacoes",
+  "/publicidade",
+  "/api/estoque",
+  "/api/produtos",
+  "/api/dashboard-ecommerce",
+  "/api/expedicao",
+  "/api/amazon/sync-catalog",
+  "/api/amazon/sync-buybox",
+];
+
+const FINANCE_PATH_PREFIXES = [
+  "/financeiro",
+  "/caixa",
+  "/contas-a-pagar",
+  "/contas-a-receber",
+  "/notas-fiscais",
+  "/destinacao",
+  "/dre",
+  "/dashboard-ecommerce",
+  "/api/caixa",
+  "/api/contas-a-pagar",
+  "/api/contas-a-receber",
+  "/api/documentos-financeiros",
+  "/api/dre",
+  "/api/dashboard-ecommerce",
+  "/api/produtos/resumo-tabela",
+  "/api/estoque/produtos",
 ];
 
 function isPublic(pathname: string): boolean {
@@ -119,6 +155,32 @@ function isSameOriginMutation(req: NextRequest): boolean {
   );
 }
 
+function matchesPrefix(pathname: string, prefixes: string[]): boolean {
+  return prefixes.some((p) => pathname === p || pathname.startsWith(`${p}/`));
+}
+
+function canAccessPath(role: string, pathname: string, method: string): boolean {
+  if (role === UsuarioRole.ADMIN) return true;
+  if (MUTATING_METHODS.has(method) && role === UsuarioRole.LEITURA) return false;
+
+  const adminOnly = matchesPrefix(pathname, ADMIN_PATH_PREFIXES);
+  if (adminOnly && !matchesPrefix(pathname, OPERATOR_PATH_PREFIXES)) return false;
+
+  if (role === UsuarioRole.OPERADOR) {
+    return matchesPrefix(pathname, OPERATOR_PATH_PREFIXES) || !matchesPrefix(pathname, ADMIN_PATH_PREFIXES);
+  }
+
+  if (role === UsuarioRole.FINANCEIRO) {
+    return matchesPrefix(pathname, FINANCE_PATH_PREFIXES) || !matchesPrefix(pathname, ADMIN_PATH_PREFIXES);
+  }
+
+  if (role === UsuarioRole.LEITURA) {
+    return !MUTATING_METHODS.has(method) && !matchesPrefix(pathname, ADMIN_PATH_PREFIXES);
+  }
+
+  return !matchesPrefix(pathname, ADMIN_PATH_PREFIXES);
+}
+
 export async function proxy(req: NextRequest) {
   const { pathname, search } = req.nextUrl;
 
@@ -140,10 +202,7 @@ export async function proxy(req: NextRequest) {
   const session = await verifySession(token);
 
   if (session) {
-    const adminOnly = ADMIN_PATH_PREFIXES.some(
-      (p) => pathname === p || pathname.startsWith(`${p}/`),
-    );
-    if (adminOnly && session.role !== "ADMIN") {
+    if (!canAccessPath(session.role, pathname, req.method)) {
       if (pathname.startsWith("/api/")) {
         return withSecurityHeaders(
           NextResponse.json({ erro: "NAO_AUTORIZADO" }, { status: 403 }),

@@ -6,6 +6,9 @@ import {
   TrendingDown,
   ArrowDownToLine,
   TrendingUp,
+  ReceiptText,
+  RotateCcw,
+  Archive,
 } from "lucide-react";
 import { KpiCard } from "@/components/ui/kpi-card";
 import { fetchJSON } from "@/lib/fetcher";
@@ -31,6 +34,18 @@ type ContaReceber = {
 
 type DestinacaoResumo = {
   saldoProjetado: number;
+};
+
+type DreResumo = {
+  amazon: {
+    reimbursementsFba: number;
+    returnsEstimados: number;
+    storageFees: number;
+    quantidadeReimbursementsFba: number;
+    quantidadeReturns: number;
+    quantidadeStorageFees: number;
+    unidadesReturns: number;
+  };
 };
 
 function isoYYYYMMDD(d: Date): string {
@@ -96,6 +111,15 @@ export function KpiStrip() {
     queryFn: () => fetchJSON<DestinacaoResumo>("/api/destinacao/resumo"),
   });
 
+  const inicioMes = isoYYYYMMDD(new Date(hoje.getFullYear(), hoje.getMonth(), 1));
+  const fimMes = isoYYYYMMDD(new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0));
+
+  const dreQ = useQuery<DreResumo>({
+    queryKey: ["kpi-strip", "dre-amazon", inicioMes, fimMes],
+    queryFn: () =>
+      fetchJSON<DreResumo>(`/api/dre/resumo?de=${inicioMes}&ate=${fimMes}`),
+  });
+
   const saldoCaixa = saldoQ.data?.atualCentavos ?? 0;
 
   // "A pagar próx. 7d" = somatório das contas ABERTAS com vencimento até hoje+7
@@ -121,7 +145,10 @@ export function KpiStrip() {
     contasPagarQ.isLoading ||
     contasVencidasQ.isLoading ||
     contasReceberQ.isLoading ||
-    destinacaoQ.isLoading;
+    destinacaoQ.isLoading ||
+    dreQ.isLoading;
+
+  const amazon = dreQ.data?.amazon;
 
   return (
     <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -163,6 +190,39 @@ export function KpiStrip() {
         sub="atual − comprometido + a receber"
         icon={TrendingUp}
         color="violet"
+      />
+      <KpiCard
+        label="FBA Reimbursements"
+        value={carregando ? "—" : formatBRL(amazon?.reimbursementsFba ?? 0)}
+        sub={
+          carregando
+            ? undefined
+            : `${amazon?.quantidadeReimbursementsFba ?? 0} lancamento${(amazon?.quantidadeReimbursementsFba ?? 0) !== 1 ? "s" : ""} no mes`
+        }
+        icon={ReceiptText}
+        color="green"
+      />
+      <KpiCard
+        label="Returns estimados"
+        value={carregando ? "—" : formatBRL(amazon?.returnsEstimados ?? 0)}
+        sub={
+          carregando
+            ? undefined
+            : `${amazon?.unidadesReturns ?? 0} unidade${(amazon?.unidadesReturns ?? 0) !== 1 ? "s" : ""} devolvida${(amazon?.unidadesReturns ?? 0) !== 1 ? "s" : ""}`
+        }
+        icon={RotateCcw}
+        color="orange"
+      />
+      <KpiCard
+        label="Storage fees FBA"
+        value={carregando ? "—" : formatBRL(amazon?.storageFees ?? 0)}
+        sub={
+          carregando
+            ? undefined
+            : `${amazon?.quantidadeStorageFees ?? 0} linha${(amazon?.quantidadeStorageFees ?? 0) !== 1 ? "s" : ""} no mes`
+        }
+        icon={Archive}
+        color="slate"
       />
     </div>
   );

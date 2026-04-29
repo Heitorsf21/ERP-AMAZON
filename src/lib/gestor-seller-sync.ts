@@ -56,9 +56,35 @@ function toInt(valor: unknown): number {
 //
 // Cabeçalho esperado (1-indexed em ExcelJS row.values):
 // [1] SKU Interno | [2] Título | [3] Custo Unitário Médio | [4] Preço |
-// [5] Unidades Vendidas Totais | [6] Vendas Amazon | [7] Vendas Mercado Livre |
-// [8] Vendas Shopee | [9] Vendas TikTok | [10] Faturamento |
+// [5] Unidades Vendidas Totais | [6] Vendas Amazon | [7] Faturamento |
+// [8] Lucro | [9] Margem | [10] Custo Ads |
 // [11] Lucro | [12] Margem | [13] Custo Ads | [14] Lucro Pós Ads | [15] MPA
+
+function normalizarHeader(value: unknown): string {
+  return String(value ?? "")
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, " ");
+}
+
+function criarMapaHeader(row: ExcelJS.Row | undefined) {
+  const values = (row?.values ?? []) as Array<string | number | null>;
+  const map = new Map<string, number>();
+  values.forEach((value, idx) => {
+    if (idx === 0) return;
+    const normalized = normalizarHeader(value);
+    if (normalized) map.set(normalized, idx);
+  });
+  return (aliases: string[], fallback: number) => {
+    for (const alias of aliases) {
+      const idx = map.get(normalizarHeader(alias));
+      if (idx) return idx;
+    }
+    return fallback;
+  };
+}
 
 async function importarProductsReport(
   buffer: Buffer,
@@ -85,18 +111,33 @@ async function importarProductsReport(
   let produtosAtualizados = 0;
 
   const lote = await db.loteMetricaGS.create({ data: { nomeArquivo } });
+  const col = criarMapaHeader(rows[0]);
+  const idx = {
+    sku: col(["SKU Interno", "SKU"], 1),
+    titulo: col(["Titulo", "Produto"], 2),
+    custo: col(["Custo Unitario Medio", "Custo Unitario", "Custo"], 3),
+    preco: col(["Preco", "Preco Venda"], 4),
+    unidades: col(["Unidades Vendidas Totais", "Unidades Vendidas"], 5),
+    vendasAmazon: col(["Vendas Amazon"], 6),
+    faturamento: col(["Faturamento"], 7),
+    lucro: col(["Lucro"], 8),
+    margem: col(["Margem"], 9),
+    custoAds: col(["Custo Ads"], 10),
+    lucroPosAds: col(["Lucro Pos Ads"], 11),
+    mpa: col(["MPA"], 12),
+  };
 
   for (let i = 1; i < rows.length; i++) {
     const row = rows[i];
     if (!row) continue;
     const v = row.values as (string | number | null)[];
 
-    const sku = String(v[1] ?? "").trim();
+    const sku = String(v[idx.sku] ?? "").trim();
     if (!sku) continue;
 
-    const titulo = String(v[2] ?? "").trim() || null;
-    const custoUnitarioCentavos = brlParaCentavos(v[3]) || null;
-    const precoVendaCentavos = brlParaCentavos(v[4]) || null;
+    const titulo = String(v[idx.titulo] ?? "").trim() || null;
+    const custoUnitarioCentavos = brlParaCentavos(v[idx.custo]) || null;
+    const precoVendaCentavos = brlParaCentavos(v[idx.preco]) || null;
 
     // Upsert produto no catálogo ERP
     let produtoId: string | null = null;
@@ -139,17 +180,14 @@ async function importarProductsReport(
         titulo,
         custoUnitarioCentavos,
         precoVendaCentavos,
-        unidadesVendidasTotais: toInt(v[5]),
-        vendasAmazonCentavos: brlParaCentavos(v[6]),
-        vendasMlCentavos: brlParaCentavos(v[7]),
-        vendasShopeeCentavos: brlParaCentavos(v[8]),
-        vendasTikTokCentavos: brlParaCentavos(v[9]),
-        faturamentoCentavos: brlParaCentavos(v[10]),
-        lucroCentavos: brlParaCentavos(v[11]),
-        margemPercentual: toFloat(v[12]),
-        custoAdsCentavos: brlParaCentavos(v[13]),
-        lucroPosAdsCentavos: brlParaCentavos(v[14]),
-        mpaPercentual: toFloat(v[15]),
+        unidadesVendidasTotais: toInt(v[idx.unidades]),
+        vendasAmazonCentavos: brlParaCentavos(v[idx.vendasAmazon]),
+        faturamentoCentavos: brlParaCentavos(v[idx.faturamento]),
+        lucroCentavos: brlParaCentavos(v[idx.lucro]),
+        margemPercentual: toFloat(v[idx.margem]),
+        custoAdsCentavos: brlParaCentavos(v[idx.custoAds]),
+        lucroPosAdsCentavos: brlParaCentavos(v[idx.lucroPosAds]),
+        mpaPercentual: toFloat(v[idx.mpa]),
       },
       create: {
         loteId: lote.id,
@@ -158,17 +196,14 @@ async function importarProductsReport(
         titulo,
         custoUnitarioCentavos,
         precoVendaCentavos,
-        unidadesVendidasTotais: toInt(v[5]),
-        vendasAmazonCentavos: brlParaCentavos(v[6]),
-        vendasMlCentavos: brlParaCentavos(v[7]),
-        vendasShopeeCentavos: brlParaCentavos(v[8]),
-        vendasTikTokCentavos: brlParaCentavos(v[9]),
-        faturamentoCentavos: brlParaCentavos(v[10]),
-        lucroCentavos: brlParaCentavos(v[11]),
-        margemPercentual: toFloat(v[12]),
-        custoAdsCentavos: brlParaCentavos(v[13]),
-        lucroPosAdsCentavos: brlParaCentavos(v[14]),
-        mpaPercentual: toFloat(v[15]),
+        unidadesVendidasTotais: toInt(v[idx.unidades]),
+        vendasAmazonCentavos: brlParaCentavos(v[idx.vendasAmazon]),
+        faturamentoCentavos: brlParaCentavos(v[idx.faturamento]),
+        lucroCentavos: brlParaCentavos(v[idx.lucro]),
+        margemPercentual: toFloat(v[idx.margem]),
+        custoAdsCentavos: brlParaCentavos(v[idx.custoAds]),
+        lucroPosAdsCentavos: brlParaCentavos(v[idx.lucroPosAds]),
+        mpaPercentual: toFloat(v[idx.mpa]),
       },
     });
 

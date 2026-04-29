@@ -1,9 +1,11 @@
 import { handle, ok } from "@/lib/api";
+import { requireRole, UsuarioRole } from "@/lib/auth";
 import { syncCatalog } from "@/modules/amazon/service";
 
 export const dynamic = "force-dynamic";
 
 export const POST = handle(async (req: Request) => {
+  await requireRole(UsuarioRole.ADMIN, UsuarioRole.OPERADOR);
   let produtoIds: string[] | undefined;
 
   const ct = req.headers.get("content-type") ?? "";

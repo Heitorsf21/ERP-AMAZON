@@ -20,6 +20,8 @@
     "amazon:analisar": "tsx scripts/amazon-analisar-relatorio.ts",
     "amazon:worker": "tsx scripts/amazon-worker.ts",
     "amazon:worker:once": "tsx scripts/amazon-worker.ts --once",
+    "amazon:sqs": "tsx scripts/amazon-sqs-consumer.ts",
+    "amazon:sqs:once": "tsx scripts/amazon-sqs-consumer.ts --once",
     "amazon:test": "tsx scripts/test-amazon-apis.ts",
     "amazon:reprocessar-vendas": "tsx scripts/reprocessar-vendas-amazon.ts",
     "prisma:generate": "prisma generate",
@@ -36,6 +38,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.90.0",
+    "@aws-sdk/client-sqs": "^3.1038.0",
     "@hookform/resolvers": "^3.9.0",
     "@libpdf/core": "^0.3.4",
     "@prisma/client": "^5.20.0",

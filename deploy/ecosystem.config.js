@@ -3,9 +3,10 @@
 //   pm2 start deploy/ecosystem.config.js
 //   pm2 save
 //
-// Dois processos:
+// Tres processos:
 //  - erp-web    : Next.js (next start) na porta 3000
 //  - erp-worker : daemon que processa AmazonSyncJob em loop
+//  - erp-sqs-consumer : long-poll SQS da Notifications API (quando configurado)
 module.exports = {
   apps: [
     {
@@ -33,6 +34,21 @@ module.exports = {
       autorestart: true,
       watch: false,
       max_memory_restart: "500M",
+      env: {
+        NODE_ENV: "production",
+      },
+      time: true,
+    },
+    {
+      name: "erp-sqs-consumer",
+      cwd: "/opt/erp-amazon",
+      script: "node_modules/.bin/tsx",
+      args: "scripts/amazon-sqs-consumer.ts",
+      instances: 1,
+      exec_mode: "fork",
+      autorestart: true,
+      watch: false,
+      max_memory_restart: "300M",
       env: {
         NODE_ENV: "production",
       },

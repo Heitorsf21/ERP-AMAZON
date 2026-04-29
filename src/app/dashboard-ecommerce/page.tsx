@@ -97,6 +97,12 @@ type Kpis = {
   lucroPosAdsCentavos: number | null;
   mpaPercentual: number | null;
   roiPosAdsPercentual: number | null;
+  trafficSessions: number;
+  trafficPageViews: number;
+  trafficUnitsOrdered: number;
+  trafficRevenueOrderedCentavos: number;
+  trafficConversionPercent: number | null;
+  trafficBuyBoxPercent: number | null;
   vendasSemCusto: number;
   delta: KpisDelta;
 };
@@ -209,6 +215,10 @@ function formatPercent(value: number | null | undefined): string {
 
 function formatMoneyOrNA(value: number | null | undefined): string {
   return value == null ? "N/A" : formatBRL(value);
+}
+
+function formatInt(value: number | null | undefined): string {
+  return (value ?? 0).toLocaleString("pt-BR");
 }
 
 function classificarAcos(acos: number | null): { texto: string; classe: string } | null {
@@ -331,6 +341,32 @@ function KpiCard({
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+function TrafficMetric({
+  label,
+  value,
+  detail,
+}: {
+  label: string;
+  value: string;
+  detail?: string;
+}) {
+  return (
+    <div className="rounded-md border bg-background/60 p-3">
+      <p className="text-[11px] font-medium uppercase text-muted-foreground">
+        {label}
+      </p>
+      <p className="mt-1 font-mono text-lg font-semibold tabular-nums">
+        {value}
+      </p>
+      {detail && (
+        <p className="mt-0.5 text-xs text-muted-foreground">
+          {detail}
+        </p>
+      )}
+    </div>
   );
 }
 
@@ -667,6 +703,37 @@ export default function DashboardEcommercePage() {
           <KpiCard key={card.titulo} {...card} />
         ))}
       </div>
+
+      <Card>
+        <CardHeader className="flex-row items-center justify-between space-y-0">
+          <CardTitle className="text-base">Trafego Amazon</CardTitle>
+          <Badge variant="outline">Sales & Traffic</Badge>
+        </CardHeader>
+        <CardContent>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <TrafficMetric
+              label="Sessoes"
+              value={loadingKpis ? "..." : formatInt(kpis?.trafficSessions)}
+              detail={`${formatInt(kpis?.trafficPageViews)} page views`}
+            />
+            <TrafficMetric
+              label="Conversao"
+              value={loadingKpis ? "..." : formatPercent(kpis?.trafficConversionPercent)}
+              detail={`${formatInt(kpis?.trafficUnitsOrdered)} unidades ordenadas`}
+            />
+            <TrafficMetric
+              label="Buybox media"
+              value={loadingKpis ? "..." : formatPercent(kpis?.trafficBuyBoxPercent)}
+              detail="media por SKU/dia"
+            />
+            <TrafficMetric
+              label="Receita ordenada"
+              value={loadingKpis ? "..." : formatBRL(kpis?.trafficRevenueOrderedCentavos ?? 0)}
+              detail="report Sales & Traffic"
+            />
+          </div>
+        </CardContent>
+      </Card>
 
       <div>
         <Card>

@@ -40,6 +40,13 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   Tooltip,
@@ -106,6 +113,38 @@ type ResumoTabelaItem = {
   vendido30d: number;
   buyboxPercent: number | null;
   reembolsoPercent: number;
+  sessions30d: number;
+  pageViews30d: number;
+  trafficUnitsOrdered30d: number;
+  trafficRevenueOrderedCentavos: number;
+  trafficConversionPercent: number | null;
+  trafficBuyBoxPercent: number | null;
+};
+
+type ListingDiffField = {
+  campo: "titulo" | "preco" | "status" | "imagem";
+  erp: string | number | null;
+  amazon: string | number | null;
+  igual: boolean;
+};
+
+type ListingDiffResponse = {
+  produto: {
+    id: string;
+    sku: string;
+    nome: string;
+  };
+  amazon: {
+    sellerId: string;
+    sku: string;
+    asin: string | null;
+    titulo: string | null;
+    precoCentavos: number | null;
+    status: string | null;
+    imagemUrl: string | null;
+    issuesCount: number;
+  };
+  diffs: ListingDiffField[];
 };
 
 type FiltroStatus = StatusReposicao | "TODOS";
@@ -363,6 +402,8 @@ type SortKey =
   | "amazonEstoqueTotal"
   | "diasEstoque"
   | "vendido30d"
+  | "sessions30d"
+  | "trafficConversionPercent"
   | "buyboxPercent"
   | "reembolsoPercent"
   | "custoUnitario";
@@ -393,6 +434,7 @@ export function ListaProdutos() {
     produtoId: string;
     nome: string;
   }>({ aberto: false, produtoId: "", nome: "" });
+  const [listingDiff, setListingDiff] = useState<ListingDiffResponse | null>(null);
 
   const params = new URLSearchParams();
   if (buscaDebounced) params.set("busca", buscaDebounced);
@@ -459,6 +501,10 @@ export function ListaProdutos() {
             velocidadePorId.get(p.id)?.vendido30d ??
             0
           );
+        case "sessions30d":
+          return resumoPorId.get(p.id)?.sessions30d ?? 0;
+        case "trafficConversionPercent":
+          return resumoPorId.get(p.id)?.trafficConversionPercent ?? -1;
         case "buyboxPercent":
           return resumoPorId.get(p.id)?.buyboxPercent ?? -1;
         case "reembolsoPercent":
@@ -567,6 +613,24 @@ export function ListaProdutos() {
       }
     },
     onError: () => toast.error("Erro ao buscar buybox"),
+  });
+
+  const verificarListing = useMutation({
+    mutationFn: (produtoId: string) =>
+      fetchJSON<ListingDiffResponse>(
+        `/api/produtos/${produtoId}/amazon-listing-diff`,
+      ),
+    onSuccess: (res) => {
+      setListingDiff(res);
+      const divergencias = res.diffs.filter((d) => !d.igual).length;
+      if (divergencias > 0) {
+        toast.warning(`${divergencias} divergencia(s) encontradas no listing`);
+      } else {
+        toast.success("Listing Amazon confere com o ERP");
+      }
+    },
+    onError: (err) =>
+      toast.error((err as Error).message ?? "Erro ao verificar listing"),
   });
 
   const syncTudo = useMutation({
@@ -725,7 +789,7 @@ export function ListaProdutos() {
           <div className="overflow-hidden rounded-xl border bg-card">
             {isLoading ? (
               <div className="p-4">
-                <DataTableSkeleton rows={6} columns={12} />
+                <DataTableSkeleton rows={6} columns={14} />
               </div>
             ) : produtos.length === 0 ? (
               <EmptyState busca={busca} filtroStatus={filtroStatus} />
@@ -756,6 +820,12 @@ export function ListaProdutos() {
                       </TableHead>
                       <TableHead className="hidden px-3 py-3 w-[90px] text-right xl:table-cell">
                         <SortableHeader label="Vendas 30d" sortKey="vendido30d" sort={sort} onToggle={toggleSort} align="right" />
+                      </TableHead>
+                      <TableHead className="hidden px-3 py-3 w-[110px] text-right 2xl:table-cell">
+                        <SortableHeader label="Sessoes" sortKey="sessions30d" sort={sort} onToggle={toggleSort} align="right" />
+                      </TableHead>
+                      <TableHead className="hidden px-3 py-3 w-[90px] text-right 2xl:table-cell">
+                        <SortableHeader label="Conv." sortKey="trafficConversionPercent" sort={sort} onToggle={toggleSort} align="right" />
                       </TableHead>
                       <TableHead className="hidden px-3 py-3 w-[110px] xl:table-cell">
                         <SortableHeader label="Buybox" sortKey="buyboxPercent" sort={sort} onToggle={toggleSort} />
@@ -870,6 +940,12 @@ export function ListaProdutos() {
                             }
                           />
                         </TableCell>
+                        <TableCell className="hidden px-3 py-3 text-right 2xl:table-cell">
+                          <TrafficSessionsCell resumo={resumoPorId.get(p.id)} />
+                        </TableCell>
+                        <TableCell className="hidden px-3 py-3 text-right 2xl:table-cell">
+                          <TrafficConversionCell percent={resumoPorId.get(p.id)?.trafficConversionPercent ?? null} />
+                        </TableCell>
                         <TableCell className="hidden px-3 py-3 xl:table-cell">
                           <BuyboxBar percent={resumoPorId.get(p.id)?.buyboxPercent ?? null} />
                         </TableCell>
@@ -941,6 +1017,13 @@ export function ListaProdutos() {
                                     <ShoppingCart className="mr-2 h-4 w-4" />
                                     Atualizar buybox
                                   </DropdownMenuItem>
+                                  <DropdownMenuItem
+                                    onClick={() => verificarListing.mutate(p.id)}
+                                    disabled={verificarListing.isPending}
+                                  >
+                                    <PackageSearch className="mr-2 h-4 w-4" />
+                                    Verificar listing Amazon
+                                  </DropdownMenuItem>
                                   <DropdownMenuSeparator />
                                 </>
                               )}
@@ -988,9 +1071,102 @@ export function ListaProdutos() {
             if (!v) setDialogMov({ aberto: false, produtoId: "", nome: "" });
           }}
         />
+
+        <ListingDiffDialog
+          diff={listingDiff}
+          open={listingDiff !== null}
+          onOpenChange={(open) => {
+            if (!open) setListingDiff(null);
+          }}
+        />
       </>
     </TooltipProvider>
   );
+}
+
+function ListingDiffDialog({
+  diff,
+  open,
+  onOpenChange,
+}: {
+  diff: ListingDiffResponse | null;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  if (!diff) return null;
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-3xl">
+        <DialogHeader>
+          <DialogTitle>Listing Amazon</DialogTitle>
+          <DialogDescription>
+            {diff.produto.sku} · Seller {diff.amazon.sellerId}
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="grid gap-3 sm:grid-cols-3">
+          <div className="rounded-md border p-3">
+            <div className="text-xs text-muted-foreground">ASIN</div>
+            <div className="mt-1 font-mono text-sm">{diff.amazon.asin ?? "-"}</div>
+          </div>
+          <div className="rounded-md border p-3">
+            <div className="text-xs text-muted-foreground">Status</div>
+            <div className="mt-1 text-sm font-medium">{diff.amazon.status ?? "-"}</div>
+          </div>
+          <div className="rounded-md border p-3">
+            <div className="text-xs text-muted-foreground">Issues</div>
+            <div className="mt-1 text-sm font-medium">{diff.amazon.issuesCount}</div>
+          </div>
+        </div>
+
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Campo</TableHead>
+              <TableHead>ERP</TableHead>
+              <TableHead>Amazon</TableHead>
+              <TableHead className="text-right">Resultado</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {diff.diffs.map((item) => (
+              <TableRow key={item.campo}>
+                <TableCell className="capitalize">{item.campo}</TableCell>
+                <TableCell className="max-w-[220px] truncate">
+                  {formatListingValue(item.campo, item.erp)}
+                </TableCell>
+                <TableCell className="max-w-[260px] truncate">
+                  {formatListingValue(item.campo, item.amazon)}
+                </TableCell>
+                <TableCell className="text-right">
+                  <span
+                    className={cn(
+                      "inline-flex rounded-full px-2 py-0.5 text-xs font-semibold",
+                      item.igual
+                        ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300"
+                        : "bg-amber-50 text-amber-700 dark:bg-amber-900/20 dark:text-amber-300",
+                    )}
+                  >
+                    {item.igual ? "OK" : "Divergente"}
+                  </span>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function formatListingValue(
+  campo: ListingDiffField["campo"],
+  value: string | number | null,
+) {
+  if (value == null || value === "") return "-";
+  if (campo === "preco" && typeof value === "number") return formatBRL(value);
+  return String(value);
 }
 
 // ── Empty state amigavel ─────────────────────────────────────────────────────
@@ -1047,6 +1223,50 @@ function Vendas30dBadge({ valor }: { valor: number }) {
 }
 
 // ── Buybox bar (mais visual que numero) ──────────────────────────────────────
+
+function TrafficSessionsCell({
+  resumo,
+}: {
+  resumo: ResumoTabelaItem | undefined;
+}) {
+  const sessions = resumo?.sessions30d ?? 0;
+  if (sessions === 0) {
+    return <span className="text-xs text-muted-foreground">—</span>;
+  }
+  return (
+    <div
+      className="text-right"
+      title={`${resumo?.pageViews30d ?? 0} page views nos ultimos 30 dias`}
+    >
+      <div className="font-mono text-xs font-semibold tabular-nums">
+        {sessions.toLocaleString("pt-BR")}
+      </div>
+      <div className="text-[10px] text-muted-foreground">
+        PV {(resumo?.pageViews30d ?? 0).toLocaleString("pt-BR")}
+      </div>
+    </div>
+  );
+}
+
+function TrafficConversionCell({ percent }: { percent: number | null }) {
+  if (percent == null) {
+    return <span className="text-xs text-muted-foreground">—</span>;
+  }
+  const cor =
+    percent >= 12
+      ? "text-emerald-600 dark:text-emerald-400"
+      : percent >= 6
+        ? "text-amber-600 dark:text-amber-400"
+        : "text-red-600 dark:text-red-400";
+  return (
+    <span
+      className={cn("text-xs font-semibold tabular-nums", cor)}
+      title="Conversao de unidades por sessao nos ultimos 30 dias"
+    >
+      {percent.toFixed(1)}%
+    </span>
+  );
+}
 
 function BuyboxBar({ percent }: { percent: number | null }) {
   if (percent == null) {

@@ -19,6 +19,10 @@ import {
   type SPFinanceTransaction,
 } from "@/lib/amazon-sp-api";
 import { parseAllOrdersTsv } from "@/modules/amazon/parsers/all-orders-tsv";
+import { parseFbaReimbursementsTsv } from "@/modules/amazon/parsers/fba-reimbursements-tsv";
+import { parseFbaReturnsTsv } from "@/modules/amazon/parsers/fba-returns-tsv";
+import { parseFbaStorageFeesTsv } from "@/modules/amazon/parsers/fba-storage-fees-tsv";
+import { parseSalesTrafficJson } from "@/modules/amazon/parsers/sales-traffic-json";
 import {
   downloadReportDocument,
   stepReportLifecycle,
@@ -27,6 +31,7 @@ import {
   notificarBuyboxPerdido,
   notificarBuyboxRecuperado,
   notificarReconciliado,
+  notificarReimbursementFbaRecebido,
   notificarSettlementNovo,
 } from "@/lib/notificacoes";
 import { contasReceberService } from "@/modules/contas-a-receber/service";
@@ -768,7 +773,13 @@ export async function runSettlementBackfill(creds: SPAPICredentials) {
     };
   }
 
-  const windowStart = cursor;
+  // Settlement reports API rejeita createdSince > 90 dias. Se o cursor estiver
+  // antes disso, avançamos direto para o limite aceitável e atualizamos o cursor.
+  const apiLimit = addDays(now, -89);
+  const windowStart = cursor < apiLimit ? apiLimit : cursor;
+  if (cursor < apiLimit) {
+    await setCfg(SETTLEMENT_BACKFILL_CURSOR_KEY, windowStart.toISOString());
+  }
   const proposedEnd = addDays(windowStart, SETTLEMENT_BACKFILL_WINDOW_DAYS);
   const windowEnd = proposedEnd > endLimit ? endLimit : proposedEnd;
 
@@ -919,4 +930,629 @@ function startOfUTCDay(d: Date): Date {
   const copy = new Date(d);
   copy.setUTCHours(0, 0, 0, 0);
   return copy;
+}
+
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Sprint 3: FBA reimbursements, returns, storage fees e Sales & Traffic.
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+const FBA_REIMBURSEMENTS_REPORT_TYPE = "GET_FBA_REIMBURSEMENTS_DATA";
+const FBA_RETURNS_REPORT_TYPE = "GET_FBA_FULFILLMENT_CUSTOMER_RETURNS_DATA";
+const FBA_STORAGE_REPORT_TYPE = "GET_FBA_STORAGE_FEE_CHARGES_DATA";
+const SALES_TRAFFIC_REPORT_TYPE = "GET_SALES_AND_TRAFFIC_REPORT";
+
+const REIMBURSEMENTS_PENDING_KEY = "amazon_fba_reimbursements_pending_report_id";
+const REIMBURSEMENTS_PENDING_START_KEY = "amazon_fba_reimbursements_pending_start";
+const REIMBURSEMENTS_PENDING_END_KEY = "amazon_fba_reimbursements_pending_end";
+const RETURNS_PENDING_KEY = "amazon_returns_pending_report_id";
+const RETURNS_PENDING_START_KEY = "amazon_returns_pending_start";
+const RETURNS_PENDING_END_KEY = "amazon_returns_pending_end";
+const STORAGE_PENDING_KEY = "amazon_storage_pending_report_id";
+const STORAGE_PENDING_MONTH_KEY = "amazon_storage_pending_month";
+const STORAGE_LAST_MONTH_KEY = "amazon_storage_last_processed_month";
+const TRAFFIC_PENDING_KEY = "amazon_traffic_pending_report_id";
+const TRAFFIC_PENDING_START_KEY = "amazon_traffic_pending_start";
+const TRAFFIC_PENDING_END_KEY = "amazon_traffic_pending_end";
+const DEFAULT_REIMBURSEMENT_THRESHOLD_CENTAVOS = 10_000;
+
+type Sprint3Payload = {
+  diasAtras?: number;
+};
+
+export async function runFbaReimbursementsSync(
+  creds: SPAPICredentials,
+  payload: Sprint3Payload = {},
+) {
+  const end = new Date();
+  const start = addDays(end, -(payload.diasAtras ?? 90));
+  const pendingId = await getCfg(REIMBURSEMENTS_PENDING_KEY);
+  const lifecycle = await stepReportLifecycle(creds, {
+    pendingReportId: pendingId,
+    reportType: FBA_REIMBURSEMENTS_REPORT_TYPE,
+    dataStartTime: start,
+    dataEndTime: end,
+  });
+
+  if (lifecycle.status === "PENDING_NEW") {
+    await setCfg(REIMBURSEMENTS_PENDING_KEY, lifecycle.reportId);
+    await setCfg(REIMBURSEMENTS_PENDING_START_KEY, start.toISOString());
+    await setCfg(REIMBURSEMENTS_PENDING_END_KEY, end.toISOString());
+    return {
+      ok: true,
+      pending: true,
+      created: true,
+      reportId: lifecycle.reportId,
+      reportType: FBA_REIMBURSEMENTS_REPORT_TYPE,
+    };
+  }
+
+  if (lifecycle.status === "PENDING_PROCESSING") {
+    return {
+      ok: true,
+      pending: true,
+      reportId: lifecycle.reportId,
+      status: lifecycle.processingStatus,
+    };
+  }
+
+  if (lifecycle.status === "FAILED") {
+    await clearReportKeys(
+      REIMBURSEMENTS_PENDING_KEY,
+      REIMBURSEMENTS_PENDING_START_KEY,
+      REIMBURSEMENTS_PENDING_END_KEY,
+    );
+    if (lifecycle.processingStatus === "NO_URL" || lifecycle.processingStatus === "NO_DOCUMENT") {
+      return { ok: true, reportId: lifecycle.reportId, linhas: 0, criadas: 0, atualizadas: 0, semDados: true };
+    }
+    throw new Error(
+      `Report ${FBA_REIMBURSEMENTS_REPORT_TYPE} ${lifecycle.reportId} terminou em ${lifecycle.processingStatus}`,
+    );
+  }
+
+  const rows = parseFbaReimbursementsTsv(lifecycle.buffer);
+  const stats = await upsertFbaReimbursements(rows, lifecycle.reportId);
+  await clearReportKeys(
+    REIMBURSEMENTS_PENDING_KEY,
+    REIMBURSEMENTS_PENDING_START_KEY,
+    REIMBURSEMENTS_PENDING_END_KEY,
+  );
+  return {
+    ok: true,
+    reportId: lifecycle.reportId,
+    linhas: rows.length,
+    ...stats,
+  };
+}
+
+export async function runReturnsSync(
+  creds: SPAPICredentials,
+  payload: Sprint3Payload = {},
+) {
+  const end = new Date();
+  const start = addDays(end, -(payload.diasAtras ?? 90));
+  const pendingId = await getCfg(RETURNS_PENDING_KEY);
+  const lifecycle = await stepReportLifecycle(creds, {
+    pendingReportId: pendingId,
+    reportType: FBA_RETURNS_REPORT_TYPE,
+    dataStartTime: start,
+    dataEndTime: end,
+  });
+
+  if (lifecycle.status === "PENDING_NEW") {
+    await setCfg(RETURNS_PENDING_KEY, lifecycle.reportId);
+    await setCfg(RETURNS_PENDING_START_KEY, start.toISOString());
+    await setCfg(RETURNS_PENDING_END_KEY, end.toISOString());
+    return {
+      ok: true,
+      pending: true,
+      created: true,
+      reportId: lifecycle.reportId,
+      reportType: FBA_RETURNS_REPORT_TYPE,
+    };
+  }
+
+  if (lifecycle.status === "PENDING_PROCESSING") {
+    return {
+      ok: true,
+      pending: true,
+      reportId: lifecycle.reportId,
+      status: lifecycle.processingStatus,
+    };
+  }
+
+  if (lifecycle.status === "FAILED") {
+    await clearReportKeys(
+      RETURNS_PENDING_KEY,
+      RETURNS_PENDING_START_KEY,
+      RETURNS_PENDING_END_KEY,
+    );
+    if (lifecycle.processingStatus === "NO_URL" || lifecycle.processingStatus === "NO_DOCUMENT") {
+      return { ok: true, reportId: lifecycle.reportId, linhas: 0, criadas: 0, atualizadas: 0, semDados: true };
+    }
+    throw new Error(
+      `Report ${FBA_RETURNS_REPORT_TYPE} ${lifecycle.reportId} terminou em ${lifecycle.processingStatus}`,
+    );
+  }
+
+  const rows = parseFbaReturnsTsv(lifecycle.buffer);
+  const stats = await upsertReturns(rows, lifecycle.reportId);
+  await clearReportKeys(
+    RETURNS_PENDING_KEY,
+    RETURNS_PENDING_START_KEY,
+    RETURNS_PENDING_END_KEY,
+  );
+  return {
+    ok: true,
+    reportId: lifecycle.reportId,
+    linhas: rows.length,
+    ...stats,
+  };
+}
+
+export async function runFbaStorageFeesSync(creds: SPAPICredentials) {
+  const month = startOfUTCMonth(addDays(new Date(), -31));
+  const monthIso = month.toISOString();
+  const lastProcessed = await getCfg(STORAGE_LAST_MONTH_KEY);
+  const pendingId = await getCfg(STORAGE_PENDING_KEY);
+
+  if (!pendingId && lastProcessed === monthIso) {
+    return {
+      ok: true,
+      completo: true,
+      monthOfCharge: monthIso,
+      mensagem: "Storage fees do ultimo mes ja processadas.",
+    };
+  }
+
+  const lifecycle = await stepReportLifecycle(creds, {
+    pendingReportId: pendingId,
+    reportType: FBA_STORAGE_REPORT_TYPE,
+    dataStartTime: month,
+    dataEndTime: addMonthsUTC(month, 1),
+  });
+
+  if (lifecycle.status === "PENDING_NEW") {
+    await setCfg(STORAGE_PENDING_KEY, lifecycle.reportId);
+    await setCfg(STORAGE_PENDING_MONTH_KEY, monthIso);
+    return {
+      ok: true,
+      pending: true,
+      created: true,
+      reportId: lifecycle.reportId,
+      monthOfCharge: monthIso,
+      reportType: FBA_STORAGE_REPORT_TYPE,
+    };
+  }
+
+  if (lifecycle.status === "PENDING_PROCESSING") {
+    return {
+      ok: true,
+      pending: true,
+      reportId: lifecycle.reportId,
+      status: lifecycle.processingStatus,
+    };
+  }
+
+  if (lifecycle.status === "FAILED") {
+    await clearReportKeys(STORAGE_PENDING_KEY, STORAGE_PENDING_MONTH_KEY);
+    if (lifecycle.processingStatus === "NO_URL" || lifecycle.processingStatus === "NO_DOCUMENT") {
+      return { ok: true, reportId: lifecycle.reportId, linhas: 0, criadas: 0, atualizadas: 0, semDados: true };
+    }
+    throw new Error(
+      `Report ${FBA_STORAGE_REPORT_TYPE} ${lifecycle.reportId} terminou em ${lifecycle.processingStatus}`,
+    );
+  }
+
+  const fallbackMonth =
+    parseCfgDate(await getCfg(STORAGE_PENDING_MONTH_KEY)) ?? month;
+  const rows = parseFbaStorageFeesTsv(lifecycle.buffer);
+  const stats = await upsertStorageFees(rows, lifecycle.reportId, fallbackMonth);
+  await setCfg(STORAGE_LAST_MONTH_KEY, fallbackMonth.toISOString());
+  await clearReportKeys(STORAGE_PENDING_KEY, STORAGE_PENDING_MONTH_KEY);
+  return {
+    ok: true,
+    reportId: lifecycle.reportId,
+    monthOfCharge: fallbackMonth.toISOString(),
+    linhas: rows.length,
+    ...stats,
+  };
+}
+
+export async function runTrafficSync(
+  creds: SPAPICredentials,
+  payload: Sprint3Payload = {},
+) {
+  const end = new Date();
+  const start = addDays(end, -(payload.diasAtras ?? 30));
+  const pendingId = await getCfg(TRAFFIC_PENDING_KEY);
+  const pendingStart = parseCfgDate(await getCfg(TRAFFIC_PENDING_START_KEY)) ?? start;
+
+  const lifecycle = await stepReportLifecycle(creds, {
+    pendingReportId: pendingId,
+    reportType: SALES_TRAFFIC_REPORT_TYPE,
+    dataStartTime: pendingId ? pendingStart : start,
+    dataEndTime: pendingId
+      ? parseCfgDate(await getCfg(TRAFFIC_PENDING_END_KEY)) ?? end
+      : end,
+    reportOptions: {
+      dateGranularity: "DAY",
+      asinGranularity: "SKU",
+    },
+  });
+
+  if (lifecycle.status === "PENDING_NEW") {
+    await setCfg(TRAFFIC_PENDING_KEY, lifecycle.reportId);
+    await setCfg(TRAFFIC_PENDING_START_KEY, start.toISOString());
+    await setCfg(TRAFFIC_PENDING_END_KEY, end.toISOString());
+    return {
+      ok: true,
+      pending: true,
+      created: true,
+      reportId: lifecycle.reportId,
+      de: start.toISOString(),
+      ate: end.toISOString(),
+      reportType: SALES_TRAFFIC_REPORT_TYPE,
+    };
+  }
+
+  if (lifecycle.status === "PENDING_PROCESSING") {
+    return {
+      ok: true,
+      pending: true,
+      reportId: lifecycle.reportId,
+      status: lifecycle.processingStatus,
+    };
+  }
+
+  if (lifecycle.status === "FAILED") {
+    await clearReportKeys(
+      TRAFFIC_PENDING_KEY,
+      TRAFFIC_PENDING_START_KEY,
+      TRAFFIC_PENDING_END_KEY,
+    );
+    if (lifecycle.processingStatus === "NO_URL" || lifecycle.processingStatus === "NO_DOCUMENT") {
+      return { ok: true, reportId: lifecycle.reportId, linhas: 0, criadas: 0, atualizadas: 0, semDados: true };
+    }
+    throw new Error(
+      `Report ${SALES_TRAFFIC_REPORT_TYPE} ${lifecycle.reportId} terminou em ${lifecycle.processingStatus}`,
+    );
+  }
+
+  const fallbackDate = pendingStart ?? start;
+  const rows = parseSalesTrafficJson(lifecycle.buffer, fallbackDate);
+  const stats = await upsertTrafficRows(rows);
+  await clearReportKeys(
+    TRAFFIC_PENDING_KEY,
+    TRAFFIC_PENDING_START_KEY,
+    TRAFFIC_PENDING_END_KEY,
+  );
+  return {
+    ok: true,
+    reportId: lifecycle.reportId,
+    de: fallbackDate.toISOString(),
+    ate: end.toISOString(),
+    linhas: rows.length,
+    ...stats,
+  };
+}
+
+async function upsertFbaReimbursements(
+  rows: ReturnType<typeof parseFbaReimbursementsTsv>,
+  reportId: string,
+) {
+  const lookup = await loadProdutoLookup(
+    rows.map((r) => r.sku).filter(Boolean) as string[],
+    rows.map((r) => r.asin).filter(Boolean) as string[],
+  );
+  const threshold = await getReimbursementThreshold();
+  let criadas = 0;
+  let atualizadas = 0;
+  let notificadas = 0;
+
+  for (const row of rows) {
+    const produtoId = findProdutoId(lookup, row.sku, row.asin);
+    const data = {
+      reportId,
+      reimbursementId: row.reimbursementId,
+      caseId: row.caseId,
+      amazonOrderId: row.amazonOrderId,
+      approvalDate: row.approvalDate,
+      sku: row.sku,
+      fnSku: row.fnSku,
+      asin: row.asin,
+      productName: row.productName,
+      reason: row.reason,
+      condition: row.condition,
+      currency: row.currency,
+      amountPerUnitCentavos: row.amountPerUnitCentavos,
+      amountTotalCentavos: row.amountTotalCentavos,
+      quantityCash: row.quantityCash,
+      quantityInventory: row.quantityInventory,
+      quantityTotal: row.quantityTotal,
+      originalReimbursementId: row.originalReimbursementId,
+      originalReimbursementType: row.originalReimbursementType,
+      produtoId,
+      payloadJson: JSON.stringify(row.payload),
+    };
+
+    const existing = await db.amazonReimbursement.findUnique({
+      where: { naturalKey: row.naturalKey },
+    });
+    if (existing) {
+      await db.amazonReimbursement.update({
+        where: { naturalKey: row.naturalKey },
+        data,
+      });
+      atualizadas++;
+    } else {
+      await db.amazonReimbursement.create({
+        data: { naturalKey: row.naturalKey, ...data },
+      });
+      criadas++;
+      if (row.amountTotalCentavos >= threshold) {
+        await notificarReimbursementFbaRecebido({
+          naturalKey: row.naturalKey,
+          sku: row.sku,
+          valor: row.amountTotalCentavos,
+          motivo: row.reason,
+        });
+        notificadas++;
+      }
+    }
+  }
+
+  return { criadas, atualizadas, notificadas };
+}
+
+async function upsertReturns(
+  rows: ReturnType<typeof parseFbaReturnsTsv>,
+  reportId: string,
+) {
+  const lookup = await loadProdutoLookup(
+    rows.map((r) => r.sku).filter(Boolean) as string[],
+    rows.map((r) => r.asin).filter(Boolean) as string[],
+  );
+  const estimativas = await estimateReturnsValue(rows);
+  let criadas = 0;
+  let atualizadas = 0;
+
+  for (const row of rows) {
+    const produtoId = findProdutoId(lookup, row.sku, row.asin);
+    const data = {
+      reportId,
+      tipoReport: row.tipoReport,
+      returnDate: row.returnDate,
+      amazonOrderId: row.amazonOrderId,
+      sku: row.sku,
+      fnSku: row.fnSku,
+      asin: row.asin,
+      productName: row.productName,
+      quantity: row.quantity,
+      fulfillmentCenterId: row.fulfillmentCenterId,
+      detailedDisposition: row.detailedDisposition,
+      reason: row.reason,
+      status: row.status,
+      licensePlateNumber: row.licensePlateNumber,
+      customerComments: row.customerComments,
+      valorEstimadoCentavos: estimativas.get(row.naturalKey) ?? null,
+      produtoId,
+      payloadJson: JSON.stringify(row.payload),
+    };
+
+    const existing = await db.amazonReturn.findUnique({
+      where: { naturalKey: row.naturalKey },
+    });
+    if (existing) {
+      await db.amazonReturn.update({
+        where: { naturalKey: row.naturalKey },
+        data,
+      });
+      atualizadas++;
+    } else {
+      await db.amazonReturn.create({
+        data: { naturalKey: row.naturalKey, ...data },
+      });
+      criadas++;
+    }
+  }
+
+  return { criadas, atualizadas };
+}
+
+async function upsertStorageFees(
+  rows: ReturnType<typeof parseFbaStorageFeesTsv>,
+  reportId: string,
+  fallbackMonth: Date,
+) {
+  let criadas = 0;
+  let atualizadas = 0;
+
+  for (const row of rows) {
+    const monthOfCharge = row.monthOfCharge ?? fallbackMonth;
+    const data = {
+      reportId,
+      asin: row.asin,
+      fnSku: row.fnSku,
+      productName: row.productName,
+      fulfillmentCenter: row.fulfillmentCenter,
+      countryCode: row.countryCode,
+      monthOfCharge,
+      storageRate: row.storageRate,
+      currency: row.currency,
+      averageQuantityOnHand: row.averageQuantityOnHand,
+      averageQuantityPendingRemoval: row.averageQuantityPendingRemoval,
+      estimatedTotalItemVolume: row.estimatedTotalItemVolume,
+      itemVolume: row.itemVolume,
+      volumeUnits: row.volumeUnits,
+      productSizeTier: row.productSizeTier,
+      storageFeeCentavos: row.storageFeeCentavos,
+      dangerousGoodsStorageType: row.dangerousGoodsStorageType,
+      payloadJson: JSON.stringify(row.payload),
+    };
+
+    const existing = await db.amazonStorageFee.findUnique({
+      where: { naturalKey: row.naturalKey },
+    });
+    if (existing) {
+      await db.amazonStorageFee.update({
+        where: { naturalKey: row.naturalKey },
+        data,
+      });
+      atualizadas++;
+    } else {
+      await db.amazonStorageFee.create({
+        data: { naturalKey: row.naturalKey, ...data },
+      });
+      criadas++;
+    }
+  }
+
+  return { criadas, atualizadas };
+}
+
+async function upsertTrafficRows(
+  rows: ReturnType<typeof parseSalesTrafficJson>,
+) {
+  const lookup = await loadProdutoLookup(
+    rows.map((r) => r.sku),
+    rows.map((r) => r.childAsin).filter(Boolean) as string[],
+  );
+  let criadas = 0;
+  let atualizadas = 0;
+
+  for (const row of rows) {
+    const produtoId = findProdutoId(lookup, row.sku, row.childAsin);
+    const data = {
+      parentAsin: row.parentAsin,
+      childAsin: row.childAsin,
+      sessoes: row.sessoes,
+      pageViews: row.pageViews,
+      unitsOrdered: row.unitsOrdered,
+      buyBoxPercent: row.buyBoxPercent,
+      conversaoPercent: row.conversaoPercent,
+      orderedRevenueCentavos: row.orderedRevenueCentavos,
+      currency: row.currency,
+      produtoId,
+      payloadJson: JSON.stringify(row.payload),
+    };
+    const existing = await db.amazonSkuTrafficDaily.findUnique({
+      where: { sku_data: { sku: row.sku, data: row.data } },
+    });
+    if (existing) {
+      await db.amazonSkuTrafficDaily.update({
+        where: { sku_data: { sku: row.sku, data: row.data } },
+        data,
+      });
+      atualizadas++;
+    } else {
+      await db.amazonSkuTrafficDaily.create({
+        data: {
+          sku: row.sku,
+          data: row.data,
+          ...data,
+        },
+      });
+      criadas++;
+    }
+  }
+
+  return { criadas, atualizadas };
+}
+
+async function loadProdutoLookup(skus: string[], asins: string[]) {
+  const cleanSkus = Array.from(new Set(skus.filter(Boolean)));
+  const cleanAsins = Array.from(new Set(asins.filter(Boolean)));
+  if (cleanSkus.length === 0 && cleanAsins.length === 0) {
+    return { bySku: new Map<string, string>(), byAsin: new Map<string, string>() };
+  }
+
+  const produtos = await db.produto.findMany({
+    where: {
+      OR: [
+        ...(cleanSkus.length ? [{ sku: { in: cleanSkus } }] : []),
+        ...(cleanAsins.length ? [{ asin: { in: cleanAsins } }] : []),
+      ],
+    },
+    select: { id: true, sku: true, asin: true },
+  });
+
+  return {
+    bySku: new Map(produtos.map((p) => [p.sku, p.id])),
+    byAsin: new Map(
+      produtos
+        .filter((p) => p.asin)
+        .map((p) => [p.asin as string, p.id]),
+    ),
+  };
+}
+
+function findProdutoId(
+  lookup: Awaited<ReturnType<typeof loadProdutoLookup>>,
+  sku?: string | null,
+  asin?: string | null,
+): string | null {
+  return (sku ? lookup.bySku.get(sku) : null) ?? (asin ? lookup.byAsin.get(asin) : null) ?? null;
+}
+
+async function estimateReturnsValue(rows: ReturnType<typeof parseFbaReturnsTsv>) {
+  const keys = rows
+    .filter((r) => r.amazonOrderId && r.sku)
+    .map((r) => ({ amazonOrderId: r.amazonOrderId!, sku: r.sku! }));
+
+  const estimativas = new Map<string, number>();
+  if (keys.length === 0) return estimativas;
+
+  const vendas = await db.vendaAmazon.findMany({
+    where: {
+      OR: keys.map((key) => ({
+        amazonOrderId: key.amazonOrderId,
+        sku: key.sku,
+      })),
+    },
+    select: {
+      amazonOrderId: true,
+      sku: true,
+      precoUnitarioCentavos: true,
+    },
+  });
+  const vendaPorChave = new Map(
+    vendas.map((v) => [`${v.amazonOrderId}|${v.sku}`, v.precoUnitarioCentavos]),
+  );
+
+  for (const row of rows) {
+    if (!row.amazonOrderId || !row.sku) continue;
+    const preco = vendaPorChave.get(`${row.amazonOrderId}|${row.sku}`);
+    if (preco == null) continue;
+    estimativas.set(row.naturalKey, preco * Math.max(1, row.quantity));
+  }
+
+  return estimativas;
+}
+
+async function getReimbursementThreshold() {
+  const fromEnv = Number(process.env.AMAZON_REIMBURSEMENT_FBA_NOTIFY_THRESHOLD_CENTAVOS);
+  if (Number.isFinite(fromEnv) && fromEnv > 0) return fromEnv;
+  const cfg = await getCfg("amazon_reimbursement_fba_notify_threshold_centavos");
+  const fromCfg = Number(cfg);
+  return Number.isFinite(fromCfg) && fromCfg > 0
+    ? fromCfg
+    : DEFAULT_REIMBURSEMENT_THRESHOLD_CENTAVOS;
+}
+
+async function clearReportKeys(...keys: string[]) {
+  await Promise.all(keys.map((key) => delCfg(key)));
+}
+
+function parseCfgDate(value: string | null): Date | null {
+  if (!value) return null;
+  const d = new Date(value);
+  return Number.isFinite(d.getTime()) ? d : null;
+}
+
+function startOfUTCMonth(d: Date) {
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1));
+}
+
+function addMonthsUTC(d: Date, months: number) {
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + months, 1));
 }
