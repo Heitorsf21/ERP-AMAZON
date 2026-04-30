@@ -9,6 +9,7 @@ import {
   ReceiptText,
   RotateCcw,
   Archive,
+  Megaphone,
 } from "lucide-react";
 import { KpiCard } from "@/components/ui/kpi-card";
 import { fetchJSON } from "@/lib/fetcher";
@@ -45,6 +46,13 @@ type DreResumo = {
     quantidadeReturns: number;
     quantidadeStorageFees: number;
     unidadesReturns: number;
+  };
+  ads: {
+    sync: number;
+    syncVendas: number;
+    syncAcos: number | null;
+    total: number;
+    origem: "SYNC" | "MANUAL";
   };
 };
 
@@ -149,6 +157,9 @@ export function KpiStrip() {
     dreQ.isLoading;
 
   const amazon = dreQ.data?.amazon;
+  const ads = dreQ.data?.ads;
+  const acosPct = ads?.syncAcos != null ? `${(ads.syncAcos * 100).toFixed(1)}%` : "—";
+  const adsValor = ads?.sync && ads.sync > 0 ? ads.sync : ads?.total ?? 0;
 
   return (
     <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -223,6 +234,19 @@ export function KpiStrip() {
         }
         icon={Archive}
         color="slate"
+      />
+      <KpiCard
+        label="Amazon Ads (mes)"
+        value={carregando ? "—" : formatBRL(adsValor)}
+        sub={
+          carregando
+            ? undefined
+            : ads?.origem === "SYNC"
+              ? `ACOS ${acosPct} · sync API`
+              : "manual"
+        }
+        icon={Megaphone}
+        color="violet"
       />
     </div>
   );

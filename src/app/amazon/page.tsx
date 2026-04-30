@@ -12,6 +12,7 @@ import {
   Clock,
   ExternalLink,
   Loader2,
+  Megaphone,
   ReceiptText,
   RefreshCw,
   RotateCcw,
@@ -210,10 +211,29 @@ export default function AmazonPage() {
       toast.error(e instanceof Error ? e.message : "Erro ao enfileirar job"),
   });
 
+  const sincronizarAds = useMutation({
+    mutationFn: (variant: "ADS" | "ADS_BACKFILL") =>
+      fetchJSON("/api/amazon/sync", {
+        method: "POST",
+        body: JSON.stringify({ tipo: variant, diasAtras: diasReports }),
+      }),
+    onSuccess: (_res, variant) => {
+      qc.invalidateQueries({ queryKey: ["amazon-jobs"] });
+      toast.success(
+        variant === "ADS"
+          ? "Sync Ads (30d) enfileirado."
+          : "Backfill Ads enfileirado.",
+      );
+    },
+    onError: (e) =>
+      toast.error(e instanceof Error ? e.message : "Erro ao enfileirar Ads"),
+  });
+
   const qualquerSyncAtivo =
     sincronizarPedidos.isPending ||
     sincronizarInventario.isPending ||
-    sincronizarSprint3.isPending;
+    sincronizarSprint3.isPending ||
+    sincronizarAds.isPending;
 
   const sprint3Jobs: Sprint3JobCard[] = [
     {
@@ -469,6 +489,54 @@ export default function AmazonPage() {
                     </div>
                   );
                 })}
+              </div>
+            </div>
+
+            <div className="rounded-xl border bg-card p-5">
+              <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                <div className="flex items-start gap-3">
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
+                    <Megaphone className="h-4 w-4" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-semibold">Amazon Advertising</h3>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      Sponsored Products — gasto, vendas, ACOS por SKU. Credenciais Ads em Configuracoes &gt; Integracoes.
+                    </p>
+                  </div>
+                </div>
+                <LastJobSync queue={queue} tipo="AMAZON_ADS_REPORT_SYNC" />
+              </div>
+              <div className="flex flex-wrap gap-3">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={qualquerSyncAtivo}
+                  onClick={() => sincronizarAds.mutate("ADS")}
+                >
+                  {sincronizarAds.isPending && sincronizarAds.variables === "ADS" ? (
+                    <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <RefreshCw className="mr-2 h-3.5 w-3.5" />
+                  )}
+                  Sync Ads ({diasReports}d)
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={qualquerSyncAtivo}
+                  onClick={() => sincronizarAds.mutate("ADS_BACKFILL")}
+                >
+                  {sincronizarAds.isPending &&
+                  sincronizarAds.variables === "ADS_BACKFILL" ? (
+                    <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <RefreshCw className="mr-2 h-3.5 w-3.5" />
+                  )}
+                  Backfill Ads (janela 90d)
+                </Button>
               </div>
             </div>
           </div>

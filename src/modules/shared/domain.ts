@@ -180,6 +180,9 @@ export const TipoAmazonSyncJob = {
   RETURNS_SYNC: "RETURNS_SYNC",
   FBA_STORAGE_SYNC: "FBA_STORAGE_SYNC",
   TRAFFIC_SYNC: "TRAFFIC_SYNC",
+  // Sprint 5.5 — Amazon Advertising (Sponsored Products)
+  AMAZON_ADS_REPORT_SYNC: "AMAZON_ADS_REPORT_SYNC",
+  AMAZON_ADS_BACKFILL: "AMAZON_ADS_BACKFILL",
 } as const;
 export type TipoAmazonSyncJob =
   (typeof TipoAmazonSyncJob)[keyof typeof TipoAmazonSyncJob];

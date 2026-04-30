@@ -137,6 +137,31 @@ export const POST = handle(async (req: NextRequest) => {
     return ok({ ok: true, queued: true, job });
   }
 
+  if (tipo === "ADS" || tipo === "AMAZON_ADS_REPORT_SYNC") {
+    const diasAtras = body.diasAtras ?? 30;
+    const job = await enqueueAmazonSyncJob(
+      TipoAmazonSyncJob.AMAZON_ADS_REPORT_SYNC,
+      { diasAtras },
+      {
+        priority: 60,
+        dedupeKey: `manual:${TipoAmazonSyncJob.AMAZON_ADS_REPORT_SYNC}:${diasAtras}`,
+      },
+    );
+    return ok({ ok: true, queued: true, job });
+  }
+
+  if (tipo === "ADS_BACKFILL" || tipo === "AMAZON_ADS_BACKFILL") {
+    const job = await enqueueAmazonSyncJob(
+      TipoAmazonSyncJob.AMAZON_ADS_BACKFILL,
+      {},
+      {
+        priority: 50,
+        dedupeKey: `manual:${TipoAmazonSyncJob.AMAZON_ADS_BACKFILL}`,
+      },
+    );
+    return ok({ ok: true, queued: true, job });
+  }
+
   if (tipo === "INVENTORY" || tipo === "ALL") {
     const job = await enqueueAmazonSyncJob(
       TipoAmazonSyncJob.INVENTORY_SYNC,

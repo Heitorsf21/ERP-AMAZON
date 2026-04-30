@@ -10,7 +10,7 @@ export const GET = handle(async () => {
   const desde30d = subDays(new Date(), 30);
   const desde15dBuybox = subDays(new Date(), 15);
 
-  const [produtos, vendas, reembolsos, buybox, traffic] = await Promise.all([
+  const [produtos, vendas, reembolsos, buybox, traffic, ads] = await Promise.all([
     db.produto.findMany({
       where: { ativo: true },
       select: { id: true, sku: true },
@@ -47,6 +47,16 @@ export const GET = handle(async () => {
         buyBoxPercent: true,
       },
     }),
+    db.amazonAdsMetricaDiaria.groupBy({
+      by: ["sku"],
+      where: { data: { gte: desde30d }, sku: { not: null } },
+      _sum: {
+        gastoCentavos: true,
+        vendasCentavos: true,
+        impressoes: true,
+        cliques: true,
+      },
+    }),
   ]);
 
   // Para % do tempo com buybox, precisamos saber quantos snapshots tinham somosBuybox=true.
@@ -71,6 +81,7 @@ export const GET = handle(async () => {
     buyboxGanhos.map((b) => [b.sku, b._count._all]),
   );
   const trafficPorSku = new Map(traffic.map((t) => [t.sku, t]));
+  const adsPorSku = new Map(ads.map((a) => [a.sku, a]));
 
   const resultado = produtos.map((p) => {
     const vendido30d = vendidoPorSku.get(p.sku) ?? 0;
@@ -92,6 +103,12 @@ export const GET = handle(async () => {
     const buyboxPercent =
       totalSnaps > 0 ? Math.round((ganhos / totalSnaps) * 1000) / 10 : null;
 
+    const adsRow = adsPorSku.get(p.sku);
+    const adsGasto = adsRow?._sum.gastoCentavos ?? 0;
+    const adsVendas = adsRow?._sum.vendasCentavos ?? 0;
+    const adsAcosPercent =
+      adsVendas > 0 ? Math.round((adsGasto / adsVendas) * 1000) / 10 : null;
+
     return {
       id: p.id,
       sku: p.sku,
@@ -110,6 +127,11 @@ export const GET = handle(async () => {
         trafficAvg?.buyBoxPercent == null
           ? null
           : Math.round(trafficAvg.buyBoxPercent * 10) / 10,
+      adsGastoCentavos30d: adsGasto,
+      adsVendasCentavos30d: adsVendas,
+      adsAcosPercent30d: adsAcosPercent,
+      adsImpressoes30d: adsRow?._sum.impressoes ?? 0,
+      adsCliques30d: adsRow?._sum.cliques ?? 0,
     };
   });
 

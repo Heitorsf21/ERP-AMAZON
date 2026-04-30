@@ -278,6 +278,7 @@ model Produto {
   reimbursementsFba  AmazonReimbursement[]
   returnsAmazon      AmazonReturn[]
   skuTrafficDaily    AmazonSkuTrafficDaily[]
+  adsMetricasDiarias AmazonAdsMetricaDiaria[]
   variacoesPai       ProdutoVariacao[] @relation("ProdutoVariacaoPai")
   variacaoComoFilho  ProdutoVariacao?  @relation("ProdutoVariacaoFilho")
 
@@ -996,4 +997,59 @@ model AmazonSkuTrafficDaily {
   @@index([sku])
   @@index([produtoId])
   @@index([childAsin])
+}
+
+// ── Sprint 5.5: Amazon Advertising (Sponsored Products) ─────────────────────
+//
+// Sync diário do report `spAdvertisedProduct` (granularidade ASIN/SKU/dia).
+// AdsCampanha/AdsGastoManual continuam como fallback no MVP — depois de 30 dias
+// estáveis, viram read-only. Não confundir esses dois modelos novos com o
+// `AdsCampanha` antigo (manual).
+
+model AmazonAdsCampanha {
+  id            String   @id @default(cuid())
+  campaignId    String   @unique
+  profileId     String
+  nome          String
+  estado        String?
+  tipoTargeting String?
+  budgetCentavos Int?
+  ultimaSync    DateTime
+  payloadJson   String
+  criadoEm      DateTime @default(now())
+  atualizadoEm  DateTime @updatedAt
+
+  metricasDiarias AmazonAdsMetricaDiaria[]
+
+  @@index([profileId])
+  @@index([estado])
+}
+
+model AmazonAdsMetricaDiaria {
+  id             String   @id @default(cuid())
+  data           DateTime
+  campaignId     String
+  adGroupId      String?
+  asin           String?
+  sku            String?
+  impressoes     Int      @default(0)
+  cliques        Int      @default(0)
+  gastoCentavos  Int      @default(0)
+  vendasCentavos Int      @default(0)
+  unidades       Int      @default(0)
+  pedidos        Int      @default(0)
+  acos           Float?
+  produtoId      String?
+  payloadJson    String
+  criadoEm       DateTime @default(now())
+  atualizadoEm   DateTime @updatedAt
+
+  campanha AmazonAdsCampanha @relation(fields: [campaignId], references: [campaignId], onDelete: Cascade)
+  produto  Produto?          @relation(fields: [produtoId], references: [id], onDelete: SetNull)
+
+  @@unique([data, campaignId, adGroupId, asin, sku])
+  @@index([sku, data])
+  @@index([asin, data])
+  @@index([data])
+  @@index([produtoId])
 }

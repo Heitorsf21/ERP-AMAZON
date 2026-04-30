@@ -17,6 +17,7 @@ async function calcularDRE(de: Date, ate: Date) {
     saidasEstoque,
     adsCampanhasAgg,
     adsManualAgg,
+    adsSyncAgg,
   ] = await Promise.all([
     db.contaReceber.findMany({
       where: { status: "RECEBIDA", dataRecebimento: { gte: de, lte: ate } },
@@ -82,6 +83,11 @@ async function calcularDRE(de: Date, ate: Date) {
       where: { periodoFim: { gte: de, lte: ate } },
       _sum: { valorCentavos: true },
     }),
+    db.amazonAdsMetricaDiaria.aggregate({
+      where: { data: { gte: de, lte: ate } },
+      _sum: { gastoCentavos: true, vendasCentavos: true },
+      _count: { _all: true },
+    }),
   ]);
 
   const receitaAmazonBase = contasReceber.reduce((s, c) => s + c.valor, 0);
@@ -145,7 +151,15 @@ async function calcularDRE(de: Date, ate: Date) {
   );
   const adsCampanhasCentavos = adsCampanhasAgg._sum.gastoCentavos ?? 0;
   const adsManualCentavos = adsManualAgg._sum.valorCentavos ?? 0;
-  const adsTotal = adsCampanhasCentavos + adsManualCentavos;
+  const adsSyncGasto = adsSyncAgg._sum.gastoCentavos ?? 0;
+  const adsSyncVendas = adsSyncAgg._sum.vendasCentavos ?? 0;
+  const adsSyncAcos = adsSyncVendas > 0 ? adsSyncGasto / adsSyncVendas : null;
+  // Quando ha sync da Amazon Ads API, ele eh fonte de verdade. AdsCampanha/manual
+  // viram fallback para periodos sem sync.
+  const adsTotal =
+    adsSyncGasto > 0
+      ? adsSyncGasto
+      : adsCampanhasCentavos + adsManualCentavos;
 
   return {
     receitaAmazon,
@@ -195,7 +209,11 @@ async function calcularDRE(de: Date, ate: Date) {
     ads: {
       campanhas: adsCampanhasCentavos,
       manual: adsManualCentavos,
+      sync: adsSyncGasto,
+      syncVendas: adsSyncVendas,
+      syncAcos: adsSyncAcos,
       total: adsTotal,
+      origem: adsSyncGasto > 0 ? "SYNC" : "MANUAL",
     },
   };
 }

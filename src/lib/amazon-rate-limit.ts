@@ -15,6 +15,11 @@ export const AmazonSpApiOperation = {
   PRODUCT_PRICING_GET_OFFERS: "PRODUCT_PRICING_GET_OFFERS",
   SELLERS_GET: "SELLERS_GET",
   LISTINGS_GET_ITEM: "LISTINGS_GET_ITEM",
+  ADS_REPORTS_CREATE: "ADS_REPORTS_CREATE",
+  ADS_REPORTS_GET: "ADS_REPORTS_GET",
+  ADS_REPORTS_DOWNLOAD: "ADS_REPORTS_DOWNLOAD",
+  ADS_PROFILES_GET: "ADS_PROFILES_GET",
+  ADS_CAMPAIGNS_LIST: "ADS_CAMPAIGNS_LIST",
 } as const;
 
 export type AmazonSpApiOperation =
@@ -94,6 +99,32 @@ const OPERATION_LIMITS: Record<AmazonSpApiOperation, OperationLimit> = {
   },
   // Listings Items v2021-08-01 getListingsItem: 5 rps, burst 10.
   [AmazonSpApiOperation.LISTINGS_GET_ITEM]: {
+    rateLimitPerSecond: 5,
+    burst: 10,
+  },
+  // Ads API v3 reporting/reports POST. Limites Ads sao mais generosos que SP-API;
+  // mantemos conservador e deixamos `adoptObservedRateLimit` calibrar via header.
+  [AmazonSpApiOperation.ADS_REPORTS_CREATE]: {
+    rateLimitPerSecond: 1,
+    burst: 10,
+  },
+  // Ads API v3 reporting/reports/{id} GET — polling status do report.
+  [AmazonSpApiOperation.ADS_REPORTS_GET]: {
+    rateLimitPerSecond: 5,
+    burst: 10,
+  },
+  // GET S3 do url devolvido em status DONE — sem cooldown agressivo.
+  [AmazonSpApiOperation.ADS_REPORTS_DOWNLOAD]: {
+    rateLimitPerSecond: 1,
+    burst: 5,
+  },
+  // GET /v2/profiles — chamada pontual (descobrir profileId).
+  [AmazonSpApiOperation.ADS_PROFILES_GET]: {
+    rateLimitPerSecond: 1,
+    burst: 5,
+  },
+  // POST /sp/campaigns/list (paginacao para upsert de AmazonAdsCampanha).
+  [AmazonSpApiOperation.ADS_CAMPAIGNS_LIST]: {
     rateLimitPerSecond: 5,
     burst: 10,
   },

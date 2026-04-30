@@ -32,6 +32,11 @@ import {
   syncSettlementReports,
   reconciliarRecebimentosAmazon,
 } from "@/modules/amazon/jobs-handlers";
+import {
+  runAmazonAdsBackfill,
+  runAmazonAdsReportSync,
+} from "@/modules/amazon/ads-handlers";
+import { getAmazonAdsCredentials } from "@/modules/amazon/ads-service";
 import { TipoAmazonSyncJob } from "@/modules/shared/domain";
 
 const HEARTBEAT_KEY = "worker_heartbeat_at";
@@ -133,9 +138,15 @@ async function processJob(
 ) {
   const payload = parseJobPayload<SyncPayload>(payloadRaw);
 
-  // Para jobs que precisam de credenciais, busca-as uma única vez.
+  // Jobs Ads usam outras credenciais (advertising LWA scope) — tratados a parte.
+  const isAdsJob =
+    tipo === TipoAmazonSyncJob.AMAZON_ADS_REPORT_SYNC ||
+    tipo === TipoAmazonSyncJob.AMAZON_ADS_BACKFILL;
+
+  // Para jobs que precisam de credenciais SP-API, busca-as uma única vez.
   // REVIEWS_DISCOVERY/SEND buscam suas próprias creds via getCredentialsOrThrow.
   const needCreds =
+    !isAdsJob &&
     tipo !== TipoAmazonSyncJob.REVIEWS_DISCOVERY &&
     tipo !== TipoAmazonSyncJob.REVIEWS_SEND;
 
@@ -202,6 +213,30 @@ async function processJob(
       return runFbaStorageFeesSync(sp!);
     case TipoAmazonSyncJob.TRAFFIC_SYNC:
       return runTrafficSync(sp!, payload);
+    case TipoAmazonSyncJob.AMAZON_ADS_REPORT_SYNC: {
+      const adsCreds = await getAmazonAdsCredentials();
+      if (!adsCreds) {
+        return {
+          ok: false,
+          skipped: true,
+          mensagem:
+            "Credenciais Amazon Advertising nao configuradas — job pulado.",
+        };
+      }
+      return runAmazonAdsReportSync(adsCreds, payload);
+    }
+    case TipoAmazonSyncJob.AMAZON_ADS_BACKFILL: {
+      const adsCreds = await getAmazonAdsCredentials();
+      if (!adsCreds) {
+        return {
+          ok: false,
+          skipped: true,
+          mensagem:
+            "Credenciais Amazon Advertising nao configuradas — job pulado.",
+        };
+      }
+      return runAmazonAdsBackfill(adsCreds);
+    }
     default:
       throw new Error(`Tipo de job Amazon desconhecido: ${tipo}`);
   }

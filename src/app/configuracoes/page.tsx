@@ -9,6 +9,7 @@ import { Palette } from "lucide-react";
 import { GmailSection } from "./gmail-section";
 import { PreferenciasSection } from "./preferencias-section";
 import { AmazonSection } from "@/components/configuracoes/amazon-section";
+import { AmazonAdsSection } from "@/components/configuracoes/amazon-ads-section";
 import { DriveSection } from "@/components/configuracoes/drive-section";
 import { NotificacoesSection } from "@/components/configuracoes/notificacoes-section";
 import { SistemaSection } from "@/components/configuracoes/sistema-section";
@@ -62,6 +63,7 @@ export default function ConfiguracoesPage() {
         {/* ---- Integracoes ---- */}
         <TabsContent value="integracoes" className="space-y-4">
           <AmazonSection />
+          <AmazonAdsSection />
           <Suspense fallback={<div className="h-40 rounded-xl border bg-card" />}>
             <GmailSection />
           </Suspense>

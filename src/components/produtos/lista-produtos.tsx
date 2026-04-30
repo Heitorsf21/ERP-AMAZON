@@ -119,6 +119,11 @@ type ResumoTabelaItem = {
   trafficRevenueOrderedCentavos: number;
   trafficConversionPercent: number | null;
   trafficBuyBoxPercent: number | null;
+  adsGastoCentavos30d: number;
+  adsVendasCentavos30d: number;
+  adsAcosPercent30d: number | null;
+  adsImpressoes30d: number;
+  adsCliques30d: number;
 };
 
 type ListingDiffField = {
@@ -1233,16 +1238,36 @@ function TrafficSessionsCell({
   if (sessions === 0) {
     return <span className="text-xs text-muted-foreground">—</span>;
   }
+  const adsGasto = resumo?.adsGastoCentavos30d ?? 0;
+  const adsAcos = resumo?.adsAcosPercent30d ?? null;
+  const adsHint =
+    adsGasto > 0
+      ? ` · Ads R$ ${(adsGasto / 100).toFixed(2)}${adsAcos != null ? ` ACOS ${adsAcos.toFixed(1)}%` : ""}`
+      : "";
   return (
     <div
       className="text-right"
-      title={`${resumo?.pageViews30d ?? 0} page views nos ultimos 30 dias`}
+      title={`${resumo?.pageViews30d ?? 0} page views nos ultimos 30 dias${adsHint}`}
     >
       <div className="font-mono text-xs font-semibold tabular-nums">
         {sessions.toLocaleString("pt-BR")}
       </div>
       <div className="text-[10px] text-muted-foreground">
         PV {(resumo?.pageViews30d ?? 0).toLocaleString("pt-BR")}
+        {adsGasto > 0 && adsAcos != null && (
+          <span
+            className={cn(
+              "ml-2 font-semibold",
+              adsAcos >= 30
+                ? "text-red-600 dark:text-red-400"
+                : adsAcos >= 20
+                  ? "text-amber-600 dark:text-amber-400"
+                  : "text-emerald-600 dark:text-emerald-400",
+            )}
+          >
+            ACOS {adsAcos.toFixed(1)}%
+          </span>
+        )}
       </div>
     </div>
   );

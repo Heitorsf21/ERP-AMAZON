@@ -133,6 +133,21 @@ const SCHEDULES: Array<{
     priority: 6,
     payload: { diasAtras: 30 },
   },
+  // Sprint 5.5: Amazon Advertising (Sponsored Products).
+  // Sync incremental dos ultimos 30 dias a cada 6h. Recriar o report eh barato
+  // e a Amazon ja deduplica via cache do nome quando a janela nao mudou.
+  {
+    tipo: TipoAmazonSyncJob.AMAZON_ADS_REPORT_SYNC,
+    intervalMs: 6 * 60 * 60_000,
+    priority: 12,
+    payload: { diasAtras: 30 },
+  },
+  // Backfill de ate ~94 dias por execucao (limite Ads API), avancando cursor.
+  {
+    tipo: TipoAmazonSyncJob.AMAZON_ADS_BACKFILL,
+    intervalMs: 6 * 60 * 60_000,
+    priority: 4,
+  },
 ];
 
 export async function enqueueAmazonSyncJob(

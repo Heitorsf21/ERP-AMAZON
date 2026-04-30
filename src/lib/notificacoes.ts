@@ -189,3 +189,22 @@ export function notificarReconciliado(args: {
     linkRef: `/contas-a-receber`,
   });
 }
+
+// ACOS alto por SKU. `acos` em fracao (0.42 = 42%). Dedupe por dia+sku para
+// nao spamar — recriado se a tela limpar e ele continuar acima do limiar.
+export function notificarAcosAlto(args: {
+  sku: string;
+  acos: number;
+  janelaDias: number;
+  gastoCentavos: number;
+  vendasCentavos: number;
+}) {
+  const pct = (args.acos * 100).toFixed(1);
+  return emitirNotificacao({
+    tipo: TipoNotificacao.ACOS_ALTO,
+    titulo: `ACOS alto: ${args.sku} (${pct}%)`,
+    descricao: `${args.janelaDias}d: gasto R$ ${(args.gastoCentavos / 100).toFixed(2)} / vendas R$ ${(args.vendasCentavos / 100).toFixed(2)}.`,
+    linkRef: `/produtos?busca=${encodeURIComponent(args.sku)}`,
+    dedupeKey: `acos_alto:${args.sku}:${diaUTC()}`,
+  });
+}
