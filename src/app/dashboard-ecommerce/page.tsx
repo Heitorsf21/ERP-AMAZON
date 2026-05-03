@@ -370,7 +370,7 @@ function TrafficMetric({
   );
 }
 
-export default function DashboardEcommercePage() {
+function DashboardEcommerceContent() {
   const qc = useQueryClient();
   const router = useRouter();
   const pathname = usePathname();
@@ -949,5 +949,13 @@ export default function DashboardEcommercePage() {
         </DialogContent>
       </Dialog>
     </div>
+  );
+}
+
+export default function DashboardEcommercePage() {
+  return (
+    <React.Suspense fallback={null}>
+      <DashboardEcommerceContent />
+    </React.Suspense>
   );
 }

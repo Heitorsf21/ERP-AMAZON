@@ -8,6 +8,9 @@ const nextConfig = {
     // Limita o número de workers paralelos (evita PostCSS workers órfãos no Windows).
     cpus: 2,
   },
+  // Declara Turbopack explicitamente (Next.js 16 default). O webpack config
+  // acima é só dev (watchOptions) — não afeta builds de prod.
+  turbopack: {},
   webpack: (config, { dev }) => {
     if (dev) {
       // Excluir diretórios pesados do file watcher (Windows é especialmente
