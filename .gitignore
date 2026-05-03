@@ -10,6 +10,9 @@ build/
 *.log
 .dev-server.pid
 .dev-server.current
+.dev-worker.pid
+.claude/scheduled_tasks.lock
+image (1).png
 
 # Segredos locais (nunca versionar credenciais reais)
 .env
