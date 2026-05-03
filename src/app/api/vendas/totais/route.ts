@@ -3,7 +3,8 @@ import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import {
   dataVendaPeriodoSP,
-  whereVendaAmazonContabilizavel,
+  normalizarVisaoVendas,
+  whereVendaAmazonPorVisao,
 } from "@/modules/vendas/filtros";
 
 export const dynamic = "force-dynamic";
@@ -13,13 +14,14 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     const { searchParams } = req.nextUrl;
     const de = searchParams.get("de");
     const ate = searchParams.get("ate");
+    const visao = normalizarVisaoVendas(searchParams.get("visao"));
 
     const filtros: Prisma.VendaAmazonWhereInput = {};
 
     const dataVenda = dataVendaPeriodoSP(de, ate);
     if (dataVenda) filtros.dataVenda = dataVenda;
 
-    const where = whereVendaAmazonContabilizavel(filtros);
+    const where = whereVendaAmazonPorVisao(visao, filtros);
 
     const [vendas, agg, ultimaImportacao] = await Promise.all([
       db.vendaAmazon.findMany({

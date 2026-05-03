@@ -11,7 +11,13 @@ export const STATUS_PEDIDO_CANCELADO = [
   "Cancelado",
   "Unfulfillable",
   "UNFULFILLABLE",
+] as const;
+
+export const STATUS_PEDIDO_REEMBOLSADO = [
   "REEMBOLSADO",
+  "Reembolsado",
+  "Refunded",
+  "REFUNDED",
 ] as const;
 
 export const STATUS_PEDIDO_PENDENTE = [
@@ -34,6 +40,9 @@ export const STATUS_FINANCEIRO_NAO_CONTABILIZAVEL = [
 
 const STATUS_PEDIDO_CANCELADO_NORMALIZADO = new Set(
   STATUS_PEDIDO_CANCELADO.map(normalizarStatus),
+);
+const STATUS_PEDIDO_REEMBOLSADO_NORMALIZADO = new Set(
+  STATUS_PEDIDO_REEMBOLSADO.map(normalizarStatus),
 );
 const STATUS_PEDIDO_PENDENTE_NORMALIZADO = new Set(
   STATUS_PEDIDO_PENDENTE.map(normalizarStatus),
@@ -63,6 +72,20 @@ export function isVendaAmazonContabilizavel(input: {
   );
 }
 
+export function isVendaAmazonPrincipal(input: {
+  statusPedido?: string | null;
+  statusFinanceiro?: string | null;
+}): boolean {
+  const statusPedido = normalizarStatus(input.statusPedido);
+  const statusFinanceiro = normalizarStatus(input.statusFinanceiro);
+
+  return (
+    !STATUS_PEDIDO_CANCELADO_NORMALIZADO.has(statusPedido) &&
+    !STATUS_PEDIDO_REEMBOLSADO_NORMALIZADO.has(statusPedido) &&
+    !STATUS_FINANCEIRO_NAO_CONTABILIZAVEL_NORMALIZADO.has(statusFinanceiro)
+  );
+}
+
 export function whereVendaAmazonContabilizavel(
   where?: Prisma.VendaAmazonWhereInput,
 ): Prisma.VendaAmazonWhereInput {
@@ -71,6 +94,11 @@ export function whereVendaAmazonContabilizavel(
       {
         statusPedido: {
           in: [...STATUS_PEDIDO_CANCELADO],
+        },
+      },
+      {
+        statusPedido: {
+          in: [...STATUS_PEDIDO_REEMBOLSADO],
         },
       },
       {
@@ -100,6 +128,59 @@ export function whereVendaAmazonContabilizavel(
   };
 }
 
+export type VisaoVendas = "principal" | "cancelados" | "reembolsados" | "todos";
+
+export function normalizarVisaoVendas(value?: string | null): VisaoVendas {
+  if (
+    value === "cancelados" ||
+    value === "reembolsados" ||
+    value === "todos"
+  ) {
+    return value;
+  }
+  return "principal";
+}
+
+export function whereVendaAmazonPrincipal(
+  where?: Prisma.VendaAmazonWhereInput,
+): Prisma.VendaAmazonWhereInput {
+  return andWhere(
+    {
+      NOT: [
+        { statusPedido: { in: [...STATUS_PEDIDO_CANCELADO] } },
+        { statusPedido: { in: [...STATUS_PEDIDO_REEMBOLSADO] } },
+        { statusFinanceiro: { in: [...STATUS_FINANCEIRO_NAO_CONTABILIZAVEL] } },
+      ],
+    },
+    where,
+  );
+}
+
+export function whereVendaAmazonPorVisao(
+  visao: VisaoVendas,
+  where?: Prisma.VendaAmazonWhereInput,
+): Prisma.VendaAmazonWhereInput {
+  if (visao === "todos") return where ?? {};
+  if (visao === "cancelados") {
+    return andWhere(
+      { statusPedido: { in: [...STATUS_PEDIDO_CANCELADO] } },
+      where,
+    );
+  }
+  if (visao === "reembolsados") {
+    return andWhere(
+      {
+        OR: [
+          { statusPedido: { in: [...STATUS_PEDIDO_REEMBOLSADO] } },
+          { statusFinanceiro: { in: [...STATUS_FINANCEIRO_NAO_CONTABILIZAVEL] } },
+        ],
+      },
+      where,
+    );
+  }
+  return whereVendaAmazonPrincipal(where);
+}
+
 export function dataVendaPeriodoSP(
   de?: string | null,
   ate?: string | null,
@@ -115,4 +196,12 @@ export function dataVendaPeriodoSP(
 
 function normalizarStatus(status?: string | null): string {
   return (status ?? "").trim().toUpperCase();
+}
+
+function andWhere(
+  base: Prisma.VendaAmazonWhereInput,
+  where?: Prisma.VendaAmazonWhereInput,
+): Prisma.VendaAmazonWhereInput {
+  if (!where || Object.keys(where).length === 0) return base;
+  return { AND: [base, where] };
 }

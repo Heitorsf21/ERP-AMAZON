@@ -3,7 +3,8 @@ import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import {
   dataVendaPeriodoSP,
-  whereVendaAmazonContabilizavel,
+  normalizarVisaoVendas,
+  whereVendaAmazonPorVisao,
 } from "@/modules/vendas/filtros";
 
 export const dynamic = "force-dynamic";
@@ -15,6 +16,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     const ate = searchParams.get("ate");
     const sku = searchParams.get("sku");
     const status = searchParams.get("status");
+    const visao = normalizarVisaoVendas(searchParams.get("visao"));
     const pagina = Math.max(1, Number(searchParams.get("pagina") ?? "1"));
     const porPagina = 50;
 
@@ -28,10 +30,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     if (status && status !== "todos") {
       filtros.OR = [{ statusPedido: status }, { statusFinanceiro: status }];
     }
-    const where =
-      status && status !== "todos"
-        ? filtros
-        : whereVendaAmazonContabilizavel(filtros);
+    const where = whereVendaAmazonPorVisao(visao, filtros);
 
     const [total, vendas] = await Promise.all([
       db.vendaAmazon.count({ where }),

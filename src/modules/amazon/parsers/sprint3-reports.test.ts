@@ -1,10 +1,27 @@
 import { describe, expect, it } from "vitest";
+import { parseAllOrdersTsv } from "./all-orders-tsv";
 import { parseFbaReimbursementsTsv } from "./fba-reimbursements-tsv";
 import { parseFbaReturnsTsv } from "./fba-returns-tsv";
 import { parseFbaStorageFeesTsv } from "./fba-storage-fees-tsv";
 import { parseSalesTrafficJson } from "./sales-traffic-json";
 
 describe("Sprint 3 Amazon report parsers", () => {
+  it("preserva pedido do ALL_ORDERS mesmo sem SKU para raw order", () => {
+    const rows = parseAllOrdersTsv(
+      [
+        "amazon-order-id\tpurchase-date\torder-status\tsales-channel\tfulfillment-channel\tsku",
+        "701-1234567-1234567\t2025-08-23T10:00:00Z\tPending\tAmazon.com.br\tAFN\t",
+      ].join("\n"),
+    );
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      amazonOrderId: "701-1234567-1234567",
+      orderStatus: "Pending",
+      sku: "",
+    });
+  });
+
   it("parses FBA reimbursements TSV with normalized headers and money", () => {
     const input = [
       "reimbursement-id\tcase-id\tapproval-date\tsku\tfnsku\tasin\treason\tamount-total\tquantity-reimbursed-total\tcurrency-unit",

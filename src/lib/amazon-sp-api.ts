@@ -70,10 +70,18 @@ export interface SPOrder {
 }
 
 export interface SPOrdersResponse {
+  payload?: {
+    orders?: SPOrder[];
+    pagination?: {
+      nextToken?: string;
+    };
+    nextToken?: string;
+  };
   pagination?: {
     nextToken?: string;
   };
-  orders: SPOrder[];
+  orders?: SPOrder[];
+  nextToken?: string;
   lastUpdatedBefore?: string;
 }
 
@@ -742,7 +750,7 @@ export async function getOrders(
                 maxResultsPerPage,
                 options.dateFilter ?? "created",
               ),
-              nextToken,
+              paginationToken: nextToken,
             }
           : orderDateParams(
               creds.marketplaceId,
@@ -754,12 +762,40 @@ export async function getOrders(
       },
     );
 
-    orders.push(...(result.orders ?? []));
-    nextToken = result.pagination?.nextToken;
+    orders.push(...readOrdersFromResponse(result));
+    nextToken = readNextOrderToken(result);
     pages += 1;
   } while (nextToken && (!options.maxPages || pages < options.maxPages));
 
   return orders;
+}
+
+export async function getOrder(
+  creds: SPAPICredentials,
+  orderId: string,
+  options: { accessToken?: string } = {},
+): Promise<SPOrder | null> {
+  type Resp = SPOrder & {
+    order?: SPOrder;
+    Order?: SPOrder;
+    payload?: { order?: SPOrder; Order?: SPOrder };
+  };
+  const result = await spApiRequest<Resp>(
+    creds,
+    `/orders/2026-01-01/orders/${encodeURIComponent(orderId)}`,
+    {
+      operation: AmazonSpApiOperation.ORDERS_GET,
+      accessToken: options.accessToken,
+    },
+  );
+
+  return (
+    result.order ??
+    result.Order ??
+    result.payload?.order ??
+    result.payload?.Order ??
+    (result.orderId ? result : null)
+  );
 }
 
 export async function listFinancialTransactions(
@@ -948,6 +984,31 @@ function orderDateParams(
   }
 
   return params;
+}
+
+function readOrdersFromResponse(result: SPOrdersResponse): SPOrder[] {
+  const payload = result.payload as Record<string, unknown> | undefined;
+  const root = result as Record<string, unknown>;
+  return (
+    result.orders ??
+    result.payload?.orders ??
+    (Array.isArray(payload?.Orders) ? (payload.Orders as SPOrder[]) : undefined) ??
+    (Array.isArray(root.Orders) ? (root.Orders as SPOrder[]) : undefined) ??
+    []
+  );
+}
+
+function readNextOrderToken(result: SPOrdersResponse): string | undefined {
+  const payload = result.payload as Record<string, unknown> | undefined;
+  const root = result as Record<string, unknown>;
+  const token =
+    result.pagination?.nextToken ??
+    result.payload?.pagination?.nextToken ??
+    result.payload?.nextToken ??
+    result.nextToken ??
+    payload?.NextToken ??
+    root.NextToken;
+  return typeof token === "string" && token.trim() ? token : undefined;
 }
 
 function normalizeActions(actions?: SolicitationAction | SolicitationAction[]) {

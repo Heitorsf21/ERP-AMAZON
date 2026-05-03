@@ -50,9 +50,12 @@ type WorkerOptions = {
 };
 
 type SyncPayload = {
+  orderIds?: string[];
   diasAtras?: number;
   maxPages?: number;
   windowDias?: number;
+  notificationId?: string;
+  eventTime?: string;
 };
 
 export async function processAmazonSyncJobs(options: WorkerOptions = {}) {
@@ -188,6 +191,7 @@ async function processJob(
     case TipoAmazonSyncJob.ORDERS_SYNC:
       return syncOrders(payload.diasAtras ?? 3, {
         maxPages: payload.maxPages ?? 1,
+        orderIds: payload.orderIds,
         since: payload.windowDias ? subDays(new Date(), payload.windowDias) : undefined,
       });
     case TipoAmazonSyncJob.FINANCES_SYNC:

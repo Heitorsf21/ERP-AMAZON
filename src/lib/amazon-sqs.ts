@@ -59,10 +59,25 @@ type NotificationMetadata = {
   notificationId?: string;
 };
 
+const ORDER_ID_KEYS = new Set([
+  "amazonorderid",
+  "amazonorderids",
+  "orderid",
+  "orderids",
+]);
+
 export function getSqsConfig(): SqsConfig | null {
   const queueUrl = process.env.AMAZON_SQS_QUEUE_URL;
   const region = process.env.AMAZON_SQS_REGION ?? process.env.AWS_REGION ?? "us-east-1";
-  if (!queueUrl) return null;
+  if (!queueUrl) {
+    if (
+      process.env.AMAZON_SQS_PRIMARY === "true" &&
+      process.env.NODE_ENV === "production"
+    ) {
+      throw new Error("AMAZON_SQS_PRIMARY=true, mas AMAZON_SQS_QUEUE_URL nao foi configurado.");
+    }
+    return null;
+  }
 
   const accessKeyId = process.env.AWS_ACCESS_KEY_ID;
   const secretAccessKey = process.env.AWS_SECRET_ACCESS_KEY;
@@ -222,9 +237,15 @@ export async function dispatchNotification(
 
   switch (tipo) {
     case "ORDER_CHANGE": {
+      const orderIds = extractOrderIdsFromNotification(notif);
       const job = await enqueueAmazonSyncJob(
         TipoAmazonSyncJob.ORDERS_SYNC,
-        { diasAtras: 1, maxPages: 1, ...basePayload },
+        {
+          ...(orderIds.length > 0
+            ? { orderIds }
+            : { diasAtras: 1, maxPages: 1 }),
+          ...basePayload,
+        },
         { dedupeKey: `sqs:${tipo}:${notificationId}`, priority: 50 },
       );
       return [job.id];
@@ -272,6 +293,19 @@ export function parseSqsNotificationBody(body: string): AmazonSqsNotification {
   return parsed as AmazonSqsNotification;
 }
 
+export function extractOrderIdsFromNotification(
+  notification: AmazonSqsNotification,
+): string[] {
+  const ids = new Set<string>();
+  visitNotificationRecords(getPayload(notification) ?? notification, (record) => {
+    for (const [key, value] of Object.entries(record)) {
+      if (!ORDER_ID_KEYS.has(normalizeNotificationKey(key))) continue;
+      for (const id of normalizeOrderIdValues(value)) ids.add(id);
+    }
+  });
+  return [...ids];
+}
+
 function getNotificationType(notification: AmazonSqsNotification): string | null {
   return notification.NotificationType ?? notification.notificationType ?? null;
 }
@@ -308,8 +342,12 @@ function parseOptionalDate(value: string | undefined): Date | null {
   return Number.isFinite(date.getTime()) ? date : null;
 }
 
-function parseJobsCriadosIds(value: string | null): string[] {
+function parseJobsCriadosIds(value: unknown): string[] {
   if (!value) return [];
+  if (Array.isArray(value)) {
+    return value.filter((item): item is string => typeof item === "string");
+  }
+  if (typeof value !== "string") return [];
   try {
     const parsed = JSON.parse(value) as unknown;
     return Array.isArray(parsed)
@@ -322,4 +360,39 @@ function parseJobsCriadosIds(value: string | null): string[] {
 
 function minuteSlot(): string {
   return Math.floor(Date.now() / 60_000).toString();
+}
+
+function normalizeNotificationKey(key: string): string {
+  return key.toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+function normalizeOrderIdValues(value: unknown): string[] {
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    return trimmed ? [trimmed] : [];
+  }
+  if (Array.isArray(value)) {
+    return value.flatMap(normalizeOrderIdValues);
+  }
+  return [];
+}
+
+function visitNotificationRecords(
+  value: unknown,
+  visitor: (record: Record<string, unknown>) => void,
+  depth = 0,
+) {
+  if (depth > 8) return;
+  if (Array.isArray(value)) {
+    for (const item of value) visitNotificationRecords(item, visitor, depth + 1);
+    return;
+  }
+  if (!value || typeof value !== "object") return;
+  const record = value as Record<string, unknown>;
+  visitor(record);
+  for (const child of Object.values(record)) {
+    if (child && typeof child === "object") {
+      visitNotificationRecords(child, visitor, depth + 1);
+    }
+  }
 }

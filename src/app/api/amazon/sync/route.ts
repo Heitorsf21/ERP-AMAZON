@@ -12,7 +12,11 @@ export const dynamic = "force-dynamic";
 
 export const POST = handle(async (req: NextRequest) => {
   const session = await requireRole(UsuarioRole.ADMIN);
-  const body = await req.json().catch(() => ({})) as { tipo?: string; diasAtras?: number };
+  const body = (await req.json().catch(() => ({}))) as {
+    tipo?: string;
+    diasAtras?: number;
+    orderIds?: string[];
+  };
   const tipo = body.tipo ?? "ALL";
 
   await auditLog({
@@ -32,12 +36,20 @@ export const POST = handle(async (req: NextRequest) => {
 
   if (tipo === "ORDERS" || tipo === "ALL") {
     const diasAtras = body.diasAtras ?? 3;
+    const orderIds = Array.isArray(body.orderIds)
+      ? body.orderIds.filter((id): id is string => typeof id === "string" && !!id.trim())
+      : [];
     const job = await enqueueAmazonSyncJob(
       TipoAmazonSyncJob.ORDERS_SYNC,
-      { diasAtras, maxPages: 5, windowDias: diasAtras },
+      orderIds.length > 0
+        ? { orderIds }
+        : { diasAtras, maxPages: 5, windowDias: diasAtras },
       {
         priority: 50,
-        dedupeKey: `manual:${TipoAmazonSyncJob.ORDERS_SYNC}:${diasAtras}`,
+        dedupeKey:
+          orderIds.length > 0
+            ? `manual:${TipoAmazonSyncJob.ORDERS_SYNC}:${orderIds.join(",")}`
+            : `manual:${TipoAmazonSyncJob.ORDERS_SYNC}:${diasAtras}`,
       },
     );
     jobs.push(job);

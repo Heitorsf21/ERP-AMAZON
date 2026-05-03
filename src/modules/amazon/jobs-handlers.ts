@@ -391,10 +391,12 @@ const ORDERS_HISTORY_REPORT_TYPE =
 const ORDERS_HISTORY_CURSOR_KEY = "amazon_orders_history_cursor";
 const ORDERS_HISTORY_PENDING_KEY = "amazon_orders_history_pending_report_id";
 const ORDERS_HISTORY_PENDING_END_KEY = "amazon_orders_history_pending_window_end";
+const ORDERS_HISTORY_PENDING_AT_KEY = "amazon_orders_history_pending_report_at";
 const LOJA_ABERTA_EM_KEY = "amazon_loja_aberta_em";
-const LOJA_ABERTA_EM_DEFAULT = "2025-07-28T00:00:00.000Z";
+const LOJA_ABERTA_EM_DEFAULT = "2025-08-23T03:00:00.000Z";
 const ORDERS_HISTORY_WINDOW_DAYS = 30;
 const ORDERS_HISTORY_END_OFFSET_DAYS = 2;
+const ORDERS_HISTORY_PENDING_TIMEOUT_MS = 24 * 60 * 60 * 1000;
 
 async function getCfg(chave: string): Promise<string | null> {
   const row = await db.configuracaoSistema.findUnique({ where: { chave } });
@@ -439,7 +441,20 @@ export async function syncOrdersHistoryReport(creds: SPAPICredentials) {
     };
   }
 
-  const pendingId = await getCfg(ORDERS_HISTORY_PENDING_KEY);
+  let pendingId = await getCfg(ORDERS_HISTORY_PENDING_KEY);
+  const pendingAt = parseCfgDate(await getCfg(ORDERS_HISTORY_PENDING_AT_KEY));
+  if (
+    pendingId &&
+    pendingAt &&
+    now.getTime() - pendingAt.getTime() > ORDERS_HISTORY_PENDING_TIMEOUT_MS
+  ) {
+    await delCfg(ORDERS_HISTORY_PENDING_KEY);
+    await delCfg(ORDERS_HISTORY_PENDING_END_KEY);
+    await delCfg(ORDERS_HISTORY_PENDING_AT_KEY);
+    pendingId = null;
+  } else if (pendingId && !pendingAt) {
+    await setCfg(ORDERS_HISTORY_PENDING_AT_KEY, now.toISOString());
+  }
   const windowStart = cursor;
   const proposedEnd = addDays(windowStart, ORDERS_HISTORY_WINDOW_DAYS);
   const windowEnd = proposedEnd > endLimit ? endLimit : proposedEnd;
@@ -454,6 +469,7 @@ export async function syncOrdersHistoryReport(creds: SPAPICredentials) {
   if (result.status === "PENDING_NEW") {
     await setCfg(ORDERS_HISTORY_PENDING_KEY, result.reportId);
     await setCfg(ORDERS_HISTORY_PENDING_END_KEY, windowEnd.toISOString());
+    await setCfg(ORDERS_HISTORY_PENDING_AT_KEY, now.toISOString());
     return {
       ok: true,
       pending: true,
@@ -477,6 +493,7 @@ export async function syncOrdersHistoryReport(creds: SPAPICredentials) {
   if (result.status === "FAILED") {
     await delCfg(ORDERS_HISTORY_PENDING_KEY);
     await delCfg(ORDERS_HISTORY_PENDING_END_KEY);
+    await delCfg(ORDERS_HISTORY_PENDING_AT_KEY);
     return {
       ok: false,
       reportId: result.reportId,
@@ -498,6 +515,7 @@ export async function syncOrdersHistoryReport(creds: SPAPICredentials) {
   );
   await delCfg(ORDERS_HISTORY_PENDING_KEY);
   await delCfg(ORDERS_HISTORY_PENDING_END_KEY);
+  await delCfg(ORDERS_HISTORY_PENDING_AT_KEY);
 
   return {
     ok: true,
@@ -515,6 +533,10 @@ async function upsertOrdersHistoryRows(
   let criadas = 0;
   let atualizadas = 0;
   let ignoradas = 0;
+  const pedidosBrutos = await upsertRawOrdersHistoryRows(
+    rows,
+    marketplaceFallback,
+  );
 
   // Pré-carrega produtos por SKU pra pegar custoUnitario e asin.
   const skus = Array.from(new Set(rows.map((r) => r.sku))).filter(Boolean);
@@ -585,7 +607,7 @@ async function upsertOrdersHistoryRows(
     }
   }
 
-  return { linhas: rows.length, criadas, atualizadas, ignoradas };
+  return { linhas: rows.length, pedidosBrutos, criadas, atualizadas, ignoradas };
 }
 
 // ─────────────────────────────────────────────────────────────────────
@@ -594,6 +616,56 @@ async function upsertOrdersHistoryRows(
 // AmazonFinanceTransaction com payload completo. Auto-desliga ao alcançar
 // `now - 2 dias`.
 // ─────────────────────────────────────────────────────────────────────
+
+async function upsertRawOrdersHistoryRows(
+  rows: Awaited<ReturnType<typeof parseAllOrdersTsv>>,
+  marketplaceFallback: string,
+) {
+  const porPedido = new Map<string, typeof rows>();
+  for (const row of rows) {
+    if (!row.amazonOrderId) continue;
+    const group = porPedido.get(row.amazonOrderId) ?? [];
+    group.push(row);
+    porPedido.set(row.amazonOrderId, group);
+  }
+
+  for (const [amazonOrderId, group] of porPedido) {
+    const first = group[0];
+    if (!first) continue;
+
+    const statusPedido =
+      group.find((row) => row.orderStatus && row.orderStatus !== "UNKNOWN")
+        ?.orderStatus ?? "UNKNOWN";
+    const itensProcessados = group.some((row) => !!row.sku);
+    const data = {
+      statusPedido,
+      createdTime: first.purchaseDate,
+      marketplaceId: first.salesChannel ?? marketplaceFallback,
+      fulfillmentChannel: first.fulfillmentChannel,
+      payloadJson: JSON.stringify({
+        source: ORDERS_HISTORY_REPORT_TYPE,
+        rows: group,
+      }),
+      ultimaSyncEm: new Date(),
+    };
+
+    await db.amazonOrderRaw.upsert({
+      where: { amazonOrderId },
+      create: {
+        amazonOrderId,
+        ...data,
+        lastUpdatedTime: null,
+        itensProcessados,
+      },
+      update: {
+        ...data,
+        ...(itensProcessados ? { itensProcessados: true } : {}),
+      },
+    });
+  }
+
+  return porPedido.size;
+}
 
 const FINANCES_BACKFILL_CURSOR_KEY = "amazon_finances_backfill_cursor";
 const FINANCES_BACKFILL_WINDOW_DAYS = 14;

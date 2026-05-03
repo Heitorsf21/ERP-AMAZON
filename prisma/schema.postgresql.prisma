@@ -322,6 +322,27 @@ model VendaAmazon {
   @@index([ultimaSyncEm])
 }
 
+model AmazonOrderRaw {
+  id                 String    @id @default(cuid())
+  amazonOrderId      String    @unique
+  statusPedido       String    @default("UNKNOWN")
+  createdTime        DateTime?
+  lastUpdatedTime    DateTime?
+  marketplaceId      String?
+  fulfillmentChannel String?
+  payloadJson        Json
+  itensProcessados   Boolean   @default(false)
+  ultimaSyncEm       DateTime?
+  criadoEm           DateTime  @default(now())
+  atualizadoEm       DateTime  @updatedAt
+
+  @@index([statusPedido])
+  @@index([createdTime])
+  @@index([lastUpdatedTime])
+  @@index([itensProcessados])
+  @@index([ultimaSyncEm])
+}
+
 model ProdutoVariacao {
   id              String   @id @default(cuid())
   produtoPaiId    String

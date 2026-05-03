@@ -42,7 +42,7 @@ export function redactForAudit<T>(value: T): T {
   return redactValue(value) as T;
 }
 
-function serializeAuditJson(value: unknown): string | null {
+function serializeAuditJson(value: unknown): any {
   if (value === undefined || value === null) return null;
   return JSON.stringify(redactValue(value));
 }

@@ -62,7 +62,7 @@ export const POST = handle(async (req: Request, { params }: Params) => {
       skuFilho,
       nome: body.nome ?? produtoFilho?.nome ?? null,
       tipo: body.tipo ?? null,
-      atributosJson: body.atributos ? JSON.stringify(body.atributos) : null,
+      atributosJson: (body.atributos ? JSON.stringify(body.atributos) : null) as any,
     },
   });
 

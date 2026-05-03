@@ -7,6 +7,7 @@
  *
  * Uso: npx tsx scripts/setup-sqs-subscriptions.ts
  */
+import { loadEnvConfig } from "@next/env";
 import { db } from "@/lib/db";
 import {
   spApiRequest,
@@ -16,11 +17,13 @@ import {
 } from "@/lib/amazon-sp-api";
 import { getAmazonConfig, isAmazonConfigured } from "@/modules/amazon/service";
 
-const QUEUE_ARN = "arn:aws:sqs:us-east-1:238788379344:amazon-sp-api-notifications";
+loadEnvConfig(process.cwd());
+
+const QUEUE_ARN = process.env.AMAZON_SQS_QUEUE_ARN;
 
 type NotifEntry = { type: string; body?: Record<string, unknown> };
 
-function buildNotificationTypes(marketplaceId: string): NotifEntry[] {
+function buildNotificationTypes(): NotifEntry[] {
   return [
     {
       type: "ORDER_CHANGE",
@@ -29,7 +32,6 @@ function buildNotificationTypes(marketplaceId: string): NotifEntry[] {
         processingDirective: {
           eventFilter: {
             eventFilterType: "ORDER_CHANGE",
-            orderChangeTypes: ["ORDER_STATUS_CHANGE", "ORDER_SUMMARY_CHANGE"],
           },
         },
       },
@@ -40,6 +42,12 @@ function buildNotificationTypes(marketplaceId: string): NotifEntry[] {
 }
 
 async function main() {
+  const queueArn = QUEUE_ARN;
+  if (!queueArn) {
+    console.error("AMAZON_SQS_QUEUE_ARN nao configurado.");
+    process.exit(1);
+  }
+
   const config = await getAmazonConfig();
   if (!isAmazonConfigured(config)) {
     console.error("Credenciais Amazon não configuradas.");
@@ -54,8 +62,7 @@ async function main() {
     endpoint: config.amazon_endpoint || undefined,
   };
 
-  const marketplaceId = creds.marketplaceId;
-  const NOTIFICATION_TYPES = buildNotificationTypes(marketplaceId);
+  const NOTIFICATION_TYPES = buildNotificationTypes();
 
   // Token grantless para gerenciar destinations (não é vinculado a um seller)
   const grantlessToken = await getLWAGrantlessToken(creds, "sellingpartnerapi::notifications");
@@ -78,7 +85,7 @@ async function main() {
   ).catch(() => null);
 
   const found = existingDests?.payload?.destinations?.find(
-    (d) => d.resource?.sqs?.arn === QUEUE_ARN,
+    (d) => d.resource?.sqs?.arn === queueArn,
   );
 
   if (found) {
@@ -92,7 +99,7 @@ async function main() {
         {
           method: "POST",
           accessToken: grantlessToken,
-          body: { name: "erp-amazon-sqs", resourceSpecification: { sqs: { arn: QUEUE_ARN } } },
+          body: { name: "erp-amazon-sqs", resourceSpecification: { sqs: { arn: queueArn } } },
         },
       );
       destinationId = created.payload.destinationId;
@@ -102,9 +109,9 @@ async function main() {
       const msg = err instanceof Error ? err.message : String(err);
       const match = msg.match(/already exists for the application/);
       if (match) {
-        // Usa o ID da execução anterior (obtido via GET agora com listagem correta)
-        destinationId = "fffdbad1-1252-40f0-913d-7183ea470f8f";
-        console.log(`  → Destination já existia (409 conflict), reusando: ${destinationId}`);
+        throw new Error(
+          "Destination SQS ja existe para esta aplicacao, mas nao foi possivel localizar por AMAZON_SQS_QUEUE_ARN. Confirme o ARN ou remova o destino antigo na SP-API antes de recriar.",
+        );
       } else {
         throw err;
       }

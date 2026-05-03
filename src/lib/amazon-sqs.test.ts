@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { parseSqsNotificationBody } from "@/lib/amazon-sqs";
+import {
+  extractOrderIdsFromNotification,
+  parseSqsNotificationBody,
+} from "@/lib/amazon-sqs";
 
 describe("amazon-sqs", () => {
   it("parseia notificacao SP-API direta", () => {
@@ -33,5 +36,24 @@ describe("amazon-sqs", () => {
 
     expect(notification.NotificationType).toBe("LISTINGS_ITEM_STATUS_CHANGE");
     expect(notification.Payload?.Sku).toBe("MFS-001");
+  });
+
+  it("extrai AmazonOrderId de ORDER_CHANGE direto ou aninhado", () => {
+    const notification = parseSqsNotificationBody(
+      JSON.stringify({
+        NotificationType: "ORDER_CHANGE",
+        Payload: {
+          OrderChangeNotification: {
+            AmazonOrderId: "701-1234567-1234567",
+          },
+          OrderIds: ["702-1234567-1234567"],
+        },
+      }),
+    );
+
+    expect(extractOrderIdsFromNotification(notification).sort()).toEqual([
+      "701-1234567-1234567",
+      "702-1234567-1234567",
+    ]);
   });
 });

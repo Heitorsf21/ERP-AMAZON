@@ -336,9 +336,11 @@ export async function ensureRecurringAmazonJobs(now = new Date()) {
 
 // SQLite guarda payload como JSON stringificado. (Em Postgres usaremos Json/jsonb.)
 export function parseJobPayload<T extends Record<string, unknown>>(
-  payload: string | null,
+  payload: unknown,
 ): T {
   if (!payload) return {} as T;
+  if (typeof payload === "object") return payload as T;
+  if (typeof payload !== "string") return {} as T;
   try {
     return JSON.parse(payload) as T;
   } catch {

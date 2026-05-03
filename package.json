@@ -22,6 +22,7 @@
     "amazon:worker:once": "tsx scripts/amazon-worker.ts --once",
     "amazon:sqs": "tsx scripts/amazon-sqs-consumer.ts",
     "amazon:sqs:once": "tsx scripts/amazon-sqs-consumer.ts --once",
+    "amazon:sqs:setup": "tsx scripts/setup-sqs-subscriptions.ts",
     "amazon:test": "tsx scripts/test-amazon-apis.ts",
     "amazon:reprocessar-vendas": "tsx scripts/reprocessar-vendas-amazon.ts",
     "prisma:generate": "prisma generate",

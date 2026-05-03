@@ -15,4 +15,11 @@ describe("amazon-sp-api Listings guard", () => {
       expect(source).not.toContain(`export async function ${token}`);
     }
   });
+
+  it("usa paginationToken nas paginas seguintes de Orders v2026", () => {
+    const source = readFileSync("src/lib/amazon-sp-api.ts", "utf8");
+
+    expect(source).toContain("paginationToken: nextToken");
+    expect(source).not.toContain("nextToken: nextToken");
+  });
 });

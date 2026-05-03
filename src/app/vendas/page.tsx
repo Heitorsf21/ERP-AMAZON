@@ -124,6 +124,7 @@ type ResultadoImportacao = {
 };
 
 type Filtros = { de: string; ate: string; sku: string; status: string };
+type AbaVendas = "principal" | "cancelados" | "reembolsados";
 
 const filtrosIniciais: Filtros = { de: "", ate: "", sku: "", status: "" };
 
@@ -365,8 +366,6 @@ function PainelFiltros({
                 <option value="">todos</option>
                 <option value="Shipped">enviado</option>
                 <option value="Pending">pendente</option>
-                <option value="Canceled">cancelado</option>
-                <option value="REEMBOLSADO">reembolsado</option>
               </select>
             </div>
           </div>
@@ -405,8 +404,10 @@ export default function VendasPage() {
   const [filtros, setFiltros] = React.useState<Filtros>(filtrosIniciais);
   const [pagina, setPagina] = React.useState(1);
   const [dialogAberto, setDialogAberto] = React.useState(false);
+  const [aba, setAba] = React.useState<AbaVendas>("principal");
+  const visaoVendas = aba === "cancelados" ? "cancelados" : "principal";
 
-  React.useEffect(() => setPagina(1), [filtros]);
+  React.useEffect(() => setPagina(1), [filtros, aba]);
 
   const params = React.useMemo(() => {
     const p = new URLSearchParams();
@@ -414,34 +415,37 @@ export default function VendasPage() {
     if (filtros.ate) p.set("ate", filtros.ate);
     if (filtros.sku) p.set("sku", filtros.sku);
     if (filtros.status) p.set("status", filtros.status);
+    p.set("visao", visaoVendas);
     p.set("pagina", String(pagina));
     return p;
-  }, [filtros, pagina]);
+  }, [filtros, pagina, visaoVendas]);
 
   const totaisParams = React.useMemo(() => {
     const p = new URLSearchParams();
     if (filtros.de) p.set("de", filtros.de);
     if (filtros.ate) p.set("ate", filtros.ate);
+    p.set("visao", visaoVendas);
     return p;
-  }, [filtros.de, filtros.ate]);
+  }, [filtros.de, filtros.ate, visaoVendas]);
 
   const vendasQuery = useQuery<{
     vendas: Venda[];
     total: number;
     porPagina: number;
   }>({
-    queryKey: ["vendas", filtros, pagina],
+    queryKey: ["vendas", filtros, pagina, visaoVendas],
     queryFn: () => fetch(`/api/vendas?${params}`).then((r) => r.json()),
   });
 
   const totaisQuery = useQuery<Totais>({
-    queryKey: ["vendas-totais", filtros.de, filtros.ate],
+    queryKey: ["vendas-totais", filtros.de, filtros.ate, visaoVendas],
     queryFn: () => fetch(`/api/vendas/totais?${totaisParams}`).then((r) => r.json()),
   });
 
   const reembolsosQuery = useQuery<ReembolsosResponse>({
     queryKey: ["vendas-reembolsos", filtros, pagina],
     queryFn: () => fetch(`/api/vendas/reembolsos?${params}`).then((r) => r.json()),
+    enabled: aba === "reembolsados",
   });
 
   const sincronizar = useMutation({
@@ -631,91 +635,39 @@ export default function VendasPage() {
         )}
       </div>
 
-      <Tabs defaultValue="vendas" className="w-full">
+      <Tabs
+        value={aba}
+        onValueChange={(value) => setAba(value as AbaVendas)}
+        className="w-full"
+      >
         <TabsList>
-          <TabsTrigger value="vendas">Vendas</TabsTrigger>
+          <TabsTrigger value="principal">Pedidos</TabsTrigger>
+          <TabsTrigger value="cancelados">Cancelados</TabsTrigger>
           <TabsTrigger value="reembolsados">Reembolsados</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="vendas" className="mt-4">
-          {vendasQuery.isLoading ? (
-            <DataTableSkeleton rows={8} columns={8} />
-          ) : vendas.length === 0 ? (
-            <EmptyState onImportar={() => setDialogAberto(true)} />
-          ) : (
-            <>
-              <div className="overflow-hidden rounded-md border">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Data</TableHead>
-                      <TableHead className="hidden sm:table-cell">Pedido</TableHead>
-                      <TableHead>SKU</TableHead>
-                      <TableHead className="hidden md:table-cell">Produto</TableHead>
-                      <TableHead className="text-right">Qtd</TableHead>
-                      <TableHead className="text-right">Bruto</TableHead>
-                      <TableHead className="hidden lg:table-cell text-right">
-                        Taxas
-                      </TableHead>
-                      <TableHead className="text-right">Liquido</TableHead>
-                      <TableHead>Status</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {vendas.map((venda) => (
-                      <TableRow key={venda.id}>
-                        <TableCell className="tabular-nums">
-                          {fmtData(venda.dataVenda)}
-                        </TableCell>
-                        <TableCell className="hidden sm:table-cell font-mono text-xs text-muted-foreground">
-                          {venda.amazonOrderId}
-                        </TableCell>
-                        <TableCell className="font-medium">{venda.sku}</TableCell>
-                        <TableCell className="hidden max-w-[260px] md:table-cell">
-                          <span
-                            className="line-clamp-1 text-sm text-muted-foreground"
-                            title={venda.titulo ?? ""}
-                          >
-                            {venda.titulo ?? "-"}
-                          </span>
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums">
-                          {venda.quantidade}
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums">
-                          {formatBRL(valorBruto(venda))}
-                        </TableCell>
-                        <TableCell className="hidden text-right tabular-nums lg:table-cell">
-                          {formatBRL(venda.taxasCentavos + venda.fretesCentavos)}
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums font-medium">
-                          {formatBRL(
-                            venda.liquidoMarketplaceCentavos ?? valorBruto(venda),
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex flex-col gap-1">
-                            <StatusBadge status={venda.statusPedido} />
-                            {venda.statusFinanceiro !== venda.statusPedido && (
-                              <span className="text-xs text-muted-foreground">
-                                {venda.statusFinanceiro}
-                              </span>
-                            )}
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-              <Paginacao
-                pagina={pagina}
-                totalPaginas={totalPaginas}
-                setPagina={setPagina}
-                total={total}
-              />
-            </>
-          )}
+        <TabsContent value="principal" className="mt-4">
+          <TabelaVendas
+            isLoading={vendasQuery.isLoading}
+            vendas={vendas}
+            pagina={pagina}
+            totalPaginas={totalPaginas}
+            setPagina={setPagina}
+            total={total}
+            onImportar={() => setDialogAberto(true)}
+          />
+        </TabsContent>
+
+        <TabsContent value="cancelados" className="mt-4">
+          <TabelaVendas
+            isLoading={vendasQuery.isLoading}
+            vendas={vendas}
+            pagina={pagina}
+            totalPaginas={totalPaginas}
+            setPagina={setPagina}
+            total={total}
+            onImportar={() => setDialogAberto(true)}
+          />
         </TabsContent>
 
         <TabsContent value="reembolsados" className="mt-4 space-y-4">
@@ -844,6 +796,102 @@ export default function VendasPage() {
 
       <DialogImportar aberto={dialogAberto} onFechar={() => setDialogAberto(false)} />
     </div>
+  );
+}
+
+function TabelaVendas({
+  isLoading,
+  vendas,
+  pagina,
+  totalPaginas,
+  setPagina,
+  total,
+  onImportar,
+}: {
+  isLoading: boolean;
+  vendas: Venda[];
+  pagina: number;
+  totalPaginas: number;
+  setPagina: React.Dispatch<React.SetStateAction<number>>;
+  total: number;
+  onImportar: () => void;
+}) {
+  if (isLoading) return <DataTableSkeleton rows={8} columns={8} />;
+  if (vendas.length === 0) return <EmptyState onImportar={onImportar} />;
+
+  return (
+    <>
+      <div className="overflow-hidden rounded-md border">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Data</TableHead>
+              <TableHead className="hidden sm:table-cell">Pedido</TableHead>
+              <TableHead>SKU</TableHead>
+              <TableHead className="hidden md:table-cell">Produto</TableHead>
+              <TableHead className="text-right">Qtd</TableHead>
+              <TableHead className="text-right">Bruto</TableHead>
+              <TableHead className="hidden text-right lg:table-cell">
+                Taxas
+              </TableHead>
+              <TableHead className="text-right">Liquido</TableHead>
+              <TableHead>Status</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {vendas.map((venda) => (
+              <TableRow key={venda.id}>
+                <TableCell className="tabular-nums">
+                  {fmtData(venda.dataVenda)}
+                </TableCell>
+                <TableCell className="hidden font-mono text-xs text-muted-foreground sm:table-cell">
+                  {venda.amazonOrderId}
+                </TableCell>
+                <TableCell className="font-medium">{venda.sku}</TableCell>
+                <TableCell className="hidden max-w-[260px] md:table-cell">
+                  <span
+                    className="line-clamp-1 text-sm text-muted-foreground"
+                    title={venda.titulo ?? ""}
+                  >
+                    {venda.titulo ?? "-"}
+                  </span>
+                </TableCell>
+                <TableCell className="text-right tabular-nums">
+                  {venda.quantidade}
+                </TableCell>
+                <TableCell className="text-right tabular-nums">
+                  {formatBRL(valorBruto(venda))}
+                </TableCell>
+                <TableCell className="hidden text-right tabular-nums lg:table-cell">
+                  {formatBRL(venda.taxasCentavos + venda.fretesCentavos)}
+                </TableCell>
+                <TableCell className="text-right font-medium tabular-nums">
+                  {formatBRL(
+                    venda.liquidoMarketplaceCentavos ?? valorBruto(venda),
+                  )}
+                </TableCell>
+                <TableCell>
+                  <div className="flex flex-col gap-1">
+                    <StatusBadge status={venda.statusPedido} />
+                    {venda.statusFinanceiro !== venda.statusPedido && (
+                      <span className="text-xs text-muted-foreground">
+                        {venda.statusFinanceiro}
+                      </span>
+                    )}
+                  </div>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+      <Paginacao
+        pagina={pagina}
+        totalPaginas={totalPaginas}
+        setPagina={setPagina}
+        total={total}
+      />
+    </>
   );
 }
 

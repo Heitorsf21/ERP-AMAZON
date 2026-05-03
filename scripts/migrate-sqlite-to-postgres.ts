@@ -102,6 +102,7 @@ async function migrate() {
     "AmazonSyncLog",
     "AmazonSyncJob",
     "AmazonApiQuota",
+    "AmazonOrderRaw",
     "AmazonReviewSolicitation",
     "LoteImportacaoFBA",
     "VendaFBA",
@@ -141,6 +142,7 @@ async function copiarTabela(tabela: string, linhas: Row[]) {
   const jsonCampos: Record<string, string[]> = {
     AmazonSyncLog: ["detalhes"],
     AmazonSyncJob: ["payload", "result"],
+    AmazonOrderRaw: ["payloadJson"],
     AmazonReviewSolicitation: ["rawResponse"],
   };
 
@@ -160,6 +162,7 @@ async function copiarTabela(tabela: string, linhas: Row[]) {
     AmazonSyncLog: ["createdAt"],
     AmazonSyncJob: ["runAfter", "startedAt", "finishedAt", "lockedAt", "createdAt", "updatedAt"],
     AmazonApiQuota: ["nextAllowedAt", "lastAttemptAt", "createdAt", "updatedAt"],
+    AmazonOrderRaw: ["createdTime", "lastUpdatedTime", "ultimaSyncEm", "criadoEm", "atualizadoEm"],
     AmazonReviewSolicitation: [
       "orderCreatedAt", "eligibleFrom", "deliveryWindowStart", "deliveryWindowEnd",
       "nextCheckAt", "lastAttemptAt", "checkedAt", "sentAt", "createdAt", "updatedAt",

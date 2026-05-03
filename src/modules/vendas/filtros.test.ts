@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   dataVendaPeriodoSP,
   isVendaAmazonContabilizavel,
+  isVendaAmazonPrincipal,
 } from "./filtros";
 
 describe("filtros de vendas Amazon", () => {
@@ -21,6 +22,36 @@ describe("filtros de vendas Amazon", () => {
         statusFinanceiro: "DEFERRED",
       }),
     ).toBe(true);
+  });
+
+  it("inclui pedidos pendentes na visao principal", () => {
+    expect(
+      isVendaAmazonPrincipal({
+        statusPedido: "Pending",
+        statusFinanceiro: "PENDENTE",
+      }),
+    ).toBe(true);
+    expect(
+      isVendaAmazonPrincipal({
+        statusPedido: "PendingAvailability",
+        statusFinanceiro: "PENDENTE",
+      }),
+    ).toBe(true);
+  });
+
+  it("separa apenas cancelados e reembolsados da visao principal", () => {
+    expect(
+      isVendaAmazonPrincipal({
+        statusPedido: "Canceled",
+        statusFinanceiro: "PENDENTE",
+      }),
+    ).toBe(false);
+    expect(
+      isVendaAmazonPrincipal({
+        statusPedido: "Shipped",
+        statusFinanceiro: "REFUNDED",
+      }),
+    ).toBe(false);
   });
 
   it("contabiliza pedidos enviados", () => {

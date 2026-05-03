@@ -9,6 +9,7 @@ import {
   getInventorySummaries,
   listFinancialTransactions,
   getMarketplaceParticipations,
+  getOrder,
   getSellerId,
   getOrders,
   getOrderItems,
@@ -69,12 +70,13 @@ const DEFAULT_MARKETPLACE_ID = "A2Q3Y263D00KWC";
 
 // Helper para campos JSON: SQLite armazena como String?; em Postgres viraria Json.
 // Mantemos a mesma forma de chamada (asJson(...)) para facilitar troca de provider.
-function asJson(value: unknown): string | null {
+function asJson(value: unknown): any {
   if (value === null || value === undefined) return null;
   return JSON.stringify(value);
 }
 const ORDERS_CURSOR_KEY = "amazon_orders_last_updated_after";
 const BACKFILL_CURSOR_KEY = "amazon_backfill_orders_cursor";
+const AMAZON_LOJA_ABERTA_EM = "2025-08-23T03:00:00.000Z";
 
 export const AMAZON_REQUIRED_CONFIG_KEYS = [
   "amazon_client_id",
@@ -105,6 +107,7 @@ type VendaAmazonSyncResumo = {
 
 type SyncOrdersResult = {
   lidas: number;
+  pedidosBrutos: number;
   criadas: number;
   atualizadas: number;
   ignoradas: number;
@@ -117,6 +120,7 @@ type SyncOrdersInternalOptions = {
   diasAtras: number;
   startDate?: Date;
   endDate?: Date;
+  orderIds?: string[];
   cursorKey?: string;
   tipo?: string;
   maxPages?: number;
@@ -275,8 +279,18 @@ export async function testConnection(): Promise<{ ok: boolean; mensagem: string 
 
 export async function syncOrders(
   diasAtras = 3,
-  options: { maxPages?: number; since?: Date } = {},
+  options: { maxPages?: number; since?: Date; orderIds?: string[] } = {},
 ): Promise<SyncOrdersResult> {
+  const orderIds = normalizeOrderIds(options.orderIds);
+  if (orderIds.length > 0) {
+    return syncOrdersInternal({
+      diasAtras,
+      orderIds,
+      maxPages: options.maxPages ?? 1,
+      dateFilter: "lastUpdated",
+    });
+  }
+
   // Passagem 1 — createdAfter: descobre TODOS os pedidos (incluindo Pending)
   // criados no período, independente de quando foram atualizados.
   const createdSince = options.since ?? subDays(new Date(), diasAtras);
@@ -305,6 +319,7 @@ export async function syncOrders(
 
   return {
     lidas: r1.lidas + r2.lidas,
+    pedidosBrutos: r1.pedidosBrutos + r2.pedidosBrutos,
     criadas: r1.criadas + r2.criadas,
     atualizadas: r1.atualizadas + r2.atualizadas,
     ignoradas: r1.ignoradas + r2.ignoradas,
@@ -320,8 +335,8 @@ export async function syncBackfillOrders(): Promise<
     completo: boolean;
   }
 > {
-  const inicioPadrao = subDays(new Date(), 730);
-  const fim = new Date();
+  const inicioPadrao = new Date(AMAZON_LOJA_ABERTA_EM);
+  const fim = subDays(new Date(), 2);
   const cursor = await getSystemConfig(BACKFILL_CURSOR_KEY);
   const inicio = cursor ? new Date(cursor) : inicioPadrao;
   const ate = new Date(Math.min(addDays(inicio, 14).getTime(), fim.getTime()));
@@ -329,6 +344,7 @@ export async function syncBackfillOrders(): Promise<
   if (inicio >= fim) {
     return {
       lidas: 0,
+      pedidosBrutos: 0,
       criadas: 0,
       atualizadas: 0,
       ignoradas: 0,
@@ -524,11 +540,14 @@ async function syncOrdersInternal(
   const creds = await getCredentialsOrThrow();
   const cursorKey = options.cursorKey ?? ORDERS_CURSOR_KEY;
   const overlapMinutes = options.overlapMinutes ?? 15;
+  const orderIds = normalizeOrderIds(options.orderIds);
 
   let criadas = 0;
   let atualizadas = 0;
   let ignoradas = 0;
+  let pedidosBrutos = 0;
   let maxCursorDate: Date | null = null;
+  let itemsRateLimited = false;
 
   try {
     const cursor = await getSystemConfig(cursorKey);
@@ -538,29 +557,40 @@ async function syncOrdersInternal(
       (cursorDate && Number.isFinite(cursorDate.getTime())
         ? new Date(cursorDate.getTime() - overlapMinutes * 60_000)
         : subDays(new Date(), options.diasAtras));
-    const orders = await getOrders(creds, since, 50, {
-      maxPages: options.maxPages,
-      before: options.endDate,
-      dateFilter: options.dateFilter ?? "created",
-    });
+    const orders =
+      orderIds.length > 0
+        ? await fetchOrdersById(creds, orderIds)
+        : await getOrders(creds, since, 50, {
+            maxPages: options.maxPages,
+            before: options.endDate,
+            dateFilter: options.dateFilter ?? "created",
+          });
     const pedidos: VendaAmazonSyncResumo[] = [];
+    pedidosBrutos = orders.filter((order) => getAmazonOrderId(order)).length;
+
+    for (const order of orders) {
+      await upsertAmazonOrderRaw(creds, order, { itensProcessados: false });
+    }
 
     // Buscamos itens detalhados (com preço, taxa, frete) por pedido.
     // O endpoint de listagem /orders/2026-01-01/orders NAO traz isso —
     // só /orders/v0/orders/{id}/orderItems. Rate limit ORDERS_GET = 0.5 rps.
     const itemsPorOrderId = new Map<string, SPOrderItemDetail[]>();
     for (const order of orders) {
-      if (!order.orderId) continue;
+      const amazonOrderId = getAmazonOrderId(order);
+      if (!amazonOrderId) continue;
       try {
-        const detalhes = await getOrderItems(creds, order.orderId);
-        itemsPorOrderId.set(order.orderId, detalhes);
+        const detalhes = await getOrderItems(creds, amazonOrderId);
+        const fallback = detalhes.length > 0 ? detalhes : orderItemsFromOrderSummary(order);
+        itemsPorOrderId.set(amazonOrderId, fallback);
       } catch (err) {
         if (isAmazonRateLimitError(err)) {
           // Quota de itens esgotada — processa o que já buscou, próximo ciclo continua.
+          itemsRateLimited = true;
           break;
         }
         // erro pontual num pedido — segue o fluxo, marca vazio
-        itemsPorOrderId.set(order.orderId, []);
+        itemsPorOrderId.set(amazonOrderId, orderItemsFromOrderSummary(order));
       }
     }
 
@@ -579,18 +609,31 @@ async function syncOrdersInternal(
     const produtosPorSku = new Map(produtos.map((produto) => [produto.sku, produto]));
 
     for (const order of orders) {
-      const cursorDate = parseDate(order.createdTime);
-      if (cursorDate && (!maxCursorDate || cursorDate > maxCursorDate)) {
-        maxCursorDate = cursorDate;
+      const amazonOrderId = getAmazonOrderId(order);
+      if (!amazonOrderId) {
+        ignoradas++;
+        continue;
       }
 
-      const itensDetalhados = order.orderId
-        ? itemsPorOrderId.get(order.orderId) ?? []
-        : [];
+      const cursorReferenceDate =
+        options.dateFilter === "lastUpdated"
+          ? getOrderLastUpdatedTime(order)
+          : getOrderCreatedTime(order);
+      if (
+        cursorReferenceDate &&
+        (!maxCursorDate || cursorReferenceDate > maxCursorDate)
+      ) {
+        maxCursorDate = cursorReferenceDate;
+      }
+
+      const itensDetalhados = itemsPorOrderId.get(amazonOrderId) ?? [];
+      await upsertAmazonOrderRaw(creds, order, {
+        itensProcessados: itensDetalhados.some((item) => !!item.SellerSKU),
+      });
 
       for (const item of itensDetalhados) {
         const sku = item.SellerSKU;
-        if (!order.orderId || !sku) {
+        if (!sku) {
           ignoradas++;
           continue;
         }
@@ -612,11 +655,14 @@ async function syncOrdersInternal(
 
         const where = {
           amazonOrderId_sku: {
-            amazonOrderId: order.orderId,
+            amazonOrderId,
             sku,
           },
         };
         const existente = await db.vendaAmazon.findUnique({ where });
+        const statusPedido = getOrderStatus(order, existente?.statusPedido ?? "UNKNOWN");
+        const createdAt = getOrderCreatedTime(order) ?? new Date();
+        const lastUpdatedAt = getOrderLastUpdatedTime(order);
         const data = {
           orderItemId: item.OrderItemId ?? null,
           asin: item.ASIN ?? produto?.asin ?? null,
@@ -627,11 +673,13 @@ async function syncOrdersInternal(
           taxasCentavos,
           fretesCentavos,
           liquidoMarketplaceCentavos,
-          marketplace: order.salesChannel?.marketplaceName ?? creds.marketplaceId,
-          fulfillmentChannel: order.salesChannel?.channelName ?? null,
-          statusPedido: order.orderStatus ?? existente?.statusPedido ?? "UNKNOWN",
+          marketplace:
+            getOrderMarketplaceName(order) ??
+            getOrderMarketplace(order, creds.marketplaceId),
+          fulfillmentChannel: getOrderFulfillmentChannel(order),
+          statusPedido,
           statusFinanceiro: existente?.statusFinanceiro ?? "PENDENTE",
-          dataVenda: parseDate(order.createdTime) ?? new Date(),
+          dataVenda: createdAt,
           ultimaSyncEm: new Date(),
         };
 
@@ -644,7 +692,7 @@ async function syncOrdersInternal(
         } else {
           await db.vendaAmazon.create({
             data: {
-              amazonOrderId: order.orderId,
+              amazonOrderId,
               sku,
               ...data,
               custoUnitarioCentavos:
@@ -657,37 +705,43 @@ async function syncOrdersInternal(
         }
 
         pedidos.push({
-          amazonOrderId: order.orderId,
-          purchaseDate: order.createdTime,
-          lastUpdatedDate: order.lastUpdatedTime,
+          amazonOrderId,
+          purchaseDate: createdAt.toISOString(),
+          lastUpdatedDate: lastUpdatedAt?.toISOString() ?? createdAt.toISOString(),
           asin: item.ASIN,
           sku,
           quantityOrdered: quantidade,
-          statusPedido: order.orderStatus,
+          statusPedido,
         });
       }
     }
 
-    if (maxCursorDate && !options.endDate && !options.startDate) {
+    if (maxCursorDate && !options.endDate && !options.startDate && orderIds.length === 0) {
       await setSystemConfig(cursorKey, maxCursorDate.toISOString());
     }
 
+    const mensagem = itemsRateLimited
+      ? `${pedidos.length} itens sincronizados; pedidos brutos preservados e itens restantes aguardam nova janela por rate limit.`
+      : `${pedidos.length} itens de pedido sincronizados pela Orders API.`;
     await db.amazonSyncLog.update({
       where: { id: logId },
       data: {
         status: StatusAmazonSync.SUCESSO,
-        mensagem: `${pedidos.length} itens de pedido sincronizados pela Orders API.`,
-        detalhes: asJson({ pedidos: pedidos.slice(0, 20) }),
+        mensagem,
+        detalhes: asJson({ pedidos: pedidos.slice(0, 20), pedidosBrutos }),
         registros: pedidos.length,
       },
     });
 
     return {
       lidas: pedidos.length,
+      pedidosBrutos,
       criadas,
       atualizadas,
       ignoradas,
       pedidos,
+      rateLimited: itemsRateLimited || undefined,
+      mensagem: itemsRateLimited ? mensagem : undefined,
     };
   } catch (e) {
     if (isAmazonRateLimitError(e)) {
@@ -706,6 +760,7 @@ async function syncOrdersInternal(
       });
       return {
         lidas: 0,
+        pedidosBrutos,
         criadas,
         atualizadas,
         ignoradas,
@@ -969,6 +1024,189 @@ function parseAmountCentavos(v: { Amount?: string } | undefined | null): number 
   return Math.round(n * 100);
 }
 
+function normalizeOrderIds(orderIds?: string[]): string[] {
+  if (!Array.isArray(orderIds)) return [];
+  return [
+    ...new Set(
+      orderIds
+        .map((id) => (typeof id === "string" ? id.trim() : ""))
+        .filter((id): id is string => id.length > 0),
+    ),
+  ];
+}
+
+async function fetchOrdersById(
+  creds: SPAPICredentials,
+  orderIds: string[],
+): Promise<SPOrder[]> {
+  const pedidos: SPOrder[] = [];
+  for (const orderId of normalizeOrderIds(orderIds)) {
+    const pedido = await getOrder(creds, orderId);
+    if (pedido) pedidos.push(pedido);
+  }
+  return pedidos;
+}
+
+function getAmazonOrderId(order: SPOrder): string | undefined {
+  return readStringFromOrder(order, [
+    "orderId",
+    "OrderId",
+    "amazonOrderId",
+    "AmazonOrderId",
+  ]);
+}
+
+function getOrderStatus(order: SPOrder, fallback = "UNKNOWN"): string {
+  return (
+    readStringFromOrder(order, [
+      "orderStatus",
+      "OrderStatus",
+      "status",
+      "orderState",
+    ]) ?? fallback
+  );
+}
+
+function getOrderCreatedTime(order: SPOrder): Date | null {
+  return parseDate(
+    readStringFromOrder(order, [
+      "createdTime",
+      "CreatedTime",
+      "purchaseDate",
+      "PurchaseDate",
+      "orderDate",
+      "createdAt",
+    ]),
+  );
+}
+
+function getOrderLastUpdatedTime(order: SPOrder): Date | null {
+  return parseDate(
+    readStringFromOrder(order, [
+      "lastUpdatedTime",
+      "LastUpdatedTime",
+      "lastUpdateDate",
+      "LastUpdateDate",
+      "updatedAt",
+    ]),
+  );
+}
+
+function getOrderMarketplace(order: SPOrder, fallback?: string): string | null {
+  return (
+    order.salesChannel?.marketplaceId ??
+    readStringFromOrder(order, ["marketplaceId", "MarketplaceId"]) ??
+    fallback ??
+    null
+  );
+}
+
+function getOrderMarketplaceName(order: SPOrder): string | null {
+  return (
+    order.salesChannel?.marketplaceName ??
+    readStringFromOrder(order, ["marketplaceName", "MarketplaceName"]) ??
+    null
+  );
+}
+
+function getOrderFulfillmentChannel(order: SPOrder): string | null {
+  return (
+    order.salesChannel?.channelName ??
+    readStringFromOrder(order, [
+      "fulfillmentChannel",
+      "FulfillmentChannel",
+      "fulfillmentChannelCode",
+      "channelName",
+    ]) ??
+    null
+  );
+}
+
+async function upsertAmazonOrderRaw(
+  creds: SPAPICredentials,
+  order: SPOrder,
+  options: { itensProcessados?: boolean } = {},
+) {
+  const amazonOrderId = getAmazonOrderId(order);
+  if (!amazonOrderId) return;
+
+  const base = {
+    statusPedido: getOrderStatus(order),
+    createdTime: getOrderCreatedTime(order),
+    lastUpdatedTime: getOrderLastUpdatedTime(order),
+    marketplaceId: getOrderMarketplace(order, creds.marketplaceId),
+    fulfillmentChannel: getOrderFulfillmentChannel(order),
+    payloadJson: asJson(order) ?? "{}",
+    ultimaSyncEm: new Date(),
+  };
+
+  await db.amazonOrderRaw.upsert({
+    where: { amazonOrderId },
+    create: {
+      amazonOrderId,
+      ...base,
+      itensProcessados: Boolean(options.itensProcessados),
+    },
+    update: {
+      ...base,
+      ...(options.itensProcessados ? { itensProcessados: true } : {}),
+    },
+  });
+}
+
+function orderItemsFromOrderSummary(order: SPOrder): SPOrderItemDetail[] {
+  const rawItems: unknown[] = Array.isArray(order.orderItems)
+    ? order.orderItems
+    : readDeepArray(order, ["orderItems", "OrderItems", "items"]);
+
+  return rawItems
+    .map((item, index) => {
+      const record = isObjectRecord(item) ? item : {};
+      const product = isObjectRecord(record.product) ? record.product : {};
+      const sku =
+        readStringFromRecord(record, ["SellerSKU", "sellerSku", "sku"]) ??
+        readStringFromRecord(product, ["SellerSKU", "sellerSku", "sku"]);
+      const asin =
+        readStringFromRecord(record, ["ASIN", "asin"]) ??
+        readStringFromRecord(product, ["ASIN", "asin"]);
+      const quantity =
+        readDeepNumber(item, ["QuantityOrdered", "quantityOrdered", "quantity"]) ??
+        1;
+
+      return {
+        ASIN: asin,
+        SellerSKU: sku,
+        OrderItemId:
+          readStringFromRecord(record, ["OrderItemId", "orderItemId"]) ??
+          `${getAmazonOrderId(order) ?? "order"}:${sku ?? index}`,
+        Title:
+          readStringFromRecord(record, ["Title", "title"]) ??
+          readStringFromRecord(product, ["Title", "title", "itemName"]),
+        QuantityOrdered: Math.max(1, Number(quantity) || 1),
+        ItemPrice: toSpMoney(product.price ?? record.price ?? record.ItemPrice),
+        ShippingPrice: toSpMoney(record.ShippingPrice ?? record.shippingPrice),
+        ItemTax: toSpMoney(record.ItemTax ?? record.itemTax),
+        ShippingTax: toSpMoney(record.ShippingTax ?? record.shippingTax),
+      };
+    })
+    .filter((item) => !!item.SellerSKU || !!item.ASIN);
+}
+
+function toSpMoney(
+  value: unknown,
+): { Amount?: string; CurrencyCode?: string } | undefined {
+  if (value == null) return undefined;
+  const centavos = extractAmountCentavos(value);
+  if (!centavos) return undefined;
+  const currency = isObjectRecord(value)
+    ? readStringFromRecord(value, ["CurrencyCode", "currencyCode", "currency"])
+    : undefined;
+  return {
+    Amount: (centavos / 100).toFixed(2),
+    ...(currency ? { CurrencyCode: currency } : {}),
+  };
+}
+
 function extractAmountCentavos(value: unknown): number {
   if (value == null) return 0;
   if (typeof value === "number" && Number.isFinite(value)) {
@@ -1175,6 +1413,14 @@ function readStringFromRecord(
     if (typeof value === "number" && Number.isFinite(value)) return String(value);
   }
   return undefined;
+}
+
+function readStringFromOrder(order: SPOrder, keys: string[]): string | undefined {
+  if (isObjectRecord(order)) {
+    const direct = readStringFromRecord(order, keys);
+    if (direct) return direct;
+  }
+  return readDeepString(order, keys);
 }
 
 function visitRecords(
@@ -1937,7 +2183,7 @@ type ReviewQueueRecord = {
   checkedAt: Date | null;
   sentAt: Date | null;
   errorMessage: string | null;
-  rawResponse: string | null;
+  rawResponse: unknown;
   createdAt: Date;
   updatedAt: Date;
 };

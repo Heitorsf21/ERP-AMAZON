@@ -71,9 +71,9 @@ export function parseAllOrdersTsv(input: Buffer | string): AllOrdersTsvRow[] {
     shipPromo: idx("ship-promotion-discount"),
   };
 
-  if (I.orderId < 0 || I.sku < 0) {
+  if (I.orderId < 0) {
     throw new Error(
-      `Header inválido em ALL_ORDERS report: faltam amazon-order-id ou sku. Header recebido: ${header.join(", ")}`,
+      `Header invalido em ALL_ORDERS report: falta amazon-order-id. Header recebido: ${header.join(", ")}`,
     );
   }
 
@@ -81,8 +81,8 @@ export function parseAllOrdersTsv(input: Buffer | string): AllOrdersTsvRow[] {
   for (let i = 1; i < lines.length; i += 1) {
     const cols = lines[i]!.split("\t");
     const orderId = (cols[I.orderId] ?? "").trim();
-    const sku = (cols[I.sku] ?? "").trim();
-    if (!orderId || !sku) continue;
+    const sku = I.sku >= 0 ? (cols[I.sku] ?? "").trim() : "";
+    if (!orderId) continue;
 
     rows.push({
       amazonOrderId: orderId,
