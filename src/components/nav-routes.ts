@@ -22,6 +22,7 @@ import {
   Megaphone,
   Activity,
   Truck,
+  Sparkles,
 } from "lucide-react";
 import type { Route } from "next";
 
@@ -144,6 +145,12 @@ export const NAV_GROUPS: NavGroup[] = [
         label: "Publicidade",
         icon: Megaphone,
         keywords: ["ads", "anuncios", "ppc", "acos", "tacos"],
+      },
+      {
+        href: "/genius" as Route,
+        label: "Genius Pro",
+        icon: Sparkles,
+        keywords: ["sugestoes", "oportunidades", "alertas", "buybox", "restock", "ia"],
       },
     ],
   },

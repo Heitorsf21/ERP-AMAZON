@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
+import {
+  dataVendaPeriodoSP,
+  whereVendaAmazonContabilizavel,
+} from "@/modules/vendas/filtros";
 
 export const dynamic = "force-dynamic";
 
@@ -14,23 +18,20 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     const pagina = Math.max(1, Number(searchParams.get("pagina") ?? "1"));
     const porPagina = 50;
 
-    const where: Prisma.VendaAmazonWhereInput = {};
+    const filtros: Prisma.VendaAmazonWhereInput = {};
 
-    if (de || ate) {
-      where.dataVenda = {};
-      if (de) where.dataVenda.gte = new Date(de);
-      if (ate) {
-        const fim = new Date(ate);
-        fim.setHours(23, 59, 59, 999);
-        where.dataVenda.lte = fim;
-      }
-    }
+    const dataVenda = dataVendaPeriodoSP(de, ate);
+    if (dataVenda) filtros.dataVenda = dataVenda;
     if (sku) {
-      where.sku = { contains: sku };
+      filtros.sku = { contains: sku };
     }
     if (status && status !== "todos") {
-      where.OR = [{ statusPedido: status }, { statusFinanceiro: status }];
+      filtros.OR = [{ statusPedido: status }, { statusFinanceiro: status }];
     }
+    const where =
+      status && status !== "todos"
+        ? filtros
+        : whereVendaAmazonContabilizavel(filtros);
 
     const [total, vendas] = await Promise.all([
       db.vendaAmazon.count({ where }),

@@ -33,9 +33,10 @@ const ADS_BACKFILL_CURSOR_KEY = "amazon_ads_backfill_cursor"; // ISO date — ja
 const ADS_BACKFILL_PENDING_START_KEY = "amazon_ads_backfill_pending_start";
 const ADS_BACKFILL_PENDING_END_KEY = "amazon_ads_backfill_pending_end";
 
-const ADS_BACKFILL_DEFAULT_HISTORY_DAYS = 365;
-// Ads API aceita ~95 dias por janela; deixamos 90 com folga.
-const ADS_BACKFILL_WINDOW_DAYS = 90;
+// Ads API spAdvertisedProduct retem ~95 dias e exige janelas de no maximo 31
+// dias por report. Default conservador: 90 dias de historico em janelas de 30.
+const ADS_BACKFILL_DEFAULT_HISTORY_DAYS = 90;
+const ADS_BACKFILL_WINDOW_DAYS = 30;
 // ACOS limiar para alerta (fracao). 0.30 = 30% — coerente com regra existente.
 const ACOS_ALERT_THRESHOLD = 0.3;
 // Lookback do alerta — agrega ultimos 7d de gasto/vendas por SKU.

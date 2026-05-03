@@ -128,6 +128,28 @@ export interface SolicitationActionsResponse {
   };
 }
 
+export async function getLWAGrantlessToken(
+  creds: Pick<SPAPICredentials, "clientId" | "clientSecret">,
+  scope: string,
+): Promise<string> {
+  const response = await fetch(LWA_TOKEN_URL, {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded;charset=UTF-8" },
+    body: new URLSearchParams({
+      grant_type: "client_credentials",
+      client_id: creds.clientId,
+      client_secret: creds.clientSecret,
+      scope,
+    }),
+  });
+  const payload = await parseResponse(response);
+  if (!response.ok) throw new Error(`LWA grantless error ${response.status}: ${stringify(payload)}`);
+  if (!isRecord(payload) || typeof payload.access_token !== "string") {
+    throw new Error(`LWA grantless response without access_token: ${stringify(payload)}`);
+  }
+  return payload.access_token;
+}
+
 export async function getLWAToken(
   creds: Pick<SPAPICredentials, "clientId" | "clientSecret" | "refreshToken">,
 ): Promise<string> {

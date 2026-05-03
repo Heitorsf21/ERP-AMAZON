@@ -1,5 +1,6 @@
 import { handle, ok } from "@/lib/api";
 import { db } from "@/lib/db";
+import { whereVendaAmazonContabilizavel } from "@/modules/vendas/filtros";
 
 export const dynamic = "force-dynamic";
 
@@ -87,10 +88,10 @@ export const GET = handle(async (req: Request) => {
   if (skus.length > 0) {
     const vendasPorSku = await db.vendaAmazon.groupBy({
       by: ["sku"],
-      where: {
+      where: whereVendaAmazonContabilizavel({
         sku: { in: skus },
         dataVenda: { gte: inicio, lte: fim },
-      },
+      }),
       _sum: { liquidoMarketplaceCentavos: true },
     });
 

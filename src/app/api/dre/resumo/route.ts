@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { ok } from "@/lib/api";
+import { whereVendaAmazonContabilizavel } from "@/modules/vendas/filtros";
 
 export const dynamic = "force-dynamic";
 
@@ -33,7 +34,9 @@ async function calcularDRE(de: Date, ate: Date) {
     }),
     // Vendas Amazon detalhadas (Sprint 4 — DRE expandido).
     db.vendaAmazon.aggregate({
-      where: { dataVenda: { gte: de, lte: ate } },
+      where: whereVendaAmazonContabilizavel({
+        dataVenda: { gte: de, lte: ate },
+      }),
       _sum: {
         valorBrutoCentavos: true,
         liquidoMarketplaceCentavos: true,

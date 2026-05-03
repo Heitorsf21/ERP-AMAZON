@@ -1,5 +1,6 @@
 import { handle, ok, erro } from "@/lib/api";
 import { db } from "@/lib/db";
+import { whereVendaAmazonContabilizavel } from "@/modules/vendas/filtros";
 
 export const dynamic = "force-dynamic";
 
@@ -16,10 +17,9 @@ export const GET = handle(async (_req: Request, { params }: Params) => {
 
   const [vendas, reembolsos] = await Promise.all([
     db.vendaAmazon.findMany({
-      where: {
+      where: whereVendaAmazonContabilizavel({
         liquidacaoId,
-        statusPedido: { notIn: ["Canceled"] },
-      },
+      }),
       select: {
         valorBrutoCentavos: true,
         taxasCentavos: true,

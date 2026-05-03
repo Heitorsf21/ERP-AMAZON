@@ -78,7 +78,9 @@ for (const f of Object.values(pidFiles)) {
   }
 }
 
-const NEXT_CMD = "next dev --webpack";
+const portArg = process.argv.find((a, i) => process.argv[i - 1] === "--port" || a.startsWith("--port="));
+const portValue = portArg?.includes("=") ? portArg.split("=")[1] : process.argv[process.argv.indexOf("--port") + 1];
+const NEXT_CMD = `next dev --webpack${portValue ? ` --port ${portValue}` : ""}`;
 const WORKER_CMD = "tsx scripts/amazon-worker.ts";
 
 const web = startChild("next", NEXT_CMD, {

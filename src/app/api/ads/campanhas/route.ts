@@ -1,5 +1,6 @@
 import { handle, ok } from "@/lib/api";
 import { db } from "@/lib/db";
+import { whereVendaAmazonContabilizavel } from "@/modules/vendas/filtros";
 
 export const dynamic = "force-dynamic";
 
@@ -44,9 +45,9 @@ function calcularDerivados(c: Campanha): CampanhaEnriquecida {
 async function totalFaturamentoAmazon(de: Date, ate: Date): Promise<number> {
   const agg = await db.vendaAmazon.aggregate({
     _sum: { liquidoMarketplaceCentavos: true },
-    where: {
+    where: whereVendaAmazonContabilizavel({
       dataVenda: { gte: de, lte: ate },
-    },
+    }),
   });
   return agg._sum.liquidoMarketplaceCentavos ?? 0;
 }

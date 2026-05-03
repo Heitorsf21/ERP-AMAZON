@@ -10,6 +10,7 @@ import {
   type ReceberPedidoInput,
 } from "./schemas";
 import { StatusPedidoCompra, StatusReposicao } from "@/modules/shared/domain";
+import { whereVendaAmazonContabilizavel } from "@/modules/vendas/filtros";
 import { addDays, subDays } from "date-fns";
 
 const COBERTURA_DIAS = 60;
@@ -153,10 +154,9 @@ export const comprasService = {
       }),
       db.vendaAmazon.groupBy({
         by: ["sku"],
-        where: {
+        where: whereVendaAmazonContabilizavel({
           dataVenda: { gte: desde },
-          statusPedido: { notIn: ["Canceled", "REEMBOLSADO"] },
-        },
+        }),
         _sum: { quantidade: true },
       }),
     ]);

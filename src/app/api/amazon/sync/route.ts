@@ -31,10 +31,10 @@ export const POST = handle(async (req: NextRequest) => {
   const jobs = [];
 
   if (tipo === "ORDERS" || tipo === "ALL") {
-    const diasAtras = body.diasAtras ?? 30;
+    const diasAtras = body.diasAtras ?? 3;
     const job = await enqueueAmazonSyncJob(
       TipoAmazonSyncJob.ORDERS_SYNC,
-      { diasAtras, maxPages: 1 },
+      { diasAtras, maxPages: 5, windowDias: diasAtras },
       {
         priority: 50,
         dedupeKey: `manual:${TipoAmazonSyncJob.ORDERS_SYNC}:${diasAtras}`,

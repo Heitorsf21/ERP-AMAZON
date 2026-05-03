@@ -1,5 +1,6 @@
 import { subDays, format, startOfDay } from "date-fns";
 import { db } from "@/lib/db";
+import { whereVendaAmazonContabilizavel } from "@/modules/vendas/filtros";
 
 export type TipoNotificacao =
   | "ESTOQUE_CRITICO"
@@ -31,10 +32,9 @@ export const notificacaoService = {
       }),
       db.vendaAmazon.groupBy({
         by: ["sku"],
-        where: {
+        where: whereVendaAmazonContabilizavel({
           dataVenda: { gte: desde30d },
-          statusPedido: { notIn: ["Canceled", "REEMBOLSADO"] },
-        },
+        }),
         _sum: { quantidade: true },
       }),
     ]);

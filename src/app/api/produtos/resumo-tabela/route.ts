@@ -1,6 +1,7 @@
 import { subDays } from "date-fns";
 import { handle, ok } from "@/lib/api";
 import { db } from "@/lib/db";
+import { whereVendaAmazonContabilizavel } from "@/modules/vendas/filtros";
 
 export const dynamic = "force-dynamic";
 
@@ -17,10 +18,9 @@ export const GET = handle(async () => {
     }),
     db.vendaAmazon.groupBy({
       by: ["sku"],
-      where: {
+      where: whereVendaAmazonContabilizavel({
         dataVenda: { gte: desde30d },
-        statusPedido: { notIn: ["Canceled", "REEMBOLSADO"] },
-      },
+      }),
       _sum: { quantidade: true },
     }),
     db.amazonReembolso.groupBy({

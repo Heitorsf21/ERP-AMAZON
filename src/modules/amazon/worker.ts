@@ -1,4 +1,5 @@
 import { isAmazonQuotaCooldownError } from "@/lib/amazon-rate-limit";
+import { pollSqsNotifications } from "@/lib/amazon-sqs";
 import { db } from "@/lib/db";
 import { notificarJobFalhando } from "@/lib/notificacoes";
 import {
@@ -32,6 +33,7 @@ import {
   syncSettlementReports,
   reconciliarRecebimentosAmazon,
 } from "@/modules/amazon/jobs-handlers";
+import { subDays } from "date-fns";
 import {
   runAmazonAdsBackfill,
   runAmazonAdsReportSync,
@@ -50,6 +52,7 @@ type WorkerOptions = {
 type SyncPayload = {
   diasAtras?: number;
   maxPages?: number;
+  windowDias?: number;
 };
 
 export async function processAmazonSyncJobs(options: WorkerOptions = {}) {
@@ -107,6 +110,15 @@ export async function processAmazonSyncJobs(options: WorkerOptions = {}) {
   // Heartbeat: outras partes do sistema (health endpoint, watchdog)
   // usam isso para detectar worker travado.
   await writeHeartbeat();
+
+  // Polling SQS — drena notificações push do SP-API (ORDER_CHANGE, etc.)
+  // Usa long-polling de 1s para não bloquear o loop. Cada mensagem vira um job
+  // de alta prioridade na fila local, processado na próxima iteração.
+  try {
+    await pollSqsNotifications({ maxMessages: 10, waitTimeSeconds: 1 });
+  } catch (e) {
+    console.warn("pollSqsNotifications erro:", e);
+  }
 
   // Reconciliação Nubank ↔ ContaReceber (sem custo de SP-API).
   // Roda a cada loop, é barato e dá liquidação automática rápida.
@@ -176,6 +188,7 @@ async function processJob(
     case TipoAmazonSyncJob.ORDERS_SYNC:
       return syncOrders(payload.diasAtras ?? 3, {
         maxPages: payload.maxPages ?? 1,
+        since: payload.windowDias ? subDays(new Date(), payload.windowDias) : undefined,
       });
     case TipoAmazonSyncJob.FINANCES_SYNC:
       return syncFinances(payload.diasAtras ?? 14, {

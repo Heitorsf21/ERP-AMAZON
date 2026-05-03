@@ -32,7 +32,7 @@ import {
   TipoAmazonSync,
   TipoMovimentacaoEstoque,
 } from "@/modules/shared/domain";
-import { addDays, subDays } from "date-fns";
+import { addDays, subDays, subHours } from "date-fns";
 
 // Chaves de configuração armazenadas em ConfiguracaoSistema.
 export const AMAZON_CONFIG_KEYS = [
@@ -121,6 +121,7 @@ type SyncOrdersInternalOptions = {
   tipo?: string;
   maxPages?: number;
   overlapMinutes?: number;
+  dateFilter?: "created" | "lastUpdated";
 };
 
 export async function getAmazonConfig(): Promise<Record<string, string>> {
@@ -273,10 +274,44 @@ export async function testConnection(): Promise<{ ok: boolean; mensagem: string 
 }
 
 export async function syncOrders(
-  diasAtras = 30,
-  options: { maxPages?: number } = {},
+  diasAtras = 3,
+  options: { maxPages?: number; since?: Date } = {},
 ): Promise<SyncOrdersResult> {
-  return syncOrdersInternal({ diasAtras, maxPages: options.maxPages ?? 1 });
+  // Passagem 1 — createdAfter: descobre TODOS os pedidos (incluindo Pending)
+  // criados no período, independente de quando foram atualizados.
+  const createdSince = options.since ?? subDays(new Date(), diasAtras);
+  const r1 = await syncOrdersInternal({
+    diasAtras,
+    startDate: createdSince,
+    maxPages: options.maxPages ?? 1,
+    dateFilter: "created",
+  });
+
+  // Passagem 2 — lastUpdatedAfter: captura mudanças de status em pedidos
+  // mais antigos (ex: pedido de 5 dias atrás que acabou de ser enviado).
+  // Usa janela fixa de 6h para não duplicar o custo de rate limit.
+  // Se já estourou o rate limit na passagem 1, pula a 2.
+  if (r1.rateLimited) return r1;
+
+  const updatedSince = subHours(new Date(), 6);
+  const r2 = await syncOrdersInternal({
+    diasAtras,
+    startDate: updatedSince,
+    maxPages: 1,
+    dateFilter: "lastUpdated",
+  }).catch(() => null);
+
+  if (!r2) return r1;
+
+  return {
+    lidas: r1.lidas + r2.lidas,
+    criadas: r1.criadas + r2.criadas,
+    atualizadas: r1.atualizadas + r2.atualizadas,
+    ignoradas: r1.ignoradas + r2.ignoradas,
+    pedidos: [...r1.pedidos, ...r2.pedidos],
+    rateLimited: r2.rateLimited,
+    mensagem: r2.rateLimited ? r2.mensagem : r1.mensagem,
+  };
 }
 
 export async function syncBackfillOrders(): Promise<
@@ -506,7 +541,7 @@ async function syncOrdersInternal(
     const orders = await getOrders(creds, since, 50, {
       maxPages: options.maxPages,
       before: options.endDate,
-      dateFilter: "created",
+      dateFilter: options.dateFilter ?? "created",
     });
     const pedidos: VendaAmazonSyncResumo[] = [];
 
@@ -521,7 +556,8 @@ async function syncOrdersInternal(
         itemsPorOrderId.set(order.orderId, detalhes);
       } catch (err) {
         if (isAmazonRateLimitError(err)) {
-          throw err;
+          // Quota de itens esgotada — processa o que já buscou, próximo ciclo continua.
+          break;
         }
         // erro pontual num pedido — segue o fluxo, marca vazio
         itemsPorOrderId.set(order.orderId, []);
@@ -632,7 +668,7 @@ async function syncOrdersInternal(
       }
     }
 
-    if (maxCursorDate && !options.endDate) {
+    if (maxCursorDate && !options.endDate && !options.startDate) {
       await setSystemConfig(cursorKey, maxCursorDate.toISOString());
     }
 

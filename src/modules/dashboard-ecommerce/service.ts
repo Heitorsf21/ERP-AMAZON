@@ -11,10 +11,12 @@ import {
   converterParaVendasAmazon,
   parseAmazonUnifiedTransactionCsv,
 } from "@/integrations/amazon/unified-transactions";
+import { whereVendaAmazonContabilizavel } from "@/modules/vendas/filtros";
 
 type VendaDashboard = {
   amazonOrderId: string;
   sku: string;
+  titulo: string | null;
   quantidade: number;
   precoUnitarioCentavos: number;
   taxasCentavos: number;
@@ -276,10 +278,14 @@ export const dashboardEcommerceService = {
       (acc, venda) => acc + faturamentoDaVenda(venda),
       0,
     );
+    const mapaSkuAgrupador = await carregarMapaSkuAgrupador(
+      vendas.map((venda) => venda.sku),
+    );
     const porSku = new Map<string, VendaDashboard[]>();
 
     for (const venda of vendas) {
-      porSku.set(venda.sku, [...(porSku.get(venda.sku) ?? []), venda]);
+      const sku = mapaSkuAgrupador.get(venda.sku) ?? venda.sku;
+      porSku.set(sku, [...(porSku.get(sku) ?? []), venda]);
     }
 
     const produtos = await db.produto.findMany({
@@ -322,7 +328,7 @@ export const dashboardEcommerceService = {
         return {
           sku,
           produtoId: produto?.id ?? null,
-          nome: produto?.nome ?? vendasDoProduto[0]?.sku ?? sku,
+          nome: nomeProdutoDashboard(produto?.nome, sku, vendasDoProduto),
           precoMedioCentavos:
             agregado.unidades > 0
               ? Math.round(agregado.faturamentoCentavos / agregado.unidades)
@@ -398,15 +404,16 @@ export async function fetchAdsGasto(periodo: IntervaloPeriodo) {
 
 async function buscarVendas(periodo: IntervaloPeriodo): Promise<VendaDashboard[]> {
   return db.vendaAmazon.findMany({
-    where: {
+    where: whereVendaAmazonContabilizavel({
       dataVenda: {
         gte: periodo.de,
         lte: periodo.ate,
       },
-    },
+    }),
     select: {
       amazonOrderId: true,
       sku: true,
+      titulo: true,
       quantidade: true,
       precoUnitarioCentavos: true,
       taxasCentavos: true,
@@ -415,6 +422,33 @@ async function buscarVendas(periodo: IntervaloPeriodo): Promise<VendaDashboard[]
       dataVenda: true,
     },
   });
+}
+
+async function carregarMapaSkuAgrupador(skus: string[]) {
+  const unicos = [...new Set(skus.filter(Boolean))];
+  if (unicos.length === 0) return new Map<string, string>();
+
+  const variacoes = await db.produtoVariacao.findMany({
+    where: { skuFilho: { in: unicos } },
+    select: { skuPai: true, skuFilho: true },
+  });
+
+  return new Map(
+    variacoes
+      .filter((variacao) => variacao.skuFilho)
+      .map((variacao) => [variacao.skuFilho as string, variacao.skuPai]),
+  );
+}
+
+function nomeProdutoDashboard(
+  nomeProduto: string | null | undefined,
+  sku: string,
+  vendas: VendaDashboard[],
+) {
+  const nomeLimpo = nomeProduto?.trim();
+  if (nomeLimpo && nomeLimpo !== sku) return nomeLimpo;
+
+  return vendas.find((venda) => venda.titulo?.trim())?.titulo ?? sku;
 }
 
 function buscarGastosManuais(periodo: IntervaloPeriodo): Promise<GastoManual[]> {

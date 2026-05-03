@@ -5,6 +5,7 @@ import {
   type StatusFbmPicking as StatusFbmPickingType,
   type StatusFbmPickingItem as StatusFbmPickingItemType,
 } from "@/modules/shared/domain";
+import { whereVendaAmazonContabilizavel } from "@/modules/vendas/filtros";
 import { subDays } from "date-fns";
 
 type CriarBatchInput = {
@@ -50,10 +51,9 @@ export async function criarFbmPickingBatch(input: CriarBatchInput = {}) {
   const limite = Math.min(Math.max(input.limite ?? 50, 1), 100);
   const desde = subDays(new Date(), input.diasAtras ?? 14);
   const vendas = await db.vendaAmazon.findMany({
-    where: {
+    where: whereVendaAmazonContabilizavel({
       dataVenda: { gte: desde },
-      statusPedido: { notIn: ["Canceled", "Cancelled", "CANCELLED"] },
-    },
+    }),
     orderBy: { dataVenda: "asc" },
     take: limite * 3,
   });

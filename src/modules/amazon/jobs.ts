@@ -134,18 +134,21 @@ const SCHEDULES: Array<{
     payload: { diasAtras: 30 },
   },
   // Sprint 5.5: Amazon Advertising (Sponsored Products).
-  // Sync incremental dos ultimos 30 dias a cada 6h. Recriar o report eh barato
-  // e a Amazon ja deduplica via cache do nome quando a janela nao mudou.
+  // Lifecycle progressivo: cada execucao ou cria um report novo ou avanca o
+  // pending (poll/download). Polling em 30min eh seguro: ADS_REPORTS_GET aceita
+  // 5 rps e o report normalmente fica COMPLETED em 5-15min. Reports da Ads API
+  // sao gratuitos, entao nao ha custo em recriar a janela trailing.
   {
     tipo: TipoAmazonSyncJob.AMAZON_ADS_REPORT_SYNC,
-    intervalMs: 6 * 60 * 60_000,
+    intervalMs: 30 * 60_000,
     priority: 12,
     payload: { diasAtras: 30 },
   },
-  // Backfill de ate ~94 dias por execucao (limite Ads API), avancando cursor.
+  // Backfill de ate ~90 dias por execucao (limite Ads API), avancando cursor.
+  // 365d / 90d/janela = 5 ciclos. A 30min/ciclo, ~2.5h cobre o ano todo.
   {
     tipo: TipoAmazonSyncJob.AMAZON_ADS_BACKFILL,
-    intervalMs: 6 * 60 * 60_000,
+    intervalMs: 30 * 60_000,
     priority: 4,
   },
 ];

@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
+import {
+  dataVendaPeriodoSP,
+  whereVendaAmazonContabilizavel,
+} from "@/modules/vendas/filtros";
 import { calcularResumoReembolsos } from "@/modules/vendas/reembolsos";
 
 export const dynamic = "force-dynamic";
@@ -14,17 +18,12 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     const pagina = Math.max(1, Number(searchParams.get("pagina") ?? "1"));
     const porPagina = 50;
 
-    const whereVendas: Prisma.VendaAmazonWhereInput = {};
-    if (de || ate) {
-      whereVendas.dataVenda = {};
-      if (de) whereVendas.dataVenda.gte = new Date(de);
-      if (ate) {
-        const fim = new Date(ate);
-        fim.setHours(23, 59, 59, 999);
-        whereVendas.dataVenda.lte = fim;
-      }
-    }
-    if (sku) whereVendas.sku = { contains: sku };
+    const filtrosVendas: Prisma.VendaAmazonWhereInput = {};
+    const dataVenda = dataVendaPeriodoSP(de, ate);
+    if (dataVenda) filtrosVendas.dataVenda = dataVenda;
+    if (sku) filtrosVendas.sku = { contains: sku };
+
+    const whereVendas = whereVendaAmazonContabilizavel(filtrosVendas);
 
     const vendas = await db.vendaAmazon.findMany({
       where: whereVendas,
