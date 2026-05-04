@@ -11,6 +11,7 @@ import {
   signSession,
 } from "@/lib/session";
 import { enviarEmail } from "@/lib/email";
+import { recordLoginFailure, resetLoginFailures } from "@/lib/auth-rate-limit";
 import { TipoAuditLog } from "@/modules/shared/domain";
 
 export const runtime = "nodejs";
@@ -44,6 +45,8 @@ export async function POST(req: Request) {
     : false;
 
   if (!user || !user.ativo || !senhaOk) {
+    const failureLimit = recordLoginFailure(req, email);
+
     await auditLog({
       req,
       acao: TipoAuditLog.LOGIN_FALHA,
@@ -51,11 +54,29 @@ export async function POST(req: Request) {
       entidadeId: user?.id ?? null,
       metadata: { email },
     });
+
+    if (failureLimit.limited) {
+      return NextResponse.json(
+        {
+          erro: "MUITAS_TENTATIVAS_LOGIN",
+          retryAfterSeconds: failureLimit.retryAfterSeconds,
+        },
+        {
+          status: 429,
+          headers: {
+            "Retry-After": String(failureLimit.retryAfterSeconds),
+          },
+        },
+      );
+    }
+
     return NextResponse.json(
       { erro: "CREDENCIAIS_INVALIDAS" },
       { status: 401 },
     );
   }
+
+  resetLoginFailures(req, email);
 
   // Se 2FA habilitado, gera challenge e envia código por email — NÃO cria sessão.
   if (user.twoFactorEnabled && user.twoFactorMethod === "EMAIL") {

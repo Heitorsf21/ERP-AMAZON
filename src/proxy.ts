@@ -32,7 +32,6 @@ const PUBLIC_PATHS = [
 const PUBLIC_PREFIXES = ["/_next/", "/favicon", "/public/"];
 
 const AUTH_RATE_LIMIT_PATHS = new Set([
-  "/api/auth/login",
   "/api/auth/2fa/verificar",
   "/api/auth/recuperar-senha",
   "/api/auth/redefinir-senha",

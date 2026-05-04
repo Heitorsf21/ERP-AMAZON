@@ -56,6 +56,8 @@ export function LoginForm({ nextPath }: { nextPath?: string }) {
           setErro("E-mail ou senha incorretos.");
         } else if (res.status === 400) {
           setErro("Preencha e-mail e senha corretamente.");
+        } else if (res.status === 429) {
+          setErro("Muitas tentativas de login. Aguarde alguns minutos e tente novamente.");
         } else {
           setErro("Não foi possível entrar agora. Tente novamente.");
         }
