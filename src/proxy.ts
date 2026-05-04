@@ -148,17 +148,10 @@ function isSameOriginMutation(req: NextRequest): boolean {
     return false;
   }
 
-  // Behind Nginx the app receives HTTP while the browser sends Origin with
-  // https. Use X-Forwarded-Proto (set by Nginx) to get the real protocol.
-  const fwdProto = req.headers.get("x-forwarded-proto")?.split(",")[0]?.trim();
-  const effectiveProto = fwdProto
-    ? `${fwdProto}:`
-    : req.nextUrl.protocol;
-
-  return (
-    originUrl.protocol === effectiveProto &&
-    originUrl.host === req.nextUrl.host
-  );
+  // Comparar apenas host: comparar protocolo é instável atrás do Nginx porque
+  // req.nextUrl.protocol é sempre 'http:' (Nginx termina TLS e repassa via HTTP),
+  // mesmo com X-Forwarded-Proto. Comparar host é suficiente para CSRF protection.
+  return originUrl.host === req.nextUrl.host;
 }
 
 function matchesPrefix(pathname: string, prefixes: string[]): boolean {
