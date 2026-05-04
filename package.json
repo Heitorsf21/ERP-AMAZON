@@ -35,7 +35,8 @@
     "prisma:migrate:deploy:pg": "prisma migrate deploy --schema prisma/schema.postgresql.prisma",
     "prisma:studio:pg": "prisma studio --schema prisma/schema.postgresql.prisma",
     "db:seed": "tsx prisma/seed.ts",
-    "migrate:sqlite-to-postgres": "tsx scripts/migrate-sqlite-to-postgres.ts"
+    "migrate:sqlite-to-postgres": "tsx scripts/migrate-sqlite-to-postgres.ts",
+    "admin:create": "tsx scripts/create-admin.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.90.0",
