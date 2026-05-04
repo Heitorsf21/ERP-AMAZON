@@ -4,6 +4,11 @@ const nextConfig = {
   typedRoutes: true,
   // Source maps off em dev: reduz uso de RAM em Windows (~30-40%).
   productionBrowserSourceMaps: false,
+  // TypeScript é verificado localmente (npm run typecheck) antes do push.
+  // Desabilitar no build evita OOM no worker de TypeScript em VPS com RAM limitada.
+  typescript: {
+    ignoreBuildErrors: true,
+  },
   experimental: {
     // Limita o número de workers paralelos (evita PostCSS workers órfãos no Windows).
     cpus: 2,
