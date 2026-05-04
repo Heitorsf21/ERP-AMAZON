@@ -110,6 +110,7 @@ model Movimentacao {
   origem          String
   referenciaId    String?
   motivoAjuste    String?
+  deletedAt       DateTime?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
@@ -138,6 +139,7 @@ model ContaPagar {
   pagoEm         DateTime?
   movimentacaoId String?   @unique
   observacoes    String?
+  deletedAt      DateTime?
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
@@ -222,6 +224,7 @@ model ContaReceber {
   totalPedidos    Int       @default(0)
   movimentacaoId  String?   @unique
   observacoes     String?
+  deletedAt       DateTime?
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
@@ -320,6 +323,7 @@ model VendaAmazon {
   @@index([statusPedido])
   @@index([statusFinanceiro])
   @@index([ultimaSyncEm])
+  @@index([dataVenda, statusFinanceiro])
 }
 
 model AmazonOrderRaw {
