@@ -29,7 +29,7 @@ type VendaAudit = {
 };
 
 type Candidate = {
-  source: "amazon_raw" | "finance";
+  source: "amazon_raw" | "finance" | "amazon_stored_unit";
   value: number;
 };
 
@@ -259,6 +259,9 @@ function chooseTarget(
 ): { target: number | null; source: string } {
   const amazon = candidates.find((c) => c.source === "amazon_raw")?.value;
   const finance = candidates.find((c) => c.source === "finance")?.value;
+  const storedUnit = candidates.find(
+    (c) => c.source === "amazon_stored_unit",
+  )?.value;
 
   if (amazon != null) return { target: amazon, source: "amazon_raw" };
 
@@ -273,7 +276,21 @@ function chooseTarget(
     return { target: finance, source: "finance" };
   }
 
+  if (storedUnit != null) {
+    return { target: storedUnit, source: "amazon_stored_unit" };
+  }
+
   return { target: null, source: "none" };
+}
+
+function amazonStoredUnitCandidate(venda: VendaAudit): number | null {
+  if (venda.quantidade <= 1 || venda.precoUnitarioCentavos <= 0) return null;
+
+  const totalPeloUnitario = venda.precoUnitarioCentavos * venda.quantidade;
+  const brutoAtual = valorBrutoDaVenda(venda);
+  if (totalPeloUnitario <= brutoAtual) return null;
+
+  return totalPeloUnitario;
 }
 
 function liquidoCorrigido(
@@ -337,6 +354,7 @@ async function main() {
     const candidates: Candidate[] = [
       ["amazon_raw", amazonRaw.get(k)],
       ["finance", finance.get(k)],
+      ["amazon_stored_unit", amazonStoredUnitCandidate(venda)],
     ]
       .filter((entry): entry is [Candidate["source"], number] => entry[1] != null)
       .map(([source, value]) => ({ source, value }));
