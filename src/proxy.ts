@@ -148,8 +148,15 @@ function isSameOriginMutation(req: NextRequest): boolean {
     return false;
   }
 
+  // Behind Nginx the app receives HTTP while the browser sends Origin with
+  // https. Use X-Forwarded-Proto (set by Nginx) to get the real protocol.
+  const fwdProto = req.headers.get("x-forwarded-proto")?.split(",")[0]?.trim();
+  const effectiveProto = fwdProto
+    ? `${fwdProto}:`
+    : req.nextUrl.protocol;
+
   return (
-    originUrl.protocol === req.nextUrl.protocol &&
+    originUrl.protocol === effectiveProto &&
     originUrl.host === req.nextUrl.host
   );
 }
