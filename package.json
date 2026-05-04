@@ -24,6 +24,7 @@
     "amazon:sqs:once": "tsx scripts/amazon-sqs-consumer.ts --once",
     "amazon:sqs:setup": "tsx scripts/setup-sqs-subscriptions.ts",
     "amazon:test": "tsx scripts/test-amazon-apis.ts",
+    "amazon:vendas:audit": "tsx scripts/auditar-vendas-amazon.ts",
     "amazon:reprocessar-vendas": "tsx scripts/reprocessar-vendas-amazon.ts",
     "prisma:generate": "prisma generate",
     "prisma:push": "prisma db push",

@@ -6,6 +6,7 @@ import {
   normalizarVisaoVendas,
   whereVendaAmazonPorVisao,
 } from "@/modules/vendas/filtros";
+import { valorBrutoDaVenda } from "@/modules/vendas/valores";
 
 export const dynamic = "force-dynamic";
 
@@ -44,10 +45,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     ]);
 
     const receitaBrutaCentavos = vendas.reduce(
-      (acc, venda) =>
-        acc +
-        (venda.valorBrutoCentavos ??
-          venda.precoUnitarioCentavos * venda.quantidade),
+      (acc, venda) => acc + valorBrutoDaVenda(venda),
       0,
     );
     const unidadesVendidas = agg._sum.quantidade ?? 0;

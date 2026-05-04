@@ -3,6 +3,10 @@ import { fromZonedTime } from "date-fns-tz";
 import { db } from "@/lib/db";
 import { ok } from "@/lib/api";
 import { whereVendaAmazonContabilizavel } from "@/modules/vendas/filtros";
+import {
+  valorBrutoDaVenda,
+  valorLiquidoMarketplaceDaVenda,
+} from "@/modules/vendas/valores";
 
 export const dynamic = "force-dynamic";
 
@@ -21,7 +25,7 @@ async function calcularDRE(de: Date, ate: Date) {
     contasReceber,
     movEntradas,
     contasPagas,
-    vendasAmazonAgg,
+    vendasAmazon,
     reembolsosAmazonAgg,
     reimbursementsFbaAgg,
     returnsAmazonAgg,
@@ -45,17 +49,18 @@ async function calcularDRE(de: Date, ate: Date) {
       include: { categoria: true },
     }),
     // Vendas Amazon detalhadas (Sprint 4 — DRE expandido).
-    db.vendaAmazon.aggregate({
+    db.vendaAmazon.findMany({
       where: whereVendaAmazonContabilizavel({
         dataVenda: { gte: de, lte: ate },
       }),
-      _sum: {
+      select: {
         valorBrutoCentavos: true,
+        precoUnitarioCentavos: true,
+        quantidade: true,
         liquidoMarketplaceCentavos: true,
         taxasCentavos: true,
         fretesCentavos: true,
       },
-      _count: { _all: true },
     }),
     db.amazonReembolso.aggregate({
       where: { dataReembolso: { gte: de, lte: ate } },
@@ -159,10 +164,16 @@ async function calcularDRE(de: Date, ate: Date) {
     totalReceitas > 0 ? (mpaValor / totalReceitas) * 100 : 0;
 
   // ── Bloco enriquecido (dados Amazon completos) ───────────────────
-  const vendasAmazonBrutas = vendasAmazonAgg._sum.valorBrutoCentavos ?? 0;
-  const vendasAmazonLiquidas = vendasAmazonAgg._sum.liquidoMarketplaceCentavos ?? 0;
-  const taxasAmazon = vendasAmazonAgg._sum.taxasCentavos ?? 0;
-  const fretesAmazon = vendasAmazonAgg._sum.fretesCentavos ?? 0;
+  const vendasAmazonBrutas = vendasAmazon.reduce(
+    (s, v) => s + valorBrutoDaVenda(v),
+    0,
+  );
+  const vendasAmazonLiquidas = vendasAmazon.reduce(
+    (s, v) => s + valorLiquidoMarketplaceDaVenda(v),
+    0,
+  );
+  const taxasAmazon = vendasAmazon.reduce((s, v) => s + v.taxasCentavos, 0);
+  const fretesAmazon = vendasAmazon.reduce((s, v) => s + v.fretesCentavos, 0);
   const reembolsosValor = reembolsosAmazonAgg._sum.valorReembolsadoCentavos ?? 0;
   const reembolsosTaxas = reembolsosAmazonAgg._sum.taxasReembolsadasCentavos ?? 0;
   const cpvEstoqueCalculado = saidasEstoque.reduce(
@@ -217,7 +228,7 @@ async function calcularDRE(de: Date, ate: Date) {
       reimbursementsFba,
       returnsEstimados,
       storageFees,
-      quantidadeVendas: vendasAmazonAgg._count._all ?? 0,
+      quantidadeVendas: vendasAmazon.length,
       quantidadeReembolsos: reembolsosAmazonAgg._count._all ?? 0,
       quantidadeReimbursementsFba: reimbursementsFbaAgg._count._all ?? 0,
       quantidadeReturns: returnsAmazonAgg._count._all ?? 0,

@@ -1,6 +1,7 @@
 import { handle, ok, erro } from "@/lib/api";
 import { db } from "@/lib/db";
 import { whereVendaAmazonContabilizavel } from "@/modules/vendas/filtros";
+import { valorBrutoDaVenda } from "@/modules/vendas/valores";
 
 export const dynamic = "force-dynamic";
 
@@ -22,6 +23,7 @@ export const GET = handle(async (_req: Request, { params }: Params) => {
       }),
       select: {
         valorBrutoCentavos: true,
+        precoUnitarioCentavos: true,
         taxasCentavos: true,
         fretesCentavos: true,
         liquidoMarketplaceCentavos: true,
@@ -38,7 +40,7 @@ export const GET = handle(async (_req: Request, { params }: Params) => {
     }),
   ]);
 
-  const receitaBruta = vendas.reduce((s, v) => s + (v.valorBrutoCentavos ?? 0), 0);
+  const receitaBruta = vendas.reduce((s, v) => s + valorBrutoDaVenda(v), 0);
   const taxasMarketplace = vendas.reduce((s, v) => s + v.taxasCentavos, 0);
   const fretesFBA = vendas.reduce((s, v) => s + v.fretesCentavos, 0);
   const reembolsosTotal = reembolsos.reduce((s, r) => s + r.valorReembolsadoCentavos, 0);

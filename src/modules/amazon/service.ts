@@ -33,6 +33,12 @@ import {
   TipoAmazonSync,
   TipoMovimentacaoEstoque,
 } from "@/modules/shared/domain";
+import { agruparLinhasVendaAmazon } from "@/modules/vendas/agrupamento";
+import {
+  calcularPrecoUnitarioCentavos,
+  valorBrutoDaVenda,
+  valorBrutoFinanceiroPodeAtualizar,
+} from "@/modules/vendas/valores";
 import { addDays, subDays, subHours } from "date-fns";
 
 // Chaves de configuração armazenadas em ConfiguracaoSistema.
@@ -670,28 +676,33 @@ async function syncOrdersInternal(
         itensProcessados: itensDetalhados.some((item) => !!item.SellerSKU),
       });
 
-      for (const item of itensDetalhados) {
-        const sku = item.SellerSKU;
-        if (!sku) {
-          ignoradas++;
-          continue;
-        }
+      const itensComSku = itensDetalhados.filter((item) => !!item.SellerSKU);
+      ignoradas += itensDetalhados.length - itensComSku.length;
+      const itensAgrupados = agruparLinhasVendaAmazon(
+        itensComSku.map((item) => {
+          const valorBrutoCentavos = parseAmountCentavos(item.ItemPrice);
+          const taxasCentavos =
+            parseAmountCentavos(item.ItemTax) +
+            parseAmountCentavos(item.ShippingTax);
 
+          return {
+            ...item,
+            amazonOrderId,
+            sku: item.SellerSKU as string,
+            quantidade: Math.max(1, Number(item.QuantityOrdered || 1)),
+            valorBrutoCentavos,
+            fretesCentavos: parseAmountCentavos(item.ShippingPrice),
+            taxasCentavos,
+            liquidoMarketplaceCentavos: valorBrutoCentavos - taxasCentavos,
+          };
+        }),
+      );
+
+      for (const item of itensAgrupados) {
+        const sku = item.sku;
         const produto = produtosPorSku.get(sku);
-        const quantidade = Math.max(1, Number(item.QuantityOrdered || 1));
-        const valorBrutoCentavos = parseAmountCentavos(item.ItemPrice);
-        const fretesCentavos = parseAmountCentavos(item.ShippingPrice);
-        const taxasCentavos =
-          parseAmountCentavos(item.ItemTax) +
-          parseAmountCentavos(item.ShippingTax);
-        const precoUnitarioCentavos =
-          quantidade > 0
-            ? Math.round(valorBrutoCentavos / quantidade)
-            : valorBrutoCentavos;
         // Liquido = bruto - taxas (ItemTax + ShippingTax). Frete em geral
         // é repassado pelo cliente, então não entra como dedução do líquido.
-        const liquidoMarketplaceCentavos = valorBrutoCentavos - taxasCentavos;
-
         const where = {
           amazonOrderId_sku: {
             amazonOrderId,
@@ -706,12 +717,12 @@ async function syncOrdersInternal(
           orderItemId: item.OrderItemId ?? null,
           asin: item.ASIN ?? produto?.asin ?? null,
           titulo: item.Title ?? null,
-          quantidade,
-          precoUnitarioCentavos,
-          valorBrutoCentavos,
-          taxasCentavos,
-          fretesCentavos,
-          liquidoMarketplaceCentavos,
+          quantidade: item.quantidade,
+          precoUnitarioCentavos: item.precoUnitarioCentavos,
+          valorBrutoCentavos: item.valorBrutoCentavos,
+          taxasCentavos: item.taxasCentavos,
+          fretesCentavos: item.fretesCentavos,
+          liquidoMarketplaceCentavos: item.liquidoMarketplaceCentavos,
           marketplace:
             getOrderMarketplaceName(order) ??
             getOrderMarketplace(order, creds.marketplaceId),
@@ -749,7 +760,7 @@ async function syncOrdersInternal(
           lastUpdatedDate: lastUpdatedAt?.toISOString() ?? createdAt.toISOString(),
           asin: item.ASIN,
           sku,
-          quantityOrdered: quantidade,
+          quantityOrdered: item.quantidade,
           statusPedido,
         });
       }
@@ -965,26 +976,53 @@ async function syncFinancialEvents(
         // valorBruto = ProductCharges (preço cheio antes de deduzir taxas Amazon).
         const valorBrutoCentavos = findBreakdownAmount(item, "ProductCharges");
 
-        const updated = await db.vendaAmazon.updateMany({
+        const vendasParaAtualizar = await db.vendaAmazon.findMany({
           where: { amazonOrderId: orderId, sku },
-          data: {
-            taxasCentavos,
-            fretesCentavos,
-            valorBrutoCentavos: valorBrutoCentavos || undefined,
-            liquidoMarketplaceCentavos:
-              liquidoMarketplaceCentavos || undefined,
-            liquidacaoId:
-              findSettlementId(transaction) ??
-              readDeepString(transaction, ["settlementId", "settlement-id"]) ??
-              undefined,
-            statusFinanceiro:
-              transaction.transactionStatus ??
-              readDeepString(transaction, ["status"]) ??
-              "LIQUIDADO",
-            ultimaSyncEm: new Date(),
+          select: {
+            id: true,
+            quantidade: true,
+            precoUnitarioCentavos: true,
+            valorBrutoCentavos: true,
           },
         });
-        vendasAtualizadas += updated.count;
+        const settlementId =
+          findSettlementId(transaction) ??
+          readDeepString(transaction, ["settlementId", "settlement-id"]);
+        const statusFinanceiro =
+          transaction.transactionStatus ??
+          readDeepString(transaction, ["status"]) ??
+          "LIQUIDADO";
+
+        for (const venda of vendasParaAtualizar) {
+          const atualizarBruto = valorBrutoFinanceiroPodeAtualizar({
+            valorBrutoAtualCentavos: valorBrutoDaVenda(venda),
+            quantidadeAtual: venda.quantidade,
+            valorBrutoFinanceiroCentavos: valorBrutoCentavos,
+          });
+
+          await db.vendaAmazon.update({
+            where: { id: venda.id },
+            data: {
+              taxasCentavos,
+              fretesCentavos,
+              ...(atualizarBruto
+                ? {
+                    valorBrutoCentavos,
+                    precoUnitarioCentavos: calcularPrecoUnitarioCentavos(
+                      valorBrutoCentavos,
+                      venda.quantidade,
+                    ),
+                  }
+                : {}),
+              liquidoMarketplaceCentavos:
+                liquidoMarketplaceCentavos || undefined,
+              liquidacaoId: settlementId ?? undefined,
+              statusFinanceiro,
+              ultimaSyncEm: new Date(),
+            },
+          });
+          vendasAtualizadas++;
+        }
       }
     }
 

@@ -12,6 +12,10 @@ import {
   parseAmazonUnifiedTransactionCsv,
 } from "@/integrations/amazon/unified-transactions";
 import { whereVendaAmazonContabilizavel } from "@/modules/vendas/filtros";
+import {
+  calcularValoresLinhaVendaAmazon,
+  valorBrutoDaVenda,
+} from "@/modules/vendas/valores";
 
 type VendaDashboard = {
   amazonOrderId: string;
@@ -19,6 +23,7 @@ type VendaDashboard = {
   titulo: string | null;
   quantidade: number;
   precoUnitarioCentavos: number;
+  valorBrutoCentavos: number | null;
   taxasCentavos: number;
   fretesCentavos: number;
   custoUnitarioCentavos: number | null;
@@ -88,19 +93,25 @@ export const dashboardEcommerceService = {
       };
       const existente = await db.vendaAmazon.findUnique({ where });
 
+      const valores = calcularValoresLinhaVendaAmazon({
+        quantidade: venda.quantidade,
+        valorBrutoCentavos:
+          venda.valorBrutoCentavos ??
+          venda.precoUnitarioCentavos * venda.quantidade,
+        taxasCentavos: venda.taxasCentavos,
+        fretesCentavos: venda.fretesCentavos,
+        liquidoMarketplaceCentavos: venda.liquidoMarketplaceCentavos,
+      });
+
       const data = {
         asin: venda.asin ?? produto?.asin ?? null,
         titulo: venda.titulo ?? null,
-        quantidade: venda.quantidade,
-        precoUnitarioCentavos: venda.precoUnitarioCentavos,
-        valorBrutoCentavos: venda.valorBrutoCentavos ?? null,
-        taxasCentavos: venda.taxasCentavos,
-        fretesCentavos: venda.fretesCentavos,
-        liquidoMarketplaceCentavos:
-          venda.liquidoMarketplaceCentavos ??
-          (venda.valorBrutoCentavos ?? venda.precoUnitarioCentavos * venda.quantidade) -
-            venda.taxasCentavos -
-            venda.fretesCentavos,
+        quantidade: valores.quantidade,
+        precoUnitarioCentavos: valores.precoUnitarioCentavos,
+        valorBrutoCentavos: valores.valorBrutoCentavos,
+        taxasCentavos: valores.taxasCentavos,
+        fretesCentavos: valores.fretesCentavos,
+        liquidoMarketplaceCentavos: valores.liquidoMarketplaceCentavos,
         liquidacaoId: venda.liquidacaoId ?? null,
         fulfillmentChannel: venda.fulfillmentChannel ?? null,
         statusPedido: venda.statusPedido ?? "ORDERED",
@@ -416,6 +427,7 @@ async function buscarVendas(periodo: IntervaloPeriodo): Promise<VendaDashboard[]
       titulo: true,
       quantidade: true,
       precoUnitarioCentavos: true,
+      valorBrutoCentavos: true,
       taxasCentavos: true,
       fretesCentavos: true,
       custoUnitarioCentavos: true,
@@ -540,7 +552,7 @@ function calcularLucroBruto(agregado: ReturnType<typeof agregarVendas>) {
 }
 
 function faturamentoDaVenda(venda: VendaDashboard): number {
-  return venda.precoUnitarioCentavos * venda.quantidade;
+  return valorBrutoDaVenda(venda);
 }
 
 function percentual(

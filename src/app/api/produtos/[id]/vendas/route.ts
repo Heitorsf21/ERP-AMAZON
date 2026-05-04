@@ -2,6 +2,7 @@ import { subDays } from "date-fns";
 import { handle, ok, erro } from "@/lib/api";
 import { db } from "@/lib/db";
 import { whereVendaAmazonContabilizavel } from "@/modules/vendas/filtros";
+import { valorLiquidoMarketplaceDaVenda } from "@/modules/vendas/valores";
 
 export const dynamic = "force-dynamic";
 
@@ -32,6 +33,8 @@ export const GET = handle(async (req: Request, { params }: Params) => {
       quantidade: true,
       precoUnitarioCentavos: true,
       valorBrutoCentavos: true,
+      taxasCentavos: true,
+      fretesCentavos: true,
       liquidoMarketplaceCentavos: true,
       dataVenda: true,
     },
@@ -44,10 +47,7 @@ export const GET = handle(async (req: Request, { params }: Params) => {
 
   for (const v of vendas) {
     totalUnidades += v.quantidade;
-    const liquido =
-      v.liquidoMarketplaceCentavos ??
-      v.valorBrutoCentavos ??
-      v.precoUnitarioCentavos * v.quantidade;
+    const liquido = valorLiquidoMarketplaceDaVenda(v);
     totalLiquidoCentavos += liquido;
 
     const chave = v.dataVenda.toISOString().slice(0, 10);

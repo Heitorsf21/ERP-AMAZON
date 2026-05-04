@@ -43,6 +43,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { formatBRL } from "@/lib/money";
 import { cn } from "@/lib/utils";
+import { valorBrutoDaVenda } from "@/modules/vendas/valores";
 
 type Venda = {
   id: string;
@@ -146,7 +147,7 @@ function fmtPercentual(value: number) {
 }
 
 function valorBruto(venda: Venda) {
-  return venda.valorBrutoCentavos ?? venda.precoUnitarioCentavos * venda.quantidade;
+  return valorBrutoDaVenda(venda);
 }
 
 function StatusBadge({ status }: { status: string }) {

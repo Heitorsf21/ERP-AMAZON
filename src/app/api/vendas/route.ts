@@ -6,6 +6,7 @@ import {
   normalizarVisaoVendas,
   whereVendaAmazonPorVisao,
 } from "@/modules/vendas/filtros";
+import { valorBrutoDaVenda } from "@/modules/vendas/valores";
 
 export const dynamic = "force-dynamic";
 
@@ -70,9 +71,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       status: venda.statusPedido,
       dataCompra: venda.dataVenda,
       skuExterno: venda.sku,
-      totalCentavos:
-        venda.valorBrutoCentavos ??
-        venda.precoUnitarioCentavos * venda.quantidade,
+      totalCentavos: valorBrutoDaVenda(venda),
     }));
 
     return NextResponse.json({

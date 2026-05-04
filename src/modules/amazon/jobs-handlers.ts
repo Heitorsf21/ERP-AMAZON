@@ -35,6 +35,7 @@ import {
   notificarSettlementNovo,
 } from "@/lib/notificacoes";
 import { contasReceberService } from "@/modules/contas-a-receber/service";
+import { agruparLinhasVendaAmazon } from "@/modules/vendas/agrupamento";
 import {
   OrigemMovimentacao,
   StatusContaReceber,
@@ -548,22 +549,23 @@ async function upsertOrdersHistoryRows(
     : [];
   const produtosPorSku = new Map(produtos.map((p) => [p.sku, p]));
 
-  for (const r of rows) {
-    if (!r.amazonOrderId || !r.sku) {
-      ignoradas++;
-      continue;
-    }
+  const linhasValidas = rows.filter((r) => r.amazonOrderId && r.sku);
+  ignoradas += rows.length - linhasValidas.length;
+  const linhasAgrupadas = agruparLinhasVendaAmazon(
+    linhasValidas.map((r) => ({
+      ...r,
+      quantidade: r.quantity,
+      valorBrutoCentavos: r.itemPriceCentavos,
+      fretesCentavos: r.shippingPriceCentavos,
+      taxasCentavos: r.itemTaxCentavos + r.shippingTaxCentavos,
+      liquidoMarketplaceCentavos:
+        r.itemPriceCentavos - (r.itemTaxCentavos + r.shippingTaxCentavos),
+    })),
+  );
 
+  for (const r of linhasAgrupadas) {
     const produto = produtosPorSku.get(r.sku);
-    const valorBrutoCentavos = r.itemPriceCentavos;
-    const fretesCentavos = r.shippingPriceCentavos;
     // Provisório: o FINANCES_SYNC posterior refina taxasCentavos com fees Amazon reais.
-    const taxasCentavos = r.itemTaxCentavos + r.shippingTaxCentavos;
-    const precoUnitarioCentavos =
-      r.quantity > 0
-        ? Math.round(valorBrutoCentavos / r.quantity)
-        : valorBrutoCentavos;
-    const liquidoMarketplaceCentavos = valorBrutoCentavos - taxasCentavos;
 
     const where = {
       amazonOrderId_sku: { amazonOrderId: r.amazonOrderId, sku: r.sku },
@@ -573,13 +575,13 @@ async function upsertOrdersHistoryRows(
     const data = {
       asin: r.asin ?? produto?.asin ?? null,
       titulo: r.productName ?? null,
-      quantidade: r.quantity,
-      precoUnitarioCentavos,
-      valorBrutoCentavos,
-      taxasCentavos: existente?.taxasCentavos ?? taxasCentavos,
-      fretesCentavos: existente?.fretesCentavos ?? fretesCentavos,
+      quantidade: r.quantidade,
+      precoUnitarioCentavos: r.precoUnitarioCentavos,
+      valorBrutoCentavos: r.valorBrutoCentavos,
+      taxasCentavos: existente?.taxasCentavos ?? r.taxasCentavos,
+      fretesCentavos: existente?.fretesCentavos ?? r.fretesCentavos,
       liquidoMarketplaceCentavos:
-        existente?.liquidoMarketplaceCentavos ?? liquidoMarketplaceCentavos,
+        existente?.liquidoMarketplaceCentavos ?? r.liquidoMarketplaceCentavos,
       marketplace: r.salesChannel ?? marketplaceFallback,
       fulfillmentChannel: r.fulfillmentChannel,
       statusPedido: r.orderStatus,

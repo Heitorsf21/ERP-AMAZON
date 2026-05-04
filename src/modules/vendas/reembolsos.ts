@@ -1,3 +1,5 @@
+import { valorBrutoDaVenda } from "@/modules/vendas/valores";
+
 export type VendaResumoReembolsoInput = {
   amazonOrderId: string;
   sku: string;
@@ -49,8 +51,7 @@ export function calcularResumoReembolsos(
     const grupo = ensureGrupo(grupos, venda.sku, venda.titulo);
     grupo.pedidosVendidos.add(venda.amazonOrderId);
     grupo.unidadesVendidas += venda.quantidade;
-    grupo.valorVendidoCentavos +=
-      venda.valorBrutoCentavos ?? venda.precoUnitarioCentavos * venda.quantidade;
+    grupo.valorVendidoCentavos += valorBrutoDaVenda(venda);
   }
 
   for (const reembolso of reembolsos) {
