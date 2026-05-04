@@ -101,7 +101,7 @@ export function valorBrutoFinanceiroPodeAtualizar(input: {
       ? null
       : normalizarCentavos(input.valorBrutoAtualCentavos);
   if (atual == null || atual <= 0) return true;
-  if (financeiro === atual) return true;
+  if (financeiro === atual) return false;
 
   const quantidadeAtual = normalizarQuantidadeVenda(input.quantidadeAtual);
   if (quantidadeAtual <= 1) return true;

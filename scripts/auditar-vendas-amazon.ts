@@ -29,7 +29,11 @@ type VendaAudit = {
 };
 
 type Candidate = {
-  source: "amazon_raw" | "finance" | "amazon_stored_unit";
+  source:
+    | "amazon_raw"
+    | "finance"
+    | "amazon_sku_unit"
+    | "amazon_stored_unit";
   value: number;
 };
 
@@ -142,7 +146,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return value != null && typeof value === "object" && !Array.isArray(value);
 }
 
-function visitRecords(value: unknown, fn: (record: Record<string, unknown>) => void) {
+function visitRecords(
+  value: unknown,
+  fn: (record: Record<string, unknown>) => void,
+) {
   if (Array.isArray(value)) {
     for (const item of value) visitRecords(item, fn);
     return;
@@ -253,6 +260,44 @@ async function loadFinanceCandidates(orderIds: string[]) {
   return map;
 }
 
+async function loadSkuUnitCandidates(skus: string[]) {
+  const map = new Map<string, number>();
+  if (skus.length === 0) return map;
+
+  const rows = await db.vendaAmazon.findMany({
+    where: {
+      sku: { in: skus },
+      quantidade: 1,
+      valorBrutoCentavos: { gt: 0 },
+    },
+    select: { sku: true, valorBrutoCentavos: true },
+  });
+
+  const countsBySku = new Map<string, Map<number, number>>();
+  for (const row of rows) {
+    const valor = row.valorBrutoCentavos;
+    if (valor == null || valor <= 0) continue;
+
+    const counts = countsBySku.get(row.sku) ?? new Map<number, number>();
+    counts.set(valor, (counts.get(valor) ?? 0) + 1);
+    countsBySku.set(row.sku, counts);
+  }
+
+  for (const [sku, counts] of countsBySku.entries()) {
+    let bestValue = 0;
+    let bestCount = 0;
+    for (const [value, count] of counts.entries()) {
+      if (count > bestCount || (count === bestCount && value > bestValue)) {
+        bestValue = value;
+        bestCount = count;
+      }
+    }
+    if (bestValue > 0) map.set(sku, bestValue);
+  }
+
+  return map;
+}
+
 function chooseTarget(
   venda: VendaAudit,
   candidates: Candidate[],
@@ -262,6 +307,7 @@ function chooseTarget(
   const storedUnit = candidates.find(
     (c) => c.source === "amazon_stored_unit",
   )?.value;
+  const skuUnit = candidates.find((c) => c.source === "amazon_sku_unit")?.value;
 
   if (amazon != null) return { target: amazon, source: "amazon_raw" };
 
@@ -276,6 +322,7 @@ function chooseTarget(
     return { target: finance, source: "finance" };
   }
 
+  if (skuUnit != null) return { target: skuUnit, source: "amazon_sku_unit" };
   if (storedUnit != null) {
     return { target: storedUnit, source: "amazon_stored_unit" };
   }
@@ -293,13 +340,36 @@ function amazonStoredUnitCandidate(venda: VendaAudit): number | null {
   return totalPeloUnitario;
 }
 
+function amazonSkuUnitCandidate(
+  venda: VendaAudit,
+  unitarioCentavos?: number,
+): number | null {
+  if (
+    venda.quantidade <= 1 ||
+    unitarioCentavos == null ||
+    unitarioCentavos <= 0
+  ) {
+    return null;
+  }
+
+  const brutoAtual = valorBrutoDaVenda(venda);
+  if (brutoAtual > unitarioCentavos + 1) return null;
+
+  const totalPeloSku = unitarioCentavos * venda.quantidade;
+  if (totalPeloSku <= brutoAtual) return null;
+
+  return totalPeloSku;
+}
+
 function liquidoCorrigido(
   venda: VendaAudit,
   brutoAtual: number,
   brutoNovo: number,
 ): number | undefined {
   const atual = venda.liquidoMarketplaceCentavos;
-  if (atual == null) return brutoNovo - venda.taxasCentavos - venda.fretesCentavos;
+  if (atual == null) {
+    return brutoNovo - venda.taxasCentavos - venda.fretesCentavos;
+  }
 
   const antigoComFrete =
     brutoAtual - venda.taxasCentavos - venda.fretesCentavos;
@@ -335,9 +405,11 @@ async function main() {
   });
 
   const orderIds = [...new Set(vendas.map((v) => v.amazonOrderId))];
-  const [amazonRaw, finance] = await Promise.all([
+  const skus = [...new Set(vendas.map((v) => v.sku).filter(Boolean))];
+  const [amazonRaw, finance, skuUnit] = await Promise.all([
     loadAmazonRawCandidates(orderIds),
     loadFinanceCandidates(orderIds),
+    loadSkuUnitCandidates(skus),
   ]);
 
   let semReferencia = 0;
@@ -354,9 +426,15 @@ async function main() {
     const candidates: Candidate[] = [
       ["amazon_raw", amazonRaw.get(k)],
       ["finance", finance.get(k)],
+      [
+        "amazon_sku_unit",
+        amazonSkuUnitCandidate(venda, skuUnit.get(venda.sku)),
+      ],
       ["amazon_stored_unit", amazonStoredUnitCandidate(venda)],
     ]
-      .filter((entry): entry is [Candidate["source"], number] => entry[1] != null)
+      .filter(
+        (entry): entry is [Candidate["source"], number] => entry[1] != null,
+      )
       .map(([source, value]) => ({ source, value }));
     const choice = chooseTarget(venda, candidates);
     const brutoAtual = valorBrutoDaVenda(venda);

@@ -97,6 +97,14 @@ describe("valores de VendaAmazon", () => {
       valorBrutoFinanceiroPodeAtualizar({
         quantidadeAtual: 2,
         valorBrutoAtualCentavos: 5000,
+        valorBrutoFinanceiroCentavos: 5000,
+      }),
+    ).toBe(false);
+
+    expect(
+      valorBrutoFinanceiroPodeAtualizar({
+        quantidadeAtual: 2,
+        valorBrutoAtualCentavos: 5000,
         valorBrutoFinanceiroCentavos: 10000,
       }),
     ).toBe(true);
