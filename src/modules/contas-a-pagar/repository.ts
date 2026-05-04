@@ -3,7 +3,7 @@ import type { FiltrosConta } from "./schemas";
 
 export const contasRepository = {
   async listar(filtros: FiltrosConta = {}) {
-    const where: Record<string, unknown> = {};
+    const where: Record<string, unknown> = { deletedAt: null };
 
     if (filtros.status) {
       where.status = filtros.status;
@@ -97,7 +97,7 @@ export const contasRepository = {
   },
 
   async deletar(id: string) {
-    return db.contaPagar.delete({ where: { id } });
+    return db.contaPagar.update({ where: { id }, data: { deletedAt: new Date() } });
   },
 
   // Marca contas ABERTA com vencimento passado como VENCIDA.

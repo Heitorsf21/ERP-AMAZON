@@ -1,9 +1,20 @@
 import { NextRequest } from "next/server";
+import { fromZonedTime } from "date-fns-tz";
 import { db } from "@/lib/db";
 import { ok } from "@/lib/api";
 import { whereVendaAmazonContabilizavel } from "@/modules/vendas/filtros";
 
 export const dynamic = "force-dynamic";
+
+const TZ = "America/Sao_Paulo";
+
+function inicioDia(ano: number, mes: number, dia: number): Date {
+  return fromZonedTime(new Date(ano, mes, dia, 0, 0, 0), TZ);
+}
+
+function fimDia(ano: number, mes: number, dia: number): Date {
+  return fromZonedTime(new Date(ano, mes, dia, 23, 59, 59, 999), TZ);
+}
 
 async function calcularDRE(de: Date, ate: Date) {
   const [
@@ -19,17 +30,18 @@ async function calcularDRE(de: Date, ate: Date) {
     adsCampanhasAgg,
     adsManualAgg,
     adsSyncAgg,
+    ultimoSyncLog,
   ] = await Promise.all([
     db.contaReceber.findMany({
-      where: { status: "RECEBIDA", dataRecebimento: { gte: de, lte: ate } },
+      where: { status: "RECEBIDA", dataRecebimento: { gte: de, lte: ate }, deletedAt: null },
       select: { valor: true },
     }),
     db.movimentacao.findMany({
-      where: { tipo: "ENTRADA", origem: "MANUAL", dataCaixa: { gte: de, lte: ate } },
+      where: { tipo: "ENTRADA", origem: "MANUAL", dataCaixa: { gte: de, lte: ate }, deletedAt: null },
       select: { valor: true, categoria: { select: { nome: true } } },
     }),
     db.contaPagar.findMany({
-      where: { status: "PAGA", pagoEm: { gte: de, lte: ate } },
+      where: { status: "PAGA", pagoEm: { gte: de, lte: ate }, deletedAt: null },
       include: { categoria: true },
     }),
     // Vendas Amazon detalhadas (Sprint 4 — DRE expandido).
@@ -90,6 +102,11 @@ async function calcularDRE(de: Date, ate: Date) {
       where: { data: { gte: de, lte: ate } },
       _sum: { gastoCentavos: true, vendasCentavos: true },
       _count: { _all: true },
+    }),
+    db.amazonSyncLog.findFirst({
+      where: { status: "SUCESSO" },
+      orderBy: { createdAt: "desc" },
+      select: { createdAt: true, tipo: true },
     }),
   ]);
 
@@ -152,6 +169,9 @@ async function calcularDRE(de: Date, ate: Date) {
     (s, m) => s + m.quantidade * (m.custoUnitario ?? 0),
     0,
   );
+  const skusSemCusto = saidasEstoque.filter(
+    (m) => m.custoUnitario === null || m.custoUnitario === 0,
+  ).length;
   const adsCampanhasCentavos = adsCampanhasAgg._sum.gastoCentavos ?? 0;
   const adsManualCentavos = adsManualAgg._sum.valorCentavos ?? 0;
   const adsSyncGasto = adsSyncAgg._sum.gastoCentavos ?? 0;
@@ -208,6 +228,7 @@ async function calcularDRE(de: Date, ate: Date) {
       calculado: cpvEstoqueCalculado,
       contasPagas: custoMercadoriasBase,
       storageFees,
+      skusSemCusto,
     },
     ads: {
       campanhas: adsCampanhasCentavos,
@@ -218,6 +239,7 @@ async function calcularDRE(de: Date, ate: Date) {
       total: adsTotal,
       origem: adsSyncGasto > 0 ? "SYNC" : "MANUAL",
     },
+    ultimaAtualizacao: ultimoSyncLog?.createdAt ?? null,
   };
 }
 
@@ -230,8 +252,8 @@ export async function GET(req: NextRequest) {
     const ano = parseInt(searchParams.get("ano") ?? String(new Date().getFullYear()));
     const meses = [];
     for (let m = 0; m < 12; m++) {
-      const de = new Date(ano, m, 1, 0, 0, 0);
-      const ate = new Date(ano, m + 1, 0, 23, 59, 59);
+      const de = inicioDia(ano, m, 1);
+      const ate = fimDia(ano, m + 1, 0);
       // Não processar meses no futuro
       if (de > new Date()) {
         meses.push({
@@ -258,14 +280,14 @@ export async function GET(req: NextRequest) {
 
   // Modo padrão — período personalizado
   const hoje = new Date();
-  const inicioMes = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
-  const fimMes = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0, 23, 59, 59);
+  const inicioMes = inicioDia(hoje.getFullYear(), hoje.getMonth(), 1);
+  const fimMes = fimDia(hoje.getFullYear(), hoje.getMonth() + 1, 0);
 
   const deStr = searchParams.get("de");
   const ateStr = searchParams.get("ate");
 
-  const de = deStr ? new Date(deStr + "T00:00:00") : inicioMes;
-  const ate = ateStr ? new Date(ateStr + "T23:59:59") : fimMes;
+  const de = deStr ? fromZonedTime(new Date(deStr + "T00:00:00"), TZ) : inicioMes;
+  const ate = ateStr ? fromZonedTime(new Date(ateStr + "T23:59:59"), TZ) : fimMes;
 
   const dre = await calcularDRE(de, ate);
 

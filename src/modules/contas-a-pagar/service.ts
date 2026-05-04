@@ -472,7 +472,10 @@ export const contasService = {
       if (conta.status === "PAGA" && conta.movimentacaoId) {
         await tx.movimentacao.delete({ where: { id: conta.movimentacaoId } });
       }
-      await tx.contaPagar.delete({ where: { id: contaId } });
+      await tx.contaPagar.update({
+        where: { id: contaId },
+        data: { deletedAt: new Date() },
+      });
     });
   },
 };

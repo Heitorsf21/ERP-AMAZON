@@ -106,7 +106,8 @@ export const contasReceberService = {
 
   /** Lista todas as contas a receber, mais recentes primeiro. */
   async listar(filtroStatus?: string) {
-    const where = filtroStatus ? { status: filtroStatus } : {};
+    const where: Record<string, unknown> = { deletedAt: null };
+    if (filtroStatus) where.status = filtroStatus;
     return db.contaReceber.findMany({
       where,
       orderBy: { dataPrevisao: "asc" },
@@ -117,11 +118,11 @@ export const contasReceberService = {
   async totais() {
     const [pendentes, recebidas] = await Promise.all([
       db.contaReceber.findMany({
-        where: { status: StatusContaReceber.PENDENTE },
+        where: { status: StatusContaReceber.PENDENTE, deletedAt: null },
         select: { valor: true },
       }),
       db.contaReceber.findMany({
-        where: { status: StatusContaReceber.RECEBIDA },
+        where: { status: StatusContaReceber.RECEBIDA, deletedAt: null },
         select: { valor: true },
       }),
     ]);
@@ -136,6 +137,16 @@ export const contasReceberService = {
       quantidadeRecebida: recebidas.length,
       totalCentavos: totalPendenteCentavos + totalRecebidaCentavos,
     };
+  },
+
+  /** Soft-delete: marca a conta como deletada preservando auditoria. */
+  async deletar(id: string) {
+    const conta = await db.contaReceber.findUnique({ where: { id } });
+    if (!conta) throw new Error("conta a receber não encontrada");
+    return db.contaReceber.update({
+      where: { id },
+      data: { deletedAt: new Date() },
+    });
   },
 
   /** Marca uma conta como recebida manualmente. */

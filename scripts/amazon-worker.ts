@@ -4,6 +4,24 @@
 import { loadEnvConfig } from "@next/env";
 loadEnvConfig(process.cwd());
 
+// Validação de segurança: CONFIG_ENCRYPTION_KEY obrigatória em produção
+if (process.env.NODE_ENV === "production" && !process.env.CONFIG_ENCRYPTION_KEY) {
+  console.error(
+    "[worker] ERRO CRÍTICO: CONFIG_ENCRYPTION_KEY não definida em produção.\n" +
+    "  Credenciais Amazon seriam salvas em texto puro. Configure a variável e reinicie.\n" +
+    "  Gere uma chave: node -e \"console.log(require('crypto').randomBytes(32).toString('hex'))\"",
+  );
+  process.exit(1);
+}
+
+// Aviso em desenvolvimento (não bloqueia)
+if (process.env.NODE_ENV !== "production" && !process.env.CONFIG_ENCRYPTION_KEY) {
+  console.warn(
+    "[worker] AVISO: CONFIG_ENCRYPTION_KEY não definida. " +
+    "Credenciais serão salvas em texto puro no banco de desenvolvimento.",
+  );
+}
+
 import { processAmazonSyncJobs } from "../src/modules/amazon/worker";
 
 const once = process.argv.includes("--once");

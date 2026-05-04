@@ -7,11 +7,12 @@
  *
  * Flags opcionais:
  *   --email   (padrão: admin@mundofs.cloud)
- *   --senha   (padrão: ERP@2026mundofs)
+ *   --senha   (gerada automaticamente se omitida)
  *   --nome    (padrão: Administrador)
  *   --reset   força reset de senha mesmo que o usuário já exista
  */
 
+import crypto from "node:crypto";
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
 
@@ -19,11 +20,18 @@ const db = new PrismaClient();
 
 function arg(flag: string, fallback: string): string {
   const idx = process.argv.indexOf(flag);
-  return idx !== -1 && process.argv[idx + 1] ? process.argv[idx + 1] : fallback;
+  return (idx !== -1 && process.argv[idx + 1]) ? process.argv[idx + 1]! : fallback;
+}
+
+function gerarSenhaAleatoria(): string {
+  return crypto.randomBytes(18).toString("base64url").slice(0, 16);
 }
 
 const email = arg("--email", "admin@mundofs.cloud").toLowerCase().trim();
-const senha = arg("--senha", "ERP@2026mundofs");
+const senhaArg = process.argv.indexOf("--senha");
+const senhaFornecida = senhaArg !== -1 ? process.argv[senhaArg + 1] : undefined;
+const senha: string = senhaFornecida ?? gerarSenhaAleatoria();
+const senhaGeradaAutomaticamente = !senhaFornecida;
 const nome  = arg("--nome",  "Administrador");
 const reset = process.argv.includes("--reset");
 
@@ -56,6 +64,9 @@ async function main() {
   }
 
   console.log(`  Senha: ${senha}`);
+  if (senhaGeradaAutomaticamente) {
+    console.log("  ⚠  Senha gerada automaticamente. Use --senha <valor> para definir uma senha específica.");
+  }
   console.log("  Acesse o ERP e troque a senha imediatamente em Perfil → Alterar senha.\n");
 }
 

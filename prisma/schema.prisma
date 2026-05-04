@@ -99,7 +99,7 @@ model Fornecedor {
 }
 
 model Movimentacao {
-  id              String   @id @default(cuid())
+  id              String    @id @default(cuid())
   // ENTRADA | SAIDA
   tipo            String
   valor           Int
@@ -111,8 +111,9 @@ model Movimentacao {
   origem          String
   referenciaId    String?
   motivoAjuste    String?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  deletedAt       DateTime? // soft-delete — preserve auditoria financeira
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
   categoria    Categoria     @relation(fields: [categoriaId], references: [id], onDelete: Restrict)
   contaPaga    ContaPagar?   @relation("ContaPagaMovimentacao")
@@ -139,6 +140,7 @@ model ContaPagar {
   pagoEm         DateTime?
   movimentacaoId String?   @unique
   observacoes    String?
+  deletedAt      DateTime? // soft-delete — preserve auditoria financeira
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
@@ -223,6 +225,7 @@ model ContaReceber {
   totalPedidos    Int       @default(0)
   movimentacaoId  String?   @unique
   observacoes     String?
+  deletedAt       DateTime? // soft-delete — preserve auditoria financeira
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
@@ -321,6 +324,7 @@ model VendaAmazon {
   @@index([statusPedido])
   @@index([statusFinanceiro])
   @@index([ultimaSyncEm])
+  @@index([dataVenda, statusFinanceiro])
 }
 
 model AmazonOrderRaw {

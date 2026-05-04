@@ -360,7 +360,7 @@ export async function syncBackfillOrders(): Promise<
     endDate: ate,
     cursorKey: BACKFILL_CURSOR_KEY,
     tipo: TipoAmazonSync.BACKFILL,
-    maxPages: 1,
+    maxPages: undefined,
     overlapMinutes: 0,
   });
 
@@ -431,8 +431,7 @@ export async function syncInventory(): Promise<{
       const inbound = item.inventoryDetails?.inboundWorkingQuantity ?? 0;
 
       if (!produto) {
-        // NUNCA cria produtos automaticamente — exigimos cadastro manual com SKU MFS-.
-        // Apenas registramos para o front exibir e o usuário decidir.
+        // SKU não cadastrado no inventário: ignorado aqui (auto-registro ocorre em syncOrdersInternal)
         naoCadastrados.push({
           sku: item.sellerSku,
           asin: item.asin ?? null,
@@ -607,6 +606,46 @@ async function syncOrdersInternal(
       select: { sku: true, asin: true, custoUnitario: true },
     });
     const produtosPorSku = new Map(produtos.map((produto) => [produto.sku, produto]));
+
+    // Auto-registra SKUs novos que não existem no catálogo local.
+    // Cria um registro mínimo; o usuário deve preencher o custoUnitario depois.
+    const skusSemProduto = skus.filter((sku) => !produtosPorSku.has(sku));
+    for (const sku of skusSemProduto) {
+      let asin: string | null = null;
+      let titulo: string | null = null;
+      for (const items of itemsPorOrderId.values()) {
+        const it = items.find((i) => i.SellerSKU === sku);
+        if (it) {
+          asin = it.ASIN ?? null;
+          titulo = it.Title ?? null;
+          break;
+        }
+      }
+      try {
+        const criado = await db.produto.upsert({
+          where: { sku },
+          create: {
+            sku,
+            nome: titulo || sku,
+            asin,
+            ativo: true,
+            custoUnitario: null,
+            estoqueAtual: 0,
+            estoqueMinimo: 0,
+            unidade: "un",
+          },
+          update: {},
+          select: { sku: true, asin: true, custoUnitario: true },
+        });
+        produtosPorSku.set(sku, criado);
+      } catch {
+        const existente = await db.produto.findUnique({
+          where: { sku },
+          select: { sku: true, asin: true, custoUnitario: true },
+        });
+        if (existente) produtosPorSku.set(sku, existente);
+      }
+    }
 
     for (const order of orders) {
       const amazonOrderId = getAmazonOrderId(order);
