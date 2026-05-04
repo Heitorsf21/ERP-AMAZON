@@ -29,7 +29,7 @@ type VendaAudit = {
 };
 
 type Candidate = {
-  source: "amazon_raw" | "gestor_seller" | "finance";
+  source: "amazon_raw" | "finance";
   value: number;
 };
 
@@ -170,29 +170,6 @@ function sumMap(map: Map<string, number>, k: string, value: number | null) {
   map.set(k, (map.get(k) ?? 0) + value);
 }
 
-async function loadGestorSellerCandidates(orderIds: string[]) {
-  const map = new Map<string, number>();
-  if (orderIds.length === 0) return map;
-
-  const rows = await db.vendaFBA.findMany({
-    where: { numeroPedido: { in: orderIds } },
-    select: {
-      numeroPedido: true,
-      skuExterno: true,
-      skuInterno: true,
-      totalCentavos: true,
-    },
-  });
-
-  for (const row of rows) {
-    sumMap(map, key(row.numeroPedido, row.skuExterno), row.totalCentavos);
-    if (row.skuInterno) {
-      sumMap(map, key(row.numeroPedido, row.skuInterno), row.totalCentavos);
-    }
-  }
-  return map;
-}
-
 async function loadAmazonRawCandidates(orderIds: string[]) {
   const map = new Map<string, number>();
   if (orderIds.length === 0) return map;
@@ -279,21 +256,11 @@ async function loadFinanceCandidates(orderIds: string[]) {
 function chooseTarget(
   venda: VendaAudit,
   candidates: Candidate[],
-): { target: number | null; conflict: string | null; source: string } {
+): { target: number | null; source: string } {
   const amazon = candidates.find((c) => c.source === "amazon_raw")?.value;
-  const gs = candidates.find((c) => c.source === "gestor_seller")?.value;
   const finance = candidates.find((c) => c.source === "finance")?.value;
 
-  if (amazon != null && gs != null && amazon !== gs) {
-    return {
-      target: null,
-      conflict: `Amazon raw (${amazon}) != Gestor Seller (${gs})`,
-      source: "conflict",
-    };
-  }
-
-  if (amazon != null) return { target: amazon, conflict: null, source: "amazon_raw" };
-  if (gs != null) return { target: gs, conflict: null, source: "gestor_seller" };
+  if (amazon != null) return { target: amazon, source: "amazon_raw" };
 
   if (
     finance != null &&
@@ -303,10 +270,10 @@ function chooseTarget(
       valorBrutoFinanceiroCentavos: finance,
     })
   ) {
-    return { target: finance, conflict: null, source: "finance" };
+    return { target: finance, source: "finance" };
   }
 
-  return { target: null, conflict: null, source: "none" };
+  return { target: null, source: "none" };
 }
 
 function liquidoCorrigido(
@@ -351,27 +318,24 @@ async function main() {
   });
 
   const orderIds = [...new Set(vendas.map((v) => v.amazonOrderId))];
-  const [amazonRaw, gestorSeller, finance] = await Promise.all([
+  const [amazonRaw, finance] = await Promise.all([
     loadAmazonRawCandidates(orderIds),
-    loadGestorSellerCandidates(orderIds),
     loadFinanceCandidates(orderIds),
   ]);
 
   let semReferencia = 0;
   let semMudanca = 0;
-  let conflitos = 0;
   let corrigiveis = 0;
   let aplicadas = 0;
 
   console.log(
-    `[amazon:vendas:audit] modo=${args.apply ? "apply" : "dry-run"} vendas=${vendas.length}`,
+    `[amazon:vendas:audit] modo=${args.apply ? "apply" : "dry-run"} fonte=amazon_api vendas=${vendas.length}`,
   );
 
   for (const venda of vendas) {
     const k = key(venda.amazonOrderId, venda.sku);
     const candidates: Candidate[] = [
       ["amazon_raw", amazonRaw.get(k)],
-      ["gestor_seller", gestorSeller.get(k)],
       ["finance", finance.get(k)],
     ]
       .filter((entry): entry is [Candidate["source"], number] => entry[1] != null)
@@ -379,13 +343,6 @@ async function main() {
     const choice = chooseTarget(venda, candidates);
     const brutoAtual = valorBrutoDaVenda(venda);
 
-    if (choice.conflict) {
-      conflitos++;
-      console.log(
-        `[CONFLITO] ${venda.amazonOrderId} ${venda.sku}: ${choice.conflict}`,
-      );
-      continue;
-    }
     if (choice.target == null) {
       semReferencia++;
       if (PEDIDOS_REFERENCIA.has(venda.amazonOrderId)) {
@@ -441,12 +398,7 @@ async function main() {
   console.log(`Sem mudanca: ${semMudanca}`);
   console.log(`Corrigiveis: ${corrigiveis}`);
   console.log(`Aplicadas: ${aplicadas}`);
-  console.log(`Conflitos: ${conflitos}`);
   console.log(`Sem referencia: ${semReferencia}`);
-
-  if (conflitos > 0) {
-    process.exitCode = 2;
-  }
 }
 
 main()
