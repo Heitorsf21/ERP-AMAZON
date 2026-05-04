@@ -148,10 +148,10 @@ function isSameOriginMutation(req: NextRequest): boolean {
     return false;
   }
 
-  // Comparar apenas host: comparar protocolo é instável atrás do Nginx porque
-  // req.nextUrl.protocol é sempre 'http:' (Nginx termina TLS e repassa via HTTP),
-  // mesmo com X-Forwarded-Proto. Comparar host é suficiente para CSRF protection.
-  return originUrl.host === req.nextUrl.host;
+  // Usar header Host diretamente (mais confiável que req.nextUrl.host no Edge
+  // runtime atrás do Nginx). Nginx já seta Host=$host corretamente.
+  const requestHost = req.headers.get("host") ?? req.nextUrl.host;
+  return originUrl.host === requestHost;
 }
 
 function matchesPrefix(pathname: string, prefixes: string[]): boolean {
@@ -189,13 +189,13 @@ export async function proxy(req: NextRequest) {
     );
   }
 
+  if (isPublic(pathname)) return withSecurityHeaders(NextResponse.next());
+
   if (!isSameOriginMutation(req)) {
     return withSecurityHeaders(
       NextResponse.json({ erro: "ORIGEM_INVALIDA" }, { status: 403 }),
     );
   }
-
-  if (isPublic(pathname)) return withSecurityHeaders(NextResponse.next());
 
   const token = req.cookies.get(SESSION_COOKIE_NAME)?.value;
   const session = await verifySession(token);
