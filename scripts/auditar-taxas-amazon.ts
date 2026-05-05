@@ -33,6 +33,7 @@ type VendaTaxa = {
 
 type FinanceItem = {
   source: "stored" | "live";
+  skuFallback: boolean;
   transactionId: string;
   postedDate: Date | null;
   transactionType: string | null;
@@ -414,7 +415,8 @@ async function loadLiveTransactions(args: Args, vendas: VendaTaxa[]) {
   return filtered.map(transactionRowFromLive);
 }
 
-function financeItemFromTransaction(row: {
+function financeItemFromTransaction(
+  row: {
   source?: "stored" | "live";
   transactionId: string;
   postedDate: Date | null;
@@ -422,18 +424,25 @@ function financeItemFromTransaction(row: {
   transactionStatus: string | null;
   totalAmountCentavos: number | null;
   payload: Prisma.JsonValue;
-}): FinanceItem[] {
+  },
+  context: { orderId: string; fallbackSku?: string },
+): FinanceItem[] {
   const payload = readJson(row.payload);
   const items = getFinanceItems(payload);
+  const candidates = items.length > 0 || !isRecord(payload) ? items : [payload];
 
-  return items.flatMap((item) => {
-    const sku = readString(item, [
+  return candidates.flatMap((item) => {
+    let sku = readString(item, [
       "sku",
       "sellerSku",
       "SellerSKU",
       "sellerSKU",
       "merchantSku",
     ]);
+    const orderId = findOrderId(payload, item);
+    const skuFallback =
+      !sku && orderId === context.orderId && !!context.fallbackSku;
+    if (!sku && skuFallback) sku = context.fallbackSku ?? null;
     if (!sku) return [];
 
     const amazonFeesCentavos = topBreakdownAmount(item, "AmazonFees");
@@ -490,6 +499,7 @@ function financeItemFromTransaction(row: {
     return [
       {
         source: row.source ?? "stored",
+        skuFallback,
         transactionId: row.transactionId,
         postedDate: row.postedDate,
         transactionType: row.transactionType,
@@ -564,9 +574,16 @@ async function main() {
       .map((row) => ({ ...row, source: "stored" as const })),
     ...liveTransactions.map((row) => ({ ...row, source: "live" as const })),
   ];
+  const skusDaVenda = [...new Set(vendas.map((venda) => venda.sku))];
+  const fallbackSku = skusDaVenda.length === 1 ? skusDaVenda[0] : undefined;
 
   const financeItems = transactions
-    .flatMap(financeItemFromTransaction)
+    .flatMap((transaction) =>
+      financeItemFromTransaction(transaction, {
+        orderId: args.orderId,
+        fallbackSku,
+      }),
+    )
     .filter((item) => !args.sku || item.sku === args.sku);
 
   console.log(`[amazon:taxas:audit] pedido=${args.orderId}`);
@@ -592,7 +609,9 @@ async function main() {
     );
     console.log(
       [
-        `${item.source}:${item.transactionId} ${item.sku}`,
+        `${item.source}:${item.transactionId} ${item.sku}${
+          item.skuFallback ? " (sku inferido pelo pedido)" : ""
+        }`,
         `posted=${item.postedDate?.toISOString() ?? "-"}`,
         `tipo=${item.transactionType ?? "-"}`,
         `status=${item.transactionStatus ?? "-"}`,
