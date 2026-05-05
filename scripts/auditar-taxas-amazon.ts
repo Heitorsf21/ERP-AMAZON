@@ -388,8 +388,8 @@ async function loadLiveTransactions(args: Args, vendas: VendaTaxa[]) {
 
   const postedBefore = new Date(baseDate);
   postedBefore.setDate(postedBefore.getDate() + args.diasDepois);
-  const now = new Date();
-  const cappedBefore = postedBefore > now ? now : postedBefore;
+  const safeNow = new Date(Date.now() - 3 * 60_000);
+  const cappedBefore = postedBefore > safeNow ? safeNow : postedBefore;
 
   console.log(
     `[live] buscando Transactions API de ${postedAfter.toISOString()} ate ${cappedBefore.toISOString()} maxPages=${args.maxPages}`,
