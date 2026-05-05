@@ -1,10 +1,20 @@
 import { Prisma } from "@prisma/client";
+import { decryptConfigValue } from "@/lib/crypto";
 import { db } from "@/lib/db";
+import {
+  listFinancialTransactions,
+  type SPAPICredentials,
+  type SPFinanceTransaction,
+} from "@/lib/amazon-sp-api";
 import { valorBrutoDaVenda } from "@/modules/vendas/valores";
 
 type Args = {
   orderId: string;
   sku?: string;
+  live: boolean;
+  diasAntes: number;
+  diasDepois: number;
+  maxPages: number;
 };
 
 type VendaTaxa = {
@@ -18,9 +28,11 @@ type VendaTaxa = {
   liquidoMarketplaceCentavos: number | null;
   statusFinanceiro: string;
   liquidacaoId: string | null;
+  dataVenda: Date;
 };
 
 type FinanceItem = {
+  source: "stored" | "live";
   transactionId: string;
   postedDate: Date | null;
   transactionType: string | null;
@@ -35,6 +47,15 @@ type FinanceItem = {
   feeBreakdowns: Array<{ type: string; amountCentavos: number }>;
 };
 
+type FinanceTransactionRow = {
+  transactionId: string;
+  postedDate: Date | null;
+  transactionType: string | null;
+  transactionStatus: string | null;
+  totalAmountCentavos: number | null;
+  payload: Prisma.JsonValue;
+};
+
 function parseArgs(argv: string[]): Args {
   const orderIndex = argv.findIndex((arg) => arg === "--order");
   const orderId = orderIndex >= 0 ? argv[orderIndex + 1]?.trim() : argv[0]?.trim();
@@ -45,7 +66,21 @@ function parseArgs(argv: string[]): Args {
   const skuIndex = argv.findIndex((arg) => arg === "--sku");
   const sku = skuIndex >= 0 ? argv[skuIndex + 1]?.trim() : undefined;
 
-  return { orderId, sku };
+  return {
+    orderId,
+    sku,
+    live: argv.includes("--live"),
+    diasAntes: readNumberArg(argv, "--dias-antes", 2),
+    diasDepois: readNumberArg(argv, "--dias-depois", 14),
+    maxPages: readNumberArg(argv, "--max-pages", 20),
+  };
+}
+
+function readNumberArg(argv: string[], name: string, fallback: number): number {
+  const index = argv.findIndex((arg) => arg === name);
+  if (index < 0) return fallback;
+  const value = Number(argv[index + 1]);
+  return Number.isFinite(value) && value > 0 ? Math.trunc(value) : fallback;
 }
 
 function brl(centavos?: number | null): string {
@@ -121,6 +156,8 @@ function amountToCents(value: unknown): number {
   return amountToCents(
     value.currencyAmount ??
       value.CurrencyAmount ??
+      value.totalAmount ??
+      value.TotalAmount ??
       value.amount ??
       value.Amount ??
       value.value ??
@@ -188,8 +225,11 @@ function getFinanceItems(payload: unknown): Record<string, unknown>[] {
   for (const key of [
     "items",
     "Items",
+    "ItemList",
     "shipmentItems",
     "ShipmentItems",
+    "refundItems",
+    "RefundItems",
     "transactionItems",
     "TransactionItems",
   ]) {
@@ -211,7 +251,171 @@ function getFinanceItems(payload: unknown): Record<string, unknown>[] {
   return found;
 }
 
+function readDeepString(value: unknown, keys: string[]): string | null {
+  let found: string | null = null;
+  visitRecords(value, (record) => {
+    if (found) return;
+    found = readString(record, keys);
+  });
+  return found;
+}
+
+function findOrderId(transaction: unknown, item?: unknown): string | null {
+  if (isRecord(item)) {
+    const fromItem = readDeepString(item, [
+      "amazonOrderId",
+      "AmazonOrderId",
+      "orderId",
+      "OrderId",
+    ]);
+    if (fromItem) return fromItem;
+  }
+
+  if (!isRecord(transaction)) return null;
+
+  const fromTransaction = readDeepString(transaction, [
+    "amazonOrderId",
+    "AmazonOrderId",
+    "orderId",
+    "OrderId",
+  ]);
+  if (fromTransaction) return fromTransaction;
+
+  const related = transaction.relatedIdentifiers;
+  if (!Array.isArray(related)) return null;
+  for (const identifier of related) {
+    if (!isRecord(identifier)) continue;
+    const name = normalizeKind(
+      readString(identifier, ["relatedIdentifierName", "name", "type"]),
+    );
+    if (!name.includes("order")) continue;
+    const value = readString(identifier, ["relatedIdentifierValue", "value"]);
+    if (value) return value;
+  }
+
+  return null;
+}
+
+async function loadCredentials(): Promise<SPAPICredentials | null> {
+  const rows = await db.configuracaoSistema.findMany({
+    where: { chave: { startsWith: "amazon_" } },
+    select: { chave: true, valor: true },
+  });
+  const cfg: Record<string, string> = {};
+  for (const row of rows) cfg[row.chave] = decryptConfigValue(row.valor) ?? "";
+
+  cfg.amazon_client_id ||= process.env.AMAZON_LWA_CLIENT_ID ?? "";
+  cfg.amazon_client_secret ||= process.env.AMAZON_LWA_CLIENT_SECRET ?? "";
+  cfg.amazon_refresh_token ||= process.env.AMAZON_LWA_REFRESH_TOKEN ?? "";
+  cfg.amazon_marketplace_id ||=
+    process.env.AMAZON_MARKETPLACE_ID ?? "A2Q3Y263D00KWC";
+  cfg.amazon_endpoint ||=
+    process.env.AMAZON_SP_API_ENDPOINT ??
+    "https://sellingpartnerapi-na.amazon.com";
+
+  if (
+    !cfg.amazon_client_id ||
+    !cfg.amazon_client_secret ||
+    !cfg.amazon_refresh_token ||
+    !cfg.amazon_marketplace_id
+  ) {
+    return null;
+  }
+
+  return {
+    clientId: cfg.amazon_client_id,
+    clientSecret: cfg.amazon_client_secret,
+    refreshToken: cfg.amazon_refresh_token,
+    marketplaceId: cfg.amazon_marketplace_id,
+    endpoint: cfg.amazon_endpoint || undefined,
+  };
+}
+
+async function loadStoredTransactions(orderId: string) {
+  try {
+    return await db.$queryRaw<FinanceTransactionRow[]>`
+      SELECT
+        "transactionId",
+        "postedDate",
+        "transactionType",
+        "transactionStatus",
+        "totalAmountCentavos",
+        payload
+      FROM "AmazonFinanceTransaction"
+      WHERE "amazonOrderId" = ${orderId}
+         OR payload::text ILIKE ${`%${orderId}%`}
+      ORDER BY "postedDate" ASC NULLS LAST, "transactionId" ASC
+    `;
+  } catch {
+    return db.amazonFinanceTransaction.findMany({
+      where: { amazonOrderId: orderId },
+      orderBy: [{ postedDate: "asc" }, { transactionId: "asc" }],
+      select: {
+        transactionId: true,
+        postedDate: true,
+        transactionType: true,
+        transactionStatus: true,
+        totalAmountCentavos: true,
+        payload: true,
+      },
+    });
+  }
+}
+
+function transactionRowFromLive(
+  transaction: SPFinanceTransaction,
+  index: number,
+): FinanceTransactionRow {
+  return {
+    transactionId: transaction.transactionId ?? `live:${index}`,
+    postedDate: transaction.postedDate ? new Date(transaction.postedDate) : null,
+    transactionType: transaction.transactionType ?? null,
+    transactionStatus: transaction.transactionStatus ?? null,
+    totalAmountCentavos: amountToCents(transaction.totalAmount) || null,
+    payload: transaction as Prisma.JsonValue,
+  };
+}
+
+async function loadLiveTransactions(args: Args, vendas: VendaTaxa[]) {
+  if (!args.live) return [];
+
+  const creds = await loadCredentials();
+  if (!creds) throw new Error("Credenciais Amazon SP-API nao configuradas.");
+
+  const baseDate = vendas[0]?.dataVenda ?? new Date();
+  const postedAfter = new Date(baseDate);
+  postedAfter.setDate(postedAfter.getDate() - args.diasAntes);
+
+  const postedBefore = new Date(baseDate);
+  postedBefore.setDate(postedBefore.getDate() + args.diasDepois);
+  const now = new Date();
+  const cappedBefore = postedBefore > now ? now : postedBefore;
+
+  console.log(
+    `[live] buscando Transactions API de ${postedAfter.toISOString()} ate ${cappedBefore.toISOString()} maxPages=${args.maxPages}`,
+  );
+
+  const transactions = await listFinancialTransactions(
+    creds,
+    postedAfter,
+    cappedBefore,
+    100,
+    { maxPages: args.maxPages },
+  );
+  const filtered = transactions.filter((transaction) => {
+    if (findOrderId(transaction) === args.orderId) return true;
+    return JSON.stringify(transaction).includes(args.orderId);
+  });
+
+  console.log(
+    `[live] transacoes lidas=${transactions.length} transacoes do pedido=${filtered.length}`,
+  );
+
+  return filtered.map(transactionRowFromLive);
+}
+
 function financeItemFromTransaction(row: {
+  source?: "stored" | "live";
   transactionId: string;
   postedDate: Date | null;
   transactionType: string | null;
@@ -285,6 +489,7 @@ function financeItemFromTransaction(row: {
 
     return [
       {
+        source: row.source ?? "stored",
         transactionId: row.transactionId,
         postedDate: row.postedDate,
         transactionType: row.transactionType,
@@ -344,21 +549,21 @@ async function main() {
       liquidoMarketplaceCentavos: true,
       statusFinanceiro: true,
       liquidacaoId: true,
+      dataVenda: true,
     },
   });
 
-  const transactions = await db.amazonFinanceTransaction.findMany({
-    where: { amazonOrderId: args.orderId },
-    orderBy: [{ postedDate: "asc" }, { transactionId: "asc" }],
-    select: {
-      transactionId: true,
-      postedDate: true,
-      transactionType: true,
-      transactionStatus: true,
-      totalAmountCentavos: true,
-      payload: true,
-    },
-  });
+  const [storedTransactions, liveTransactions] = await Promise.all([
+    loadStoredTransactions(args.orderId),
+    loadLiveTransactions(args, vendas),
+  ]);
+  const liveIds = new Set(liveTransactions.map((row) => row.transactionId));
+  const transactions = [
+    ...storedTransactions
+      .filter((row) => !liveIds.has(row.transactionId))
+      .map((row) => ({ ...row, source: "stored" as const })),
+    ...liveTransactions.map((row) => ({ ...row, source: "live" as const })),
+  ];
 
   const financeItems = transactions
     .flatMap(financeItemFromTransaction)
@@ -376,7 +581,7 @@ async function main() {
   }
 
   console.log("");
-  console.log("=== Amazon Finance API armazenada ===");
+  console.log("=== Amazon Finance API ===");
   if (financeItems.length === 0) {
     console.log("Nenhum item financeiro encontrado para comparar taxas.");
   }
@@ -387,7 +592,7 @@ async function main() {
     );
     console.log(
       [
-        `${item.transactionId} ${item.sku}`,
+        `${item.source}:${item.transactionId} ${item.sku}`,
         `posted=${item.postedDate?.toISOString() ?? "-"}`,
         `tipo=${item.transactionType ?? "-"}`,
         `status=${item.transactionStatus ?? "-"}`,
