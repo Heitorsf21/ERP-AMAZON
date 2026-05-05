@@ -25,6 +25,10 @@ import {
 } from "@/lib/amazon-sp-api";
 import { gunzipSync } from "zlib";
 import {
+  agruparValoresFinanceirosVendaAmazon,
+  type LinhaFinanceiraVendaAmazon,
+} from "@/modules/amazon/finance-aggregation";
+import {
   OrigemAmazonReviewSolicitation,
   OrigemMovimentacaoEstoque,
   StatusAmazonReviewSolicitation,
@@ -843,6 +847,44 @@ async function syncFinancialEvents(
   let reembolsosCriados = 0;
   let reembolsosAtualizados = 0;
   let ignorados = 0;
+  type VendaFinanceira = {
+    id: string;
+    sku: string;
+    quantidade: number;
+    precoUnitarioCentavos: number;
+    valorBrutoCentavos: number | null;
+  };
+  const vendasPorPedido = new Map<string, Promise<VendaFinanceira[]>>();
+  const loadVendasPedido = (orderId: string) => {
+    let promise = vendasPorPedido.get(orderId);
+    if (!promise) {
+      promise = db.vendaAmazon.findMany({
+        where: { amazonOrderId: orderId },
+        select: {
+          id: true,
+          sku: true,
+          quantidade: true,
+          precoUnitarioCentavos: true,
+          valorBrutoCentavos: true,
+        },
+      });
+      vendasPorPedido.set(orderId, promise);
+    }
+    return promise;
+  };
+  const resolveSku = async (orderId: string, item: Record<string, unknown>) => {
+    const sku = readDeepString(item, [
+      "sku",
+      "sellerSku",
+      "SellerSKU",
+      "sellerSKU",
+      "merchantSku",
+    ]);
+    if (sku) return sku;
+
+    const vendas = await loadVendasPedido(orderId);
+    return vendas.length === 1 ? vendas[0]?.sku : undefined;
+  };
 
   try {
     const transactions = await listFinancialTransactions(
@@ -867,15 +909,10 @@ async function syncFinancialEvents(
       if (onlyRefunds && !isRefund) continue;
 
       const items = getFinanceItems(transaction);
+      const linhasFinanceiras: LinhaFinanceiraVendaAmazon[] = [];
       for (const item of items) {
         const orderId = findOrderId(transaction, item);
-        const sku = readDeepString(item, [
-          "sku",
-          "sellerSku",
-          "SellerSKU",
-          "sellerSKU",
-          "merchantSku",
-        ]);
+        const sku = orderId ? await resolveSku(orderId, item) : undefined;
         if (!orderId || !sku) {
           ignorados++;
           continue;
@@ -976,15 +1013,6 @@ async function syncFinancialEvents(
         // valorBruto = ProductCharges (preço cheio antes de deduzir taxas Amazon).
         const valorBrutoCentavos = findBreakdownAmount(item, "ProductCharges");
 
-        const vendasParaAtualizar = await db.vendaAmazon.findMany({
-          where: { amazonOrderId: orderId, sku },
-          select: {
-            id: true,
-            quantidade: true,
-            precoUnitarioCentavos: true,
-            valorBrutoCentavos: true,
-          },
-        });
         const settlementId =
           findSettlementId(transaction) ??
           readDeepString(transaction, ["settlementId", "settlement-id"]);
@@ -993,31 +1021,54 @@ async function syncFinancialEvents(
           readDeepString(transaction, ["status"]) ??
           "LIQUIDADO";
 
+        linhasFinanceiras.push({
+          amazonOrderId: orderId,
+          sku,
+          valorBrutoCentavos,
+          taxasCentavos,
+          fretesCentavos,
+          liquidoMarketplaceCentavos,
+          liquidacaoId: settlementId ?? null,
+          statusFinanceiro,
+        });
+      }
+
+      const linhasAgrupadas =
+        agruparValoresFinanceirosVendaAmazon(linhasFinanceiras);
+      for (const linha of linhasAgrupadas) {
+        const vendasParaAtualizar = (await loadVendasPedido(
+          linha.amazonOrderId,
+        )).filter((venda) => venda.sku === linha.sku);
+        if (vendasParaAtualizar.length === 0) {
+          ignorados++;
+          continue;
+        }
+
         for (const venda of vendasParaAtualizar) {
           const atualizarBruto = valorBrutoFinanceiroPodeAtualizar({
             valorBrutoAtualCentavos: valorBrutoDaVenda(venda),
             quantidadeAtual: venda.quantidade,
-            valorBrutoFinanceiroCentavos: valorBrutoCentavos,
+            valorBrutoFinanceiroCentavos: linha.valorBrutoCentavos,
           });
 
           await db.vendaAmazon.update({
             where: { id: venda.id },
             data: {
-              taxasCentavos,
-              fretesCentavos,
+              taxasCentavos: linha.taxasCentavos,
+              fretesCentavos: linha.fretesCentavos,
               ...(atualizarBruto
                 ? {
-                    valorBrutoCentavos,
+                    valorBrutoCentavos: linha.valorBrutoCentavos,
                     precoUnitarioCentavos: calcularPrecoUnitarioCentavos(
-                      valorBrutoCentavos,
+                      linha.valorBrutoCentavos,
                       venda.quantidade,
                     ),
                   }
                 : {}),
               liquidoMarketplaceCentavos:
-                liquidoMarketplaceCentavos || undefined,
-              liquidacaoId: settlementId ?? undefined,
-              statusFinanceiro,
+                linha.liquidoMarketplaceCentavos ?? undefined,
+              liquidacaoId: linha.liquidacaoId ?? undefined,
+              statusFinanceiro: linha.statusFinanceiro ?? "LIQUIDADO",
               ultimaSyncEm: new Date(),
             },
           });
@@ -1305,6 +1356,8 @@ function extractAmountCentavos(value: unknown): number {
       value.Amount ??
       value.value ??
       value.Value ??
+      value.totalAmount ??
+      value.TotalAmount ??
       value.currencyAmount ??
       value.CurrencyAmount;
     if (amount !== value) return extractAmountCentavos(amount);
