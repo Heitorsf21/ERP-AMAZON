@@ -36,7 +36,6 @@ export const ADS_REQUIRED_CONFIG_KEYS = [
   "amazon_ads_client_id",
   "amazon_ads_client_secret",
   "amazon_ads_refresh_token",
-  "amazon_ads_profile_id",
 ] as const;
 
 export async function getAmazonAdsConfig(): Promise<Record<string, string>> {
