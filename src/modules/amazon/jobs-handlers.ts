@@ -11,6 +11,7 @@ import { db } from "@/lib/db";
 import {
   getCatalogItem,
   getInventorySummaries,
+  getListingsItem,
   getProductOffers,
   getSettlementReports,
   listFinancialTransactions,
@@ -1629,4 +1630,115 @@ function startOfUTCMonth(d: Date) {
 
 function addMonthsUTC(d: Date, months: number) {
   return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + months, 1));
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// LISTING_PRICE_SYNC
+// ─────────────────────────────────────────────────────────────────────
+// Sincroniza o `our_price` do listing (Listings Items v2021-08-01) para
+// cada SKU ativo. Salva em Produto.amazonPrecoListagemCentavos. Usado como
+// fallback de valorBrutoCentavos quando a Orders API ainda não retorna
+// ItemPrice (pedidos Pending).
+//
+// Rate limit LISTINGS_GET_ITEM = 5 rps, burst 10. Lotamos em 100 SKUs por
+// execução (suficiente para inventário típico < 200 ativos); o restante
+// pega no próximo ciclo via rotação por `amazonPrecoListagemSyncEm asc`.
+
+const LISTING_PRICE_BATCH_SIZE = 100;
+
+export async function runListingPriceSync(creds: SPAPICredentials) {
+  const sellerIdRow = await db.configuracaoSistema.findUnique({
+    where: { chave: "amazon_seller_id" },
+  });
+  const sellerId = sellerIdRow?.valor ?? null;
+  if (!sellerId) {
+    return {
+      ok: false,
+      skipped: true,
+      mensagem:
+        "amazon_seller_id nao configurado — rode scripts/sync-seller-id.ts primeiro.",
+    };
+  }
+
+  // Rotaciona por menor sincronia primeiro; SKUs novos (sync null) entram
+  // primeiro graças ao `nulls first`.
+  const produtos = await db.produto.findMany({
+    where: { ativo: true },
+    orderBy: [{ amazonPrecoListagemSyncEm: { sort: "asc", nulls: "first" } }],
+    take: LISTING_PRICE_BATCH_SIZE,
+    select: { id: true, sku: true },
+  });
+
+  let atualizados = 0;
+  let semPreco = 0;
+  const erros: string[] = [];
+
+  for (const p of produtos) {
+    try {
+      const item = await getListingsItem(creds, sellerId, p.sku);
+      const preco = extractListingOurPriceCentavos(item);
+      await db.produto.update({
+        where: { id: p.id },
+        data: {
+          amazonPrecoListagemCentavos: preco,
+          amazonPrecoListagemSyncEm: new Date(),
+        },
+      });
+      if (preco == null) semPreco++;
+      else atualizados++;
+    } catch (err) {
+      erros.push(`${p.sku}: ${err instanceof Error ? err.message : String(err)}`);
+      // Mesmo no erro, registra a tentativa pra não travar o SKU como sempre primeiro
+      await db.produto.update({
+        where: { id: p.id },
+        data: { amazonPrecoListagemSyncEm: new Date() },
+      });
+    }
+  }
+
+  return { ok: true, processados: produtos.length, atualizados, semPreco, erros };
+}
+
+// Extrai our_price (com tax) do payload do Listings Items.
+// Estrutura típica: attributes.purchasable_offer[0].our_price[0].schedule[0].value_with_tax
+// Retorna centavos (Int) ou null se não houver preço disponível.
+function extractListingOurPriceCentavos(item: unknown): number | null {
+  if (!isRecord(item)) return null;
+  const attrs = item.attributes;
+  if (!isRecord(attrs)) return null;
+  const offers = readArray(attrs.purchasable_offer);
+  for (const offer of offers) {
+    if (!isRecord(offer)) continue;
+    const ourPrices = readArray(offer.our_price);
+    for (const price of ourPrices) {
+      if (!isRecord(price)) continue;
+      const schedules = readArray(price.schedule);
+      for (const sched of schedules) {
+        if (!isRecord(sched)) continue;
+        const valor =
+          readNumber(sched.value_with_tax) ?? readNumber(sched.value);
+        if (valor != null && valor > 0) {
+          return Math.round(valor * 100);
+        }
+      }
+    }
+  }
+  return null;
+}
+
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return typeof v === "object" && v !== null && !Array.isArray(v);
+}
+
+function readArray(v: unknown): unknown[] {
+  return Array.isArray(v) ? v : [];
+}
+
+function readNumber(v: unknown): number | null {
+  if (typeof v === "number" && Number.isFinite(v)) return v;
+  if (typeof v === "string") {
+    const n = Number(v);
+    return Number.isFinite(n) ? n : null;
+  }
+  return null;
 }

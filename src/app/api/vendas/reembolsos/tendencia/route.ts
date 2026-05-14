@@ -1,6 +1,6 @@
 import { handle, ok } from "@/lib/api";
 import { db } from "@/lib/db";
-import { whereVendaAmazonContabilizavel } from "@/modules/vendas/filtros";
+import { whereVendaAmazonContabilizavelEstrito } from "@/modules/vendas/filtros";
 import { subDays, startOfWeek, format } from "date-fns";
 
 export const dynamic = "force-dynamic";
@@ -13,7 +13,7 @@ export const GET = handle(async (req: Request) => {
 
   const [vendas, reembolsos] = await Promise.all([
     db.vendaAmazon.findMany({
-      where: whereVendaAmazonContabilizavel({ dataVenda: { gte: desde } }),
+      where: whereVendaAmazonContabilizavelEstrito({ dataVenda: { gte: desde } }),
       select: { amazonOrderId: true, sku: true, dataVenda: true },
     }),
     db.amazonReembolso.findMany({

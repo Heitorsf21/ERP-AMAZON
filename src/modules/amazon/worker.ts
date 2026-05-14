@@ -26,6 +26,7 @@ import {
   runFbaStorageFeesSync,
   runFinancesBackfill,
   runInventorySnapshot,
+  runListingPriceSync,
   runReturnsSync,
   runSettlementBackfill,
   runTrafficSync,
@@ -254,6 +255,8 @@ async function processJob(
       }
       return runAmazonAdsBackfill(adsCreds);
     }
+    case TipoAmazonSyncJob.LISTING_PRICE_SYNC:
+      return runListingPriceSync(sp!);
     default:
       throw new Error(`Tipo de job Amazon desconhecido: ${tipo}`);
   }

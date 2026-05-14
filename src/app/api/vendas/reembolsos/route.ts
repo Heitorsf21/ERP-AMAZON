@@ -3,7 +3,7 @@ import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import {
   dataVendaPeriodoSP,
-  whereVendaAmazonContabilizavel,
+  whereVendaAmazonContabilizavelEstrito,
 } from "@/modules/vendas/filtros";
 import { calcularResumoReembolsos } from "@/modules/vendas/reembolsos";
 
@@ -23,7 +23,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     if (dataVenda) filtrosVendas.dataVenda = dataVenda;
     if (sku) filtrosVendas.sku = { contains: sku };
 
-    const whereVendas = whereVendaAmazonContabilizavel(filtrosVendas);
+    const whereVendas = whereVendaAmazonContabilizavelEstrito(filtrosVendas);
 
     const vendas = await db.vendaAmazon.findMany({
       where: whereVendas,

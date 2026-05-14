@@ -2,7 +2,7 @@ import { NextRequest } from "next/server";
 import { fromZonedTime } from "date-fns-tz";
 import { db } from "@/lib/db";
 import { ok } from "@/lib/api";
-import { whereVendaAmazonContabilizavel } from "@/modules/vendas/filtros";
+import { whereVendaAmazonContabilizavelEstrito } from "@/modules/vendas/filtros";
 import {
   valorBrutoDaVenda,
   valorLiquidoMarketplaceDaVenda,
@@ -50,7 +50,7 @@ async function calcularDRE(de: Date, ate: Date) {
     }),
     // Vendas Amazon detalhadas (Sprint 4 — DRE expandido).
     db.vendaAmazon.findMany({
-      where: whereVendaAmazonContabilizavel({
+      where: whereVendaAmazonContabilizavelEstrito({
         dataVenda: { gte: de, lte: ate },
       }),
       select: {

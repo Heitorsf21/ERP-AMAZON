@@ -1,7 +1,7 @@
 import { subDays } from "date-fns";
 import { handle, ok } from "@/lib/api";
 import { db } from "@/lib/db";
-import { whereVendaAmazonContabilizavel } from "@/modules/vendas/filtros";
+import { whereVendaAmazonContabilizavelEstrito } from "@/modules/vendas/filtros";
 
 export const dynamic = "force-dynamic";
 
@@ -18,7 +18,7 @@ export const GET = handle(async () => {
     }),
     db.vendaAmazon.groupBy({
       by: ["sku"],
-      where: whereVendaAmazonContabilizavel({
+      where: whereVendaAmazonContabilizavelEstrito({
         dataVenda: { gte: desde30d },
       }),
       _sum: { quantidade: true },

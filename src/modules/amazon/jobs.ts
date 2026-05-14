@@ -151,6 +151,14 @@ const SCHEDULES: Array<{
     intervalMs: 30 * 60_000,
     priority: 4,
   },
+  // Cache do our_price (Listings Items API). Roda a cada 30min para preencher
+  // Produto.amazonPrecoListagemCentavos — usado como fallback quando pedidos
+  // Pending vem sem ItemPrice da Orders API. Rate limit LISTINGS_GET_ITEM = 5 rps.
+  {
+    tipo: TipoAmazonSyncJob.LISTING_PRICE_SYNC,
+    intervalMs: 30 * 60_000,
+    priority: 8,
+  },
 ];
 
 export async function enqueueAmazonSyncJob(

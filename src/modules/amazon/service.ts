@@ -584,16 +584,28 @@ async function syncOrdersInternal(
 
     // Buscamos itens detalhados (com preço, taxa, frete) por pedido.
     // /orders/v0/orders/{id}/orderItems. Rate limit ORDERS_GET = 0.5 rps (2s cooldown).
-    // Otimização: pedidos que já têm preço válido e status correto no banco
-    // apenas recebem update de status — evita chamada desnecessária ao getOrderItems.
+    // Otimização: pedidos que já têm valor REAL da SP-API (precoOrigem = "sp-api")
+    // e status correto no banco apenas recebem update de status — evita chamada
+    // desnecessária. Pedidos com precoOrigem = "listing" (fallback) ou null
+    // continuam refazendo getOrderItems até o valor real chegar.
     const todosOrderIds = orders.map(getAmazonOrderId).filter((id): id is string => !!id);
     const existentesPreCheck = await db.vendaAmazon.findMany({
       where: { amazonOrderId: { in: todosOrderIds } },
-      select: { amazonOrderId: true, valorBrutoCentavos: true, statusPedido: true },
+      select: {
+        amazonOrderId: true,
+        valorBrutoCentavos: true,
+        statusPedido: true,
+        precoOrigem: true,
+      },
     });
     const pedidosComDadosCompletos = new Set(
       existentesPreCheck
-        .filter((e) => (e.valorBrutoCentavos ?? 0) > 0 && e.statusPedido !== "UNKNOWN")
+        .filter(
+          (e) =>
+            e.precoOrigem === "sp-api" &&
+            (e.valorBrutoCentavos ?? 0) > 0 &&
+            e.statusPedido !== "UNKNOWN",
+        )
         .map((e) => e.amazonOrderId),
     );
 
@@ -651,7 +663,12 @@ async function syncOrdersInternal(
     ];
     const produtos = await db.produto.findMany({
       where: { sku: { in: skus } },
-      select: { sku: true, asin: true, custoUnitario: true },
+      select: {
+        sku: true,
+        asin: true,
+        custoUnitario: true,
+        amazonPrecoListagemCentavos: true,
+      },
     });
     const produtosPorSku = new Map(produtos.map((produto) => [produto.sku, produto]));
 
@@ -683,13 +700,23 @@ async function syncOrdersInternal(
             unidade: "un",
           },
           update: {},
-          select: { sku: true, asin: true, custoUnitario: true },
+          select: {
+            sku: true,
+            asin: true,
+            custoUnitario: true,
+            amazonPrecoListagemCentavos: true,
+          },
         });
         produtosPorSku.set(sku, criado);
       } catch {
         const existente = await db.produto.findUnique({
           where: { sku },
-          select: { sku: true, asin: true, custoUnitario: true },
+          select: {
+            sku: true,
+            asin: true,
+            custoUnitario: true,
+            amazonPrecoListagemCentavos: true,
+          },
         });
         if (existente) produtosPorSku.set(sku, existente);
       }
@@ -755,22 +782,66 @@ async function syncOrdersInternal(
         const statusPedido = getOrderStatus(order, existente?.statusPedido ?? "UNKNOWN");
         const createdAt = getOrderCreatedTime(order) ?? new Date();
         const lastUpdatedAt = getOrderLastUpdatedTime(order);
+
+        // Decide valorBruto + precoOrigem.
+        // - ItemPrice da SP-API existe (>0) → usa real, marca "sp-api".
+        // - Senão, cache do listing (Produto.amazonPrecoListagemCentavos) → "listing".
+        // - Senão, mantém o que já existia no banco; ou zero.
+        // - Existente com "sp-api" NUNCA é sobrescrito por "listing" (preserva real).
+        let valorBrutoFinal = item.valorBrutoCentavos;
+        let precoOrigemFinal: string | null = null;
+        let taxasFinal = item.taxasCentavos;
+        let fretesFinal = item.fretesCentavos;
+        let liquidoFinal: number = item.liquidoMarketplaceCentavos;
+
+        if (valorBrutoFinal > 0) {
+          precoOrigemFinal = "sp-api";
+        } else if (
+          produto?.amazonPrecoListagemCentavos &&
+          produto.amazonPrecoListagemCentavos > 0
+        ) {
+          valorBrutoFinal = produto.amazonPrecoListagemCentavos * item.quantidade;
+          precoOrigemFinal = "listing";
+          // Sem taxas/frete reais ainda; deixar 0 e recalcular liquido.
+          taxasFinal = 0;
+          fretesFinal = 0;
+          liquidoFinal = valorBrutoFinal;
+        } else if (existente?.valorBrutoCentavos && existente.valorBrutoCentavos > 0) {
+          // Sem ItemPrice novo e sem listing — preserva o que já tinha.
+          valorBrutoFinal = existente.valorBrutoCentavos;
+          precoOrigemFinal = existente.precoOrigem ?? null;
+          taxasFinal = existente.taxasCentavos ?? 0;
+          fretesFinal = existente.fretesCentavos ?? 0;
+          liquidoFinal = existente.liquidoMarketplaceCentavos ?? valorBrutoFinal - taxasFinal;
+        }
+
+        // Não regredir "sp-api" → "listing".
+        if (existente?.precoOrigem === "sp-api" && precoOrigemFinal === "listing") {
+          valorBrutoFinal = existente.valorBrutoCentavos ?? valorBrutoFinal;
+          precoOrigemFinal = "sp-api";
+          taxasFinal = existente.taxasCentavos ?? taxasFinal;
+          fretesFinal = existente.fretesCentavos ?? fretesFinal;
+          liquidoFinal =
+            existente.liquidoMarketplaceCentavos ?? valorBrutoFinal - taxasFinal;
+        }
+
         const data = {
           orderItemId: item.OrderItemId ?? null,
           asin: item.ASIN ?? produto?.asin ?? null,
           titulo: item.Title ?? null,
           quantidade: item.quantidade,
           precoUnitarioCentavos: item.precoUnitarioCentavos,
-          valorBrutoCentavos: item.valorBrutoCentavos,
-          taxasCentavos: item.taxasCentavos,
-          fretesCentavos: item.fretesCentavos,
-          liquidoMarketplaceCentavos: item.liquidoMarketplaceCentavos,
+          valorBrutoCentavos: valorBrutoFinal,
+          taxasCentavos: taxasFinal,
+          fretesCentavos: fretesFinal,
+          liquidoMarketplaceCentavos: liquidoFinal,
           marketplace:
             getOrderMarketplaceName(order) ??
             getOrderMarketplace(order, creds.marketplaceId),
           fulfillmentChannel: getOrderFulfillmentChannel(order),
           statusPedido,
           statusFinanceiro: existente?.statusFinanceiro ?? "PENDENTE",
+          precoOrigem: precoOrigemFinal,
           dataVenda: createdAt,
           ultimaSyncEm: new Date(),
         };

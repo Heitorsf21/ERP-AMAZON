@@ -800,7 +800,7 @@ export async function getOrder(
   type Resp = SPOrder & {
     order?: SPOrder;
     Order?: SPOrder;
-    payload?: { order?: SPOrder; Order?: SPOrder };
+    payload?: { order?: SPOrder; Order?: SPOrder; AmazonOrderId?: string };
   };
   const result = await spApiRequest<Resp>(
     creds,

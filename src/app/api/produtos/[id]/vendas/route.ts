@@ -1,7 +1,7 @@
 import { subDays } from "date-fns";
 import { handle, ok, erro } from "@/lib/api";
 import { db } from "@/lib/db";
-import { whereVendaAmazonContabilizavel } from "@/modules/vendas/filtros";
+import { whereVendaAmazonContabilizavelEstrito } from "@/modules/vendas/filtros";
 import { valorLiquidoMarketplaceDaVenda } from "@/modules/vendas/valores";
 
 export const dynamic = "force-dynamic";
@@ -25,7 +25,7 @@ export const GET = handle(async (req: Request, { params }: Params) => {
   const desde = subDays(new Date(), dias);
 
   const vendas = await db.vendaAmazon.findMany({
-    where: whereVendaAmazonContabilizavel({
+    where: whereVendaAmazonContabilizavelEstrito({
       sku: produto.sku,
       dataVenda: { gte: desde },
     }),

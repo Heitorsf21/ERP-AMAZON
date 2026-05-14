@@ -267,6 +267,10 @@ model Produto {
   buyboxPreco             Int?
   buyboxConcorrentes      Int?
   buyboxUltimaSyncEm      DateTime?
+  // Preco do listing (our_price) sincronizado via /listings/2021-08-01.
+  // Usado como fallback em pedidos Pending que ainda nao tem ItemPrice na SP-API.
+  amazonPrecoListagemCentavos Int?
+  amazonPrecoListagemSyncEm   DateTime?
   createdAt               DateTime  @default(now())
   updatedAt               DateTime  @updatedAt
 
@@ -310,6 +314,10 @@ model VendaAmazon {
   fulfillmentChannel         String?
   statusPedido               String    @default("UNKNOWN")
   statusFinanceiro           String    @default("PENDENTE")
+  // Origem do valorBrutoCentavos: "sp-api" (ItemPrice real), "listing"
+  // (fallback do Produto.amazonPrecoListagemCentavos enquanto Pending) ou
+  // null (legado). Apenas "sp-api" entra em DRE/Contas a Receber.
+  precoOrigem                String?
   dataVenda                  DateTime
   ultimaSyncEm               DateTime?
   criadoEm                   DateTime  @default(now())
@@ -324,6 +332,7 @@ model VendaAmazon {
   @@index([statusFinanceiro])
   @@index([ultimaSyncEm])
   @@index([dataVenda, statusFinanceiro])
+  @@index([precoOrigem])
 }
 
 model AmazonOrderRaw {
