@@ -770,6 +770,28 @@ export async function getOrders(
   return orders;
 }
 
+export async function fetchOrdersByIdsFromList(
+  creds: SPAPICredentials,
+  orderIds: string[],
+): Promise<SPOrder[]> {
+  if (orderIds.length === 0) return [];
+  // v0 exige LastUpdatedAfter; janela de 90 dias cobre todos os orders ativos
+  const result = await spApiRequest<SPOrdersResponse>(
+    creds,
+    "/orders/v0/orders",
+    {
+      operation: AmazonSpApiOperation.ORDERS_SEARCH,
+      params: {
+        MarketplaceIds: creds.marketplaceId,
+        AmazonOrderId: orderIds.slice(0, 50).join(","),
+        MaxResultsPerPage: Math.min(orderIds.length, 100),
+        LastUpdatedAfter: new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString(),
+      },
+    },
+  );
+  return readOrdersFromResponse(result);
+}
+
 export async function getOrder(
   creds: SPAPICredentials,
   orderId: string,
@@ -782,7 +804,7 @@ export async function getOrder(
   };
   const result = await spApiRequest<Resp>(
     creds,
-    `/orders/2026-01-01/orders/${encodeURIComponent(orderId)}`,
+    `/orders/v0/orders/${encodeURIComponent(orderId)}`,
     {
       operation: AmazonSpApiOperation.ORDERS_GET,
       accessToken: options.accessToken,
@@ -794,7 +816,9 @@ export async function getOrder(
     result.Order ??
     result.payload?.order ??
     result.payload?.Order ??
-    (result.orderId ? result : null)
+    (result.orderId ? result : null) ??
+    // v0 format: payload contem AmazonOrderId e OrderStatus diretamente
+    (result.payload?.AmazonOrderId ? (result.payload as unknown as SPOrder) : null)
   );
 }
 

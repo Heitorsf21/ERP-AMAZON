@@ -22,6 +22,7 @@ import {
   type SPAPICredentials,
   type SPOrder,
   type SPOrderItemDetail,
+  fetchOrdersByIdsFromList,
 } from "@/lib/amazon-sp-api";
 import { gunzipSync } from "zlib";
 import {
@@ -569,7 +570,7 @@ async function syncOrdersInternal(
     const orders =
       orderIds.length > 0
         ? await fetchOrdersById(creds, orderIds)
-        : await getOrders(creds, since, 50, {
+        : await getOrders(creds, since, 100, {
             maxPages: options.maxPages,
             before: options.endDate,
             dateFilter: options.dateFilter ?? "created",
@@ -582,13 +583,35 @@ async function syncOrdersInternal(
     }
 
     // Buscamos itens detalhados (com preço, taxa, frete) por pedido.
-    // O endpoint de listagem /orders/2026-01-01/orders NAO traz isso —
-    // só /orders/v0/orders/{id}/orderItems. Rate limit ORDERS_GET = 0.5 rps.
+    // /orders/v0/orders/{id}/orderItems. Rate limit ORDERS_GET = 0.5 rps (2s cooldown).
+    // Otimização: pedidos que já têm preço válido e status correto no banco
+    // apenas recebem update de status — evita chamada desnecessária ao getOrderItems.
+    const todosOrderIds = orders.map(getAmazonOrderId).filter((id): id is string => !!id);
+    const existentesPreCheck = await db.vendaAmazon.findMany({
+      where: { amazonOrderId: { in: todosOrderIds } },
+      select: { amazonOrderId: true, valorBrutoCentavos: true, statusPedido: true },
+    });
+    const pedidosComDadosCompletos = new Set(
+      existentesPreCheck
+        .filter((e) => (e.valorBrutoCentavos ?? 0) > 0 && e.statusPedido !== "UNKNOWN")
+        .map((e) => e.amazonOrderId),
+    );
+
     const itemsPorOrderId = new Map<string, SPOrderItemDetail[]>();
+    const pedidosSoPraStatusUpdate: Array<{ amazonOrderId: string; order: SPOrder }> = [];
+
     for (const order of orders) {
       const amazonOrderId = getAmazonOrderId(order);
       if (!amazonOrderId) continue;
+
+      if (pedidosComDadosCompletos.has(amazonOrderId)) {
+        // Pedido já tem preço e status: agenda status-only update, pula getOrderItems.
+        pedidosSoPraStatusUpdate.push({ amazonOrderId, order });
+        continue;
+      }
+
       try {
+        await new Promise((r) => setTimeout(r, 2500));
         const detalhes = await getOrderItems(creds, amazonOrderId);
         const fallback = detalhes.length > 0 ? detalhes : orderItemsFromOrderSummary(order);
         itemsPorOrderId.set(amazonOrderId, fallback);
@@ -600,6 +623,21 @@ async function syncOrdersInternal(
         }
         // erro pontual num pedido — segue o fluxo, marca vazio
         itemsPorOrderId.set(amazonOrderId, orderItemsFromOrderSummary(order));
+      }
+    }
+
+    // Status-only: atualiza statusPedido para pedidos que pularam getOrderItems.
+    // O v0 já retorna OrderStatus, então podemos atualizar sem chamar getOrderItems.
+    for (const { amazonOrderId, order } of pedidosSoPraStatusUpdate) {
+      const novoStatus = getOrderStatus(order, "UNKNOWN");
+      if (novoStatus && novoStatus !== "UNKNOWN") {
+        await db.vendaAmazon.updateMany({
+          where: { amazonOrderId },
+          data: { statusPedido: novoStatus, ultimaSyncEm: new Date() },
+        });
+        atualizadas++;
+      } else {
+        ignoradas++;
       }
     }
 
@@ -1167,12 +1205,11 @@ async function fetchOrdersById(
   creds: SPAPICredentials,
   orderIds: string[],
 ): Promise<SPOrder[]> {
-  const pedidos: SPOrder[] = [];
-  for (const orderId of normalizeOrderIds(orderIds)) {
-    const pedido = await getOrder(creds, orderId);
-    if (pedido) pedidos.push(pedido);
-  }
-  return pedidos;
+  const ids = normalizeOrderIds(orderIds);
+  if (ids.length === 0) return [];
+  // Usa o endpoint de listagem com filtro AmazonOrderIds — retorna OrderStatus completo.
+  // getOrder (endpoint individual) não retorna OrderStatus, gerando status UNKNOWN.
+  return fetchOrdersByIdsFromList(creds, ids);
 }
 
 function getAmazonOrderId(order: SPOrder): string | undefined {
