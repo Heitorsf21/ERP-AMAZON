@@ -13,6 +13,7 @@ import {
   getInventorySummaries,
   getListingsItem,
   getProductOffers,
+  getSellerId,
   getSettlementReports,
   listFinancialTransactions,
   type SPAPICredentials,
@@ -1647,16 +1648,35 @@ function addMonthsUTC(d: Date, months: number) {
 const LISTING_PRICE_BATCH_SIZE = 100;
 
 export async function runListingPriceSync(creds: SPAPICredentials) {
+  let sellerId: string | null = null;
   const sellerIdRow = await db.configuracaoSistema.findUnique({
     where: { chave: "amazon_seller_id" },
   });
-  const sellerId = sellerIdRow?.valor ?? null;
+  sellerId = sellerIdRow?.valor ?? null;
+  // Auto-descobre via SP-API se ainda nao estiver salvo (rota Sellers/v1).
+  if (!sellerId) {
+    try {
+      sellerId = await getSellerId(creds);
+      if (sellerId) {
+        await db.configuracaoSistema.upsert({
+          where: { chave: "amazon_seller_id" },
+          create: { chave: "amazon_seller_id", valor: sellerId },
+          update: { valor: sellerId },
+        });
+      }
+    } catch (err) {
+      return {
+        ok: false,
+        skipped: true,
+        mensagem: `Falha ao resolver amazon_seller_id: ${err instanceof Error ? err.message : String(err)}`,
+      };
+    }
+  }
   if (!sellerId) {
     return {
       ok: false,
       skipped: true,
-      mensagem:
-        "amazon_seller_id nao configurado — rode scripts/sync-seller-id.ts primeiro.",
+      mensagem: "amazon_seller_id nao disponivel (SP-API retornou vazio).",
     };
   }
 
