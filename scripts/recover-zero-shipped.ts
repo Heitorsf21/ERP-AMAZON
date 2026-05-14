@@ -169,8 +169,8 @@ async function main() {
     console.log(
       `\n─── Etapa (b): Financial Events (${pendentes.size} pendente(s)) ───`,
     );
-    // Janela ampla: 2 anos para cobrir desde set/2025.
-    const since = subDays(new Date(), 365 * 2);
+    // Janela ampla: ~23 meses (limite da Finance Events API e 2 anos retroativos).
+    const since = subDays(new Date(), 365 * 2 - 10);
     console.log(`Buscando transacoes desde ${since.toISOString().slice(0, 10)}...`);
     let transacoes: SPFinanceTransaction[];
     try {
