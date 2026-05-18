@@ -185,10 +185,11 @@ const SCHEDULES: Array<{
     priority: 8,
   },
   // Estimator de taxas (comissão+FBA) via SP-API getMyFeesEstimateForSKU.
-  // Cobre até 50 SKUs por execução; refresh a cada ~20h.
+  // Amazon enforces quota agressiva — batch=5 SKUs/exec × 1h = 120 SKUs/dia.
+  // Refresh por SKU acontece a cada ~20h (filtro limiteRecente no handler).
   {
     tipo: TipoAmazonSyncJob.AMAZON_FEE_ESTIMATE_SYNC,
-    intervalMs: 6 * 60 * 60_000,
+    intervalMs: 60 * 60_000,
     priority: 7,
   },
   // Verifica diariamente se a promo FBA (R$5/R$0) expirou — dispara Notificacao.

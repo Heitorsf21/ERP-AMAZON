@@ -1683,7 +1683,12 @@ function readNumber(v: unknown): number | null {
 // produtos ativos, salva em AmazonFeeEstimate. Roda 24h.
 // ─────────────────────────────────────────────────────────────────────
 
-const FEE_ESTIMATE_MAX_PER_RUN = 50;
+// Amazon enforces PRODUCT_FEES_ESTIMATE mais agressivo que o documentado (1 rps).
+// Reduzimos batch para 5 SKUs por execucao (rotaciona pelos produtos mais antigos).
+// 5 SKUs × 4 execucoes/dia = 20 SKUs/dia, cobrindo a loja em 1-2 dias.
+const FEE_ESTIMATE_MAX_PER_RUN = 5;
+// Delay entre chamadas para nao acumular cooldown.
+const FEE_ESTIMATE_DELAY_MS = 3000;
 
 export async function runAmazonFeeEstimateSync(creds: SPAPICredentials) {
   // Usa cache em ConfiguracaoSistema.amazon_seller_id (povoado por
@@ -1723,7 +1728,12 @@ export async function runAmazonFeeEstimateSync(creds: SPAPICredentials) {
 
   let okCount = 0;
   let erros = 0;
-  for (const p of alvos) {
+  for (let i = 0; i < alvos.length; i++) {
+    const p = alvos[i];
+    if (!p) continue;
+    if (i > 0) {
+      await new Promise((r) => setTimeout(r, FEE_ESTIMATE_DELAY_MS));
+    }
     const preco = p.amazonPrecoListagemCentavos ?? 0;
     if (preco <= 0) continue;
     const est = await getMyFeesEstimateForSKU(creds, sellerId, p.sku, preco);
