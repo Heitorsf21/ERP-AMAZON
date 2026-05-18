@@ -239,41 +239,41 @@ model ContaReceber {
 // ── Estoque ─────────────────────────────────────────────────────────────────
 
 model Produto {
-  id                      String    @id @default(cuid())
-  sku                     String    @unique
-  asin                    String?
-  nome                    String
-  descricao               String?
-  custoUnitario           Int?
-  precoVenda              Int?
-  amazonEstoqueDisponivel Int?
-  amazonEstoqueReservado  Int?
-  amazonEstoqueInbound    Int?
-  amazonEstoqueTotal      Int?
-  amazonUltimaSyncEm      DateTime?
-  estoqueAtual            Int       @default(0)
-  estoqueMinimo           Int       @default(0)
-  unidade                 String    @default("un")
-  ativo                   Boolean   @default(true)
-  solicitarReviewsAtivo   Boolean   @default(true)
-  imagemUrl               String?
-  observacoes             String?
+  id                          String    @id @default(cuid())
+  sku                         String    @unique
+  asin                        String?
+  nome                        String
+  descricao                   String?
+  custoUnitario               Int?
+  precoVenda                  Int?
+  amazonEstoqueDisponivel     Int?
+  amazonEstoqueReservado      Int?
+  amazonEstoqueInbound        Int?
+  amazonEstoqueTotal          Int?
+  amazonUltimaSyncEm          DateTime?
+  estoqueAtual                Int       @default(0)
+  estoqueMinimo               Int       @default(0)
+  unidade                     String    @default("un")
+  ativo                       Boolean   @default(true)
+  solicitarReviewsAtivo       Boolean   @default(true)
+  imagemUrl                   String?
+  observacoes                 String?
   // Catálogo Amazon
-  amazonImagemUrl         String?
-  amazonTituloOficial     String?
-  amazonCategoria         String?
-  amazonCatalogSyncEm     DateTime?
+  amazonImagemUrl             String?
+  amazonTituloOficial         String?
+  amazonCategoria             String?
+  amazonCatalogSyncEm         DateTime?
   // Buybox snapshot atual
-  buyboxGanho             Boolean?
-  buyboxPreco             Int?
-  buyboxConcorrentes      Int?
-  buyboxUltimaSyncEm      DateTime?
+  buyboxGanho                 Boolean?
+  buyboxPreco                 Int?
+  buyboxConcorrentes          Int?
+  buyboxUltimaSyncEm          DateTime?
   // Preco do listing (our_price) sincronizado via /listings/2021-08-01.
   // Usado como fallback em pedidos Pending que ainda nao tem ItemPrice na SP-API.
   amazonPrecoListagemCentavos Int?
   amazonPrecoListagemSyncEm   DateTime?
-  createdAt               DateTime  @default(now())
-  updatedAt               DateTime  @updatedAt
+  createdAt                   DateTime  @default(now())
+  updatedAt                   DateTime  @updatedAt
 
   movimentacoes      MovimentacaoEstoque[]
   itensPedido        ItemPedidoCompra[]
@@ -286,14 +286,43 @@ model Produto {
   returnsAmazon      AmazonReturn[]
   skuTrafficDaily    AmazonSkuTrafficDaily[]
   adsMetricasDiarias AmazonAdsMetricaDiaria[]
-  variacoesPai       ProdutoVariacao[] @relation("ProdutoVariacaoPai")
-  variacaoComoFilho  ProdutoVariacao?  @relation("ProdutoVariacaoFilho")
+  variacoesPai       ProdutoVariacao[]            @relation("ProdutoVariacaoPai")
+  variacaoComoFilho  ProdutoVariacao?             @relation("ProdutoVariacaoFilho")
+  custoHistorico     ProdutoCustoHistorico[]
 
   @@index([sku])
   @@index([asin])
   @@index([ativo])
   @@index([amazonUltimaSyncEm])
   @@index([estoqueAtual])
+}
+
+// Vigências de custo unitário ao longo do tempo. Substitui o comportamento
+// fossilizado de Produto.custoUnitario (que continua existindo como fallback
+// para o último custo conhecido). Permite recalcular margem retroativamente
+// quando o usuário descobre que o custo de um SKU mudou em determinada data.
+//
+// Resolução: para uma venda em dataVenda, busca o registro onde
+//   produtoId = X
+//   vigenciaInicio <= dataVenda
+//   AND (vigenciaFim IS NULL OR vigenciaFim > dataVenda)
+//
+// origem: 'inicial' (backfill 1x da abertura), 'manual', 'gestor-seller-import'
+model ProdutoCustoHistorico {
+  id             String    @id @default(cuid())
+  produtoId      String
+  custoCentavos  Int
+  vigenciaInicio DateTime
+  vigenciaFim    DateTime?
+  origem         String
+  observacao     String?
+  criadoEm       DateTime  @default(now())
+
+  produto Produto @relation(fields: [produtoId], references: [id], onDelete: Cascade)
+
+  @@unique([produtoId, vigenciaInicio])
+  @@index([produtoId, vigenciaInicio])
+  @@index([vigenciaInicio])
 }
 
 model VendaAmazon {
@@ -358,16 +387,16 @@ model AmazonOrderRaw {
 }
 
 model ProdutoVariacao {
-  id              String   @id @default(cuid())
-  produtoPaiId    String
-  produtoFilhoId  String?  @unique
-  skuPai          String
-  skuFilho        String?
-  nome            String?
-  tipo            String?
-  atributosJson   String?
-  criadoEm        DateTime @default(now())
-  atualizadoEm    DateTime @updatedAt
+  id             String   @id @default(cuid())
+  produtoPaiId   String
+  produtoFilhoId String?  @unique
+  skuPai         String
+  skuFilho       String?
+  nome           String?
+  tipo           String?
+  atributosJson  String?
+  criadoEm       DateTime @default(now())
+  atualizadoEm   DateTime @updatedAt
 
   produtoPai   Produto  @relation("ProdutoVariacaoPai", fields: [produtoPaiId], references: [id], onDelete: Cascade)
   produtoFilho Produto? @relation("ProdutoVariacaoFilho", fields: [produtoFilhoId], references: [id], onDelete: SetNull)
@@ -748,18 +777,18 @@ model Notificacao {
 }
 
 model AuditLog {
-  id            String   @id @default(cuid())
-  usuarioId     String?
-  usuarioEmail  String?
-  acao          String
-  entidade      String
-  entidadeId    String?
-  antesJson     String?
-  depoisJson    String?
-  metadataJson  String?
-  ip            String?
-  userAgent     String?
-  criadoEm      DateTime @default(now())
+  id           String   @id @default(cuid())
+  usuarioId    String?
+  usuarioEmail String?
+  acao         String
+  entidade     String
+  entidadeId   String?
+  antesJson    String?
+  depoisJson   String?
+  metadataJson String?
+  ip           String?
+  userAgent    String?
+  criadoEm     DateTime @default(now())
 
   usuario Usuario? @relation(fields: [usuarioId], references: [id], onDelete: SetNull)
 
@@ -771,15 +800,15 @@ model AuditLog {
 }
 
 model FbmPickingBatch {
-  id              String   @id @default(cuid())
-  codigo          String   @unique
-  status          String   @default("ABERTO")
-  etiquetaUrl     String?
-  observacoes     String?
-  criadoPorId     String?
-  criadoPorEmail  String?
-  criadoEm        DateTime @default(now())
-  atualizadoEm    DateTime @updatedAt
+  id             String   @id @default(cuid())
+  codigo         String   @unique
+  status         String   @default("ABERTO")
+  etiquetaUrl    String?
+  observacoes    String?
+  criadoPorId    String?
+  criadoPorEmail String?
+  criadoEm       DateTime @default(now())
+  atualizadoEm   DateTime @updatedAt
 
   itens FbmPickingItem[]
 
@@ -788,20 +817,20 @@ model FbmPickingBatch {
 }
 
 model FbmPickingItem {
-  id             String   @id @default(cuid())
-  batchId        String
-  vendaAmazonId  String?
-  amazonOrderId  String
-  sku            String
-  asin           String?
-  titulo         String?
-  quantidade     Int      @default(1)
-  status         String   @default("PENDENTE")
-  checklistJson  String?
-  separadoEm     DateTime?
-  conferidoEm    DateTime?
-  criadoEm       DateTime @default(now())
-  atualizadoEm   DateTime @updatedAt
+  id            String    @id @default(cuid())
+  batchId       String
+  vendaAmazonId String?
+  amazonOrderId String
+  sku           String
+  asin          String?
+  titulo        String?
+  quantidade    Int       @default(1)
+  status        String    @default("PENDENTE")
+  checklistJson String?
+  separadoEm    DateTime?
+  conferidoEm   DateTime?
+  criadoEm      DateTime  @default(now())
+  atualizadoEm  DateTime  @updatedAt
 
   batch FbmPickingBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
 
@@ -1041,17 +1070,17 @@ model AmazonSkuTrafficDaily {
 // `AdsCampanha` antigo (manual).
 
 model AmazonAdsCampanha {
-  id            String   @id @default(cuid())
-  campaignId    String   @unique
-  profileId     String
-  nome          String
-  estado        String?
-  tipoTargeting String?
+  id             String   @id @default(cuid())
+  campaignId     String   @unique
+  profileId      String
+  nome           String
+  estado         String?
+  tipoTargeting  String?
   budgetCentavos Int?
-  ultimaSync    DateTime
-  payloadJson   String
-  criadoEm      DateTime @default(now())
-  atualizadoEm  DateTime @updatedAt
+  ultimaSync     DateTime
+  payloadJson    String
+  criadoEm       DateTime @default(now())
+  atualizadoEm   DateTime @updatedAt
 
   metricasDiarias AmazonAdsMetricaDiaria[]
 

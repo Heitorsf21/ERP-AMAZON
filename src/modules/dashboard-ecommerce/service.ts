@@ -208,7 +208,6 @@ export const dashboardEcommerceService = {
     ]);
     const agregado = agregarVendas(vendas);
     const agregadoReembolsados = agregarVendas(vendasReembolsadas);
-    const snapshotGestor = await buscarSnapshotGestorSeller(periodo);
     const lucroBrutoCentavos = calcularLucroBruto(agregado);
     const lucroPosAdsCentavos =
       lucroBrutoCentavos == null
@@ -217,20 +216,14 @@ export const dashboardEcommerceService = {
 
     return {
       periodo,
-      faturamentoCentavos:
-        snapshotGestor?.faturamentoCentavos ?? agregado.faturamentoCentavos,
+      faturamentoCentavos: agregado.faturamentoCentavos,
       freteCentavos: agregado.fretesCentavos,
       faturamentoComFreteCentavos:
         agregado.faturamentoCentavos + agregado.fretesCentavos,
-      faturamentoReembolsadoCentavos:
-        snapshotGestor?.faturamentoReembolsadoCentavos ??
-        agregadoReembolsados.faturamentoCentavos,
+      faturamentoReembolsadoCentavos: agregadoReembolsados.faturamentoCentavos,
       faturamentoComReembolsadosCentavos:
-        snapshotGestor?.faturamentoComReembolsadosCentavos ??
         agregado.faturamentoCentavos + agregadoReembolsados.faturamentoCentavos,
-      liquidoMarketplaceCentavos:
-        snapshotGestor?.liquidoMarketplaceCentavos ??
-        agregado.liquidoMarketplaceCentavos,
+      liquidoMarketplaceCentavos: agregado.liquidoMarketplaceCentavos,
       lucroBrutoCentavos,
       margemPercentual: percentual(lucroBrutoCentavos, agregado.faturamentoCentavos),
       numeroVendas: agregado.numeroVendas,
@@ -584,26 +577,6 @@ async function buscarTraffic(periodo: IntervaloPeriodo) {
         ? null
         : Math.round(agregado._avg.buyBoxPercent * 10) / 10,
   };
-}
-
-type SnapshotGestorSeller = {
-  faturamentoCentavos?: number;
-  faturamentoReembolsadoCentavos?: number;
-  faturamentoComReembolsadosCentavos?: number;
-  liquidoMarketplaceCentavos?: number;
-};
-
-async function buscarSnapshotGestorSeller(
-  periodo: IntervaloPeriodo,
-): Promise<SnapshotGestorSeller | null> {
-  const chave = `gestor_seller_snapshot:${formatarDiaPeriodo(periodo.de)}:${formatarDiaPeriodo(periodo.ate)}`;
-  const config = await db.configuracaoSistema.findUnique({ where: { chave } });
-  if (!config) return null;
-  try {
-    return JSON.parse(config.valor) as SnapshotGestorSeller;
-  } catch {
-    return null;
-  }
 }
 
 function agregarVendas(vendas: VendaDashboard[]) {

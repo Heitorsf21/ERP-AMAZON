@@ -22,6 +22,7 @@ import {
   ArrowUp,
   ArrowDown,
   ChevronsUpDown,
+  History,
 } from "lucide-react";
 import { toast } from "sonner";
 import Link from "next/link";
@@ -60,6 +61,7 @@ import { DataTableSkeleton } from "@/components/ui/data-table-skeleton";
 import { BadgeReposicao } from "./badge-reposicao";
 import { DialogProduto } from "./dialog-produto";
 import { DialogMovimentacaoEstoque } from "./dialog-movimentacao-estoque";
+import { DialogCustoHistorico } from "./dialog-custo-historico";
 import { fetchJSON } from "@/lib/fetcher";
 import { formatBRL } from "@/lib/money";
 import { resolverImagemProduto } from "@/lib/amazon-images";
@@ -439,6 +441,10 @@ export function ListaProdutos() {
     produtoId: string;
     nome: string;
   }>({ aberto: false, produtoId: "", nome: "" });
+  const [dialogCusto, setDialogCusto] = useState<{
+    aberto: boolean;
+    produtoId: string | null;
+  }>({ aberto: false, produtoId: null });
   const [listingDiff, setListingDiff] = useState<ListingDiffResponse | null>(null);
 
   const params = new URLSearchParams();
@@ -1034,6 +1040,14 @@ export function ListaProdutos() {
                               )}
                               <DropdownMenuItem
                                 onClick={() =>
+                                  setDialogCusto({ aberto: true, produtoId: p.id })
+                                }
+                              >
+                                <History className="mr-2 h-4 w-4" />
+                                Histórico de custo
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onClick={() =>
                                   setDialogProduto({ aberto: true, produto: p })
                                 }
                               >
@@ -1074,6 +1088,14 @@ export function ListaProdutos() {
           nomeProduto={dialogMov.nome}
           onOpenChange={(v) => {
             if (!v) setDialogMov({ aberto: false, produtoId: "", nome: "" });
+          }}
+        />
+
+        <DialogCustoHistorico
+          aberto={dialogCusto.aberto}
+          produtoId={dialogCusto.produtoId}
+          onOpenChange={(v) => {
+            if (!v) setDialogCusto({ aberto: false, produtoId: null });
           }}
         />
 

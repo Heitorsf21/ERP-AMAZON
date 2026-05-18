@@ -35,3 +35,9 @@ next-env.d.ts
 # Cópias locais
 "ERP AMAZON2/"
 ERP AMAZON2/
+
+# Planilhas Gestor Seller (insumos do importador de custos — sensíveis)
+reports_sales*.xlsx
+BusinessReport*.csv
+tmp/
+design-previews/claude-design-input/
