@@ -46,6 +46,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { ErrorBoundary } from "@/components/ui/error-boundary";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { MarginBadge } from "@/components/ui/margin-badge";
@@ -844,7 +845,8 @@ function DashboardEcommerceContent() {
         )}
       </div>
 
-      <Card>
+      <ErrorBoundary label="Resumo de receitas">
+        <Card>
         <CardHeader className="flex-row items-center justify-between space-y-0">
           <CardTitle className="text-base">Resumo de receitas</CardTitle>
           <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
@@ -942,9 +944,11 @@ function DashboardEcommerceContent() {
             </ResponsiveContainer>
           </div>
         </CardContent>
-      </Card>
+        </Card>
+      </ErrorBoundary>
 
-      <Card>
+      <ErrorBoundary label="Top 15 produtos">
+        <Card>
         <CardHeader className="flex-row items-center justify-between space-y-0">
           <CardTitle className="text-base">Top 15 produtos</CardTitle>
           <Button
@@ -1089,7 +1093,8 @@ function DashboardEcommerceContent() {
             </Table>
           </div>
         </CardContent>
-      </Card>
+        </Card>
+      </ErrorBoundary>
 
       <Dialog
         open={!!produtoDetalhe}
@@ -1114,8 +1119,10 @@ function DashboardEcommerceContent() {
 
 export default function DashboardEcommercePage() {
   return (
-    <React.Suspense fallback={null}>
-      <DashboardEcommerceContent />
-    </React.Suspense>
+    <ErrorBoundary label="Dashboard E-commerce">
+      <React.Suspense fallback={null}>
+        <DashboardEcommerceContent />
+      </React.Suspense>
+    </ErrorBoundary>
   );
 }

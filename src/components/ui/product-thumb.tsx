@@ -54,6 +54,10 @@ export function ProductThumb({ src, alt, size = 40, title, className }: Props) {
     <img
       src={src}
       alt={alt}
+      width={size}
+      height={size}
+      loading="lazy"
+      decoding="async"
       onError={() => setErro(true)}
       onLoad={(e) => {
         const w = (e.currentTarget as HTMLImageElement).naturalWidth;
