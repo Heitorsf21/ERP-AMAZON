@@ -3,7 +3,6 @@
 import * as React from "react";
 import { ImageOff } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 type Size = 32 | 40 | 48 | 56;
 
@@ -34,10 +33,12 @@ export function ProductThumb({ src, alt, size = 40, title, className }: Props) {
 
   const sizeClass = sizeClassMap[size];
   const iconClass = iconClassMap[size];
+  const hoverTitle = title || alt;
 
   if (!src || erro) {
     return (
       <span
+        title={hoverTitle}
         className={cn(
           "flex shrink-0 items-center justify-center rounded-md border bg-muted shadow-sm",
           sizeClass,
@@ -49,11 +50,12 @@ export function ProductThumb({ src, alt, size = 40, title, className }: Props) {
     );
   }
 
-  const img = (
+  return (
     /* eslint-disable-next-line @next/next/no-img-element */
     <img
       src={src}
       alt={alt}
+      title={hoverTitle}
       width={size}
       height={size}
       loading="lazy"
@@ -69,16 +71,5 @@ export function ProductThumb({ src, alt, size = 40, title, className }: Props) {
         className,
       )}
     />
-  );
-
-  if (!title) return img;
-
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>{img}</TooltipTrigger>
-      <TooltipContent side="right" className="max-w-[280px] text-xs">
-        {title}
-      </TooltipContent>
-    </Tooltip>
   );
 }
