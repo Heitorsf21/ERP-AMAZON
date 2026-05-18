@@ -10,7 +10,8 @@
 - Financeiro: DossieFinanceiro · DocumentoFinanceiro · ContaPagar · ContaReceber · Movimentacao · Fornecedor · Categoria
 - Estoque/Compras: Produto · MovimentacaoEstoque · PedidoCompra · ItemPedidoCompra
 - Auth/Sistema: Usuario · ConfiguracaoSistema · Notificacao · ImportacaoLote
-- Amazon: AmazonSyncLog · AmazonSyncJob · AmazonApiQuota · AmazonReviewSolicitation · AmazonSettlementReport · BuyBoxSnapshot · VendaAmazon · AmazonReembolso · LoteImportacaoFBA · VendaFBA · LoteMetricaGS · ProdutoMetricaGestorSeller · AmazonAdsMetricaDiaria · AmazonSkuTrafficDaily · AmazonOrderRaw
+- Amazon: AmazonSyncLog · AmazonSyncJob · AmazonApiQuota · AmazonReviewSolicitation · AmazonSettlementReport · BuyBoxSnapshot · VendaAmazon · AmazonReembolso · LoteImportacaoFBA · VendaFBA · LoteMetricaGS · ProdutoMetricaGestorSeller · AmazonAdsMetricaDiaria · AmazonSkuTrafficDaily · AmazonOrderRaw · AmazonFeeEstimate · AmazonFinanceTransaction
+- Custo histórico: ProdutoCustoHistorico (vigências por data)
 - Ads: AdsGastoManual · AdsCampanha
 
 ## Regras de negócio
@@ -24,11 +25,25 @@ Abas: Abertas · Vencidas · Pagas · Todas. Filtros: Hoje · Ontem · 7d · 30d
 ### Contas a receber (Amazon)
 CSV Unified Transaction: 9 linhas cabeçalho + nomes + 24 campos. Status Liberado (transferido) | Diferido (PENDENTE por liquidação). Reimport parcial: `Math.max(existente, novo)`. Ciclo ~14d (`dataPrevisao = data última + 14d`). Job `SETTLEMENT_REPORT_SYNC` (6h) baixa CSV via Reports API. `reconciliarRecebimentosAmazon()` cruza ENTRADA Nubank + "Amazon" ↔ ContaReceber PENDENTE (R$5 ou 0,5%, ±3d) a cada loop do worker.
 
-### VendaAmazon (espelha Gestor Seller)
-Chave única `(amazonOrderId, sku)`. `liquidoMarketplaceCentavos = valorBruto - itemTax - shippingTax`. Filtro **`whereVendaAmazonEspelhoGestorSeller()`** em `src/modules/vendas/filtros.ts` é a fonte de verdade (substituiu `whereVendaAmazonContabilizavel`). KPIs do dashboard preferem snapshot em `ConfiguracaoSistema` (chave `gestor_seller_snapshot:<de>:<ate>`) com fallback para agregação local. Backfill: `REPORTS_BACKFILL` em janelas de 30d, cursor `amazon_orders_history_cursor`, início `amazon_loja_aberta_em` (default 2025-07-28). `Produto.custoUnitario Int?` — front filtra "Com custo" por default.
+### VendaAmazon (independente de Gestor Seller)
+Chave única `(amazonOrderId, sku)`. `liquidoMarketplaceCentavos = valorBruto - taxasCentavos - fretesCentavos`. Filtro **`whereVendaAmazonEspelhoGestorSeller()`** em `src/modules/vendas/filtros.ts` filtra cancelados + Removal Orders + Pending sem valor. Backfill: `REPORTS_BACKFILL` em janelas de 30d, cursor `amazon_orders_history_cursor`, início `amazon_loja_aberta_em` (default 2025-07-28). `Produto.custoUnitario Int?` (fallback) + `ProdutoCustoHistorico` (vigências por data — fonte de verdade do custo). Custo resolvido via `resolverCustoUnitario(produtoId, dataVenda)`.
+
+**Invariante crítico — `VendaAmazon.taxasCentavos` é APENAS REAL** (Finance API ou SP-API Orders). Estimativas NUNCA são persistidas aqui — vivem apenas em memória no service do dashboard. DRE/Contas a Receber estão protegidos via `whereVendaAmazonContabilizavelEstrito()` que exclui PENDENTE. Write sites: `service.ts:854/860/1131`.
+
+### Fee Estimator (taxas Amazon estimadas, v2)
+- Módulo `src/modules/produtos/fee-estimator.ts` com **tabela COMMISSION_TABLE** de 36 categorias BR (rateBps + minCentavos + tier opcional). Tiers: Móveis 15%/10% acima R$200, Acessórios eletrônicos 15%/10% acima R$100.
+- **Closing fee R$1.99** para mídia (Livros/DVD/Música/Games).
+- **3 camadas de cache**: (1) Map memory in-process TTL 5min · (2) `AmazonFeeEstimate` Postgres (populado por job 1h) · (3) fallback local puro.
+- **Promo FBA** R$5 (≤R$99.99) / R$0 (≥R$100) válida até **31/07/2026** (config em `ConfiguracaoSistema.amazon_fee_fba_promo_*`). Job `AMAZON_FBA_PROMO_EXPIRY_CHECK` (24h) dispara Notificação `CONFIG_REVIEW` quando expirar.
+- **Default global = 12%** (`amazon_fee_referral_default_bps=1200`) calibrado pelas planilhas do user; só usado quando `Produto.amazonCategoriaFee` é null.
+- **Parcelamento NÃO é estimado** — vem real via sub-breakdown `AmazonForAllFee` dentro de `AmazonFees` no Finance API (1.5% sobre vendas ≥ R$40).
+- **Estado prod**: `AmazonFeeEstimate` populado lentamente por `AMAZON_FEE_ESTIMATE_SYNC` (batch 5 SKUs/h com delay 3s, fail-fast quando quota PRODUCT_FEES_ESTIMATE em cooldown). Amazon enforces quota agressiva → cache opera majoritariamente em fallback local.
+
+### Snapshot Gestor Seller (LEGADO — removido)
+Foi removido em 2c349dc. Sistema opera 100% standalone com VendaAmazon + ProdutoCustoHistorico + fee-estimator.
 
 ### Reembolsos (finance pipeline)
-`src/modules/amazon/finance-normalizer.ts` converte `SPFinanceTransaction` em `NormalizedFinanceTransaction` (item-level: SKU/ASIN/qty/fees/promos; transaction-level: settlementId/refundId). `finance-materializer.ts` aplica ações `CRIAR_REEMBOLSO | ATUALIZAR_REEMBOLSO | MARCAR_VENDA_REEMBOLSADA | IGNORAR` em `AmazonReembolso`+`VendaAmazon`. Auditoria: `npm run amazon:reliability:audit` (7 checks: refunds, gestor-seller, removals, pending-zero, finance-denormalized, api-conflicts, order-id). Recovery: `npx tsx scripts/recover-zero-pending.ts --apply` (default `--dry-run`).
+`src/modules/amazon/finance-normalizer.ts` converte `SPFinanceTransaction` em `NormalizedFinanceTransaction` (item-level: SKU/ASIN/qty/fees/promos; transaction-level: settlementId/refundId). `finance-materializer.ts` aplica ações `CRIAR_REEMBOLSO | ATUALIZAR_REEMBOLSO | MARCAR_VENDA_REEMBOLSADA | IGNORAR` em `AmazonReembolso`+`VendaAmazon`. Recovery: `npx tsx scripts/recover-zero-pending.ts --apply` (default `--dry-run`). Audit `amazon:reliability:audit` foi removido (legado).
 
 ### Ads (fonte única)
 `src/modules/amazon/ads-aggregation.ts` centraliza tudo. Precedência: **SYNC** (AmazonAdsMetricaDiaria > 0) > **LEGACY+MANUAL** (AdsCampanha CSV + AdsGastoManual) > **VAZIO**. Helpers puros (ACOS/ROAS/CTR/CPC/conv). Endpoints `/api/ads/*` e service dashboard consomem essa camada.
@@ -45,21 +60,29 @@ Chave única `(amazonOrderId, sku)`. `liquidoMarketplaceCentavos = valorBruto - 
 | Job | Intervalo | Notas |
 |---|---|---|
 | ORDERS_SYNC | 2min | últimos 3d, 1 página |
-| INVENTORY_SYNC | 5min | snapshot FBA |
-| FINANCES_SYNC | 30min | últimos 14d, preenche taxas/fretes via `breakdownAmount.currencyAmount` |
-| REFUNDS_SYNC | 1h | últimos 90d, usa finance-materializer |
-| BUYBOX_CHECK | 15min | rotaciona SKUs com ASIN |
+| INVENTORY_SYNC | 2min | snapshot FBA |
+| FINANCES_SYNC | 15min | últimos 14d, lê `breakdownAmount` agregado de `AmazonFees` (inclui Commission+FBA+Tax+AmazonForAllFee/parcelamento) |
+| FINANCES_BACKFILL | 30min | janelas 14d, cursor `amazon_finances_backfill_cursor`. Gate em jobs.ts pula enfileiramento quando cursor ≥ `now-13d` (dentro da cobertura do FINANCES_SYNC). |
+| REFUNDS_SYNC | 30min | últimos 90d, usa finance-materializer |
+| BUYBOX_CHECK | 10min | rotaciona SKUs com ASIN |
 | CATALOG_REFRESH | 24h | imagem/título/categoria |
 | SETTLEMENT_REPORT_SYNC | 6h | CSV via Reports API |
-| REPORTS_BACKFILL | 30min | janelas 30d até `now-2d` (auto-desliga) |
-| REVIEWS_DISCOVERY | 6h | gateado por `automacaoAtiva`, cache 30s |
+| REPORTS_BACKFILL | 30min | janelas 30d até `now-2d` (auto-desliga interno) |
+| REVIEWS_DISCOVERY | 12h | gateado por `automacaoAtiva`, cache 30s |
 | REVIEWS_SEND | 1h | dispara solicitations |
+| LISTING_PRICE_SYNC | 30min | cache `Produto.amazonPrecoListagemCentavos` (fallback Pending sem ItemPrice) |
+| AMAZON_FEE_ESTIMATE_SYNC | 1h | batch 5 SKUs com delay 3s. Gate `isProductFeesQuotaSaturated` pula quando cooldown >5min. |
+| AMAZON_FBA_PROMO_EXPIRY_CHECK | 24h | dispara Notificação CONFIG_REVIEW quando promo FBA expirar |
 
 ### SP-API & rate limit
-LWA OAuth2 (refresh_token → access_token, header `x-amz-access-token`). Sem AWS SigV4. Defaults em `src/lib/amazon-rate-limit.ts`; `adoptObservedRateLimit()` calibra via `x-amzn-RateLimit-Limit`. Cooldown em `AmazonApiQuota.nextAllowedAt`. 429 → `markAmazonOperationRateLimited()` respeita `retry-after`; lança `AmazonQuotaCooldownError` (retry). **Roles OK**: Inventory and Order Tracking, Finance and Accounting. **Faltam (403)**: Product Listing (Catalog Items), Pricing.
+LWA OAuth2 (refresh_token → access_token, header `x-amz-access-token`). Sem AWS SigV4. Defaults em `src/lib/amazon-rate-limit.ts`; `adoptObservedRateLimit()` calibra via `x-amzn-RateLimit-Limit`. Cooldown em `AmazonApiQuota.nextAllowedAt`. 429 → `markAmazonOperationRateLimited()` respeita `retry-after`; lança `AmazonQuotaCooldownError` (retry).
+- **Helpers fail-fast**: `tryReserveAmazonOperationSlot(op)` reserva sem esperar (retorna bool); `getAmazonOperationCooldown(op)` inspeção read-only do cooldown.
+- **Roles OK**: Inventory and Order Tracking, Finance and Accounting (inclui `getMyFeesEstimateForSKU` em Product Fees v0).
+- **Roles 403**: Product Listing (Catalog Items full), Pricing (getMyFeesEstimates batch).
+- **Quota agressiva observada**: PRODUCT_FEES_ESTIMATE retorna QuotaExceeded mesmo com 1 rps. Usar batch baixo + delay + fail-fast.
 
 ## Notificações (sino — sem email/Slack/Telegram)
-Modelo `Notificacao` (dedupeKey @unique). Helpers `src/lib/notificacoes.ts`. Tipos: ESTOQUE_CRITICO · BUYBOX_PERDIDO/RECUPERADO · REEMBOLSO_ALTO · ACOS_ALTO · LIQUIDACAO_ATRASADA · CUSTO_AUSENTE · JOB_FALHANDO · QUOTA_BLOQUEADA · SETTLEMENT_NOVO · RECEBIMENTO_RECONCILIADO · WORKER_REINICIADO.
+Modelo `Notificacao` (dedupeKey @unique). Helpers `src/lib/notificacoes.ts`. Tipos: ESTOQUE_CRITICO · BUYBOX_PERDIDO/RECUPERADO · REEMBOLSO_ALTO · ACOS_ALTO · LIQUIDACAO_ATRASADA · CUSTO_AUSENTE · JOB_FALHANDO · QUOTA_BLOQUEADA · SETTLEMENT_NOVO · RECEBIMENTO_RECONCILIADO · WORKER_REINICIADO · REIMBURSEMENT_FBA_RECEBIDO · CONFIG_REVIEW.
 
 ## Criptografia
 `src/lib/crypto.ts` AES-256-GCM. Master em `CONFIG_ENCRYPTION_KEY` (32 bytes hex). `saveAmazonConfig()` cripta chaves matching `secret|token|password|senha|_key|_apikey`. Legado em texto puro ainda lido.
@@ -88,23 +111,34 @@ Sem redesign radical — incrementais. Protótipo HTML antes de mudanças visuai
 ## Deploy — VPS Hostinger
 - Host SSH: alias `erp-vps` → `srv1611537.hstgr.cloud:2222`, user `mundofs`, key `~/.ssh/id_ed25519_mundofs_vps`.
 - Path app: `/opt/erp-amazon` (owner `erp`). Stack: Postgres 16 self-hosted + Nginx (443→3000) + PM2 + cron + Let's Encrypt. Domínio `erp.mundofs.cloud`.
+- **N8N rodando em paralelo**: container Docker em `127.0.0.1:5678`. Codex/n8n-observer modifica `src/lib/amazon-sp-api.ts`, `amazon-ads-api.ts`, `amazon-sqs.ts` direto na VPS — **sempre stashar tracked files ANTES do pull** (passar paths explícitos no stash). Pasta `backups/` criada como root pode bloquear stash full — usar `git stash push -- <arquivos>` específicos.
 - **Sequência de deploy** (rodar como `mundofs`, com `sudo -u erp`):
   ```bash
   cd /opt/erp-amazon && \
-  git stash push --include-untracked -m "pre-deploy-$(date +%s)" && \
+  git stash push -m "pre-deploy-$(date +%s)" -- src/lib/amazon-sp-api.ts src/lib/amazon-ads-api.ts src/lib/amazon-sqs.ts package-lock.json && \
   git pull --ff-only origin main && \
   npm install --no-audit --no-fund && \
   npm run prisma:migrate:deploy:pg && \
+  npm run prisma:generate:pg && \
   rm -rf .next && npm run build && \
-  pm2 reload erp-web erp-worker erp-sqs-consumer
+  pm2 reload erp-web --update-env && \
+  pm2 reload erp-worker --update-env && \
+  pm2 reload erp-sqs-consumer --update-env
   ```
-- Após build: atualizar `GIT_SHA` em `.env` (`git rev-parse --short HEAD`) e `pm2 reload erp-web --update-env` para refletir em `/api/health`.
-- Rollback: `git reset --hard <sha-anterior> && npm run build && pm2 reload erp-web erp-worker erp-sqs-consumer`.
+- **`prisma:generate:pg` é OBRIGATÓRIO** quando há mudanças de schema. Sem isso, o client fica defasado e `db.<novoModel>.findUnique` retorna undefined em runtime (quebra dashboard com "Cannot read properties of undefined").
+- `pm2 reload erp-web erp-worker erp-sqs-consumer` em UMA linha às vezes só reloada erp-web — usar 3 chamadas separadas pra garantir.
+- Após build: atualizar `GIT_SHA` em `.env` (`git rev-parse --short HEAD`) e fazer `pm2 reload erp-web --update-env` (refletir em `/api/health`).
+- Rollback: `git reset --hard <sha-anterior> && npm run prisma:generate:pg && npm run build && pm2 reload <todos>`.
 
 ## Cuidados especiais (gotchas)
 - **OneDrive corrompe `.git`** — nunca abrir o repo em pasta sincronizada (`mmap failed: Invalid argument` em fetch). Use `c:\Projects\` ou similar.
 - **Schema duplo**: prod usa `prisma:migrate:deploy:pg` (com `--schema prisma/schema.postgresql.prisma`). NÃO usar `prisma:migrate:deploy` sem `:pg` em prod (vai apontar pro schema SQLite).
 - **SQS opcional**: liga com `AMAZON_SQS_QUEUE_URL` + `AWS_ACCESS_KEY_ID/SECRET`. Mapeia `ORDER_CHANGE→ORDERS_SYNC`, `ANY_OFFER_CHANGED→BUYBOX_CHECK`, `FBA_INVENTORY_*→INVENTORY_SYNC`, `REPORT_PROCESSING_FINISHED→SETTLEMENT_REPORT_SYNC`.
+- **Migration manual Postgres**: usuário `erp_amazon` não tem permissão de shadow DB. NÃO usar `prisma migrate dev --schema=prisma/schema.postgresql.prisma`. Criar migration.sql manualmente em `prisma/migrations/<YYYYMMDDhhmmss>_<nome>/migration.sql` e aplicar com `prisma:migrate:deploy:pg`.
+- **DB local SQLite frequentemente vazio** (size 0). Trabalho real acontece via VPS Postgres (queries `psql` SSH).
+- **Confiabilidade financeira**: NUNCA escrever estimativa em `VendaAmazon.taxasCentavos`/`fretesCentavos`/`liquidoMarketplaceCentavos`. Esses campos são sagrados para DRE/Contas a Receber. Estimativas vivem em memória + `AmazonFeeEstimate` (cache, lookup-only). DRE usa `whereVendaAmazonContabilizavelEstrito()` que exclui PENDENTE.
+- **AmazonForAllFee** (no payload Finance) = parcelamento 1.5%. Já incluído no agregado `AmazonFees`. NÃO somar duas vezes.
+- **PRODUCT_FEES_ESTIMATE quota** é mais agressiva que documentado — Amazon retorna QuotaExceeded mesmo com 1 rps. Sempre fail-fast (`tryReserveAmazonOperationSlot`) + batch baixo (5) + delay (3s).
 
 ## Validação — só no que mudou
 - Lint: `npx eslint <arquivo>` · Typecheck: `npx tsc --noEmit` · Testes: `npx vitest run <arquivo>`
