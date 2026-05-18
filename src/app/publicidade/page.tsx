@@ -55,6 +55,8 @@ type Comparativo = {
   };
 };
 
+type FonteAds = "SYNC" | "LEGACY" | "MANUAL" | "MIXED" | "VAZIO";
+
 type DadosCampanhas = {
   campanhas: CampanhaTabela[];
   totalGasto: number;
@@ -63,7 +65,36 @@ type DadosCampanhas = {
   roasGeral: number | null;
   tacos: number | null;
   faturamentoAmazon: number | null;
+  origem: FonteAds;
   comparativo?: Comparativo;
+};
+
+const BADGE_ORIGEM: Record<FonteAds, { label: string; classe: string; descricao: string }> = {
+  SYNC: {
+    label: "Sync API",
+    classe: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300",
+    descricao: "Dados da Amazon Advertising API (sincronizados a cada 30 min)",
+  },
+  LEGACY: {
+    label: "CSV importado",
+    classe: "bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300",
+    descricao: "Dados de relatórios CSV importados manualmente",
+  },
+  MANUAL: {
+    label: "Gasto manual",
+    classe: "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300",
+    descricao: "Apenas registros manuais de gasto (sem sync nem CSV)",
+  },
+  MIXED: {
+    label: "CSV + Manual",
+    classe: "bg-teal-100 text-teal-800 dark:bg-teal-900/40 dark:text-teal-300",
+    descricao: "Combinação de CSV importado e gasto manual",
+  },
+  VAZIO: {
+    label: "Sem dados",
+    classe: "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300",
+    descricao: "Nenhum dado de Ads no período",
+  },
 };
 
 function periodoDefault() {
@@ -96,13 +127,30 @@ export default function PublicidadePage() {
   }, [data]);
 
   const classifAcos = classificarAcos(data?.acosGeral ?? null);
+  const origemInfo = data?.origem ? BADGE_ORIGEM[data.origem] : null;
 
   return (
     <div className="flex flex-col gap-6 p-6">
-      <PageHeader
-        title="Publicidade Amazon Ads"
-        description="Análise de campanhas, ACoS, ROAS e TACoS — dados via importação manual de relatórios CSV."
-      />
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <PageHeader
+          title="Publicidade Amazon Ads"
+          description={
+            origemInfo?.descricao ??
+            "Análise de campanhas, ACoS, ROAS e TACoS."
+          }
+        />
+        {origemInfo && (
+          <span
+            className={cn(
+              "shrink-0 self-start rounded-md px-2.5 py-1 text-xs font-semibold",
+              origemInfo.classe,
+            )}
+            title={origemInfo.descricao}
+          >
+            {origemInfo.label}
+          </span>
+        )}
+      </div>
 
       {/* Toolbar */}
       <div className="flex flex-wrap items-end gap-3">

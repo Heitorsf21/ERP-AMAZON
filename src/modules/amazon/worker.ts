@@ -40,9 +40,12 @@ import {
   runAmazonAdsReportSync,
 } from "@/modules/amazon/ads-handlers";
 import { getAmazonAdsCredentials } from "@/modules/amazon/ads-service";
-import { TipoAmazonSyncJob } from "@/modules/shared/domain";
+import { StatusAmazonSyncJob, TipoAmazonSyncJob } from "@/modules/shared/domain";
 
 const HEARTBEAT_KEY = "worker_heartbeat_at";
+const STALE_RUNNING_JOB_MINUTES = Number(
+  process.env.AMAZON_RUNNING_JOB_STALE_MINUTES ?? 30,
+);
 
 type WorkerOptions = {
   workerId?: string;
@@ -63,6 +66,8 @@ export async function processAmazonSyncJobs(options: WorkerOptions = {}) {
   const workerId = options.workerId ?? `worker-${process.pid}-${Date.now()}`;
   const limit = options.limit ?? 10;
   const results: Array<Record<string, unknown>> = [];
+
+  await releaseStaleRunningJobs(workerId);
 
   if (options.schedule !== false) {
     await ensureRecurringAmazonJobs();
@@ -148,6 +153,42 @@ async function writeHeartbeat() {
   }
 }
 
+async function releaseStaleRunningJobs(workerId: string) {
+  const staleMinutes = Number.isFinite(STALE_RUNNING_JOB_MINUTES)
+    ? Math.max(5, STALE_RUNNING_JOB_MINUTES)
+    : 30;
+  const cutoff = new Date(Date.now() - staleMinutes * 60 * 1000);
+
+  try {
+    const result = await db.amazonSyncJob.updateMany({
+      where: {
+        status: StatusAmazonSyncJob.RUNNING,
+        OR: [
+          { lockedAt: { lt: cutoff } },
+          { startedAt: { lt: cutoff } },
+        ],
+      },
+      data: {
+        status: StatusAmazonSyncJob.QUEUED,
+        lockedAt: null,
+        lockedBy: null,
+        startedAt: null,
+        finishedAt: null,
+        runAfter: new Date(),
+        error: `Auto-released stale RUNNING job by ${workerId}`,
+      },
+    });
+
+    if (result.count > 0) {
+      console.warn(
+        `[amazon-worker] liberou ${result.count} job(s) RUNNING antigo(s).`,
+      );
+    }
+  } catch (error) {
+    console.warn("releaseStaleRunningJobs erro:", error);
+  }
+}
+
 async function processJob(
   tipo: string,
   payloadRaw: Parameters<typeof parseJobPayload>[0],
@@ -201,7 +242,7 @@ async function processJob(
       });
     case TipoAmazonSyncJob.REFUNDS_SYNC:
       return syncRefunds(payload.diasAtras ?? 90, {
-        maxPages: payload.maxPages ?? 1,
+        maxPages: payload.maxPages ?? 20,
       });
     case TipoAmazonSyncJob.INVENTORY_SYNC:
       return syncInventory();

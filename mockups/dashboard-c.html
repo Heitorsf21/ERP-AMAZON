@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Mockup C — Bento 2+6 · Dashboard ERP</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+tailwind.config = { darkMode: 'class', theme: { extend: {
+  colors: { background: 'hsl(var(--background))', foreground: 'hsl(var(--foreground))', muted: 'hsl(var(--muted))', 'muted-foreground': 'hsl(var(--muted-foreground))', card: 'hsl(var(--card))', border: 'hsl(var(--border))', primary: 'hsl(var(--primary))' },
+  borderRadius: { lg: 'var(--radius)' },
+}}};
+</script>
+<style>
+:root { --background: 0 0% 98%; --foreground: 224 71% 4%; --muted: 220 14% 96%; --muted-foreground: 220 9% 46%; --card: 0 0% 100%; --border: 220 13% 91%; --primary: 221 83% 53%; --radius: 0.625rem; }
+.dark { --background: 224 71% 4%; --foreground: 210 20% 98%; --muted: 222 47% 11%; --muted-foreground: 215 16% 57%; --card: 224 71% 6%; --border: 222 47% 13%; --primary: 221 83% 58%; }
+body { background: hsl(var(--background)); color: hsl(var(--foreground)); }
+.tabnum { font-variant-numeric: tabular-nums; }
+</style>
+</head>
+<body class="min-h-screen">
+
+<header class="border-b border-border bg-card">
+  <div class="max-w-7xl mx-auto px-6 py-3 flex items-center justify-between">
+    <div class="text-sm text-muted-foreground"><span class="font-semibold text-foreground">Mockup C</span> · Bento · 2 hero XL + 6 médios · Top 15 como cards horizontais</div>
+    <button onclick="document.documentElement.classList.toggle('dark')" class="text-xs px-3 py-1.5 rounded-md border border-border hover:bg-muted">🌓 Tema</button>
+  </div>
+</header>
+
+<main class="max-w-7xl mx-auto px-6 py-6 space-y-5">
+
+  <div class="flex items-end justify-between flex-wrap gap-3">
+    <div>
+      <h1 class="text-2xl font-semibold tracking-tight">Dashboard E-commerce</h1>
+      <p class="text-sm text-muted-foreground mt-1">KPIs comerciais Amazon · 18/04 — 17/05/2026</p>
+    </div>
+    <button class="text-sm px-3 py-2 rounded-md border border-border bg-card hover:bg-muted">📅 Últimos 30 dias ▾</button>
+  </div>
+
+  <!-- Alert -->
+  <div class="flex items-center justify-between bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/50 rounded-lg px-4 py-3 text-sm">
+    <div>
+      <span class="text-amber-700 dark:text-amber-400 font-semibold">267 vendas sem custo</span>
+      <span class="text-amber-700/80 dark:text-amber-400/80"> · lucro/margem aproximados</span>
+    </div>
+    <a href="#" class="text-amber-700 dark:text-amber-400 hover:underline text-sm font-medium">Corrigir →</a>
+  </div>
+
+  <!-- 2 HERO XL com sparkline -->
+  <section class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+
+    <!-- Hero 1: Faturamento -->
+    <div class="bg-gradient-to-br from-emerald-50 to-card dark:from-emerald-950/30 dark:to-card border border-emerald-200/60 dark:border-emerald-900/40 rounded-xl p-6 relative overflow-hidden">
+      <div class="flex items-start justify-between mb-3">
+        <div>
+          <p class="text-xs uppercase tracking-wider text-emerald-700 dark:text-emerald-400 font-semibold">Faturamento</p>
+          <p class="text-[11px] text-muted-foreground mt-0.5">389 vendas · 422 unidades</p>
+        </div>
+        <span class="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700 dark:text-emerald-400 bg-emerald-100 dark:bg-emerald-950/40 px-2 py-1 rounded-full">▲ 64,8%</span>
+      </div>
+      <p class="text-4xl font-bold tabnum tracking-tight">R$ 23.236,14</p>
+      <p class="text-xs mt-2 text-muted-foreground">vs. R$ 14.106,38 (período anterior)</p>
+      <!-- Mini sparkline -->
+      <svg viewBox="0 0 400 60" class="w-full h-12 mt-3">
+        <defs>
+          <linearGradient id="spark1" x1="0" x2="0" y1="0" y2="1">
+            <stop offset="0%" stop-color="hsl(142 76% 36%)" stop-opacity="0.4"/>
+            <stop offset="100%" stop-color="hsl(142 76% 36%)" stop-opacity="0"/>
+          </linearGradient>
+        </defs>
+        <path d="M 0,50 C 30,48 50,40 80,38 C 110,36 140,32 170,28 C 200,24 230,18 260,15 C 290,12 320,8 350,10 C 380,12 400,5 400,5 L 400,60 L 0,60 Z" fill="url(#spark1)" stroke="hsl(142 76% 36%)" stroke-width="2"/>
+      </svg>
+    </div>
+
+    <!-- Hero 2: Líq. Marketplace -->
+    <div class="bg-gradient-to-br from-blue-50 to-card dark:from-blue-950/30 dark:to-card border border-blue-200/60 dark:border-blue-900/40 rounded-xl p-6 relative overflow-hidden">
+      <div class="flex items-start justify-between mb-3">
+        <div>
+          <p class="text-xs uppercase tracking-wider text-blue-700 dark:text-blue-400 font-semibold">Líq. do Marketplace</p>
+          <p class="text-[11px] text-muted-foreground mt-0.5">após taxas Amazon</p>
+        </div>
+        <span class="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700 dark:text-emerald-400 bg-emerald-100 dark:bg-emerald-950/40 px-2 py-1 rounded-full">▲ 35,1%</span>
+      </div>
+      <p class="text-4xl font-bold tabnum tracking-tight">R$ 18.201,13</p>
+      <p class="text-xs mt-2 text-muted-foreground">78,3% do faturamento bruto</p>
+      <svg viewBox="0 0 400 60" class="w-full h-12 mt-3">
+        <defs>
+          <linearGradient id="spark2" x1="0" x2="0" y1="0" y2="1">
+            <stop offset="0%" stop-color="hsl(221 83% 53%)" stop-opacity="0.4"/>
+            <stop offset="100%" stop-color="hsl(221 83% 53%)" stop-opacity="0"/>
+          </linearGradient>
+        </defs>
+        <path d="M 0,52 C 30,50 50,45 80,42 C 110,38 140,35 170,32 C 200,28 230,22 260,18 C 290,15 320,12 350,14 C 380,16 400,10 400,10 L 400,60 L 0,60 Z" fill="url(#spark2)" stroke="hsl(221 83% 53%)" stroke-width="2"/>
+      </svg>
+    </div>
+  </section>
+
+  <!-- 6 médios em grid 3x2 -->
+  <section class="grid grid-cols-2 lg:grid-cols-3 gap-3">
+
+    <div class="bg-card border border-border rounded-lg p-4 hover:border-primary/40 transition-colors">
+      <p class="text-xs text-muted-foreground mb-1.5">Vendas</p>
+      <p class="text-2xl font-semibold tabnum">389</p>
+      <p class="text-xs mt-1.5 text-emerald-600 font-medium">▲ 75,2%</p>
+    </div>
+
+    <div class="bg-card border border-border rounded-lg p-4 hover:border-primary/40 transition-colors">
+      <p class="text-xs text-muted-foreground mb-1.5">Unidades</p>
+      <p class="text-2xl font-semibold tabnum">422</p>
+      <p class="text-xs mt-1.5 text-emerald-600 font-medium">▲ 78,1%</p>
+    </div>
+
+    <div class="bg-card border border-border rounded-lg p-4 hover:border-primary/40 transition-colors">
+      <p class="text-xs text-muted-foreground mb-1.5">Ticket Médio</p>
+      <p class="text-2xl font-semibold tabnum">R$ 59,73</p>
+      <p class="text-xs mt-1.5 text-red-600 font-medium">▼ 6,0%</p>
+    </div>
+
+    <div class="bg-card border border-border rounded-lg p-4 hover:border-primary/40 transition-colors">
+      <p class="text-xs text-muted-foreground mb-1.5">Lucro Bruto</p>
+      <p class="text-2xl font-semibold tabnum text-muted-foreground/40">—</p>
+      <p class="text-xs mt-1.5 text-muted-foreground">aguardando custos</p>
+    </div>
+
+    <div class="bg-card border border-border rounded-lg p-4 hover:border-primary/40 transition-colors">
+      <p class="text-xs text-muted-foreground mb-1.5">Margem</p>
+      <p class="text-2xl font-semibold tabnum text-muted-foreground/40">—</p>
+      <p class="text-xs mt-1.5 text-muted-foreground">aguardando custos</p>
+    </div>
+
+    <div class="bg-card border border-border rounded-lg p-4 hover:border-primary/40 transition-colors">
+      <p class="text-xs text-muted-foreground mb-1.5">ROI</p>
+      <p class="text-2xl font-semibold tabnum text-muted-foreground/40">—</p>
+      <p class="text-xs mt-1.5 text-muted-foreground">aguardando custos</p>
+    </div>
+  </section>
+
+  <details class="group">
+    <summary class="cursor-pointer text-sm font-medium text-primary hover:underline select-none list-none flex items-center gap-1.5">
+      <span class="group-open:hidden">▾ Ver mais 8 métricas (Ads · Tráfego)</span>
+      <span class="hidden group-open:inline">▴ Ocultar</span>
+    </summary>
+
+    <section class="grid grid-cols-2 lg:grid-cols-4 gap-3 mt-4">
+      <div class="bg-amber-50/40 dark:bg-amber-950/10 border border-amber-200/40 dark:border-amber-900/30 rounded-lg p-3.5">
+        <p class="text-[10px] uppercase tracking-wider text-amber-700 dark:text-amber-400 font-medium mb-1">Valor em Ads</p>
+        <p class="text-base font-semibold tabnum">R$ 1.417,35</p>
+        <p class="text-[11px] mt-1 text-amber-600">▲ 8,8%</p>
+      </div>
+      <div class="bg-amber-50/40 dark:bg-amber-950/10 border border-amber-200/40 dark:border-amber-900/30 rounded-lg p-3.5">
+        <p class="text-[10px] uppercase tracking-wider text-amber-700 dark:text-amber-400 font-medium mb-1">TACOS</p>
+        <p class="text-base font-semibold tabnum">6,1%</p>
+        <p class="text-[11px] mt-1 text-emerald-600">▼ 3,1pp · baixo</p>
+      </div>
+      <div class="bg-amber-50/40 dark:bg-amber-950/10 border border-amber-200/40 dark:border-amber-900/30 rounded-lg p-3.5">
+        <p class="text-[10px] uppercase tracking-wider text-amber-700 dark:text-amber-400 font-medium mb-1">Lucro Pós Ads</p>
+        <p class="text-base font-semibold tabnum text-muted-foreground/40">—</p>
+      </div>
+      <div class="bg-amber-50/40 dark:bg-amber-950/10 border border-amber-200/40 dark:border-amber-900/30 rounded-lg p-3.5">
+        <p class="text-[10px] uppercase tracking-wider text-amber-700 dark:text-amber-400 font-medium mb-1">ROI Pós Ads</p>
+        <p class="text-base font-semibold tabnum text-muted-foreground/40">—</p>
+      </div>
+      <div class="bg-violet-50/40 dark:bg-violet-950/10 border border-violet-200/40 dark:border-violet-900/30 rounded-lg p-3.5">
+        <p class="text-[10px] uppercase tracking-wider text-violet-700 dark:text-violet-400 font-medium mb-1">Sessões</p>
+        <p class="text-base font-semibold tabnum">0</p>
+        <p class="text-[11px] mt-1 text-muted-foreground">0 page views</p>
+      </div>
+      <div class="bg-violet-50/40 dark:bg-violet-950/10 border border-violet-200/40 dark:border-violet-900/30 rounded-lg p-3.5">
+        <p class="text-[10px] uppercase tracking-wider text-violet-700 dark:text-violet-400 font-medium mb-1">Conversão</p>
+        <p class="text-base font-semibold tabnum text-muted-foreground/40">—</p>
+      </div>
+      <div class="bg-violet-50/40 dark:bg-violet-950/10 border border-violet-200/40 dark:border-violet-900/30 rounded-lg p-3.5">
+        <p class="text-[10px] uppercase tracking-wider text-violet-700 dark:text-violet-400 font-medium mb-1">Buybox média</p>
+        <p class="text-base font-semibold tabnum text-muted-foreground/40">—</p>
+      </div>
+      <div class="bg-violet-50/40 dark:bg-violet-950/10 border border-violet-200/40 dark:border-violet-900/30 rounded-lg p-3.5">
+        <p class="text-[10px] uppercase tracking-wider text-violet-700 dark:text-violet-400 font-medium mb-1">Rec. Ordenada</p>
+        <p class="text-base font-semibold tabnum">R$ 0,00</p>
+      </div>
+    </section>
+  </details>
+
+  <!-- Chart full-width grande (estilo Gestor Seller, áreas empilhadas) -->
+  <section class="bg-card border border-border rounded-xl p-6 shadow-sm">
+    <div class="flex items-center justify-between mb-5">
+      <h2 class="text-base font-semibold">Resumo de Receitas</h2>
+      <div class="flex items-center gap-3 text-xs">
+        <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-violet-500"></span> Faturamento</span>
+        <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-blue-500"></span> Líq. Marketplace</span>
+        <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-emerald-500"></span> Lucro</span>
+      </div>
+    </div>
+    <svg viewBox="0 0 800 360" class="w-full h-96">
+      <defs>
+        <linearGradient id="cV" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stop-color="hsl(262 80% 60%)" stop-opacity="0.45"/><stop offset="100%" stop-color="hsl(262 80% 60%)" stop-opacity="0.03"/></linearGradient>
+        <linearGradient id="cB" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stop-color="hsl(221 83% 53%)" stop-opacity="0.45"/><stop offset="100%" stop-color="hsl(221 83% 53%)" stop-opacity="0.03"/></linearGradient>
+        <linearGradient id="cE" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stop-color="hsl(142 76% 36%)" stop-opacity="0.5"/><stop offset="100%" stop-color="hsl(142 76% 36%)" stop-opacity="0.05"/></linearGradient>
+      </defs>
+      <g stroke="hsl(var(--border))" stroke-dasharray="3 3" stroke-width="1">
+        <line x1="50" y1="40" x2="780" y2="40"/><line x1="50" y1="110" x2="780" y2="110"/><line x1="50" y1="180" x2="780" y2="180"/><line x1="50" y1="250" x2="780" y2="250"/><line x1="50" y1="320" x2="780" y2="320"/>
+      </g>
+      <g fill="hsl(var(--muted-foreground))" font-size="10" font-family="system-ui">
+        <text x="0" y="44">R$ 2.000</text><text x="0" y="114">R$ 1.500</text><text x="0" y="184">R$ 1.000</text><text x="0" y="254">R$ 500</text><text x="0" y="324">R$ 0</text>
+      </g>
+      <!-- Faturamento (top, violeta) -->
+      <path d="M 50,260 C 110,255 150,230 200,215 C 250,200 300,210 340,200 C 380,190 420,160 460,150 C 500,140 540,165 580,150 C 620,135 660,100 700,80 C 740,60 770,75 780,70 L 780,340 L 50,340 Z" fill="url(#cV)" stroke="hsl(262 80% 60%)" stroke-width="2"/>
+      <!-- Líq. Marketplace (azul) -->
+      <path d="M 50,290 C 110,285 150,265 200,250 C 250,238 300,245 340,238 C 380,230 420,205 460,195 C 500,185 540,205 580,195 C 620,180 660,150 700,135 C 740,120 770,128 780,125 L 780,340 L 50,340 Z" fill="url(#cB)" stroke="hsl(221 83% 53%)" stroke-width="2"/>
+      <!-- Lucro (verde, base) -->
+      <path d="M 50,325 C 110,322 150,315 200,310 C 250,305 300,308 340,305 C 380,302 420,295 460,290 C 500,285 540,292 580,288 C 620,282 660,272 700,265 C 740,260 770,262 780,260 L 780,340 L 50,340 Z" fill="url(#cE)" stroke="hsl(142 76% 36%)" stroke-width="2"/>
+      <g fill="hsl(var(--muted-foreground))" font-size="10" font-family="system-ui">
+        <text x="58" y="355">18/04</text><text x="180" y="355">22/04</text><text x="312" y="355">26/04</text><text x="444" y="355">30/04</text><text x="576" y="355">04/05</text><text x="708" y="355">17/05</text>
+      </g>
+    </svg>
+  </section>
+
+  <!-- Top 15 como CARDS HORIZONTAIS -->
+  <section>
+    <div class="flex items-center justify-between mb-3">
+      <div>
+        <h2 class="text-lg font-semibold">Top 15 produtos vendidos</h2>
+        <p class="text-xs text-muted-foreground">Ordenado por faturamento · {6 de 15 exibidos no mockup}</p>
+      </div>
+      <button class="text-xs px-3 py-1.5 rounded-md border border-border bg-card hover:bg-muted">↕ Faturamento desc</button>
+    </div>
+
+    <div class="space-y-2">
+
+      <!-- Card 1 -->
+      <div class="bg-card border border-border hover:border-primary/40 hover:shadow-sm rounded-lg p-4 flex items-center gap-4 transition-all">
+        <div class="w-14 h-14 rounded-lg bg-gradient-to-br from-emerald-100 to-emerald-50 dark:from-emerald-950/40 dark:to-emerald-900/20 flex items-center justify-center text-sm font-bold text-emerald-700 dark:text-emerald-400 shrink-0">17</div>
+        <div class="flex-1 min-w-0">
+          <div class="font-medium truncate">Almofada Cóccix Ortopédica Assento em Gel</div>
+          <div class="text-xs text-muted-foreground font-mono mt-0.5">MFS-0017 · 24,6% do total</div>
+        </div>
+        <div class="hidden md:flex items-center gap-6 tabnum">
+          <div class="text-center">
+            <div class="text-[10px] uppercase text-muted-foreground tracking-wider">Unid.</div>
+            <div class="text-sm font-medium">75</div>
+          </div>
+          <div class="text-center">
+            <div class="text-[10px] uppercase text-muted-foreground tracking-wider">Preço médio</div>
+            <div class="text-sm">R$ 76,26</div>
+          </div>
+          <div class="text-center">
+            <div class="text-[10px] uppercase text-muted-foreground tracking-wider">Custo ADS</div>
+            <div class="text-sm text-amber-700 dark:text-amber-400">R$ 444,17</div>
+          </div>
+          <div class="text-center">
+            <div class="text-[10px] uppercase text-muted-foreground tracking-wider">Margem</div>
+            <div><span class="inline-block px-2 py-0.5 rounded-full text-[11px] bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400">N/A</span></div>
+          </div>
+        </div>
+        <div class="text-right shrink-0">
+          <div class="text-[10px] uppercase text-muted-foreground tracking-wider">Faturado</div>
+          <div class="text-lg font-bold tabnum">R$ 5.719,75</div>
+        </div>
+      </div>
+
+      <!-- Card 2 -->
+      <div class="bg-card border border-border hover:border-primary/40 hover:shadow-sm rounded-lg p-4 flex items-center gap-4 transition-all">
+        <div class="w-14 h-14 rounded-lg bg-gradient-to-br from-blue-100 to-blue-50 dark:from-blue-950/40 dark:to-blue-900/20 flex items-center justify-center text-sm font-bold text-blue-700 dark:text-blue-400 shrink-0">36</div>
+        <div class="flex-1 min-w-0">
+          <div class="font-medium truncate">Kit 3 Potes Marinex Facilita Vap 1 Litro</div>
+          <div class="text-xs text-muted-foreground font-mono mt-0.5">MFS-0036 · 17,2% do total</div>
+        </div>
+        <div class="hidden md:flex items-center gap-6 tabnum">
+          <div class="text-center"><div class="text-[10px] uppercase text-muted-foreground tracking-wider">Unid.</div><div class="text-sm font-medium">50</div></div>
+          <div class="text-center"><div class="text-[10px] uppercase text-muted-foreground tracking-wider">Preço médio</div><div class="text-sm">R$ 79,99</div></div>
+          <div class="text-center"><div class="text-[10px] uppercase text-muted-foreground tracking-wider">Custo ADS</div><div class="text-sm">R$ 0,00</div></div>
+          <div class="text-center"><div class="text-[10px] uppercase text-muted-foreground tracking-wider">Margem</div><div><span class="inline-block px-2 py-0.5 rounded-full text-[11px] bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400">N/A</span></div></div>
+        </div>
+        <div class="text-right shrink-0"><div class="text-[10px] uppercase text-muted-foreground tracking-wider">Faturado</div><div class="text-lg font-bold tabnum">R$ 3.999,50</div></div>
+      </div>
+
+      <!-- Card 3 -->
+      <div class="bg-card border border-border hover:border-primary/40 hover:shadow-sm rounded-lg p-4 flex items-center gap-4 transition-all">
+        <div class="w-14 h-14 rounded-lg bg-gradient-to-br from-violet-100 to-violet-50 dark:from-violet-950/40 dark:to-violet-900/20 flex items-center justify-center text-sm font-bold text-violet-700 dark:text-violet-400 shrink-0">32</div>
+        <div class="flex-1 min-w-0">
+          <div class="font-medium truncate">Conjunto 6 Potes de Vidro 350ml Nadir Figueiredo</div>
+          <div class="text-xs text-muted-foreground font-mono mt-0.5">MFS-0032 · 15,2% do total</div>
+        </div>
+        <div class="hidden md:flex items-center gap-6 tabnum">
+          <div class="text-center"><div class="text-[10px] uppercase text-muted-foreground tracking-wider">Unid.</div><div class="text-sm font-medium">63</div></div>
+          <div class="text-center"><div class="text-[10px] uppercase text-muted-foreground tracking-wider">Preço médio</div><div class="text-sm">R$ 56,02</div></div>
+          <div class="text-center"><div class="text-[10px] uppercase text-muted-foreground tracking-wider">Custo ADS</div><div class="text-sm">R$ 0,00</div></div>
+          <div class="text-center"><div class="text-[10px] uppercase text-muted-foreground tracking-wider">Margem</div><div><span class="inline-block px-2 py-0.5 rounded-full text-[11px] bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400">N/A</span></div></div>
+        </div>
+        <div class="text-right shrink-0"><div class="text-[10px] uppercase text-muted-foreground tracking-wider">Faturado</div><div class="text-lg font-bold tabnum">R$ 3.529,11</div></div>
+      </div>
+
+      <!-- Card 4 -->
+      <div class="bg-card border border-border hover:border-primary/40 hover:shadow-sm rounded-lg p-4 flex items-center gap-4 transition-all">
+        <div class="w-14 h-14 rounded-lg bg-gradient-to-br from-orange-100 to-orange-50 dark:from-orange-950/40 dark:to-orange-900/20 flex items-center justify-center text-sm font-bold text-orange-700 dark:text-orange-400 shrink-0">34</div>
+        <div class="flex-1 min-w-0">
+          <div class="font-medium truncate">Kit com 6 Tigelas Marinex Americano Com Tampa</div>
+          <div class="text-xs text-muted-foreground font-mono mt-0.5">MFS-0034 · 8,4% do total</div>
+        </div>
+        <div class="hidden md:flex items-center gap-6 tabnum">
+          <div class="text-center"><div class="text-[10px] uppercase text-muted-foreground tracking-wider">Unid.</div><div class="text-sm font-medium">53</div></div>
+          <div class="text-center"><div class="text-[10px] uppercase text-muted-foreground tracking-wider">Preço médio</div><div class="text-sm">R$ 37,00</div></div>
+          <div class="text-center"><div class="text-[10px] uppercase text-muted-foreground tracking-wider">Custo ADS</div><div class="text-sm">R$ 0,00</div></div>
+          <div class="text-center"><div class="text-[10px] uppercase text-muted-foreground tracking-wider">Margem</div><div><span class="inline-block px-2 py-0.5 rounded-full text-[11px] bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400">N/A</span></div></div>
+        </div>
+        <div class="text-right shrink-0"><div class="text-[10px] uppercase text-muted-foreground tracking-wider">Faturado</div><div class="text-lg font-bold tabnum">R$ 1.961,07</div></div>
+      </div>
+
+      <!-- Card 5 -->
+      <div class="bg-card border border-border hover:border-primary/40 hover:shadow-sm rounded-lg p-4 flex items-center gap-4 transition-all">
+        <div class="w-14 h-14 rounded-lg bg-gradient-to-br from-pink-100 to-pink-50 dark:from-pink-950/40 dark:to-pink-900/20 flex items-center justify-center text-sm font-bold text-pink-700 dark:text-pink-400 shrink-0">27</div>
+        <div class="flex-1 min-w-0">
+          <div class="font-medium truncate">Kit com Tigela Americano C/Tampa Plástica Sort.</div>
+          <div class="text-xs text-muted-foreground font-mono mt-0.5">MFS-0027 · 5,4% do total</div>
+        </div>
+        <div class="hidden md:flex items-center gap-6 tabnum">
+          <div class="text-center"><div class="text-[10px] uppercase text-muted-foreground tracking-wider">Unid.</div><div class="text-sm font-medium">18</div></div>
+          <div class="text-center"><div class="text-[10px] uppercase text-muted-foreground tracking-wider">Preço médio</div><div class="text-sm">R$ 69,97</div></div>
+          <div class="text-center"><div class="text-[10px] uppercase text-muted-foreground tracking-wider">Custo ADS</div><div class="text-sm text-amber-700 dark:text-amber-400">R$ 464,67</div></div>
+          <div class="text-center"><div class="text-[10px] uppercase text-muted-foreground tracking-wider">Margem</div><div><span class="inline-block px-2 py-0.5 rounded-full text-[11px] bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400">N/A</span></div></div>
+        </div>
+        <div class="text-right shrink-0"><div class="text-[10px] uppercase text-muted-foreground tracking-wider">Faturado</div><div class="text-lg font-bold tabnum">R$ 1.259,46</div></div>
+      </div>
+
+      <!-- Card 6 -->
+      <div class="bg-card border border-border hover:border-primary/40 hover:shadow-sm rounded-lg p-4 flex items-center gap-4 transition-all">
+        <div class="w-14 h-14 rounded-lg bg-gradient-to-br from-cyan-100 to-cyan-50 dark:from-cyan-950/40 dark:to-cyan-900/20 flex items-center justify-center text-sm font-bold text-cyan-700 dark:text-cyan-400 shrink-0">35</div>
+        <div class="flex-1 min-w-0">
+          <div class="font-medium truncate">Nadir Figueiredo · Tigela 3L Com Tampa Marinex</div>
+          <div class="text-xs text-muted-foreground font-mono mt-0.5">MFS-0035 · 5,0% do total</div>
+        </div>
+        <div class="hidden md:flex items-center gap-6 tabnum">
+          <div class="text-center"><div class="text-[10px] uppercase text-muted-foreground tracking-wider">Unid.</div><div class="text-sm font-medium">29</div></div>
+          <div class="text-center"><div class="text-[10px] uppercase text-muted-foreground tracking-wider">Preço médio</div><div class="text-sm">R$ 40,35</div></div>
+          <div class="text-center"><div class="text-[10px] uppercase text-muted-foreground tracking-wider">Custo ADS</div><div class="text-sm">R$ 0,00</div></div>
+          <div class="text-center"><div class="text-[10px] uppercase text-muted-foreground tracking-wider">Margem</div><div><span class="inline-block px-2 py-0.5 rounded-full text-[11px] bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400">N/A</span></div></div>
+        </div>
+        <div class="text-right shrink-0"><div class="text-[10px] uppercase text-muted-foreground tracking-wider">Faturado</div><div class="text-lg font-bold tabnum">R$ 1.170,13</div></div>
+      </div>
+
+      <p class="text-center text-xs text-muted-foreground italic py-2">… mais 9 produtos · placeholder colorido se torna imagem real quando ASIN/imagemUrl disponível</p>
+    </div>
+  </section>
+
+  <footer class="text-center text-xs text-muted-foreground py-6">Mockup C · clique 🌓 no topo para alternar tema</footer>
+</main>
+</body>
+</html>

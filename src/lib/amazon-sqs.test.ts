@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  extractReportProcessingInfo,
   extractOrderIdsFromNotification,
   parseSqsNotificationBody,
 } from "@/lib/amazon-sqs";
@@ -55,5 +56,41 @@ describe("amazon-sqs", () => {
       "701-1234567-1234567",
       "702-1234567-1234567",
     ]);
+  });
+
+  it("extrai reportType e reportId de REPORT_PROCESSING_FINISHED aninhado", () => {
+    const notification = parseSqsNotificationBody(
+      JSON.stringify({
+        NotificationType: "REPORT_PROCESSING_FINISHED",
+        Payload: {
+          ReportProcessingFinishedNotification: {
+            ReportType: "GET_V2_SETTLEMENT_REPORT_DATA_FLAT_FILE_V2",
+            ReportId: "1234567890",
+          },
+        },
+      }),
+    );
+
+    expect(extractReportProcessingInfo(notification)).toEqual({
+      reportType: "GET_V2_SETTLEMENT_REPORT_DATA_FLAT_FILE_V2",
+      reportId: "1234567890",
+    });
+  });
+
+  it("extrai reportType de reports nao-settlement para o dispatcher ignorar", () => {
+    const notification = parseSqsNotificationBody(
+      JSON.stringify({
+        NotificationType: "REPORT_PROCESSING_FINISHED",
+        Payload: {
+          reportType: "GET_FLAT_FILE_ALL_ORDERS_DATA_BY_ORDER_DATE_GENERAL",
+          reportId: "orders-report",
+        },
+      }),
+    );
+
+    expect(extractReportProcessingInfo(notification)).toEqual({
+      reportType: "GET_FLAT_FILE_ALL_ORDERS_DATA_BY_ORDER_DATE_GENERAL",
+      reportId: "orders-report",
+    });
   });
 });

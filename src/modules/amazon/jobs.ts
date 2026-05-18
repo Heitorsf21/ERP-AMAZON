@@ -40,24 +40,24 @@ const SCHEDULES: Array<{
   },
   {
     tipo: TipoAmazonSyncJob.INVENTORY_SYNC,
-    intervalMs: SQS_PRIMARY ? 30 * 60_000 : 5 * 60_000,
+    intervalMs: 2 * 60_000,
     priority: 20,
   },
   {
     tipo: TipoAmazonSyncJob.FINANCES_SYNC,
-    intervalMs: 30 * 60_000,
+    intervalMs: 15 * 60_000,
     priority: 10,
     payload: { diasAtras: 14, maxPages: 1 },
   },
   {
     tipo: TipoAmazonSyncJob.REFUNDS_SYNC,
-    intervalMs: 60 * 60_000,
+    intervalMs: 30 * 60_000,
     priority: 10,
-    payload: { diasAtras: 90, maxPages: 1 },
+    payload: { diasAtras: 90, maxPages: 20 },
   },
   {
     tipo: TipoAmazonSyncJob.REVIEWS_DISCOVERY,
-    intervalMs: 6 * 60 * 60_000,
+    intervalMs: 12 * 60 * 60_000,
     priority: 40,
   },
   {
@@ -80,7 +80,7 @@ const SCHEDULES: Array<{
   },
   {
     tipo: TipoAmazonSyncJob.BUYBOX_CHECK,
-    intervalMs: SQS_PRIMARY ? 60 * 60_000 : 15 * 60_000,
+    intervalMs: 10 * 60_000,
     priority: 15,
   },
   {
@@ -99,7 +99,7 @@ const SCHEDULES: Array<{
   },
   {
     tipo: TipoAmazonSyncJob.SETTLEMENT_BACKFILL,
-    intervalMs: 6 * 60 * 60_000,
+    intervalMs: 24 * 60 * 60_000,
     priority: 5,
   },
   {
@@ -112,7 +112,7 @@ const SCHEDULES: Array<{
   // Sprint 3: reports financeiros diretos.
   {
     tipo: TipoAmazonSyncJob.FBA_REIMBURSEMENTS_SYNC,
-    intervalMs: 6 * 60 * 60_000,
+    intervalMs: 12 * 60 * 60_000,
     priority: 12,
     payload: { diasAtras: 90 },
   },
@@ -140,7 +140,7 @@ const SCHEDULES: Array<{
   // sao gratuitos, entao nao ha custo em recriar a janela trailing.
   {
     tipo: TipoAmazonSyncJob.AMAZON_ADS_REPORT_SYNC,
-    intervalMs: 30 * 60_000,
+    intervalMs: 60 * 60_000,
     priority: 12,
     payload: { diasAtras: 30 },
   },
@@ -148,7 +148,7 @@ const SCHEDULES: Array<{
   // 365d / 90d/janela = 5 ciclos. A 30min/ciclo, ~2.5h cobre o ano todo.
   {
     tipo: TipoAmazonSyncJob.AMAZON_ADS_BACKFILL,
-    intervalMs: 30 * 60_000,
+    intervalMs: 15 * 60_000,
     priority: 4,
   },
   // Cache do our_price (Listings Items API). Roda a cada 30min para preencher

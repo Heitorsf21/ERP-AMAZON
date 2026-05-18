@@ -38,6 +38,14 @@ export const STATUS_FINANCEIRO_NAO_CONTABILIZAVEL = [
   "REFUNDED",
 ] as const;
 
+export const MARKETPLACE_REMOVAL_ORDER = [
+  "Non-Amazon",
+  "NON_AMAZON",
+  "Non Amazon",
+] as const;
+
+const PREFIXO_REMOVAL_ORDER = "S01-";
+
 const STATUS_PEDIDO_CANCELADO_NORMALIZADO = new Set(
   STATUS_PEDIDO_CANCELADO.map(normalizarStatus),
 );
@@ -55,6 +63,8 @@ const STATUS_FINANCEIRO_NAO_CONTABILIZAVEL_NORMALIZADO = new Set(
 );
 
 export function isVendaAmazonContabilizavel(input: {
+  amazonOrderId?: string | null;
+  marketplace?: string | null;
   statusPedido?: string | null;
   statusFinanceiro?: string | null;
   valorBrutoCentavos?: number | null;
@@ -64,6 +74,7 @@ export function isVendaAmazonContabilizavel(input: {
   const statusFinanceiro = normalizarStatus(input.statusFinanceiro);
   const valorBruto = input.valorBrutoCentavos ?? 0;
 
+  if (isVendaAmazonRemovalOrder(input)) return false;
   if (STATUS_PEDIDO_CANCELADO_NORMALIZADO.has(statusPedido)) return false;
   if (STATUS_FINANCEIRO_NAO_CONTABILIZAVEL_NORMALIZADO.has(statusFinanceiro))
     return false;
@@ -84,11 +95,14 @@ export function isVendaAmazonContabilizavel(input: {
  * ou legado (null) conta.
  */
 export function isVendaAmazonContabilizavelEstrito(input: {
+  amazonOrderId?: string | null;
+  marketplace?: string | null;
   statusPedido?: string | null;
   statusFinanceiro?: string | null;
   valorBrutoCentavos?: number | null;
   precoOrigem?: string | null;
 }): boolean {
+  if (isVendaAmazonRemovalOrder(input)) return false;
   if (input.precoOrigem === "listing") return false;
   const statusPedido = normalizarStatus(input.statusPedido);
   const statusFinanceiro = normalizarStatus(input.statusFinanceiro);
@@ -104,6 +118,8 @@ export function isVendaAmazonContabilizavelEstrito(input: {
 }
 
 export function isVendaAmazonPrincipal(input: {
+  amazonOrderId?: string | null;
+  marketplace?: string | null;
   statusPedido?: string | null;
   statusFinanceiro?: string | null;
 }): boolean {
@@ -111,6 +127,7 @@ export function isVendaAmazonPrincipal(input: {
   const statusFinanceiro = normalizarStatus(input.statusFinanceiro);
 
   return (
+    !isVendaAmazonRemovalOrder(input) &&
     !STATUS_PEDIDO_CANCELADO_NORMALIZADO.has(statusPedido) &&
     !STATUS_PEDIDO_REEMBOLSADO_NORMALIZADO.has(statusPedido) &&
     !STATUS_FINANCEIRO_NAO_CONTABILIZAVEL_NORMALIZADO.has(statusFinanceiro)
@@ -137,6 +154,7 @@ export function whereVendaAmazonContabilizavel(
 ): Prisma.VendaAmazonWhereInput {
   const contabilizavel: Prisma.VendaAmazonWhereInput = {
     NOT: [
+      ...whereRemovalOrders(),
       {
         statusPedido: {
           in: [...STATUS_PEDIDO_CANCELADO],
@@ -191,6 +209,7 @@ export function whereVendaAmazonContabilizavelEstrito(
 ): Prisma.VendaAmazonWhereInput {
   const contabilizavel: Prisma.VendaAmazonWhereInput = {
     NOT: [
+      ...whereRemovalOrders(),
       { statusPedido: { in: [...STATUS_PEDIDO_CANCELADO] } },
       { statusPedido: { in: [...STATUS_PEDIDO_REEMBOLSADO] } },
       { statusFinanceiro: { in: [...STATUS_FINANCEIRO_NAO_CONTABILIZAVEL] } },
@@ -209,6 +228,62 @@ export function whereVendaAmazonContabilizavelEstrito(
   return {
     AND: [contabilizavel, where],
   };
+}
+
+/**
+ * Base do espelho Gestor Seller.
+ *
+ * Importante: nao exclui reembolsos por status vitalicio da venda. No Gestor,
+ * o status "Reembolsado" e recortado pelo periodo do relatorio; uma venda de
+ * janeiro reembolsada em fevereiro segue como "Enviado" no relatorio de
+ * janeiro. Por isso o Dashboard remove apenas os pedidos com AmazonReembolso
+ * dentro da propria janela consultada.
+ */
+export function whereVendaAmazonEspelhoGestorSeller(
+  where?: Prisma.VendaAmazonWhereInput,
+): Prisma.VendaAmazonWhereInput {
+  return andWhere(
+    {
+      NOT: [
+        ...whereRemovalOrders(),
+        { statusPedido: { in: [...STATUS_PEDIDO_CANCELADO] } },
+        {
+          AND: [
+            { statusPedido: { in: [...STATUS_PEDIDO_PENDENTE] } },
+            {
+              OR: [
+                { valorBrutoCentavos: null },
+                { valorBrutoCentavos: { lte: 0 } },
+              ],
+            },
+          ],
+        },
+      ],
+    },
+    where,
+  );
+}
+
+/**
+ * Parte complementar do tooltip do Gestor Seller: vendas do periodo que foram
+ * reembolsadas. Mantem exclusao de Removal Orders e cancelados.
+ */
+export function whereVendaAmazonReembolsadaGestorSeller(
+  where?: Prisma.VendaAmazonWhereInput,
+): Prisma.VendaAmazonWhereInput {
+  return andWhere(
+    {
+      NOT: [
+        ...whereRemovalOrders(),
+        { statusPedido: { in: [...STATUS_PEDIDO_CANCELADO] } },
+      ],
+      OR: [
+        { statusPedido: { in: [...STATUS_PEDIDO_REEMBOLSADO] } },
+        { statusFinanceiro: { in: [...STATUS_FINANCEIRO_NAO_CONTABILIZAVEL] } },
+      ],
+    },
+    where,
+  );
 }
 
 export type VisaoVendas = "principal" | "cancelados" | "reembolsados" | "todos";
@@ -230,6 +305,7 @@ export function whereVendaAmazonPrincipal(
   return andWhere(
     {
       NOT: [
+        ...whereRemovalOrders(),
         { statusPedido: { in: [...STATUS_PEDIDO_CANCELADO] } },
         { statusPedido: { in: [...STATUS_PEDIDO_REEMBOLSADO] } },
         { statusFinanceiro: { in: [...STATUS_FINANCEIRO_NAO_CONTABILIZAVEL] } },
@@ -243,16 +319,22 @@ export function whereVendaAmazonPorVisao(
   visao: VisaoVendas,
   where?: Prisma.VendaAmazonWhereInput,
 ): Prisma.VendaAmazonWhereInput {
-  if (visao === "todos") return where ?? {};
+  if (visao === "todos") {
+    return andWhere({ NOT: [...whereRemovalOrders()] }, where);
+  }
   if (visao === "cancelados") {
     return andWhere(
-      { statusPedido: { in: [...STATUS_PEDIDO_CANCELADO] } },
+      {
+        NOT: [...whereRemovalOrders()],
+        statusPedido: { in: [...STATUS_PEDIDO_CANCELADO] },
+      },
       where,
     );
   }
   if (visao === "reembolsados") {
     return andWhere(
       {
+        NOT: [...whereRemovalOrders()],
         OR: [
           { statusPedido: { in: [...STATUS_PEDIDO_REEMBOLSADO] } },
           { statusFinanceiro: { in: [...STATUS_FINANCEIRO_NAO_CONTABILIZAVEL] } },
@@ -279,6 +361,27 @@ export function dataVendaPeriodoSP(
 
 function normalizarStatus(status?: string | null): string {
   return (status ?? "").trim().toUpperCase();
+}
+
+export function isVendaAmazonRemovalOrder(input: {
+  amazonOrderId?: string | null;
+  marketplace?: string | null;
+}): boolean {
+  const amazonOrderId = input.amazonOrderId?.trim() ?? "";
+  const marketplace = input.marketplace?.trim().toUpperCase() ?? "";
+  return (
+    amazonOrderId.startsWith(PREFIXO_REMOVAL_ORDER) ||
+    MARKETPLACE_REMOVAL_ORDER.some(
+      (value) => value.toUpperCase() === marketplace,
+    )
+  );
+}
+
+function whereRemovalOrders(): Prisma.VendaAmazonWhereInput[] {
+  return [
+    { marketplace: { in: [...MARKETPLACE_REMOVAL_ORDER] } },
+    { amazonOrderId: { startsWith: PREFIXO_REMOVAL_ORDER } },
+  ];
 }
 
 function andWhere(

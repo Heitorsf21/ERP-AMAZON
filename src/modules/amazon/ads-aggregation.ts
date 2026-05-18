@@ -1,0 +1,720 @@
+/**
+ * Camada centralizada de agregacao de Amazon Ads.
+ *
+ * Regra de precedencia (espelha a logica da DRE):
+ *  1) Se ha registros em AmazonAdsMetricaDiaria com gasto > 0 no periodo,
+ *     fonte = SYNC -> retorna APENAS dados do sync oficial.
+ *  2) Caso contrario, soma AdsCampanha (legacy CSV) + AdsGastoManual.
+ *     - Ambos > 0  -> MIXED
+ *     - So legacy  -> LEGACY
+ *     - So manual  -> MANUAL
+ *     - Nada       -> VAZIO
+ *
+ * Esse modulo e a unica fonte de verdade para os endpoints /api/ads/* e o
+ * service do dashboard-ecommerce. Helpers de calculo (ACOS/ROAS/CTR/CPC/conv)
+ * sao puros e reutilizaveis.
+ */
+
+import { db } from "@/lib/db";
+import type { IntervaloPeriodo } from "@/lib/periodo";
+
+export type FonteAds = "SYNC" | "LEGACY" | "MANUAL" | "MIXED" | "VAZIO";
+
+export type AdsMetricasBase = {
+  gastoCentavos: number;
+  vendasAtribuidasCentavos: number;
+  impressoes: number;
+  cliques: number;
+  pedidos: number;
+  unidades: number;
+};
+
+export type AdsMetricasDerivadas = {
+  acosPercentual: number | null;
+  roas: number | null;
+  ctrPercentual: number | null;
+  cpcCentavos: number | null;
+  taxaConversaoPercentual: number | null;
+};
+
+export type AdsResumo = AdsMetricasBase &
+  AdsMetricasDerivadas & {
+    fonte: FonteAds;
+  };
+
+export type AdsCampanhaItem = AdsMetricasBase &
+  AdsMetricasDerivadas & {
+    id: string;
+    nomeCampanha: string;
+    sku: string | null;
+    asin: string | null;
+    periodoInicio: Date;
+    periodoFim: Date;
+  };
+
+export type AdsTimelinePonto = AdsMetricasBase &
+  AdsMetricasDerivadas & {
+    data: string;
+  };
+
+export type AdsPorSkuItem = AdsMetricasBase &
+  AdsMetricasDerivadas & {
+    sku: string;
+    asin: string | null;
+  };
+
+// ────────────────────────────────────────────────────────────────────────────
+// Helpers puros
+// ────────────────────────────────────────────────────────────────────────────
+
+const METRICAS_BASE_VAZIA: AdsMetricasBase = {
+  gastoCentavos: 0,
+  vendasAtribuidasCentavos: 0,
+  impressoes: 0,
+  cliques: 0,
+  pedidos: 0,
+  unidades: 0,
+};
+
+export function calcularDerivadas(m: AdsMetricasBase): AdsMetricasDerivadas {
+  return {
+    acosPercentual:
+      m.vendasAtribuidasCentavos > 0
+        ? (m.gastoCentavos / m.vendasAtribuidasCentavos) * 100
+        : null,
+    roas:
+      m.gastoCentavos > 0 ? m.vendasAtribuidasCentavos / m.gastoCentavos : null,
+    ctrPercentual: m.impressoes > 0 ? (m.cliques / m.impressoes) * 100 : null,
+    cpcCentavos: m.cliques > 0 ? Math.round(m.gastoCentavos / m.cliques) : null,
+    taxaConversaoPercentual:
+      m.cliques > 0 ? (m.pedidos / m.cliques) * 100 : null,
+  };
+}
+
+export function tacosPercentual(
+  gastoCentavos: number,
+  faturamentoCentavos: number,
+): number | null {
+  if (faturamentoCentavos <= 0) return null;
+  return (gastoCentavos / faturamentoCentavos) * 100;
+}
+
+function acumular(a: AdsMetricasBase, b: AdsMetricasBase): AdsMetricasBase {
+  return {
+    gastoCentavos: a.gastoCentavos + b.gastoCentavos,
+    vendasAtribuidasCentavos:
+      a.vendasAtribuidasCentavos + b.vendasAtribuidasCentavos,
+    impressoes: a.impressoes + b.impressoes,
+    cliques: a.cliques + b.cliques,
+    pedidos: a.pedidos + b.pedidos,
+    unidades: a.unidades + b.unidades,
+  };
+}
+
+function valorSobreposto(
+  inicioGasto: Date,
+  fimGasto: Date,
+  periodo: IntervaloPeriodo,
+  valorCentavos: number,
+): number {
+  const inicio = Math.max(inicioGasto.getTime(), periodo.de.getTime());
+  const fim = Math.min(fimGasto.getTime(), periodo.ate.getTime());
+  if (fim < inicio) return 0;
+
+  const duracaoGasto = Math.max(1, fimGasto.getTime() - inicioGasto.getTime());
+  const duracaoSobreposta = Math.max(1, fim - inicio);
+
+  return Math.round(valorCentavos * (duracaoSobreposta / duracaoGasto));
+}
+
+function classificarFonte(
+  legacyTemDado: boolean,
+  manualTemDado: boolean,
+): FonteAds {
+  if (legacyTemDado && manualTemDado) return "MIXED";
+  if (legacyTemDado) return "LEGACY";
+  if (manualTemDado) return "MANUAL";
+  return "VAZIO";
+}
+
+function diaIso(date: Date): string {
+  return date.toISOString().slice(0, 10);
+}
+
+function inicioSemanaUtc(date: Date): Date {
+  const d = new Date(
+    Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()),
+  );
+  const diaSemana = d.getUTCDay();
+  d.setUTCDate(d.getUTCDate() - diaSemana);
+  return d;
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Probe de fonte: olha se ha gasto sincronizado no periodo
+// ────────────────────────────────────────────────────────────────────────────
+
+async function temGastoSync(periodo: IntervaloPeriodo): Promise<boolean> {
+  const agg = await db.amazonAdsMetricaDiaria.aggregate({
+    where: { data: { gte: periodo.de, lte: periodo.ate } },
+    _sum: { gastoCentavos: true },
+  });
+  return (agg._sum.gastoCentavos ?? 0) > 0;
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// getAdsResumo — totais agregados do periodo
+// ────────────────────────────────────────────────────────────────────────────
+
+export async function getAdsResumo(
+  periodo: IntervaloPeriodo,
+): Promise<AdsResumo> {
+  const sync = await db.amazonAdsMetricaDiaria.aggregate({
+    where: { data: { gte: periodo.de, lte: periodo.ate } },
+    _sum: {
+      gastoCentavos: true,
+      vendasCentavos: true,
+      impressoes: true,
+      cliques: true,
+      pedidos: true,
+      unidades: true,
+    },
+  });
+
+  const gastoSync = sync._sum.gastoCentavos ?? 0;
+  if (gastoSync > 0) {
+    const base: AdsMetricasBase = {
+      gastoCentavos: gastoSync,
+      vendasAtribuidasCentavos: sync._sum.vendasCentavos ?? 0,
+      impressoes: sync._sum.impressoes ?? 0,
+      cliques: sync._sum.cliques ?? 0,
+      pedidos: sync._sum.pedidos ?? 0,
+      unidades: sync._sum.unidades ?? 0,
+    };
+    return { ...base, ...calcularDerivadas(base), fonte: "SYNC" };
+  }
+
+  // Fallback legacy + manual
+  const [legacyAgg, manualGastos] = await Promise.all([
+    db.adsCampanha.aggregate({
+      where: {
+        periodoInicio: { lte: periodo.ate },
+        periodoFim: { gte: periodo.de },
+      },
+      _sum: {
+        gastoCentavos: true,
+        vendasAtribuidasCentavos: true,
+        impressoes: true,
+        cliques: true,
+        pedidos: true,
+        unidades: true,
+      },
+    }),
+    db.adsGastoManual.findMany({
+      where: {
+        periodoInicio: { lte: periodo.ate },
+        periodoFim: { gte: periodo.de },
+      },
+      select: {
+        periodoInicio: true,
+        periodoFim: true,
+        valorCentavos: true,
+      },
+    }),
+  ]);
+
+  const legacyBase: AdsMetricasBase = {
+    gastoCentavos: legacyAgg._sum.gastoCentavos ?? 0,
+    vendasAtribuidasCentavos: legacyAgg._sum.vendasAtribuidasCentavos ?? 0,
+    impressoes: legacyAgg._sum.impressoes ?? 0,
+    cliques: legacyAgg._sum.cliques ?? 0,
+    pedidos: legacyAgg._sum.pedidos ?? 0,
+    unidades: legacyAgg._sum.unidades ?? 0,
+  };
+  const manualGasto = manualGastos.reduce(
+    (acc, g) =>
+      acc + valorSobreposto(g.periodoInicio, g.periodoFim, periodo, g.valorCentavos),
+    0,
+  );
+
+  const base: AdsMetricasBase = {
+    ...legacyBase,
+    gastoCentavos: legacyBase.gastoCentavos + manualGasto,
+  };
+  const fonte = classificarFonte(legacyBase.gastoCentavos > 0, manualGasto > 0);
+  return { ...base, ...calcularDerivadas(base), fonte };
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// getAdsCampanhas — uma linha por (campaignId × sku × asin) quando SYNC,
+// ou por AdsCampanha quando LEGACY.
+// ────────────────────────────────────────────────────────────────────────────
+
+export async function getAdsCampanhas(
+  periodo: IntervaloPeriodo,
+): Promise<{ itens: AdsCampanhaItem[]; resumo: AdsResumo }> {
+  const usaSync = await temGastoSync(periodo);
+
+  if (usaSync) {
+    const grupos = await db.amazonAdsMetricaDiaria.groupBy({
+      by: ["campaignId", "sku", "asin"],
+      where: { data: { gte: periodo.de, lte: periodo.ate } },
+      _sum: {
+        gastoCentavos: true,
+        vendasCentavos: true,
+        impressoes: true,
+        cliques: true,
+        pedidos: true,
+        unidades: true,
+      },
+    });
+
+    const campaignIds = Array.from(new Set(grupos.map((g) => g.campaignId)));
+    const campanhas = campaignIds.length
+      ? await db.amazonAdsCampanha.findMany({
+          where: { campaignId: { in: campaignIds } },
+          select: { campaignId: true, nome: true },
+        })
+      : [];
+    const nomePorCampaign = new Map(
+      campanhas.map((c) => [c.campaignId, c.nome] as const),
+    );
+
+    const itens: AdsCampanhaItem[] = grupos
+      .map((g) => {
+        const base: AdsMetricasBase = {
+          gastoCentavos: g._sum.gastoCentavos ?? 0,
+          vendasAtribuidasCentavos: g._sum.vendasCentavos ?? 0,
+          impressoes: g._sum.impressoes ?? 0,
+          cliques: g._sum.cliques ?? 0,
+          pedidos: g._sum.pedidos ?? 0,
+          unidades: g._sum.unidades ?? 0,
+        };
+        return {
+          id: `${g.campaignId}|${g.sku ?? ""}|${g.asin ?? ""}`,
+          nomeCampanha: nomePorCampaign.get(g.campaignId) ?? g.campaignId,
+          sku: g.sku ?? null,
+          asin: g.asin ?? null,
+          periodoInicio: periodo.de,
+          periodoFim: periodo.ate,
+          ...base,
+          ...calcularDerivadas(base),
+        };
+      })
+      .sort((a, b) => b.gastoCentavos - a.gastoCentavos);
+
+    const resumoBase = itens.reduce<AdsMetricasBase>(
+      (acc, i) =>
+        acumular(acc, {
+          gastoCentavos: i.gastoCentavos,
+          vendasAtribuidasCentavos: i.vendasAtribuidasCentavos,
+          impressoes: i.impressoes,
+          cliques: i.cliques,
+          pedidos: i.pedidos,
+          unidades: i.unidades,
+        }),
+      METRICAS_BASE_VAZIA,
+    );
+    return {
+      itens,
+      resumo: {
+        ...resumoBase,
+        ...calcularDerivadas(resumoBase),
+        fonte: "SYNC",
+      },
+    };
+  }
+
+  // Fallback LEGACY (AdsCampanha) — manual nao gera "campanha" individual.
+  const campanhas = await db.adsCampanha.findMany({
+    where: {
+      periodoInicio: { lte: periodo.ate },
+      periodoFim: { gte: periodo.de },
+    },
+    orderBy: [{ acosPercentual: "desc" }, { gastoCentavos: "desc" }],
+  });
+
+  const itens: AdsCampanhaItem[] = campanhas.map((c) => {
+    const base: AdsMetricasBase = {
+      gastoCentavos: c.gastoCentavos,
+      vendasAtribuidasCentavos: c.vendasAtribuidasCentavos,
+      impressoes: c.impressoes,
+      cliques: c.cliques,
+      pedidos: c.pedidos,
+      unidades: c.unidades,
+    };
+    return {
+      id: c.id,
+      nomeCampanha: c.nomeCampanha,
+      sku: c.sku,
+      asin: c.asin,
+      periodoInicio: c.periodoInicio,
+      periodoFim: c.periodoFim,
+      ...base,
+      ...calcularDerivadas(base),
+    };
+  });
+
+  // Resumo do fallback: legacy + manual (mesma regra da DRE)
+  const resumo = await getAdsResumo(periodo);
+  return { itens, resumo };
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// getAdsTimeline — pontos diarios/semanais
+// ────────────────────────────────────────────────────────────────────────────
+
+export async function getAdsTimeline(
+  periodo: IntervaloPeriodo,
+  granularidade: "day" | "week" = "day",
+): Promise<AdsTimelinePonto[]> {
+  const usaSync = await temGastoSync(periodo);
+
+  const buckets = new Map<string, AdsMetricasBase>();
+
+  if (usaSync) {
+    const grupos = await db.amazonAdsMetricaDiaria.groupBy({
+      by: ["data"],
+      where: { data: { gte: periodo.de, lte: periodo.ate } },
+      _sum: {
+        gastoCentavos: true,
+        vendasCentavos: true,
+        impressoes: true,
+        cliques: true,
+        pedidos: true,
+        unidades: true,
+      },
+    });
+
+    for (const g of grupos) {
+      const chave =
+        granularidade === "week"
+          ? diaIso(inicioSemanaUtc(g.data))
+          : diaIso(g.data);
+      const base: AdsMetricasBase = {
+        gastoCentavos: g._sum.gastoCentavos ?? 0,
+        vendasAtribuidasCentavos: g._sum.vendasCentavos ?? 0,
+        impressoes: g._sum.impressoes ?? 0,
+        cliques: g._sum.cliques ?? 0,
+        pedidos: g._sum.pedidos ?? 0,
+        unidades: g._sum.unidades ?? 0,
+      };
+      buckets.set(chave, acumular(buckets.get(chave) ?? METRICAS_BASE_VAZIA, base));
+    }
+  } else {
+    // LEGACY: agrupa AdsCampanha pelo dia/semana de periodoInicio
+    const campanhas = await db.adsCampanha.findMany({
+      where: {
+        periodoInicio: { lte: periodo.ate },
+        periodoFim: { gte: periodo.de },
+      },
+      select: {
+        periodoInicio: true,
+        gastoCentavos: true,
+        vendasAtribuidasCentavos: true,
+        cliques: true,
+        impressoes: true,
+        pedidos: true,
+        unidades: true,
+      },
+      orderBy: { periodoInicio: "asc" },
+    });
+
+    for (const c of campanhas) {
+      const chave =
+        granularidade === "week"
+          ? diaIso(inicioSemanaUtc(c.periodoInicio))
+          : diaIso(c.periodoInicio);
+      const base: AdsMetricasBase = {
+        gastoCentavos: c.gastoCentavos,
+        vendasAtribuidasCentavos: c.vendasAtribuidasCentavos,
+        impressoes: c.impressoes,
+        cliques: c.cliques,
+        pedidos: c.pedidos,
+        unidades: c.unidades,
+      };
+      buckets.set(chave, acumular(buckets.get(chave) ?? METRICAS_BASE_VAZIA, base));
+    }
+  }
+
+  return Array.from(buckets.entries())
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([data, base]) => ({
+      data,
+      ...base,
+      ...calcularDerivadas(base),
+    }));
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// getAdsPorSku — agregado por SKU
+// ────────────────────────────────────────────────────────────────────────────
+
+export async function getAdsPorSku(
+  periodo: IntervaloPeriodo,
+): Promise<AdsPorSkuItem[]> {
+  const usaSync = await temGastoSync(periodo);
+
+  const mapa = new Map<string, AdsMetricasBase & { asin: string | null }>();
+
+  if (usaSync) {
+    const grupos = await db.amazonAdsMetricaDiaria.groupBy({
+      by: ["sku", "asin"],
+      where: {
+        data: { gte: periodo.de, lte: periodo.ate },
+        sku: { not: null },
+      },
+      _sum: {
+        gastoCentavos: true,
+        vendasCentavos: true,
+        impressoes: true,
+        cliques: true,
+        pedidos: true,
+        unidades: true,
+      },
+    });
+
+    for (const g of grupos) {
+      const sku = g.sku;
+      if (!sku) continue;
+      const atual =
+        mapa.get(sku) ?? { ...METRICAS_BASE_VAZIA, asin: g.asin ?? null };
+      const base: AdsMetricasBase = {
+        gastoCentavos: g._sum.gastoCentavos ?? 0,
+        vendasAtribuidasCentavos: g._sum.vendasCentavos ?? 0,
+        impressoes: g._sum.impressoes ?? 0,
+        cliques: g._sum.cliques ?? 0,
+        pedidos: g._sum.pedidos ?? 0,
+        unidades: g._sum.unidades ?? 0,
+      };
+      const somado = acumular(atual, base);
+      mapa.set(sku, {
+        ...somado,
+        asin: atual.asin ?? g.asin ?? null,
+      });
+    }
+  } else {
+    const campanhas = await db.adsCampanha.findMany({
+      where: {
+        periodoInicio: { lte: periodo.ate },
+        periodoFim: { gte: periodo.de },
+        sku: { not: null },
+      },
+      select: {
+        sku: true,
+        asin: true,
+        gastoCentavos: true,
+        vendasAtribuidasCentavos: true,
+        cliques: true,
+        impressoes: true,
+        pedidos: true,
+        unidades: true,
+      },
+    });
+
+    for (const c of campanhas) {
+      const sku = c.sku?.trim();
+      if (!sku) continue;
+      const atual =
+        mapa.get(sku) ?? { ...METRICAS_BASE_VAZIA, asin: c.asin ?? null };
+      const base: AdsMetricasBase = {
+        gastoCentavos: c.gastoCentavos,
+        vendasAtribuidasCentavos: c.vendasAtribuidasCentavos,
+        impressoes: c.impressoes,
+        cliques: c.cliques,
+        pedidos: c.pedidos,
+        unidades: c.unidades,
+      };
+      const somado = acumular(atual, base);
+      mapa.set(sku, {
+        ...somado,
+        asin: atual.asin ?? c.asin ?? null,
+      });
+    }
+  }
+
+  return Array.from(mapa.entries())
+    .map(([sku, dados]) => {
+      const base: AdsMetricasBase = {
+        gastoCentavos: dados.gastoCentavos,
+        vendasAtribuidasCentavos: dados.vendasAtribuidasCentavos,
+        impressoes: dados.impressoes,
+        cliques: dados.cliques,
+        pedidos: dados.pedidos,
+        unidades: dados.unidades,
+      };
+      return {
+        sku,
+        asin: dados.asin,
+        ...base,
+        ...calcularDerivadas(base),
+      };
+    })
+    .sort((a, b) => b.gastoCentavos - a.gastoCentavos);
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// getAdsGastoPorProduto — usado pelo dashboard-ecommerce::obterTopProdutos
+// Retorna mapa produtoId -> centavos + bucket "sem produto" para rateio.
+// ────────────────────────────────────────────────────────────────────────────
+
+export async function getAdsGastoPorProduto(
+  periodo: IntervaloPeriodo,
+): Promise<{
+  porProdutoId: Map<string, number>;
+  gastoSemProduto: number;
+  fonte: FonteAds;
+}> {
+  const usaSync = await temGastoSync(periodo);
+  const porProdutoId = new Map<string, number>();
+  let gastoSemProduto = 0;
+
+  if (usaSync) {
+    // 1) Linhas com produtoId direto
+    const comProduto = await db.amazonAdsMetricaDiaria.groupBy({
+      by: ["produtoId"],
+      where: {
+        data: { gte: periodo.de, lte: periodo.ate },
+        produtoId: { not: null },
+      },
+      _sum: { gastoCentavos: true },
+    });
+    for (const g of comProduto) {
+      if (!g.produtoId) continue;
+      porProdutoId.set(g.produtoId, g._sum.gastoCentavos ?? 0);
+    }
+
+    // 2) Linhas sem produtoId mas com SKU -> tenta resolver via Produto
+    const semProdutoComSku = await db.amazonAdsMetricaDiaria.groupBy({
+      by: ["sku"],
+      where: {
+        data: { gte: periodo.de, lte: periodo.ate },
+        produtoId: null,
+        sku: { not: null },
+      },
+      _sum: { gastoCentavos: true },
+    });
+    const skusOrfaos = semProdutoComSku
+      .map((g) => g.sku)
+      .filter((s): s is string => !!s);
+    const produtosResolvidos = skusOrfaos.length
+      ? await db.produto.findMany({
+          where: { sku: { in: skusOrfaos } },
+          select: { id: true, sku: true },
+        })
+      : [];
+    const produtoIdPorSku = new Map(
+      produtosResolvidos.map((p) => [p.sku, p.id] as const),
+    );
+    for (const g of semProdutoComSku) {
+      const gasto = g._sum.gastoCentavos ?? 0;
+      if (!gasto) continue;
+      const pid = g.sku ? produtoIdPorSku.get(g.sku) : undefined;
+      if (pid) {
+        porProdutoId.set(pid, (porProdutoId.get(pid) ?? 0) + gasto);
+      } else {
+        gastoSemProduto += gasto;
+      }
+    }
+
+    // 3) Linhas totalmente orfas (sem sku nem produtoId) -> sem produto
+    const orfas = await db.amazonAdsMetricaDiaria.aggregate({
+      where: {
+        data: { gte: periodo.de, lte: periodo.ate },
+        produtoId: null,
+        sku: null,
+      },
+      _sum: { gastoCentavos: true },
+    });
+    gastoSemProduto += orfas._sum.gastoCentavos ?? 0;
+
+    return { porProdutoId, gastoSemProduto, fonte: "SYNC" };
+  }
+
+  // Fallback: legacy (AdsCampanha por SKU -> Produto) + manual (AdsGastoManual.produtoId)
+  const [campanhasLegacy, gastosManuais] = await Promise.all([
+    db.adsCampanha.findMany({
+      where: {
+        periodoInicio: { lte: periodo.ate },
+        periodoFim: { gte: periodo.de },
+      },
+      select: {
+        sku: true,
+        gastoCentavos: true,
+        periodoInicio: true,
+        periodoFim: true,
+      },
+    }),
+    db.adsGastoManual.findMany({
+      where: {
+        periodoInicio: { lte: periodo.ate },
+        periodoFim: { gte: periodo.de },
+      },
+      select: {
+        produtoId: true,
+        valorCentavos: true,
+        periodoInicio: true,
+        periodoFim: true,
+      },
+    }),
+  ]);
+
+  // Resolve produtoId dos SKUs do legacy
+  const skusLegacy = Array.from(
+    new Set(
+      campanhasLegacy
+        .map((c) => c.sku)
+        .filter((s): s is string => !!s),
+    ),
+  );
+  const produtosLegacy = skusLegacy.length
+    ? await db.produto.findMany({
+        where: { sku: { in: skusLegacy } },
+        select: { id: true, sku: true },
+      })
+    : [];
+  const pidPorSku = new Map(produtosLegacy.map((p) => [p.sku, p.id] as const));
+
+  for (const c of campanhasLegacy) {
+    const valor = valorSobreposto(
+      c.periodoInicio,
+      c.periodoFim,
+      periodo,
+      c.gastoCentavos,
+    );
+    if (!valor) continue;
+    const pid = c.sku ? pidPorSku.get(c.sku) : undefined;
+    if (pid) {
+      porProdutoId.set(pid, (porProdutoId.get(pid) ?? 0) + valor);
+    } else {
+      gastoSemProduto += valor;
+    }
+  }
+
+  let manualTemDado = false;
+  for (const g of gastosManuais) {
+    const valor = valorSobreposto(
+      g.periodoInicio,
+      g.periodoFim,
+      periodo,
+      g.valorCentavos,
+    );
+    if (!valor) continue;
+    manualTemDado = true;
+    if (g.produtoId) {
+      porProdutoId.set(
+        g.produtoId,
+        (porProdutoId.get(g.produtoId) ?? 0) + valor,
+      );
+    } else {
+      gastoSemProduto += valor;
+    }
+  }
+
+  const legacyTemDado = campanhasLegacy.some((c) => c.gastoCentavos > 0);
+  return {
+    porProdutoId,
+    gastoSemProduto,
+    fonte: classificarFonte(legacyTemDado, manualTemDado),
+  };
+}

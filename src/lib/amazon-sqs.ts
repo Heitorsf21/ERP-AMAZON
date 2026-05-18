@@ -66,6 +66,10 @@ const ORDER_ID_KEYS = new Set([
   "orderids",
 ]);
 
+const SETTLEMENT_REPORT_TYPE = "GET_V2_SETTLEMENT_REPORT_DATA_FLAT_FILE_V2";
+const REPORT_TYPE_KEYS = new Set(["reporttype"]);
+const REPORT_ID_KEYS = new Set(["reportid", "generatedreportid"]);
+
 export function getSqsConfig(): SqsConfig | null {
   const queueUrl = process.env.AMAZON_SQS_QUEUE_URL;
   const region = process.env.AMAZON_SQS_REGION ?? process.env.AWS_REGION ?? "us-east-1";
@@ -267,10 +271,20 @@ export async function dispatchNotification(
       return [job.id];
     }
     case "REPORT_PROCESSING_FINISHED": {
+      const reportInfo = extractReportProcessingInfo(notif);
+      if (reportInfo.reportType !== SETTLEMENT_REPORT_TYPE) return [];
+
       const job = await enqueueAmazonSyncJob(
         TipoAmazonSyncJob.SETTLEMENT_REPORT_SYNC,
-        basePayload,
-        { dedupeKey: `sqs:${tipo}:${notificationId}`, priority: 45 },
+        {
+          ...basePayload,
+          reportType: reportInfo.reportType,
+          reportId: reportInfo.reportId ?? null,
+        },
+        {
+          dedupeKey: `sqs:${tipo}:${reportInfo.reportId ?? notificationId}`,
+          priority: 45,
+        },
       );
       return [job.id];
     }
@@ -304,6 +318,27 @@ export function extractOrderIdsFromNotification(
     }
   });
   return [...ids];
+}
+
+export function extractReportProcessingInfo(
+  notification: AmazonSqsNotification,
+): { reportType: string | null; reportId: string | null } {
+  let reportType: string | null = null;
+  let reportId: string | null = null;
+
+  visitNotificationRecords(getPayload(notification) ?? notification, (record) => {
+    for (const [key, value] of Object.entries(record)) {
+      const normalizedKey = normalizeNotificationKey(key);
+      if (!reportType && REPORT_TYPE_KEYS.has(normalizedKey)) {
+        reportType = normalizeSingleString(value);
+      }
+      if (!reportId && REPORT_ID_KEYS.has(normalizedKey)) {
+        reportId = normalizeSingleString(value);
+      }
+    }
+  });
+
+  return { reportType, reportId };
 }
 
 function getNotificationType(notification: AmazonSqsNotification): string | null {
@@ -375,6 +410,12 @@ function normalizeOrderIdValues(value: unknown): string[] {
     return value.flatMap(normalizeOrderIdValues);
   }
   return [];
+}
+
+function normalizeSingleString(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed || null;
 }
 
 function visitNotificationRecords(

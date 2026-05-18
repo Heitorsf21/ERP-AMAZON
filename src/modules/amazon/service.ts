@@ -30,6 +30,10 @@ import {
   type LinhaFinanceiraVendaAmazon,
 } from "@/modules/amazon/finance-aggregation";
 import {
+  shouldAutoApplyAmazonRefunds,
+  upsertAmazonFinanceTransactions,
+} from "@/modules/amazon/finance-materializer";
+import {
   OrigemAmazonReviewSolicitation,
   OrigemMovimentacaoEstoque,
   StatusAmazonReviewSolicitation,
@@ -999,10 +1003,50 @@ async function syncFinancialEvents(
     const transactions = await listFinancialTransactions(
       creds,
       subDays(new Date(), diasAtras),
-      undefined,
+      new Date(Date.now() - 5 * 60 * 1000),
       100,
       { maxPages: options.maxPages ?? 1 },
     );
+    const autoApplyRefunds = shouldAutoApplyAmazonRefunds();
+    const financeStats = await upsertAmazonFinanceTransactions(transactions, {
+      materializarReembolsos: autoApplyRefunds,
+    });
+    reembolsosCriados = financeStats.reembolsosCriados;
+    reembolsosAtualizados = financeStats.reembolsosAtualizados;
+    vendasAtualizadas += financeStats.vendasMarcadasReembolso;
+    ignorados +=
+      financeStats.ignoradas +
+      financeStats.reembolsosIgnorados +
+      financeStats.refundsPendentesValidacao;
+
+    if (onlyRefunds) {
+      await db.amazonSyncLog.update({
+        where: { id: logId },
+        data: {
+          status: StatusAmazonSync.SUCESSO,
+          mensagem: `${transactions.length} eventos financeiros lidos.`,
+          detalhes: asJson({
+            vendasAtualizadas,
+            reembolsosCriados,
+            reembolsosAtualizados,
+            ignorados,
+            autoApplyRefunds,
+            financeTransactionsCriadas: financeStats.criadas,
+            financeTransactionsAtualizadas: financeStats.atualizadas,
+            refundsPendentesValidacao: financeStats.refundsPendentesValidacao,
+          }),
+          registros: transactions.length,
+        },
+      });
+
+      return {
+        lidas: transactions.length,
+        vendasAtualizadas,
+        reembolsosCriados,
+        reembolsosAtualizados,
+        ignorados,
+      };
+    }
 
     for (const transaction of transactions) {
       const kind = normalizeFinanceKind(
@@ -1027,83 +1071,7 @@ async function syncFinancialEvents(
           continue;
         }
 
-        if (isRefund) {
-          const produto = await db.produto.findUnique({
-            where: { sku },
-            select: { id: true, asin: true },
-          });
-          const dataReembolso =
-            parseDate(
-              transaction.postedDate ??
-                readDeepString(transaction, ["postedDate", "date", "postedAt"]),
-            ) ?? new Date();
-          const amount = Math.abs(
-            extractAmountCentavos(item) || extractAmountCentavos(transaction),
-          );
-          const referenciaExterna =
-            transaction.transactionId ??
-            `${orderId}:${sku}:${dataReembolso.toISOString()}:refund`;
-          const existente = await db.amazonReembolso.findUnique({
-            where: { referenciaExterna },
-          });
-          // taxasReembolsadasCentavos: AmazonFees no top-level já inclui Commission + FBA fees.
-          // Fallback para a heurística antiga se nada bater (compat Finance Events API legacy).
-          const taxasRefundTop = findBreakdownAmount(item, "AmazonFees");
-          const taxasRefundCentavos = Math.abs(
-            taxasRefundTop || sumBreakdowns(item, "fee"),
-          );
-          const data = {
-            amazonOrderId: orderId,
-            orderItemId: readDeepString(item, ["orderItemId", "OrderItemId"]) ?? null,
-            sku,
-            asin:
-              readDeepString(item, ["asin", "ASIN"]) ?? produto?.asin ?? null,
-            titulo: readDeepString(item, ["title", "description", "itemName"]) ?? null,
-            quantidade: Math.max(
-              1,
-              Math.abs(readDeepNumber(item, ["quantity", "quantityShipped"]) ?? 1),
-            ),
-            valorReembolsadoCentavos: amount,
-            taxasReembolsadasCentavos: taxasRefundCentavos,
-            dataReembolso,
-            liquidacaoId:
-              findSettlementId(transaction) ??
-              readDeepString(transaction, ["settlementId", "settlement-id"]) ??
-              null,
-            marketplace: transaction.marketplaceId ?? creds.marketplaceId,
-            statusFinanceiro:
-              transaction.transactionStatus ??
-              readDeepString(transaction, ["status"]) ??
-              "REEMBOLSADO",
-            produtoId: produto?.id ?? null,
-          };
-
-          if (existente) {
-            await db.amazonReembolso.update({
-              where: { id: existente.id },
-              data,
-            });
-            reembolsosAtualizados++;
-          } else {
-            await db.amazonReembolso.create({
-              data: {
-                ...data,
-                referenciaExterna,
-              },
-            });
-            reembolsosCriados++;
-          }
-
-          await db.vendaAmazon.updateMany({
-            where: { amazonOrderId: orderId, sku },
-            data: {
-              statusPedido: "REEMBOLSADO",
-              statusFinanceiro: "REEMBOLSADO",
-              ultimaSyncEm: new Date(),
-            },
-          });
-          continue;
-        }
+        if (isRefund) continue;
 
         const liquidoMarketplaceCentavos = extractAmountCentavos(item);
 
@@ -1467,7 +1435,11 @@ function extractAmountCentavos(value: unknown): number {
       value.totalAmount ??
       value.TotalAmount ??
       value.currencyAmount ??
-      value.CurrencyAmount;
+      value.CurrencyAmount ??
+      value.unitPrice ??
+      value.UnitPrice ??
+      value.itemPrice ??
+      value.ItemPrice;
     if (amount !== value) return extractAmountCentavos(amount);
   }
   return 0;

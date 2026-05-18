@@ -18,7 +18,6 @@ import {
   listFinancialTransactions,
   type SPAPICredentials,
   type SPCatalogItem,
-  type SPFinanceTransaction,
 } from "@/lib/amazon-sp-api";
 import { parseAllOrdersTsv } from "@/modules/amazon/parsers/all-orders-tsv";
 import { parseFbaReimbursementsTsv } from "@/modules/amazon/parsers/fba-reimbursements-tsv";
@@ -29,6 +28,10 @@ import {
   downloadReportDocument,
   stepReportLifecycle,
 } from "@/modules/amazon/report-runner";
+import {
+  shouldAutoApplyAmazonRefunds,
+  upsertAmazonFinanceTransactions,
+} from "@/modules/amazon/finance-materializer";
 import {
   notificarBuyboxPerdido,
   notificarBuyboxRecuperado,
@@ -711,7 +714,9 @@ export async function runFinancesBackfill(creds: SPAPICredentials) {
     { maxPages: FINANCES_BACKFILL_MAX_PAGES },
   );
 
-  const stats = await upsertFinanceTransactions(transactions);
+  const stats = await upsertAmazonFinanceTransactions(transactions, {
+    materializarReembolsos: shouldAutoApplyAmazonRefunds(),
+  });
 
   await setCfg(FINANCES_BACKFILL_CURSOR_KEY, windowEnd.toISOString());
 
@@ -722,97 +727,6 @@ export async function runFinancesBackfill(creds: SPAPICredentials) {
     transacoes: transactions.length,
     ...stats,
   };
-}
-
-async function upsertFinanceTransactions(transactions: SPFinanceTransaction[]) {
-  let criadas = 0;
-  let atualizadas = 0;
-  let ignoradas = 0;
-
-  for (const tx of transactions) {
-    if (!tx.transactionId) {
-      ignoradas++;
-      continue;
-    }
-
-    const amazonOrderId = extractRelatedId(tx, "AmazonOrderId");
-    const sku = extractFirstSku(tx);
-    const totalAmount = parseAmountToCentavos(tx.totalAmount);
-
-    const data = {
-      transactionType: tx.transactionType ?? null,
-      transactionStatus: tx.transactionStatus ?? null,
-      description: tx.description ?? null,
-      postedDate: tx.postedDate ? new Date(tx.postedDate) : null,
-      marketplaceId: tx.marketplaceId ?? null,
-      amazonOrderId,
-      sku,
-      totalAmountCentavos: totalAmount.centavos,
-      totalAmountCurrency: totalAmount.currency,
-      // SQLite: String. Postgres: Json (Prisma serializa). Convenção do projeto
-      // é stringificar manualmente — ver AmazonSyncJob.payload.
-      payload: JSON.stringify(tx),
-    };
-
-    const existente = await db.amazonFinanceTransaction.findUnique({
-      where: { transactionId: tx.transactionId },
-    });
-
-    if (existente) {
-      await db.amazonFinanceTransaction.update({
-        where: { transactionId: tx.transactionId },
-        data,
-      });
-      atualizadas++;
-    } else {
-      await db.amazonFinanceTransaction.create({
-        data: { transactionId: tx.transactionId, ...data },
-      });
-      criadas++;
-    }
-  }
-
-  return { criadas, atualizadas, ignoradas };
-}
-
-function extractRelatedId(
-  tx: SPFinanceTransaction,
-  name: string,
-): string | null {
-  const found = tx.relatedIdentifiers?.find(
-    (id) => id.relatedIdentifierName === name,
-  );
-  return found?.relatedIdentifierValue ?? null;
-}
-
-function extractFirstSku(tx: SPFinanceTransaction): string | null {
-  for (const item of tx.transactionItems ?? []) {
-    if (!item || typeof item !== "object") continue;
-    const candidates = [
-      (item as Record<string, unknown>).sellerSKU,
-      (item as Record<string, unknown>).SKU,
-      (item as Record<string, unknown>).sku,
-    ];
-    for (const c of candidates) {
-      if (typeof c === "string" && c.length > 0) return c;
-    }
-  }
-  return null;
-}
-
-function parseAmountToCentavos(raw: unknown): {
-  centavos: number | null;
-  currency: string | null;
-} {
-  if (raw == null || typeof raw !== "object") {
-    return { centavos: null, currency: null };
-  }
-  const obj = raw as Record<string, unknown>;
-  const value = obj.currencyAmount ?? obj.amount ?? obj.value;
-  const currencyRaw = obj.currencyCode ?? obj.currency;
-  const currency = typeof currencyRaw === "string" ? currencyRaw : null;
-  if (typeof value !== "number") return { centavos: null, currency };
-  return { centavos: Math.round(value * 100), currency };
 }
 
 // ─────────────────────────────────────────────────────────────────────

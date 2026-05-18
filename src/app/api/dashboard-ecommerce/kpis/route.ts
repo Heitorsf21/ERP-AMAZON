@@ -33,6 +33,19 @@ export const GET = handle(async (req: Request) => {
     ...kpis,
     delta: {
       faturamento: deltaPercent(kpis.faturamentoCentavos, prev.faturamentoCentavos),
+      frete: deltaPercent(kpis.freteCentavos, prev.freteCentavos),
+      faturamentoComFrete: deltaPercent(
+        kpis.faturamentoComFreteCentavos,
+        prev.faturamentoComFreteCentavos,
+      ),
+      faturamentoReembolsado: deltaPercent(
+        kpis.faturamentoReembolsadoCentavos,
+        prev.faturamentoReembolsadoCentavos,
+      ),
+      faturamentoComReembolsados: deltaPercent(
+        kpis.faturamentoComReembolsadosCentavos,
+        prev.faturamentoComReembolsadosCentavos,
+      ),
       liquidoMarketplace: deltaPercent(kpis.liquidoMarketplaceCentavos, prev.liquidoMarketplaceCentavos),
       lucroBruto: deltaPercent(kpis.lucroBrutoCentavos, prev.lucroBrutoCentavos),
       margem: deltaPP(kpis.margemPercentual, prev.margemPercentual),

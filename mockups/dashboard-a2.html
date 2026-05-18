@@ -1,0 +1,534 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Mockup A2 — A revisado · Dashboard ERP</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+tailwind.config = {
+  darkMode: 'class',
+  theme: { extend: {
+    colors: {
+      background: 'hsl(var(--background))', foreground: 'hsl(var(--foreground))',
+      muted: 'hsl(var(--muted))', 'muted-foreground': 'hsl(var(--muted-foreground))',
+      card: 'hsl(var(--card))', border: 'hsl(var(--border))',
+      primary: 'hsl(var(--primary))', success: 'hsl(var(--success))',
+      warning: 'hsl(var(--warning))', destructive: 'hsl(var(--destructive))',
+    },
+    borderRadius: { lg: 'var(--radius)' },
+  }}
+};
+</script>
+<style>
+:root {
+  --background: 0 0% 98%; --foreground: 224 71% 4%;
+  --muted: 220 14% 96%; --muted-foreground: 220 9% 46%;
+  --card: 0 0% 100%; --border: 220 13% 91%;
+  --primary: 221 83% 53%; --success: 142 76% 36%;
+  --warning: 38 92% 50%; --destructive: 0 72% 51%;
+  --radius: 0.625rem;
+}
+.dark {
+  --background: 224 71% 4%; --foreground: 210 20% 98%;
+  --muted: 222 47% 11%; --muted-foreground: 215 16% 57%;
+  --card: 224 71% 6%; --border: 222 47% 13%;
+  --primary: 221 83% 58%; --success: 142 70% 40%;
+  --warning: 38 85% 50%; --destructive: 0 62% 50%;
+}
+body { background: hsl(var(--background)); color: hsl(var(--foreground)); }
+.tabnum { font-variant-numeric: tabular-nums; }
+.icon { width: 16px; height: 16px; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; fill: none; }
+.icon-sm { width: 14px; height: 14px; }
+</style>
+</head>
+<body class="min-h-screen">
+
+<header class="border-b border-border bg-card">
+  <div class="max-w-7xl mx-auto px-6 py-3 flex items-center justify-between">
+    <div class="text-sm text-muted-foreground"><span class="font-semibold text-foreground">Mockup A2</span> · A revisado · ícones SVG · filtro no header · chart 3 áreas empilhadas</div>
+    <button onclick="document.documentElement.classList.toggle('dark')" class="text-xs px-3 py-1.5 rounded-md border border-border hover:bg-muted">🌓 Tema</button>
+  </div>
+</header>
+
+<main class="max-w-7xl mx-auto px-6 py-6 space-y-5">
+
+  <!-- Header com título + filtro de período no mesmo nível (estilo B) -->
+  <div class="flex items-end justify-between flex-wrap gap-3">
+    <div>
+      <h1 class="text-2xl font-semibold tracking-tight">Dashboard E-commerce</h1>
+      <p class="text-sm text-muted-foreground mt-1">KPIs comerciais Amazon · vendas item-a-item · 18/04 — 17/05/2026</p>
+    </div>
+    <div class="flex items-center gap-2">
+      <button class="inline-flex items-center gap-2 text-sm px-3 py-2 rounded-md border border-border bg-card hover:bg-muted">
+        <svg class="icon" viewBox="0 0 24 24" stroke="currentColor"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+        Últimos 30 dias
+        <svg class="icon icon-sm" viewBox="0 0 24 24" stroke="currentColor"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+    </div>
+  </div>
+
+  <!-- Alert -->
+  <div class="flex items-center justify-between bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/50 rounded-lg px-4 py-3 text-sm">
+    <div class="flex items-center gap-2">
+      <svg class="icon text-amber-700 dark:text-amber-400" viewBox="0 0 24 24" stroke="currentColor"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+      <span class="font-semibold">267 venda(s) sem custo cadastrado</span>
+      <span class="text-amber-700/80 dark:text-amber-400/80"> — lucro e margem podem estar incorretos.</span>
+    </div>
+    <a href="#" class="text-amber-700 dark:text-amber-400 hover:underline text-sm font-medium">Corrigir custos →</a>
+  </div>
+
+  <!-- HERO KPIs (4) — bordas finas laterais coloridas, ícones SVG sem emoji -->
+  <section class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+
+    <!-- 1. Faturamento -->
+    <div class="bg-card border border-border rounded-lg p-5 relative overflow-hidden hover:shadow-md transition-shadow">
+      <div class="absolute left-0 top-0 bottom-0 w-1 bg-emerald-500"></div>
+      <div class="flex items-start justify-between mb-3">
+        <div class="flex items-center gap-1.5">
+          <p class="text-[11px] font-medium tracking-wider uppercase text-muted-foreground">Faturamento</p>
+          <svg class="icon icon-sm text-muted-foreground/60" viewBox="0 0 24 24" stroke="currentColor"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+        </div>
+        <div class="h-9 w-9 rounded-md bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
+          <svg class="icon" viewBox="0 0 24 24" stroke="currentColor"><circle cx="12" cy="12" r="10"/><path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8"/><path d="M12 18V6"/></svg>
+        </div>
+      </div>
+      <p class="text-2xl xl:text-3xl font-bold tabnum tracking-tight">R$ 23.236,14</p>
+      <p class="text-xs mt-2 flex items-center gap-1">
+        <svg class="icon icon-sm text-emerald-600" viewBox="0 0 24 24" stroke="currentColor"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
+        <span class="text-emerald-600 font-medium">64,8%</span>
+        <span class="text-muted-foreground font-normal">vs. período anterior</span>
+      </p>
+    </div>
+
+    <!-- 2. Líq. Marketplace -->
+    <div class="bg-card border border-border rounded-lg p-5 relative overflow-hidden hover:shadow-md transition-shadow">
+      <div class="absolute left-0 top-0 bottom-0 w-1 bg-emerald-500"></div>
+      <div class="flex items-start justify-between mb-3">
+        <p class="text-[11px] font-medium tracking-wider uppercase text-muted-foreground">Líq. Marketplace</p>
+        <div class="h-9 w-9 rounded-md bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
+          <svg class="icon" viewBox="0 0 24 24" stroke="currentColor"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2"/><path d="M6 12h.01M18 12h.01"/></svg>
+        </div>
+      </div>
+      <p class="text-2xl xl:text-3xl font-bold tabnum tracking-tight">R$ 18.201,13</p>
+      <p class="text-xs mt-2 flex items-center gap-1">
+        <svg class="icon icon-sm text-emerald-600" viewBox="0 0 24 24" stroke="currentColor"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
+        <span class="text-emerald-600 font-medium">35,1%</span>
+      </p>
+    </div>
+
+    <!-- 3. Lucro Bruto -->
+    <div class="bg-card border border-border rounded-lg p-5 relative overflow-hidden hover:shadow-md transition-shadow">
+      <div class="absolute left-0 top-0 bottom-0 w-1 bg-blue-500"></div>
+      <div class="flex items-start justify-between mb-3">
+        <p class="text-[11px] font-medium tracking-wider uppercase text-muted-foreground">Lucro Bruto</p>
+        <div class="h-9 w-9 rounded-md bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center">
+          <svg class="icon" viewBox="0 0 24 24" stroke="currentColor"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
+        </div>
+      </div>
+      <p class="text-2xl xl:text-3xl font-bold tabnum tracking-tight text-muted-foreground/50">N/A</p>
+      <p class="text-xs mt-2 text-muted-foreground">aguardando custos</p>
+    </div>
+
+    <!-- 4. Margem -->
+    <div class="bg-card border border-border rounded-lg p-5 relative overflow-hidden hover:shadow-md transition-shadow">
+      <div class="absolute left-0 top-0 bottom-0 w-1 bg-blue-500"></div>
+      <div class="flex items-start justify-between mb-3">
+        <p class="text-[11px] font-medium tracking-wider uppercase text-muted-foreground">Margem</p>
+        <div class="h-9 w-9 rounded-md bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center">
+          <svg class="icon" viewBox="0 0 24 24" stroke="currentColor"><line x1="19" y1="5" x2="5" y2="19"/><circle cx="6.5" cy="6.5" r="2.5"/><circle cx="17.5" cy="17.5" r="2.5"/></svg>
+        </div>
+      </div>
+      <p class="text-2xl xl:text-3xl font-bold tabnum tracking-tight text-muted-foreground/50">N/A</p>
+      <p class="text-xs mt-2 text-muted-foreground">aguardando custos</p>
+    </div>
+  </section>
+
+  <!-- Médios (4) -->
+  <section class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+
+    <div class="bg-card border border-border rounded-lg p-4 relative overflow-hidden hover:shadow-md transition-shadow">
+      <div class="absolute left-0 top-0 bottom-0 w-1 bg-blue-500"></div>
+      <div class="flex items-start justify-between mb-2">
+        <p class="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Vendas</p>
+        <div class="h-8 w-8 rounded-md bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center">
+          <svg class="icon" viewBox="0 0 24 24" stroke="currentColor"><path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1Z"/><path d="M16 8H8M16 12H8M13 16H8"/></svg>
+        </div>
+      </div>
+      <p class="text-xl font-semibold tabnum">389</p>
+      <p class="text-xs mt-1.5 flex items-center gap-1">
+        <svg class="icon icon-sm text-emerald-600" viewBox="0 0 24 24" stroke="currentColor"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
+        <span class="text-emerald-600 font-medium">75,2%</span>
+      </p>
+    </div>
+
+    <div class="bg-card border border-border rounded-lg p-4 relative overflow-hidden hover:shadow-md transition-shadow">
+      <div class="absolute left-0 top-0 bottom-0 w-1 bg-blue-500"></div>
+      <div class="flex items-start justify-between mb-2">
+        <p class="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Unidades</p>
+        <div class="h-8 w-8 rounded-md bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center">
+          <svg class="icon" viewBox="0 0 24 24" stroke="currentColor"><path d="m7.5 4.27 9 5.15"/><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg>
+        </div>
+      </div>
+      <p class="text-xl font-semibold tabnum">422</p>
+      <p class="text-xs mt-1.5 flex items-center gap-1">
+        <svg class="icon icon-sm text-emerald-600" viewBox="0 0 24 24" stroke="currentColor"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
+        <span class="text-emerald-600 font-medium">78,1%</span>
+      </p>
+    </div>
+
+    <div class="bg-card border border-border rounded-lg p-4 relative overflow-hidden hover:shadow-md transition-shadow">
+      <div class="absolute left-0 top-0 bottom-0 w-1 bg-blue-500"></div>
+      <div class="flex items-start justify-between mb-2">
+        <p class="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Ticket Médio</p>
+        <div class="h-8 w-8 rounded-md bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center">
+          <svg class="icon" viewBox="0 0 24 24" stroke="currentColor"><line x1="12" y1="2" x2="12" y2="22"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+        </div>
+      </div>
+      <p class="text-xl font-semibold tabnum">R$ 59,73</p>
+      <p class="text-xs mt-1.5 flex items-center gap-1">
+        <svg class="icon icon-sm text-red-600" viewBox="0 0 24 24" stroke="currentColor"><polyline points="23 18 13.5 8.5 8.5 13.5 1 6"/><polyline points="17 18 23 18 23 12"/></svg>
+        <span class="text-red-600 font-medium">6,0%</span>
+      </p>
+    </div>
+
+    <div class="bg-card border border-border rounded-lg p-4 relative overflow-hidden hover:shadow-md transition-shadow">
+      <div class="absolute left-0 top-0 bottom-0 w-1 bg-blue-500"></div>
+      <div class="flex items-start justify-between mb-2">
+        <p class="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">ROI</p>
+        <div class="h-8 w-8 rounded-md bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center">
+          <svg class="icon" viewBox="0 0 24 24" stroke="currentColor"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>
+        </div>
+      </div>
+      <p class="text-xl font-semibold tabnum text-muted-foreground/50">N/A</p>
+      <p class="text-xs mt-1.5 text-muted-foreground">aguardando custos</p>
+    </div>
+  </section>
+
+  <!-- Ver mais -->
+  <details class="group">
+    <summary class="cursor-pointer text-sm font-medium text-primary hover:underline flex items-center gap-1.5 select-none list-none">
+      <svg class="icon icon-sm group-open:rotate-180 transition-transform" viewBox="0 0 24 24" stroke="currentColor"><polyline points="6 9 12 15 18 9"/></svg>
+      <span class="group-open:hidden">Ver mais 8 métricas (Ads · Tráfego · Buybox)</span>
+      <span class="hidden group-open:inline">Ocultar métricas secundárias</span>
+    </summary>
+
+    <section class="grid grid-cols-2 lg:grid-cols-4 gap-3 mt-4">
+
+      <!-- Ads = âmbar -->
+      <div class="bg-card border border-border rounded-lg p-3.5 relative overflow-hidden">
+        <div class="absolute left-0 top-0 bottom-0 w-1 bg-amber-500"></div>
+        <div class="flex items-start justify-between mb-1.5">
+          <p class="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Valor em Ads</p>
+          <div class="h-7 w-7 rounded-md bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center">
+            <svg class="icon icon-sm" viewBox="0 0 24 24" stroke="currentColor"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg>
+          </div>
+        </div>
+        <p class="text-base font-semibold tabnum">R$ 1.417,35</p>
+        <p class="text-[11px] mt-1 flex items-center gap-1">
+          <svg class="icon icon-sm text-amber-600" viewBox="0 0 24 24" stroke="currentColor"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
+          <span class="text-amber-600 font-medium">8,8%</span> <span class="text-muted-foreground">(custo)</span>
+        </p>
+      </div>
+
+      <div class="bg-card border border-border rounded-lg p-3.5 relative overflow-hidden">
+        <div class="absolute left-0 top-0 bottom-0 w-1 bg-amber-500"></div>
+        <div class="flex items-start justify-between mb-1.5">
+          <p class="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">TACOS</p>
+          <div class="h-7 w-7 rounded-md bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center">
+            <svg class="icon icon-sm" viewBox="0 0 24 24" stroke="currentColor"><path d="M21.21 15.89A10 10 0 1 1 8 2.83"/><path d="M22 12A10 10 0 0 0 12 2v10z"/></svg>
+          </div>
+        </div>
+        <p class="text-base font-semibold tabnum">6,1%</p>
+        <p class="text-[11px] mt-1 flex items-center gap-1">
+          <svg class="icon icon-sm text-emerald-600" viewBox="0 0 24 24" stroke="currentColor"><polyline points="23 18 13.5 8.5 8.5 13.5 1 6"/><polyline points="17 18 23 18 23 12"/></svg>
+          <span class="text-emerald-600 font-medium">3,1pp</span>
+          <span class="inline-block ml-0.5 px-1.5 py-0.5 rounded text-[10px] bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400">Baixo</span>
+        </p>
+      </div>
+
+      <div class="bg-card border border-border rounded-lg p-3.5 relative overflow-hidden">
+        <div class="absolute left-0 top-0 bottom-0 w-1 bg-amber-500"></div>
+        <div class="flex items-start justify-between mb-1.5">
+          <p class="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Lucro Pós Ads</p>
+          <div class="h-7 w-7 rounded-md bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center">
+            <svg class="icon icon-sm" viewBox="0 0 24 24" stroke="currentColor"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+          </div>
+        </div>
+        <p class="text-base font-semibold tabnum text-muted-foreground/50">N/A</p>
+        <p class="text-[11px] mt-1 text-muted-foreground">aguardando custos</p>
+      </div>
+
+      <div class="bg-card border border-border rounded-lg p-3.5 relative overflow-hidden">
+        <div class="absolute left-0 top-0 bottom-0 w-1 bg-amber-500"></div>
+        <div class="flex items-start justify-between mb-1.5">
+          <p class="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">ROI Pós Ads</p>
+          <div class="h-7 w-7 rounded-md bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center">
+            <svg class="icon icon-sm" viewBox="0 0 24 24" stroke="currentColor"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+          </div>
+        </div>
+        <p class="text-base font-semibold tabnum text-muted-foreground/50">N/A</p>
+        <p class="text-[11px] mt-1 text-muted-foreground">MPA N/A</p>
+      </div>
+
+      <!-- Tráfego = roxo -->
+      <div class="bg-card border border-border rounded-lg p-3.5 relative overflow-hidden">
+        <div class="absolute left-0 top-0 bottom-0 w-1 bg-violet-500"></div>
+        <div class="flex items-start justify-between mb-1.5">
+          <p class="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Sessões</p>
+          <div class="h-7 w-7 rounded-md bg-violet-500/10 text-violet-600 dark:text-violet-400 flex items-center justify-center">
+            <svg class="icon icon-sm" viewBox="0 0 24 24" stroke="currentColor"><path d="m9 9 5 12 1.8-5.2L21 14Z"/><path d="M7.2 2.2 8 5.1"/><path d="m5.1 8-2.9-.8"/><path d="M14 4.1 12 6"/><path d="m6 12-1.9 2"/></svg>
+          </div>
+        </div>
+        <p class="text-base font-semibold tabnum">0</p>
+        <p class="text-[11px] mt-1 text-muted-foreground">0 page views</p>
+      </div>
+
+      <div class="bg-card border border-border rounded-lg p-3.5 relative overflow-hidden">
+        <div class="absolute left-0 top-0 bottom-0 w-1 bg-violet-500"></div>
+        <div class="flex items-start justify-between mb-1.5">
+          <p class="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Conversão</p>
+          <div class="h-7 w-7 rounded-md bg-violet-500/10 text-violet-600 dark:text-violet-400 flex items-center justify-center">
+            <svg class="icon icon-sm" viewBox="0 0 24 24" stroke="currentColor"><line x1="19" y1="5" x2="5" y2="19"/><circle cx="6.5" cy="6.5" r="2.5"/><circle cx="17.5" cy="17.5" r="2.5"/></svg>
+          </div>
+        </div>
+        <p class="text-base font-semibold tabnum text-muted-foreground/50">N/A</p>
+        <p class="text-[11px] mt-1 text-muted-foreground">0 unidades ordenadas</p>
+      </div>
+
+      <div class="bg-card border border-border rounded-lg p-3.5 relative overflow-hidden">
+        <div class="absolute left-0 top-0 bottom-0 w-1 bg-violet-500"></div>
+        <div class="flex items-start justify-between mb-1.5">
+          <p class="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Buybox média</p>
+          <div class="h-7 w-7 rounded-md bg-violet-500/10 text-violet-600 dark:text-violet-400 flex items-center justify-center">
+            <svg class="icon icon-sm" viewBox="0 0 24 24" stroke="currentColor"><circle cx="12" cy="8" r="7"/><polyline points="8.21 13.89 7 23 12 20 17 23 15.79 13.88"/></svg>
+          </div>
+        </div>
+        <p class="text-base font-semibold tabnum text-muted-foreground/50">N/A</p>
+        <p class="text-[11px] mt-1 text-muted-foreground">média por SKU/dia</p>
+      </div>
+
+      <div class="bg-card border border-border rounded-lg p-3.5 relative overflow-hidden">
+        <div class="absolute left-0 top-0 bottom-0 w-1 bg-violet-500"></div>
+        <div class="flex items-start justify-between mb-1.5">
+          <p class="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Rec. Ordenada</p>
+          <div class="h-7 w-7 rounded-md bg-violet-500/10 text-violet-600 dark:text-violet-400 flex items-center justify-center">
+            <svg class="icon icon-sm" viewBox="0 0 24 24" stroke="currentColor"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
+          </div>
+        </div>
+        <p class="text-base font-semibold tabnum">R$ 0,00</p>
+        <p class="text-[11px] mt-1 text-muted-foreground">Sales & Traffic</p>
+      </div>
+    </section>
+  </details>
+
+  <!-- Chart estilo C: 3 áreas empilhadas (Faturamento / Líq. Marketplace / Lucro) -->
+  <section class="bg-card border border-border rounded-xl p-6 shadow-sm">
+    <div class="flex items-center justify-between mb-5 flex-wrap gap-2">
+      <h2 class="text-base font-semibold">Resumo de Receitas</h2>
+      <div class="flex items-center gap-4 text-xs">
+        <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-violet-500"></span> Faturamento</span>
+        <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-blue-500"></span> Líq. Marketplace</span>
+        <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-emerald-500"></span> Lucro</span>
+      </div>
+    </div>
+    <svg viewBox="0 0 800 360" class="w-full h-96">
+      <defs>
+        <linearGradient id="a2v" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stop-color="hsl(262 80% 60%)" stop-opacity="0.45"/><stop offset="100%" stop-color="hsl(262 80% 60%)" stop-opacity="0.03"/></linearGradient>
+        <linearGradient id="a2b" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stop-color="hsl(221 83% 53%)" stop-opacity="0.45"/><stop offset="100%" stop-color="hsl(221 83% 53%)" stop-opacity="0.03"/></linearGradient>
+        <linearGradient id="a2e" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stop-color="hsl(142 76% 36%)" stop-opacity="0.5"/><stop offset="100%" stop-color="hsl(142 76% 36%)" stop-opacity="0.05"/></linearGradient>
+      </defs>
+      <g stroke="hsl(var(--border))" stroke-dasharray="3 3" stroke-width="1">
+        <line x1="50" y1="40" x2="780" y2="40"/>
+        <line x1="50" y1="110" x2="780" y2="110"/>
+        <line x1="50" y1="180" x2="780" y2="180"/>
+        <line x1="50" y1="250" x2="780" y2="250"/>
+        <line x1="50" y1="320" x2="780" y2="320"/>
+      </g>
+      <g fill="hsl(var(--muted-foreground))" font-size="10" font-family="system-ui">
+        <text x="0" y="44">R$ 2.000</text>
+        <text x="0" y="114">R$ 1.500</text>
+        <text x="0" y="184">R$ 1.000</text>
+        <text x="0" y="254">R$ 500</text>
+        <text x="0" y="324">R$ 0</text>
+      </g>
+      <!-- Faturamento (topo, violeta) -->
+      <path d="M 50,260 C 110,255 150,230 200,215 C 250,200 300,210 340,200 C 380,190 420,160 460,150 C 500,140 540,165 580,150 C 620,135 660,100 700,80 C 740,60 770,75 780,70 L 780,340 L 50,340 Z" fill="url(#a2v)" stroke="hsl(262 80% 60%)" stroke-width="2"/>
+      <!-- Líq. Marketplace (meio, azul) -->
+      <path d="M 50,290 C 110,285 150,265 200,250 C 250,238 300,245 340,238 C 380,230 420,205 460,195 C 500,185 540,205 580,195 C 620,180 660,150 700,135 C 740,120 770,128 780,125 L 780,340 L 50,340 Z" fill="url(#a2b)" stroke="hsl(221 83% 53%)" stroke-width="2"/>
+      <!-- Lucro (base, verde) -->
+      <path d="M 50,325 C 110,322 150,315 200,310 C 250,305 300,308 340,305 C 380,302 420,295 460,290 C 500,285 540,292 580,288 C 620,282 660,272 700,265 C 740,260 770,262 780,260 L 780,340 L 50,340 Z" fill="url(#a2e)" stroke="hsl(142 76% 36%)" stroke-width="2"/>
+      <g fill="hsl(var(--muted-foreground))" font-size="10" font-family="system-ui">
+        <text x="58" y="355">18/04</text>
+        <text x="180" y="355">22/04</text>
+        <text x="312" y="355">26/04</text>
+        <text x="444" y="355">30/04</text>
+        <text x="576" y="355">04/05</text>
+        <text x="708" y="355">17/05</text>
+      </g>
+    </svg>
+  </section>
+
+  <!-- Top 15 -->
+  <section class="bg-card border border-border rounded-lg overflow-hidden">
+    <div class="flex items-center justify-between px-5 py-4 border-b border-border">
+      <h2 class="text-base font-semibold">Top 15 produtos</h2>
+      <button class="inline-flex items-center gap-2 text-xs px-3 py-1.5 rounded-md border border-border hover:bg-muted">
+        <svg class="icon icon-sm" viewBox="0 0 24 24" stroke="currentColor"><path d="M3 6h18M6 12h12M10 18h4"/></svg>
+        Faturamento desc
+      </button>
+    </div>
+    <table class="w-full text-sm">
+      <thead class="bg-muted/40 text-[11px] uppercase tracking-wider text-muted-foreground">
+        <tr>
+          <th class="text-left px-5 py-2.5 font-medium">Produto</th>
+          <th class="text-right px-2 py-2.5 font-medium">Preço médio</th>
+          <th class="text-right px-2 py-2.5 font-medium">Custo</th>
+          <th class="text-right px-2 py-2.5 font-medium">Unid.</th>
+          <th class="text-right px-2 py-2.5 font-medium">Faturado</th>
+          <th class="text-right px-2 py-2.5 font-medium">Repr.</th>
+          <th class="text-right px-2 py-2.5 font-medium">Lucro</th>
+          <th class="text-center px-2 py-2.5 font-medium">Margem</th>
+          <th class="text-right px-2 py-2.5 font-medium">Custo ADS</th>
+          <th class="text-right px-5 py-2.5 font-medium">Lucro pós Ads</th>
+        </tr>
+      </thead>
+      <tbody class="tabnum">
+
+        <tr class="border-t border-border hover:bg-blue-50/50 dark:hover:bg-blue-950/20 transition-colors">
+          <td class="px-5 py-3">
+            <div class="flex items-center gap-3">
+              <div class="w-10 h-10 rounded-md bg-gradient-to-br from-emerald-100 to-emerald-50 dark:from-emerald-950/40 dark:to-emerald-900/20 flex items-center justify-center text-[11px] font-semibold text-emerald-700 dark:text-emerald-400 shrink-0">17</div>
+              <div class="min-w-0">
+                <div class="font-medium truncate max-w-[280px]">Almofada Cóccix Ortopédica Assento em Gel</div>
+                <div class="text-xs text-muted-foreground font-mono">MFS-0017</div>
+              </div>
+            </div>
+          </td>
+          <td class="text-right px-2">R$ 76,26</td>
+          <td class="text-right px-2 text-muted-foreground/50">N/A</td>
+          <td class="text-right px-2">75</td>
+          <td class="text-right px-2 font-semibold">R$ 5.719,75</td>
+          <td class="text-right px-2 text-muted-foreground">24,6%</td>
+          <td class="text-right px-2 text-muted-foreground/50">N/A</td>
+          <td class="text-center px-2"><span class="inline-block px-2 py-0.5 rounded-full text-[11px] bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400">N/A</span></td>
+          <td class="text-right px-2 text-amber-700 dark:text-amber-400">R$ 444,17</td>
+          <td class="text-right px-5 text-muted-foreground/50">N/A</td>
+        </tr>
+
+        <tr class="border-t border-border hover:bg-blue-50/50 dark:hover:bg-blue-950/20 bg-muted/20 transition-colors">
+          <td class="px-5 py-3">
+            <div class="flex items-center gap-3">
+              <div class="w-10 h-10 rounded-md bg-gradient-to-br from-blue-100 to-blue-50 dark:from-blue-950/40 dark:to-blue-900/20 flex items-center justify-center text-[11px] font-semibold text-blue-700 dark:text-blue-400 shrink-0">36</div>
+              <div class="min-w-0">
+                <div class="font-medium truncate max-w-[280px]">Kit 3 Potes Marinex Facilita Vap 1 Litro</div>
+                <div class="text-xs text-muted-foreground font-mono">MFS-0036</div>
+              </div>
+            </div>
+          </td>
+          <td class="text-right px-2">R$ 79,99</td>
+          <td class="text-right px-2 text-muted-foreground/50">N/A</td>
+          <td class="text-right px-2">50</td>
+          <td class="text-right px-2 font-semibold">R$ 3.999,50</td>
+          <td class="text-right px-2 text-muted-foreground">17,2%</td>
+          <td class="text-right px-2 text-muted-foreground/50">N/A</td>
+          <td class="text-center px-2"><span class="inline-block px-2 py-0.5 rounded-full text-[11px] bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400">N/A</span></td>
+          <td class="text-right px-2">R$ 0,00</td>
+          <td class="text-right px-5 text-muted-foreground/50">N/A</td>
+        </tr>
+
+        <tr class="border-t border-border hover:bg-blue-50/50 dark:hover:bg-blue-950/20 transition-colors">
+          <td class="px-5 py-3">
+            <div class="flex items-center gap-3">
+              <div class="w-10 h-10 rounded-md bg-gradient-to-br from-violet-100 to-violet-50 dark:from-violet-950/40 dark:to-violet-900/20 flex items-center justify-center text-[11px] font-semibold text-violet-700 dark:text-violet-400 shrink-0">32</div>
+              <div class="min-w-0">
+                <div class="font-medium truncate max-w-[280px]">Conjunto 6 Potes de Vidro 350ml Nadir Figueiredo</div>
+                <div class="text-xs text-muted-foreground font-mono">MFS-0032</div>
+              </div>
+            </div>
+          </td>
+          <td class="text-right px-2">R$ 56,02</td>
+          <td class="text-right px-2 text-muted-foreground/50">N/A</td>
+          <td class="text-right px-2">63</td>
+          <td class="text-right px-2 font-semibold">R$ 3.529,11</td>
+          <td class="text-right px-2 text-muted-foreground">15,2%</td>
+          <td class="text-right px-2 text-muted-foreground/50">N/A</td>
+          <td class="text-center px-2"><span class="inline-block px-2 py-0.5 rounded-full text-[11px] bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400">N/A</span></td>
+          <td class="text-right px-2">R$ 0,00</td>
+          <td class="text-right px-5 text-muted-foreground/50">N/A</td>
+        </tr>
+
+        <tr class="border-t border-border hover:bg-blue-50/50 dark:hover:bg-blue-950/20 bg-muted/20 transition-colors">
+          <td class="px-5 py-3">
+            <div class="flex items-center gap-3">
+              <div class="w-10 h-10 rounded-md bg-gradient-to-br from-orange-100 to-orange-50 dark:from-orange-950/40 dark:to-orange-900/20 flex items-center justify-center text-[11px] font-semibold text-orange-700 dark:text-orange-400 shrink-0">34</div>
+              <div class="min-w-0">
+                <div class="font-medium truncate max-w-[280px]">Kit com 6 Tigelas Marinex Americano Com Tampa</div>
+                <div class="text-xs text-muted-foreground font-mono">MFS-0034</div>
+              </div>
+            </div>
+          </td>
+          <td class="text-right px-2">R$ 37,00</td>
+          <td class="text-right px-2 text-muted-foreground/50">N/A</td>
+          <td class="text-right px-2">53</td>
+          <td class="text-right px-2 font-semibold">R$ 1.961,07</td>
+          <td class="text-right px-2 text-muted-foreground">8,4%</td>
+          <td class="text-right px-2 text-muted-foreground/50">N/A</td>
+          <td class="text-center px-2"><span class="inline-block px-2 py-0.5 rounded-full text-[11px] bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400">N/A</span></td>
+          <td class="text-right px-2">R$ 0,00</td>
+          <td class="text-right px-5 text-muted-foreground/50">N/A</td>
+        </tr>
+
+        <tr class="border-t border-border hover:bg-blue-50/50 dark:hover:bg-blue-950/20 transition-colors">
+          <td class="px-5 py-3">
+            <div class="flex items-center gap-3">
+              <div class="w-10 h-10 rounded-md bg-gradient-to-br from-pink-100 to-pink-50 dark:from-pink-950/40 dark:to-pink-900/20 flex items-center justify-center text-[11px] font-semibold text-pink-700 dark:text-pink-400 shrink-0">27</div>
+              <div class="min-w-0">
+                <div class="font-medium truncate max-w-[280px]">Kit com Tigela Americano C/Tampa Plástica Sort.</div>
+                <div class="text-xs text-muted-foreground font-mono">MFS-0027</div>
+              </div>
+            </div>
+          </td>
+          <td class="text-right px-2">R$ 69,97</td>
+          <td class="text-right px-2 text-muted-foreground/50">N/A</td>
+          <td class="text-right px-2">18</td>
+          <td class="text-right px-2 font-semibold">R$ 1.259,46</td>
+          <td class="text-right px-2 text-muted-foreground">5,4%</td>
+          <td class="text-right px-2 text-muted-foreground/50">N/A</td>
+          <td class="text-center px-2"><span class="inline-block px-2 py-0.5 rounded-full text-[11px] bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400">N/A</span></td>
+          <td class="text-right px-2 text-amber-700 dark:text-amber-400">R$ 464,67</td>
+          <td class="text-right px-5 text-muted-foreground/50">N/A</td>
+        </tr>
+
+        <tr class="border-t border-border hover:bg-blue-50/50 dark:hover:bg-blue-950/20 bg-muted/20 transition-colors">
+          <td class="px-5 py-3">
+            <div class="flex items-center gap-3">
+              <div class="w-10 h-10 rounded-md bg-gradient-to-br from-cyan-100 to-cyan-50 dark:from-cyan-950/40 dark:to-cyan-900/20 flex items-center justify-center text-[11px] font-semibold text-cyan-700 dark:text-cyan-400 shrink-0">35</div>
+              <div class="min-w-0">
+                <div class="font-medium truncate max-w-[280px]">Nadir Figueiredo · Tigela 3L Com Tampa Marinex</div>
+                <div class="text-xs text-muted-foreground font-mono">MFS-0035</div>
+              </div>
+            </div>
+          </td>
+          <td class="text-right px-2">R$ 40,35</td>
+          <td class="text-right px-2 text-muted-foreground/50">N/A</td>
+          <td class="text-right px-2">29</td>
+          <td class="text-right px-2 font-semibold">R$ 1.170,13</td>
+          <td class="text-right px-2 text-muted-foreground">5,0%</td>
+          <td class="text-right px-2 text-muted-foreground/50">N/A</td>
+          <td class="text-center px-2"><span class="inline-block px-2 py-0.5 rounded-full text-[11px] bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400">N/A</span></td>
+          <td class="text-right px-2">R$ 0,00</td>
+          <td class="text-right px-5 text-muted-foreground/50">N/A</td>
+        </tr>
+
+        <tr class="border-t border-border">
+          <td colspan="10" class="px-5 py-3 text-center text-xs text-muted-foreground italic">… mais 9 produtos · placeholders coloridos viram imagens reais quando ASIN/imagemUrl disponível · badges de margem coloridos (verde ≥25%, âmbar 10-24%, vermelho &lt;10%) com custos cadastrados</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <footer class="text-center text-xs text-muted-foreground py-4">Mockup A2 · clique 🌓 no topo para alternar tema</footer>
+</main>
+</body>
+</html>

@@ -63,7 +63,10 @@ async function calcularDRE(de: Date, ate: Date) {
       },
     }),
     db.amazonReembolso.aggregate({
-      where: { dataReembolso: { gte: de, lte: ate } },
+      where: {
+        dataReembolso: { gte: de, lte: ate },
+        NOT: { motivoCategoria: "GESTOR_SELLER_VALIDATION" },
+      },
       _sum: {
         valorReembolsadoCentavos: true,
         taxasReembolsadasCentavos: true,

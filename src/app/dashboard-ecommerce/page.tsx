@@ -5,35 +5,39 @@ import {
   Area,
   AreaChart,
   CartesianGrid,
-  Line,
   ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
 } from "recharts";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import {
   AlertTriangle,
   ArrowUpDown,
+  Award,
   BarChart3,
   Banknote,
   Boxes,
   Calendar,
+  ChevronDown,
   CircleDollarSign,
+  Info,
   LineChart,
   Megaphone,
+  MousePointerClick,
   PackageSearch,
   Percent,
   PieChart,
   ReceiptText,
+  ShoppingCart,
   Sigma,
   Target,
   TrendingUp,
+  Zap,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -44,13 +48,14 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { MarginBadge } from "@/components/ui/margin-badge";
 import { PageHeader } from "@/components/ui/page-header";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { Select } from "@/components/ui/select";
+import { ProductThumb } from "@/components/ui/product-thumb";
 import {
   Table,
   TableBody,
@@ -59,8 +64,10 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { TrendIndicator } from "@/components/ui/trend-indicator";
+import { resolverImagemProduto } from "@/lib/amazon-images";
 import { fetchJSON } from "@/lib/fetcher";
-import { formatBRL, parseValorBRParaCentavos } from "@/lib/money";
+import { formatBRL } from "@/lib/money";
 import {
   PeriodoPreset,
   formatarDataInputPeriodo,
@@ -70,6 +77,10 @@ import { cn } from "@/lib/utils";
 
 type KpisDelta = {
   faturamento: number | null;
+  frete: number | null;
+  faturamentoComFrete: number | null;
+  faturamentoReembolsado: number | null;
+  faturamentoComReembolsados: number | null;
   liquidoMarketplace: number | null;
   lucroBruto: number | null;
   margem: number | null;
@@ -85,6 +96,10 @@ type KpisDelta = {
 
 type Kpis = {
   faturamentoCentavos: number;
+  freteCentavos: number;
+  faturamentoComFreteCentavos: number;
+  faturamentoReembolsadoCentavos: number;
+  faturamentoComReembolsadosCentavos: number;
   liquidoMarketplaceCentavos: number;
   lucroBrutoCentavos: number | null;
   margemPercentual: number | null;
@@ -110,6 +125,7 @@ type Kpis = {
 type TimelineItem = {
   data: string;
   faturamentoCentavos: number;
+  liquidoMarketplaceCentavos: number;
   lucroBrutoCentavos: number | null;
   lucroPosAdsCentavos: number | null;
 };
@@ -118,6 +134,9 @@ type TopProduto = {
   sku: string;
   produtoId: string | null;
   nome: string;
+  imagemUrl: string | null;
+  amazonImagemUrl: string | null;
+  asin: string | null;
   precoMedioCentavos: number;
   custoUnitarioCentavos: number | null;
   unidades: number;
@@ -128,12 +147,6 @@ type TopProduto = {
   custoAdsCentavos: number;
   lucroPosAdsCentavos: number | null;
   mpaPercentual: number | null;
-};
-
-type Produto = {
-  id: string;
-  sku: string;
-  nome: string;
 };
 
 const presets = [
@@ -161,9 +174,7 @@ function periodoInicial() {
   };
 }
 
-const PRESET_VALUES = new Set<string>(
-  Object.values(PeriodoPreset),
-);
+const PRESET_VALUES = new Set<string>(Object.values(PeriodoPreset));
 
 function lerEstadoInicialDaURL(searchParams: URLSearchParams) {
   const presetParam = searchParams.get("preset");
@@ -223,17 +234,17 @@ function formatInt(value: number | null | undefined): string {
 
 function classificarAcos(acos: number | null): { texto: string; classe: string } | null {
   if (acos == null) return null;
-  if (acos < 10) return { texto: "Baixo — vale aumentar lance", classe: "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200" };
-  if (acos < 15) return { texto: "Ótimo — manter estratégia", classe: "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200" };
-  if (acos < 20) return { texto: "Bom — monitorar", classe: "bg-teal-100 text-teal-800 dark:bg-teal-900 dark:text-teal-200" };
-  if (acos < 25) return { texto: "Ok — avaliar ajuste", classe: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300" };
-  if (acos < 30) return { texto: "Atenção — reduzir lance", classe: "bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-300" };
-  if (acos < 40) return { texto: "Alerta — revisar campanha", classe: "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300" };
-  return { texto: "Crítico — pausar campanha", classe: "bg-red-800 text-white" };
+  if (acos < 10) return { texto: "Baixo — vale aumentar lance", classe: "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400" };
+  if (acos < 15) return { texto: "Ótimo — manter estratégia", classe: "bg-blue-100 text-blue-700 dark:bg-blue-950/40 dark:text-blue-400" };
+  if (acos < 20) return { texto: "Bom — monitorar", classe: "bg-teal-100 text-teal-700 dark:bg-teal-950/40 dark:text-teal-400" };
+  if (acos < 25) return { texto: "Ok — avaliar ajuste", classe: "bg-yellow-100 text-yellow-700 dark:bg-yellow-950/30 dark:text-yellow-300" };
+  if (acos < 30) return { texto: "Atenção — reduzir lance", classe: "bg-orange-100 text-orange-700 dark:bg-orange-950/40 dark:text-orange-400" };
+  if (acos < 40) return { texto: "Alerta — revisar campanha", classe: "bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-400" };
+  return { texto: "Crítico — pausar campanha", classe: "bg-red-700 text-white" };
 }
 
 function formatDiaCurto(value: string): string {
-  const [ano, mes, dia] = value.split("-");
+  const [, mes, dia] = value.split("-");
   return `${dia}/${mes}`;
 }
 
@@ -241,78 +252,127 @@ function queryString(periodo: { de: string; ate: string }) {
   return new URLSearchParams(periodo).toString();
 }
 
-function DeltaBadge({
-  valor,
-  tipo,
-  inverso = false,
-}: {
-  valor: number | null;
-  tipo: "percent" | "pp";
-  inverso?: boolean;
-}) {
-  if (valor == null || !Number.isFinite(valor) || Math.abs(valor) < 0.05) return null;
-  const isPositive = valor > 0;
-  const isGood = inverso ? !isPositive : isPositive;
-  return (
-    <span
-      className={cn(
-        "text-[11px] font-semibold tabular-nums",
-        isGood
-          ? "text-emerald-600 dark:text-emerald-400"
-          : "text-red-500 dark:text-red-400",
-      )}
-    >
-      {isPositive ? "▲" : "▼"} {Math.abs(valor).toFixed(1)}
-      {tipo === "pp" ? "pp" : "%"}
-    </span>
-  );
-}
+type CategoriaKpi = "receita" | "operacao" | "ads" | "trafego";
+
+const categoriaConfig: Record<
+  CategoriaKpi,
+  { bar: string; iconBg: string; iconText: string }
+> = {
+  receita: {
+    bar: "bg-emerald-500",
+    iconBg: "bg-emerald-500/10",
+    iconText: "text-emerald-600 dark:text-emerald-400",
+  },
+  operacao: {
+    bar: "bg-blue-500",
+    iconBg: "bg-blue-500/10",
+    iconText: "text-blue-600 dark:text-blue-400",
+  },
+  ads: {
+    bar: "bg-amber-500",
+    iconBg: "bg-amber-500/10",
+    iconText: "text-amber-600 dark:text-amber-400",
+  },
+  trafego: {
+    bar: "bg-violet-500",
+    iconBg: "bg-violet-500/10",
+    iconText: "text-violet-600 dark:text-violet-400",
+  },
+};
+
+type KpiCardProps = {
+  titulo: string;
+  valor: string;
+  detalhe?: string;
+  icon: React.ComponentType<{ className?: string }>;
+  categoria: CategoriaKpi;
+  delta?: { valor: number | null; tipo: "percent" | "pp"; inverso?: boolean };
+  badge?: { texto: string; classe: string } | null;
+  tooltip?: Array<{ label: string; value: string }>;
+  size?: "hero" | "medium" | "compact";
+};
 
 function KpiCard({
   titulo,
   valor,
   detalhe,
   icon: Icon,
-  tone = "neutral",
+  categoria,
   delta,
   badge,
-}: {
-  titulo: string;
-  valor: string;
-  detalhe?: string;
-  icon: React.ComponentType<{ className?: string }>;
-  tone?: "neutral" | "success" | "warning" | "danger";
-  delta?: { valor: number | null; tipo: "percent" | "pp"; inverso?: boolean };
-  badge?: { texto: string; classe: string } | null;
-}) {
-  const tones = {
-    neutral: "bg-primary/10 text-primary",
-    success: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400",
-    warning: "bg-amber-500/12 text-amber-700 dark:text-amber-400",
-    danger: "bg-red-500/10 text-red-700 dark:text-red-400",
-  };
+  tooltip,
+  size = "hero",
+}: KpiCardProps) {
+  const c = categoriaConfig[categoria];
+  const padding = size === "compact" ? "p-3.5" : size === "medium" ? "p-4" : "p-5";
+  const valorClasse =
+    size === "compact"
+      ? "text-base"
+      : size === "medium"
+        ? "text-xl"
+        : "text-2xl xl:text-3xl";
+  const iconBox =
+    size === "compact" ? "h-7 w-7" : size === "medium" ? "h-8 w-8" : "h-9 w-9";
+  const iconClasse = size === "compact" ? "h-3.5 w-3.5" : "h-4 w-4";
 
   return (
-    <Card className="overflow-hidden">
-      <CardContent className="p-3.5">
+    <Card className="relative overflow-hidden transition-shadow hover:shadow-md">
+      <span
+        aria-hidden
+        className={cn("absolute left-0 top-0 bottom-0 w-1", c.bar)}
+      />
+      <CardContent className={padding}>
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0 flex-1">
-            <p className="text-[11px] font-medium uppercase text-muted-foreground line-clamp-1" title={titulo}>
-              {titulo}
-            </p>
-            {/* Valor: tamanho conservador para caber valores monetarios longos
-                em qualquer largura de coluna sem cortar. */}
+            <div className="flex min-w-0 items-center gap-1.5">
+              <p
+                className="min-w-0 text-[11px] font-medium uppercase tracking-wider text-muted-foreground line-clamp-1"
+                title={titulo}
+              >
+                {titulo}
+              </p>
+              {tooltip && tooltip.length > 0 && (
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <button
+                      type="button"
+                      aria-label={`Detalhes de ${titulo}`}
+                      className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-muted-foreground/60 transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    >
+                      <Info className="h-3.5 w-3.5" />
+                    </button>
+                  </PopoverTrigger>
+                  <PopoverContent align="start" className="w-56 p-3">
+                    <div className="space-y-1.5">
+                      {tooltip.map((item) => (
+                        <div
+                          key={item.label}
+                          className="flex items-center justify-between gap-4 text-xs"
+                        >
+                          <span className="text-muted-foreground">{item.label}</span>
+                          <span className="font-medium tabular-nums">{item.value}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </PopoverContent>
+                </Popover>
+              )}
+            </div>
             <p
-              className="mt-1.5 text-base font-semibold leading-tight tracking-tight tabular-nums break-words sm:text-lg"
+              className={cn(
+                "mt-1.5 font-bold leading-tight tracking-tight tabular-nums break-words",
+                valorClasse,
+                valor === "N/A" && "text-muted-foreground/50",
+              )}
               title={valor}
             >
               {valor}
             </p>
-            <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5">
+            <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-0.5">
               {delta && (
-                <DeltaBadge
-                  valor={delta.valor}
-                  tipo={delta.tipo}
+                <TrendIndicator
+                  value={delta.valor}
+                  unit={delta.tipo}
                   inverso={delta.inverso}
                 />
               )}
@@ -324,7 +384,12 @@ function KpiCard({
             </div>
             {badge && (
               <div className="mt-2 flex items-center gap-1.5">
-                <span className={cn("rounded px-1.5 py-0.5 text-[10px] font-semibold", badge.classe)}>
+                <span
+                  className={cn(
+                    "rounded px-1.5 py-0.5 text-[10px] font-semibold",
+                    badge.classe,
+                  )}
+                >
                   {badge.texto}
                 </span>
               </div>
@@ -332,11 +397,13 @@ function KpiCard({
           </div>
           <div
             className={cn(
-              "flex h-8 w-8 shrink-0 items-center justify-center rounded-md",
-              tones[tone],
+              "flex shrink-0 items-center justify-center rounded-md",
+              iconBox,
+              c.iconBg,
+              c.iconText,
             )}
           >
-            <Icon className="h-3.5 w-3.5" />
+            <Icon className={iconClasse} />
           </div>
         </div>
       </CardContent>
@@ -344,41 +411,13 @@ function KpiCard({
   );
 }
 
-function TrafficMetric({
-  label,
-  value,
-  detail,
-}: {
-  label: string;
-  value: string;
-  detail?: string;
-}) {
-  return (
-    <div className="rounded-md border bg-background/60 p-3">
-      <p className="text-[11px] font-medium uppercase text-muted-foreground">
-        {label}
-      </p>
-      <p className="mt-1 font-mono text-lg font-semibold tabular-nums">
-        {value}
-      </p>
-      {detail && (
-        <p className="mt-0.5 text-xs text-muted-foreground">
-          {detail}
-        </p>
-      )}
-    </div>
-  );
-}
-
 function DashboardEcommerceContent() {
-  const qc = useQueryClient();
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
 
   const estadoInicial = React.useMemo(
     () => lerEstadoInicialDaURL(new URLSearchParams(searchParams.toString())),
-    // calcula apenas uma vez no mount; mudancas posteriores partem da UI
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [],
   );
@@ -391,12 +430,11 @@ function DashboardEcommerceContent() {
   const [personalizadoRascunho, setPersonalizadoRascunho] = React.useState(
     estadoInicial.periodo,
   );
-  const [sortProdutos, setSortProdutos] = React.useState<"desc" | "asc">(
-    "desc",
-  );
+  const [sortProdutos, setSortProdutos] = React.useState<"desc" | "asc">("desc");
   const [produtoDetalhe, setProdutoDetalhe] = React.useState<TopProduto | null>(
     null,
   );
+  const [mostrarSecundarios, setMostrarSecundarios] = React.useState(false);
 
   React.useEffect(() => {
     const params = new URLSearchParams();
@@ -431,9 +469,7 @@ function DashboardEcommerceContent() {
       fetchJSON<TimelineItem[]>(`/api/dashboard-ecommerce/timeline?${qs}`),
   });
 
-  const { data: topProdutos = [], isLoading: loadingTop } = useQuery<
-    TopProduto[]
-  >({
+  const { data: topProdutos = [], isLoading: loadingTop } = useQuery<TopProduto[]>({
     queryKey: ["dashboard-ecommerce-top-produtos", periodo],
     queryFn: () =>
       fetchJSON<TopProduto[]>(
@@ -450,86 +486,165 @@ function DashboardEcommerceContent() {
   }, [topProdutos, sortProdutos]);
 
   const d = kpis?.delta;
-  const cards = [
+
+  const kpisPrincipais: KpiCardProps[] = [
     {
       titulo: "Faturamento",
       valor: formatBRL(kpis?.faturamentoCentavos ?? 0),
       icon: CircleDollarSign,
-      tone: "success" as const,
-      delta: { valor: d?.faturamento ?? null, tipo: "percent" as const },
+      categoria: "receita",
+      size: "hero",
+      delta: { valor: d?.faturamento ?? null, tipo: "percent" },
+      tooltip: [
+        { label: "Total do frete", value: formatBRL(kpis?.freteCentavos ?? 0) },
+        {
+          label: "Total com frete",
+          value: formatBRL(kpis?.faturamentoComFreteCentavos ?? 0),
+        },
+        {
+          label: "Fat. reembolsados",
+          value: formatBRL(kpis?.faturamentoReembolsadoCentavos ?? 0),
+        },
+        {
+          label: "Total c/ reembolsados",
+          value: formatBRL(kpis?.faturamentoComReembolsadosCentavos ?? 0),
+        },
+      ],
     },
     {
       titulo: "Liq. Marketplace",
       valor: formatBRL(kpis?.liquidoMarketplaceCentavos ?? 0),
       icon: Banknote,
-      delta: { valor: d?.liquidoMarketplace ?? null, tipo: "percent" as const },
+      categoria: "receita",
+      size: "hero",
+      delta: { valor: d?.liquidoMarketplace ?? null, tipo: "percent" },
     },
     {
       titulo: "Lucro Bruto",
       valor: loadingKpis ? "..." : formatMoneyOrNA(kpis?.lucroBrutoCentavos),
       icon: TrendingUp,
-      tone: "success" as const,
-      delta: { valor: d?.lucroBruto ?? null, tipo: "percent" as const },
+      categoria: "operacao",
+      size: "hero",
+      delta: { valor: d?.lucroBruto ?? null, tipo: "percent" },
+      detalhe: kpis?.lucroBrutoCentavos == null ? "aguardando custos" : undefined,
     },
     {
       titulo: "Margem",
       valor: loadingKpis ? "..." : formatPercent(kpis?.margemPercentual),
       icon: Percent,
-      delta: { valor: d?.margem ?? null, tipo: "pp" as const },
+      categoria: "operacao",
+      size: "hero",
+      delta: { valor: d?.margem ?? null, tipo: "pp" },
+      detalhe: kpis?.margemPercentual == null ? "aguardando custos" : undefined,
     },
     {
       titulo: "Vendas",
-      valor: String(kpis?.numeroVendas ?? 0),
+      valor: formatInt(kpis?.numeroVendas),
       icon: ReceiptText,
-      delta: { valor: d?.numeroVendas ?? null, tipo: "percent" as const },
+      categoria: "operacao",
+      size: "medium",
+      delta: { valor: d?.numeroVendas ?? null, tipo: "percent" },
     },
     {
       titulo: "Unidades",
-      valor: String(kpis?.unidades ?? 0),
+      valor: formatInt(kpis?.unidades),
       icon: Boxes,
-      delta: { valor: d?.unidades ?? null, tipo: "percent" as const },
+      categoria: "operacao",
+      size: "medium",
+      delta: { valor: d?.unidades ?? null, tipo: "percent" },
     },
     {
       titulo: "Ticket Medio",
       valor: formatBRL(kpis?.ticketMedioCentavos ?? 0),
       icon: Sigma,
-      delta: { valor: d?.ticketMedio ?? null, tipo: "percent" as const },
+      categoria: "operacao",
+      size: "medium",
+      delta: { valor: d?.ticketMedio ?? null, tipo: "percent" },
     },
     {
       titulo: "ROI",
       valor: loadingKpis ? "..." : formatPercent(kpis?.roiPercentual),
       icon: Target,
-      delta: { valor: d?.roi ?? null, tipo: "pp" as const },
+      categoria: "operacao",
+      size: "medium",
+      delta: { valor: d?.roi ?? null, tipo: "pp" },
+      detalhe: kpis?.roiPercentual == null ? "aguardando custos" : undefined,
     },
+  ];
+
+  const kpisSecundarios: KpiCardProps[] = [
     {
       titulo: "Valor em Ads",
       valor: formatBRL(kpis?.valorAdsCentavos ?? 0),
       icon: Megaphone,
-      tone: "warning" as const,
-      delta: { valor: d?.valorAds ?? null, tipo: "percent" as const, inverso: true },
+      categoria: "ads",
+      size: "compact",
+      delta: { valor: d?.valorAds ?? null, tipo: "percent", inverso: true },
     },
     {
       titulo: "TACOS",
       valor: loadingKpis ? "..." : formatPercent(kpis?.tacosPercentual),
       icon: PieChart,
-      tone: "warning" as const,
-      delta: { valor: d?.tacos ?? null, tipo: "pp" as const, inverso: true },
+      categoria: "ads",
+      size: "compact",
+      delta: { valor: d?.tacos ?? null, tipo: "pp", inverso: true },
       badge: classificarAcos(kpis?.tacosPercentual ?? null),
     },
     {
       titulo: "Lucro pos Ads",
       valor: loadingKpis ? "..." : formatMoneyOrNA(kpis?.lucroPosAdsCentavos),
-      detalhe: `MPA ${formatPercent(kpis?.mpaPercentual)}`,
       icon: LineChart,
-      tone:
-        (kpis?.lucroPosAdsCentavos ?? 0) < 0 ? ("danger" as const) : ("success" as const),
-      delta: { valor: d?.lucroPosAds ?? null, tipo: "percent" as const },
+      categoria: "ads",
+      size: "compact",
+      delta: { valor: d?.lucroPosAds ?? null, tipo: "percent" },
+      detalhe:
+        kpis?.lucroPosAdsCentavos == null
+          ? "aguardando custos"
+          : `MPA ${formatPercent(kpis?.mpaPercentual)}`,
     },
     {
       titulo: "ROI pos Ads",
       valor: loadingKpis ? "..." : formatPercent(kpis?.roiPosAdsPercentual),
       icon: BarChart3,
-      delta: { valor: d?.roiPosAds ?? null, tipo: "pp" as const },
+      categoria: "ads",
+      size: "compact",
+      delta: { valor: d?.roiPosAds ?? null, tipo: "pp" },
+      detalhe:
+        kpis?.roiPosAdsPercentual == null ? "aguardando custos" : undefined,
+    },
+    {
+      titulo: "Sessoes",
+      valor: loadingKpis ? "..." : formatInt(kpis?.trafficSessions),
+      icon: Zap,
+      categoria: "trafego",
+      size: "compact",
+      detalhe: `${formatInt(kpis?.trafficPageViews)} page views`,
+    },
+    {
+      titulo: "Conversao",
+      valor: loadingKpis ? "..." : formatPercent(kpis?.trafficConversionPercent),
+      icon: MousePointerClick,
+      categoria: "trafego",
+      size: "compact",
+      detalhe: `${formatInt(kpis?.trafficUnitsOrdered)} unidades ordenadas`,
+    },
+    {
+      titulo: "Buybox media",
+      valor: loadingKpis ? "..." : formatPercent(kpis?.trafficBuyBoxPercent),
+      icon: Award,
+      categoria: "trafego",
+      size: "compact",
+      detalhe: "media por SKU/dia",
+    },
+    {
+      titulo: "Receita ordenada",
+      valor: loadingKpis
+        ? "..."
+        : formatBRL(kpis?.trafficRevenueOrderedCentavos ?? 0),
+      icon: ShoppingCart,
+      categoria: "trafego",
+      size: "compact",
+      detalhe: "Sales & Traffic",
     },
   ];
 
@@ -564,14 +679,15 @@ function DashboardEcommerceContent() {
     setPeriodoPopoverAberto(false);
   }
 
+  const heroes = kpisPrincipais.slice(0, 4);
+  const medios = kpisPrincipais.slice(4, 8);
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       <PageHeader
         title="Dashboard E-commerce"
-        description="KPIs comerciais da Amazon por vendas item-a-item."
-      />
-
-      <div className="flex flex-col gap-3 rounded-lg border bg-card p-3 sm:flex-row sm:items-center sm:justify-between">
+        description={`KPIs comerciais da Amazon · vendas item-a-item · ${formatPeriodoBR(periodo.de)} — ${formatPeriodoBR(periodo.ate)}`}
+      >
         <Popover
           open={periodoPopoverAberto}
           onOpenChange={(open) => {
@@ -584,16 +700,14 @@ function DashboardEcommerceContent() {
               type="button"
               variant="outline"
               size="sm"
-              className="h-9 w-full justify-start gap-2 sm:w-auto"
+              className="h-9 gap-2"
             >
               <Calendar className="h-4 w-4 text-muted-foreground" />
-              <span className="text-xs font-medium text-muted-foreground">
-                Periodo:
-              </span>
-              <span className="font-semibold">{labelBotaoPeriodo}</span>
+              <span className="font-medium">{labelBotaoPeriodo}</span>
+              <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
             </Button>
           </PopoverTrigger>
-          <PopoverContent align="start" className="w-72 p-2">
+          <PopoverContent align="end" className="w-72 p-2">
             <div className="flex flex-col">
               {presets.map((preset) => {
                 const ativo = presetAtivo === preset.value;
@@ -676,12 +790,7 @@ function DashboardEcommerceContent() {
             )}
           </PopoverContent>
         </Popover>
-
-        <p className="text-xs text-muted-foreground sm:text-right">
-          Mostrando {formatPeriodoBR(periodo.de)} ate{" "}
-          {formatPeriodoBR(periodo.ate)}
-        </p>
-      </div>
+      </PageHeader>
 
       {kpis && kpis.vendasSemCusto > 0 && (
         <div className="flex items-center gap-2.5 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm dark:border-amber-800/50 dark:bg-amber-900/20">
@@ -698,123 +807,142 @@ function DashboardEcommerceContent() {
         </div>
       )}
 
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-        {cards.map((card) => (
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        {heroes.map((card) => (
           <KpiCard key={card.titulo} {...card} />
         ))}
       </div>
 
+      <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
+        {medios.map((card) => (
+          <KpiCard key={card.titulo} {...card} />
+        ))}
+      </div>
+
+      <div>
+        <button
+          type="button"
+          onClick={() => setMostrarSecundarios((v) => !v)}
+          className="inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:underline"
+        >
+          <ChevronDown
+            className={cn(
+              "h-4 w-4 transition-transform",
+              mostrarSecundarios && "rotate-180",
+            )}
+          />
+          {mostrarSecundarios
+            ? "Ocultar metricas secundarias"
+            : "Ver mais 8 metricas (Ads · Trafego)"}
+        </button>
+        {mostrarSecundarios && (
+          <div className="mt-4 grid gap-3 grid-cols-2 lg:grid-cols-4">
+            {kpisSecundarios.map((card) => (
+              <KpiCard key={card.titulo} {...card} />
+            ))}
+          </div>
+        )}
+      </div>
+
       <Card>
         <CardHeader className="flex-row items-center justify-between space-y-0">
-          <CardTitle className="text-base">Trafego Amazon</CardTitle>
-          <Badge variant="outline">Sales & Traffic</Badge>
+          <CardTitle className="text-base">Resumo de receitas</CardTitle>
+          <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+            <span className="flex items-center gap-1.5">
+              <span className="h-2.5 w-2.5 rounded-full bg-violet-500" />
+              Faturamento
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="h-2.5 w-2.5 rounded-full bg-blue-500" />
+              Liq. Marketplace
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="h-2.5 w-2.5 rounded-full bg-emerald-500" />
+              Lucro Bruto
+            </span>
+          </div>
         </CardHeader>
         <CardContent>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <TrafficMetric
-              label="Sessoes"
-              value={loadingKpis ? "..." : formatInt(kpis?.trafficSessions)}
-              detail={`${formatInt(kpis?.trafficPageViews)} page views`}
-            />
-            <TrafficMetric
-              label="Conversao"
-              value={loadingKpis ? "..." : formatPercent(kpis?.trafficConversionPercent)}
-              detail={`${formatInt(kpis?.trafficUnitsOrdered)} unidades ordenadas`}
-            />
-            <TrafficMetric
-              label="Buybox media"
-              value={loadingKpis ? "..." : formatPercent(kpis?.trafficBuyBoxPercent)}
-              detail="media por SKU/dia"
-            />
-            <TrafficMetric
-              label="Receita ordenada"
-              value={loadingKpis ? "..." : formatBRL(kpis?.trafficRevenueOrderedCentavos ?? 0)}
-              detail="report Sales & Traffic"
-            />
+          <div className="h-[360px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart
+                data={timeline}
+                margin={{ top: 8, right: 14, left: 0, bottom: 0 }}
+              >
+                <defs>
+                  <linearGradient id="grad-faturamento" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#7c3aed" stopOpacity={0.45} />
+                    <stop offset="100%" stopColor="#7c3aed" stopOpacity={0.03} />
+                  </linearGradient>
+                  <linearGradient id="grad-liquido" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#2563eb" stopOpacity={0.45} />
+                    <stop offset="100%" stopColor="#2563eb" stopOpacity={0.03} />
+                  </linearGradient>
+                  <linearGradient id="grad-lucro" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#059669" stopOpacity={0.5} />
+                    <stop offset="100%" stopColor="#059669" stopOpacity={0.05} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                <XAxis
+                  dataKey="data"
+                  tickFormatter={formatDiaCurto}
+                  minTickGap={22}
+                  tickLine={false}
+                  axisLine={false}
+                  fontSize={12}
+                />
+                <YAxis
+                  tickFormatter={(value) => formatBRL(Number(value))}
+                  width={78}
+                  tickLine={false}
+                  axisLine={false}
+                  fontSize={12}
+                />
+                <Tooltip
+                  formatter={(value, name) => [
+                    formatBRL(Number(value)),
+                    name === "faturamentoCentavos"
+                      ? "Faturamento"
+                      : name === "liquidoMarketplaceCentavos"
+                        ? "Liq. Marketplace"
+                        : "Lucro Bruto",
+                  ]}
+                  labelFormatter={(value) => formatDiaCurto(String(value))}
+                />
+                <Area
+                  type="monotone"
+                  dataKey="faturamentoCentavos"
+                  stroke="#7c3aed"
+                  strokeWidth={2}
+                  fill="url(#grad-faturamento)"
+                  dot={false}
+                  name="faturamentoCentavos"
+                />
+                <Area
+                  type="monotone"
+                  dataKey="liquidoMarketplaceCentavos"
+                  stroke="#2563eb"
+                  strokeWidth={2}
+                  fill="url(#grad-liquido)"
+                  dot={false}
+                  name="liquidoMarketplaceCentavos"
+                />
+                <Area
+                  type="monotone"
+                  dataKey="lucroBrutoCentavos"
+                  stroke="#059669"
+                  strokeWidth={2}
+                  fill="url(#grad-lucro)"
+                  dot={false}
+                  connectNulls
+                  name="lucroBrutoCentavos"
+                />
+              </AreaChart>
+            </ResponsiveContainer>
           </div>
         </CardContent>
       </Card>
-
-      <div>
-        <Card>
-          <CardHeader className="flex-row items-center justify-between space-y-0">
-            <CardTitle className="text-base">Faturamento diario</CardTitle>
-            <Badge variant="secondary">recharts</Badge>
-          </CardHeader>
-          <CardContent>
-            <div className="h-[320px]">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart
-                  data={timeline}
-                  margin={{ top: 8, right: 14, left: 0, bottom: 0 }}
-                >
-                  <defs>
-                    <linearGradient id="receita" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#059669" stopOpacity={0.26} />
-                      <stop offset="95%" stopColor="#059669" stopOpacity={0} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                  <XAxis
-                    dataKey="data"
-                    tickFormatter={formatDiaCurto}
-                    minTickGap={22}
-                    tickLine={false}
-                    axisLine={false}
-                    fontSize={12}
-                  />
-                  <YAxis
-                    tickFormatter={(value) => formatBRL(Number(value))}
-                    width={78}
-                    tickLine={false}
-                    axisLine={false}
-                    fontSize={12}
-                  />
-                  <Tooltip
-                    formatter={(value, name) => [
-                      formatBRL(Number(value)),
-                      name === "faturamentoCentavos"
-                        ? "Faturamento"
-                        : name === "lucroBrutoCentavos"
-                          ? "Lucro bruto"
-                          : "Lucro pos Ads",
-                    ]}
-                    labelFormatter={(value) => formatDiaCurto(String(value))}
-                  />
-                  <Area
-                    type="monotone"
-                    dataKey="faturamentoCentavos"
-                    stroke="#059669"
-                    strokeWidth={2}
-                    fill="url(#receita)"
-                    dot={false}
-                    name="Faturamento"
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="lucroBrutoCentavos"
-                    stroke="#2563eb"
-                    strokeWidth={2}
-                    dot={false}
-                    connectNulls
-                    name="Lucro bruto"
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="lucroPosAdsCentavos"
-                    stroke="#f59e0b"
-                    strokeWidth={2}
-                    dot={false}
-                    connectNulls
-                    name="Lucro pos Ads"
-                  />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
-          </CardContent>
-        </Card>
-
-      </div>
 
       <Card>
         <CardHeader className="flex-row items-center justify-between space-y-0">
@@ -843,10 +971,9 @@ function DashboardEcommerceContent() {
                   <TableHead className="text-right">Faturado</TableHead>
                   <TableHead className="text-right">Represent.</TableHead>
                   <TableHead className="text-right">Lucro</TableHead>
-                  <TableHead className="text-right">Margem</TableHead>
+                  <TableHead className="text-center">Margem</TableHead>
                   <TableHead className="text-right">Custo ADS</TableHead>
                   <TableHead className="text-right">Lucro pos Ads</TableHead>
-                  <TableHead className="text-right">MPA</TableHead>
                   <TableHead className="w-[60px]" />
                 </TableRow>
               </TableHeader>
@@ -854,7 +981,7 @@ function DashboardEcommerceContent() {
                 {loadingTop ? (
                   <TableRow>
                     <TableCell
-                      colSpan={12}
+                      colSpan={11}
                       className="py-10 text-center text-muted-foreground"
                     >
                       Carregando produtos...
@@ -863,67 +990,100 @@ function DashboardEcommerceContent() {
                 ) : produtosOrdenados.length === 0 ? (
                   <TableRow>
                     <TableCell
-                      colSpan={12}
+                      colSpan={11}
                       className="py-10 text-center text-muted-foreground"
                     >
                       Sem vendas no periodo.
                     </TableCell>
                   </TableRow>
                 ) : (
-                  produtosOrdenados.map((produto) => (
-                    <TableRow key={produto.sku} className="even:bg-muted/30">
-                      <TableCell>
-                        <div className="max-w-[320px]">
-                          <p className="truncate font-medium">{produto.nome}</p>
-                          <p className="font-mono text-xs text-muted-foreground">
-                            {produto.sku}
-                          </p>
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-right font-mono tabular-nums">
-                        {formatBRL(produto.precoMedioCentavos)}
-                      </TableCell>
-                      <TableCell className="text-right font-mono tabular-nums">
-                        {formatMoneyOrNA(produto.custoUnitarioCentavos)}
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {produto.unidades}
-                      </TableCell>
-                      <TableCell className="text-right font-mono font-semibold tabular-nums">
-                        {formatBRL(produto.faturadoCentavos)}
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {formatPercent(produto.representatividadePercentual)}
-                      </TableCell>
-                      <TableCell className="text-right font-mono tabular-nums">
-                        {formatMoneyOrNA(produto.lucroCentavos)}
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {formatPercent(produto.margemPercentual)}
-                      </TableCell>
-                      <TableCell className="text-right font-mono tabular-nums">
-                        {formatBRL(produto.custoAdsCentavos)}
-                      </TableCell>
-                      <TableCell className="text-right font-mono tabular-nums">
-                        {formatMoneyOrNA(produto.lucroPosAdsCentavos)}
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {formatPercent(produto.mpaPercentual)}
-                      </TableCell>
-                      <TableCell>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8"
-                          onClick={() => setProdutoDetalhe(produto)}
-                          title="Detalhe do produto"
+                  produtosOrdenados.map((produto) => {
+                    const imagemAmazon = resolverImagemProduto(
+                      produto.amazonImagemUrl,
+                      produto.asin,
+                      null,
+                    );
+                    const thumbSrc = produto.imagemUrl && produto.produtoId
+                      ? `/api/produtos/${produto.produtoId}/imagem`
+                      : imagemAmazon;
+                    return (
+                      <TableRow key={produto.sku} className="even:bg-muted/30">
+                        <TableCell>
+                          <div className="flex items-center gap-3">
+                            <ProductThumb
+                              src={thumbSrc}
+                              alt={produto.nome}
+                              size={40}
+                              title={produto.nome}
+                            />
+                            <div className="min-w-0 max-w-[280px]">
+                              <p className="truncate font-medium">{produto.nome}</p>
+                              <p className="font-mono text-xs text-muted-foreground">
+                                {produto.sku}
+                              </p>
+                            </div>
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums">
+                          {formatBRL(produto.precoMedioCentavos)}
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums">
+                          {produto.custoUnitarioCentavos == null ? (
+                            <span className="text-muted-foreground/50">N/A</span>
+                          ) : (
+                            formatBRL(produto.custoUnitarioCentavos)
+                          )}
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums">
+                          {produto.unidades}
+                        </TableCell>
+                        <TableCell className="text-right font-semibold tabular-nums">
+                          {formatBRL(produto.faturadoCentavos)}
+                        </TableCell>
+                        <TableCell className="text-right text-muted-foreground tabular-nums">
+                          {formatPercent(produto.representatividadePercentual)}
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums">
+                          {produto.lucroCentavos == null ? (
+                            <span className="text-muted-foreground/50">N/A</span>
+                          ) : (
+                            formatBRL(produto.lucroCentavos)
+                          )}
+                        </TableCell>
+                        <TableCell className="text-center">
+                          <MarginBadge value={produto.margemPercentual} />
+                        </TableCell>
+                        <TableCell
+                          className={cn(
+                            "text-right tabular-nums",
+                            produto.custoAdsCentavos > 0 &&
+                              "text-amber-700 dark:text-amber-400",
+                          )}
                         >
-                          <PackageSearch className="h-4 w-4" />
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))
+                          {formatBRL(produto.custoAdsCentavos)}
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums">
+                          {produto.lucroPosAdsCentavos == null ? (
+                            <span className="text-muted-foreground/50">N/A</span>
+                          ) : (
+                            formatBRL(produto.lucroPosAdsCentavos)
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8"
+                            onClick={() => setProdutoDetalhe(produto)}
+                            title="Detalhe do produto"
+                          >
+                            <PackageSearch className="h-4 w-4" />
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })
                 )}
               </TableBody>
             </Table>

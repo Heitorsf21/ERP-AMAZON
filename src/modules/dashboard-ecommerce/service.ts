@@ -11,7 +11,15 @@ import {
   converterParaVendasAmazon,
   parseAmazonUnifiedTransactionCsv,
 } from "@/integrations/amazon/unified-transactions";
-import { whereVendaAmazonContabilizavel } from "@/modules/vendas/filtros";
+import {
+  getAdsGastoPorProduto,
+  getAdsResumo,
+  getAdsTimeline,
+  type FonteAds,
+} from "@/modules/amazon/ads-aggregation";
+import {
+  whereVendaAmazonEspelhoGestorSeller,
+} from "@/modules/vendas/filtros";
 import {
   calcularValoresLinhaVendaAmazon,
   valorBrutoDaVenda,
@@ -26,16 +34,9 @@ type VendaDashboard = {
   valorBrutoCentavos: number | null;
   taxasCentavos: number;
   fretesCentavos: number;
+  liquidoMarketplaceCentavos: number | null;
   custoUnitarioCentavos: number | null;
   dataVenda: Date;
-};
-
-type GastoManual = {
-  id: string;
-  periodoInicio: Date;
-  periodoFim: Date;
-  produtoId: string | null;
-  valorCentavos: number;
 };
 
 export type ResultadoImportacaoVendaAmazon = {
@@ -199,12 +200,15 @@ export const dashboardEcommerceService = {
   },
 
   async obterKpis(periodo: IntervaloPeriodo) {
-    const [vendas, ads, traffic] = await Promise.all([
+    const [vendas, vendasReembolsadas, ads, traffic] = await Promise.all([
       buscarVendas(periodo),
+      buscarVendasReembolsadasGestorSeller(periodo),
       fetchAdsGasto(periodo),
       buscarTraffic(periodo),
     ]);
     const agregado = agregarVendas(vendas);
+    const agregadoReembolsados = agregarVendas(vendasReembolsadas);
+    const snapshotGestor = await buscarSnapshotGestorSeller(periodo);
     const lucroBrutoCentavos = calcularLucroBruto(agregado);
     const lucroPosAdsCentavos =
       lucroBrutoCentavos == null
@@ -213,8 +217,20 @@ export const dashboardEcommerceService = {
 
     return {
       periodo,
-      faturamentoCentavos: agregado.faturamentoCentavos,
-      liquidoMarketplaceCentavos: agregado.liquidoMarketplaceCentavos,
+      faturamentoCentavos:
+        snapshotGestor?.faturamentoCentavos ?? agregado.faturamentoCentavos,
+      freteCentavos: agregado.fretesCentavos,
+      faturamentoComFreteCentavos:
+        agregado.faturamentoCentavos + agregado.fretesCentavos,
+      faturamentoReembolsadoCentavos:
+        snapshotGestor?.faturamentoReembolsadoCentavos ??
+        agregadoReembolsados.faturamentoCentavos,
+      faturamentoComReembolsadosCentavos:
+        snapshotGestor?.faturamentoComReembolsadosCentavos ??
+        agregado.faturamentoCentavos + agregadoReembolsados.faturamentoCentavos,
+      liquidoMarketplaceCentavos:
+        snapshotGestor?.liquidoMarketplaceCentavos ??
+        agregado.liquidoMarketplaceCentavos,
       lucroBrutoCentavos,
       margemPercentual: percentual(lucroBrutoCentavos, agregado.faturamentoCentavos),
       numeroVendas: agregado.numeroVendas,
@@ -258,21 +274,33 @@ export const dashboardEcommerceService = {
       porDia.set(dia, [...(porDia.get(dia) ?? []), venda]);
     }
 
+    // Quando ha sync de Ads, usamos o gasto REAL por dia (vindo de
+    // AmazonAdsMetricaDiaria). Caso contrario, rateamos proporcionalmente
+    // ao faturamento — granularidade legacy nao e diaria confiavel.
+    const adsRealPorDia = new Map<string, number>();
+    if (ads.fonte === "SYNC") {
+      const pontos = await getAdsTimeline(periodo, "day");
+      for (const p of pontos) adsRealPorDia.set(p.data, p.gastoCentavos);
+    }
+
     return criarDiasDoPeriodo(periodo).map((dia) => {
       const vendasDoDia = porDia.get(dia) ?? [];
       const item = agregarVendas(vendasDoDia);
       const lucroBrutoCentavos = calcularLucroBruto(item);
       const adsDoDia =
-        agregado.faturamentoCentavos > 0
-          ? Math.round(
-              ads.totalCentavos *
-                (item.faturamentoCentavos / agregado.faturamentoCentavos),
-            )
-          : 0;
+        ads.fonte === "SYNC"
+          ? (adsRealPorDia.get(dia) ?? 0)
+          : agregado.faturamentoCentavos > 0
+            ? Math.round(
+                ads.totalCentavos *
+                  (item.faturamentoCentavos / agregado.faturamentoCentavos),
+              )
+            : 0;
 
       return {
         data: dia,
         faturamentoCentavos: item.faturamentoCentavos,
+        liquidoMarketplaceCentavos: item.liquidoMarketplaceCentavos,
         lucroBrutoCentavos,
         lucroPosAdsCentavos:
           lucroBrutoCentavos == null ? null : lucroBrutoCentavos - adsDoDia,
@@ -281,9 +309,9 @@ export const dashboardEcommerceService = {
   },
 
   async obterTopProdutos(periodo: IntervaloPeriodo, limit = 15) {
-    const [vendas, ads] = await Promise.all([
+    const [vendas, adsPorProdutoInfo] = await Promise.all([
       buscarVendas(periodo),
-      buscarGastosManuais(periodo),
+      getAdsGastoPorProduto(periodo),
     ]);
     const totalFaturamento = vendas.reduce(
       (acc, venda) => acc + faturamentoDaVenda(venda),
@@ -301,22 +329,19 @@ export const dashboardEcommerceService = {
 
     const produtos = await db.produto.findMany({
       where: { sku: { in: [...porSku.keys()] } },
-      select: { id: true, sku: true, nome: true, custoUnitario: true },
+      select: {
+        id: true,
+        sku: true,
+        nome: true,
+        custoUnitario: true,
+        imagemUrl: true,
+        amazonImagemUrl: true,
+        asin: true,
+      },
     });
     const produtosPorSku = new Map(produtos.map((produto) => [produto.sku, produto]));
-    const adsGeral = ads
-      .filter((gasto) => !gasto.produtoId)
-      .reduce((acc, gasto) => acc + valorSobreposto(gasto, periodo), 0);
-    const adsPorProduto = new Map<string, number>();
-
-    for (const gasto of ads) {
-      if (!gasto.produtoId) continue;
-      adsPorProduto.set(
-        gasto.produtoId,
-        (adsPorProduto.get(gasto.produtoId) ?? 0) +
-          valorSobreposto(gasto, periodo),
-      );
-    }
+    const { porProdutoId: adsPorProduto, gastoSemProduto: adsGeral } =
+      adsPorProdutoInfo;
 
     return [...porSku.entries()]
       .map(([sku, vendasDoProduto]) => {
@@ -340,6 +365,9 @@ export const dashboardEcommerceService = {
           sku,
           produtoId: produto?.id ?? null,
           nome: nomeProdutoDashboard(produto?.nome, sku, vendasDoProduto),
+          imagemUrl: produto?.imagemUrl ?? null,
+          amazonImagemUrl: produto?.amazonImagemUrl ?? null,
+          asin: produto?.asin ?? null,
           precoMedioCentavos:
             agregado.unidades > 0
               ? Math.round(agregado.faturamentoCentavos / agregado.unidades)
@@ -402,20 +430,31 @@ export const dashboardEcommerceService = {
   },
 };
 
-export async function fetchAdsGasto(periodo: IntervaloPeriodo) {
-  const gastos = await buscarGastosManuais(periodo);
+export async function fetchAdsGasto(periodo: IntervaloPeriodo): Promise<{
+  totalCentavos: number;
+  fonte: FonteAds;
+}> {
+  const resumo = await getAdsResumo(periodo);
   return {
-    totalCentavos: gastos.reduce(
-      (acc, gasto) => acc + valorSobreposto(gasto, periodo),
-      0,
-    ),
-    fonte: "manual" as const,
+    totalCentavos: resumo.gastoCentavos,
+    fonte: resumo.fonte,
   };
 }
 
 async function buscarVendas(periodo: IntervaloPeriodo): Promise<VendaDashboard[]> {
+  const [vendas, vendasReembolsadas] = await Promise.all([
+    buscarVendasBaseGestorSeller(periodo),
+    buscarVendasReembolsadasGestorSeller(periodo),
+  ]);
+  const reembolsadas = new Set(vendasReembolsadas.map(chaveVendaDashboard));
+  return vendas.filter((venda) => !reembolsadas.has(chaveVendaDashboard(venda)));
+}
+
+async function buscarVendasBaseGestorSeller(
+  periodo: IntervaloPeriodo,
+): Promise<VendaDashboard[]> {
   return db.vendaAmazon.findMany({
-    where: whereVendaAmazonContabilizavel({
+    where: whereVendaAmazonEspelhoGestorSeller({
       dataVenda: {
         gte: periodo.de,
         lte: periodo.ate,
@@ -430,10 +469,63 @@ async function buscarVendas(periodo: IntervaloPeriodo): Promise<VendaDashboard[]
       valorBrutoCentavos: true,
       taxasCentavos: true,
       fretesCentavos: true,
+      liquidoMarketplaceCentavos: true,
       custoUnitarioCentavos: true,
       dataVenda: true,
     },
   });
+}
+
+async function buscarVendasReembolsadasGestorSeller(
+  periodo: IntervaloPeriodo,
+): Promise<VendaDashboard[]> {
+  const reembolsos = await db.amazonReembolso.findMany({
+    where: {
+      dataReembolso: {
+        gte: periodo.de,
+        lte: periodo.ate,
+      },
+    },
+    select: {
+      amazonOrderId: true,
+      sku: true,
+    },
+  });
+  const chaves = [
+    ...new Set(
+      reembolsos.map(
+        (reembolso) => `${reembolso.amazonOrderId}\u0000${reembolso.sku}`,
+      ),
+    ),
+  ];
+  if (chaves.length === 0) return [];
+
+  return db.vendaAmazon.findMany({
+    where: whereVendaAmazonEspelhoGestorSeller({
+      dataVenda: { gte: periodo.de, lte: periodo.ate },
+      OR: chaves.map((chave) => {
+        const [amazonOrderId, sku] = chave.split("\u0000");
+        return { amazonOrderId, sku };
+      }),
+    }),
+    select: {
+      amazonOrderId: true,
+      sku: true,
+      titulo: true,
+      quantidade: true,
+      precoUnitarioCentavos: true,
+      valorBrutoCentavos: true,
+      taxasCentavos: true,
+      fretesCentavos: true,
+      liquidoMarketplaceCentavos: true,
+      custoUnitarioCentavos: true,
+      dataVenda: true,
+    },
+  });
+}
+
+function chaveVendaDashboard(venda: Pick<VendaDashboard, "amazonOrderId" | "sku">) {
+  return `${venda.amazonOrderId}\u0000${venda.sku}`;
 }
 
 async function carregarMapaSkuAgrupador(skus: string[]) {
@@ -461,22 +553,6 @@ function nomeProdutoDashboard(
   if (nomeLimpo && nomeLimpo !== sku) return nomeLimpo;
 
   return vendas.find((venda) => venda.titulo?.trim())?.titulo ?? sku;
-}
-
-function buscarGastosManuais(periodo: IntervaloPeriodo): Promise<GastoManual[]> {
-  return db.adsGastoManual.findMany({
-    where: {
-      periodoInicio: { lte: periodo.ate },
-      periodoFim: { gte: periodo.de },
-    },
-    select: {
-      id: true,
-      periodoInicio: true,
-      periodoFim: true,
-      produtoId: true,
-      valorCentavos: true,
-    },
-  });
 }
 
 async function buscarTraffic(periodo: IntervaloPeriodo) {
@@ -510,11 +586,32 @@ async function buscarTraffic(periodo: IntervaloPeriodo) {
   };
 }
 
+type SnapshotGestorSeller = {
+  faturamentoCentavos?: number;
+  faturamentoReembolsadoCentavos?: number;
+  faturamentoComReembolsadosCentavos?: number;
+  liquidoMarketplaceCentavos?: number;
+};
+
+async function buscarSnapshotGestorSeller(
+  periodo: IntervaloPeriodo,
+): Promise<SnapshotGestorSeller | null> {
+  const chave = `gestor_seller_snapshot:${formatarDiaPeriodo(periodo.de)}:${formatarDiaPeriodo(periodo.ate)}`;
+  const config = await db.configuracaoSistema.findUnique({ where: { chave } });
+  if (!config) return null;
+  try {
+    return JSON.parse(config.valor) as SnapshotGestorSeller;
+  } catch {
+    return null;
+  }
+}
+
 function agregarVendas(vendas: VendaDashboard[]) {
   const pedidos = new Set(vendas.map((venda) => venda.amazonOrderId));
   let faturamentoCentavos = 0;
   let taxasCentavos = 0;
   let fretesCentavos = 0;
+  let liquidoMarketplaceCentavos = 0;
   let custoTotalCentavos = 0;
   let vendasSemCusto = 0;
   let unidades = 0;
@@ -523,6 +620,9 @@ function agregarVendas(vendas: VendaDashboard[]) {
     faturamentoCentavos += faturamentoDaVenda(venda);
     taxasCentavos += venda.taxasCentavos;
     fretesCentavos += venda.fretesCentavos;
+    liquidoMarketplaceCentavos +=
+      venda.liquidoMarketplaceCentavos ??
+      faturamentoDaVenda(venda) - venda.taxasCentavos - venda.fretesCentavos;
     unidades += venda.quantidade;
 
     if (venda.custoUnitarioCentavos && venda.custoUnitarioCentavos > 0) {
@@ -536,8 +636,7 @@ function agregarVendas(vendas: VendaDashboard[]) {
     faturamentoCentavos,
     taxasCentavos,
     fretesCentavos,
-    liquidoMarketplaceCentavos:
-      faturamentoCentavos - taxasCentavos - fretesCentavos,
+    liquidoMarketplaceCentavos,
     custoTotalCentavos,
     custoCompleto: vendasSemCusto === 0,
     vendasSemCusto,
@@ -574,22 +673,4 @@ function criarDiasDoPeriodo(periodo: IntervaloPeriodo): string[] {
   }
 
   return dias;
-}
-
-function valorSobreposto(gasto: GastoManual, periodo: IntervaloPeriodo) {
-  const inicio = Math.max(
-    gasto.periodoInicio.getTime(),
-    periodo.de.getTime(),
-  );
-  const fim = Math.min(gasto.periodoFim.getTime(), periodo.ate.getTime());
-
-  if (fim < inicio) return 0;
-
-  const duracaoGasto = Math.max(
-    1,
-    gasto.periodoFim.getTime() - gasto.periodoInicio.getTime(),
-  );
-  const duracaoSobreposta = Math.max(1, fim - inicio);
-
-  return Math.round(gasto.valorCentavos * (duracaoSobreposta / duracaoGasto));
 }

@@ -1,46 +1,16 @@
 import { handle, ok } from "@/lib/api";
 import { db } from "@/lib/db";
+import {
+  getAdsCampanhas,
+  tacosPercentual,
+  type AdsCampanhaItem,
+  type FonteAds,
+} from "@/modules/amazon/ads-aggregation";
 import { whereVendaAmazonContabilizavelEstrito } from "@/modules/vendas/filtros";
 
 export const dynamic = "force-dynamic";
 
-type Campanha = {
-  id: string;
-  nomeCampanha: string;
-  sku: string | null;
-  asin: string | null;
-  impressoes: number;
-  cliques: number;
-  gastoCentavos: number;
-  vendasAtribuidasCentavos: number;
-  pedidos: number;
-  unidades: number;
-  acosPercentual: number | null;
-  roas: number | null;
-  periodoInicio: Date;
-  periodoFim: Date;
-};
-
-type CampanhaEnriquecida = Campanha & {
-  ctrPercentual: number | null;
-  cpcCentavos: number | null;
-  taxaConversaoPercentual: number | null;
-};
-
-function calcularDerivados(c: Campanha): CampanhaEnriquecida {
-  const ctrPercentual =
-    c.impressoes > 0 ? (c.cliques / c.impressoes) * 100 : null;
-  const cpcCentavos =
-    c.cliques > 0 ? Math.round(c.gastoCentavos / c.cliques) : null;
-  const taxaConversaoPercentual =
-    c.cliques > 0 ? (c.pedidos / c.cliques) * 100 : null;
-  return {
-    ...c,
-    ctrPercentual,
-    cpcCentavos,
-    taxaConversaoPercentual,
-  };
-}
+type CampanhaPayload = AdsCampanhaItem;
 
 async function totalFaturamentoAmazon(de: Date, ate: Date): Promise<number> {
   const agg = await db.vendaAmazon.aggregate({
@@ -66,33 +36,44 @@ function parseDataFim(d: string): Date {
 }
 
 async function carregarBloco(de: Date, ate: Date) {
-  const campanhas = (await db.adsCampanha.findMany({
-    where: {
-      periodoInicio: { lte: ate },
-      periodoFim: { gte: de },
-    },
-    orderBy: [{ acosPercentual: "desc" }, { gastoCentavos: "desc" }],
-  })) as Campanha[];
-
-  const totalGasto = campanhas.reduce((a, c) => a + c.gastoCentavos, 0);
-  const totalVendas = campanhas.reduce(
-    (a, c) => a + c.vendasAtribuidasCentavos,
-    0,
-  );
-  const acosGeral = totalVendas > 0 ? (totalGasto / totalVendas) * 100 : null;
-  const roasGeral = totalGasto > 0 ? totalVendas / totalGasto : null;
-  const faturamentoAmazon = await totalFaturamentoAmazon(de, ate);
-  const tacos =
-    faturamentoAmazon > 0 ? (totalGasto / faturamentoAmazon) * 100 : null;
+  const [{ itens, resumo }, faturamentoAmazon] = await Promise.all([
+    getAdsCampanhas({ de, ate }),
+    totalFaturamentoAmazon(de, ate),
+  ]);
 
   return {
-    campanhas,
-    totalGasto,
-    totalVendas,
-    acosGeral,
-    roasGeral,
-    tacos,
+    campanhas: itens,
+    totalGasto: resumo.gastoCentavos,
+    totalVendas: resumo.vendasAtribuidasCentavos,
+    acosGeral: resumo.acosPercentual,
+    roasGeral: resumo.roas,
+    tacos: tacosPercentual(resumo.gastoCentavos, faturamentoAmazon),
     faturamentoAmazon,
+    origem: resumo.fonte,
+  };
+}
+
+type Bloco = Awaited<ReturnType<typeof carregarBloco>>;
+
+function shapeBase(bloco: Bloco): {
+  campanhas: CampanhaPayload[];
+  totalGasto: number;
+  totalVendas: number;
+  acosGeral: number | null;
+  roasGeral: number | null;
+  tacos: number | null;
+  faturamentoAmazon: number | null;
+  origem: FonteAds;
+} {
+  return {
+    campanhas: bloco.campanhas,
+    totalGasto: bloco.totalGasto,
+    totalVendas: bloco.totalVendas,
+    acosGeral: bloco.acosGeral,
+    roasGeral: bloco.roasGeral,
+    tacos: bloco.tacos,
+    faturamentoAmazon: bloco.faturamentoAmazon,
+    origem: bloco.origem,
   };
 }
 
@@ -102,43 +83,21 @@ export const GET = handle(async (req: Request) => {
   const ate = searchParams.get("ate");
   const comparar = searchParams.get("comparar") === "true";
 
-  // Sem período: comportamento legado (todas as campanhas)
+  // Sem periodo: retrocompat — usa janela default de 30 dias para evitar
+  // varrer tudo. (Antes retornava todas as campanhas legacy, mas com sync
+  // ativo isso pode ser custoso.)
   if (!de || !ate) {
-    const campanhas = (await db.adsCampanha.findMany({
-      orderBy: [{ acosPercentual: "desc" }, { gastoCentavos: "desc" }],
-    })) as Campanha[];
-    const totalGasto = campanhas.reduce((a, c) => a + c.gastoCentavos, 0);
-    const totalVendas = campanhas.reduce(
-      (a, c) => a + c.vendasAtribuidasCentavos,
-      0,
-    );
-    const acosGeral =
-      totalVendas > 0 ? (totalGasto / totalVendas) * 100 : null;
-    const roasGeral = totalGasto > 0 ? totalVendas / totalGasto : null;
-    return ok({
-      campanhas: campanhas.map(calcularDerivados),
-      totalGasto,
-      totalVendas,
-      acosGeral,
-      roasGeral,
-      tacos: null,
-      faturamentoAmazon: null,
-    });
+    const fim = new Date();
+    const inicio = new Date(fim);
+    inicio.setUTCDate(inicio.getUTCDate() - 30);
+    const bloco = await carregarBloco(inicio, fim);
+    return ok({ ...shapeBase(bloco), faturamentoAmazon: null });
   }
 
   const inicio = parseDataInicio(de);
   const fim = parseDataFim(ate);
   const atual = await carregarBloco(inicio, fim);
-
-  const baseRetorno = {
-    campanhas: atual.campanhas.map(calcularDerivados),
-    totalGasto: atual.totalGasto,
-    totalVendas: atual.totalVendas,
-    acosGeral: atual.acosGeral,
-    roasGeral: atual.roasGeral,
-    tacos: atual.tacos,
-    faturamentoAmazon: atual.faturamentoAmazon,
-  };
+  const baseRetorno = shapeBase(atual);
 
   if (!comparar) return ok(baseRetorno);
 
@@ -159,6 +118,7 @@ export const GET = handle(async (req: Request) => {
       acosGeral: anterior.acosGeral,
       roasGeral: anterior.roasGeral,
       tacos: anterior.tacos,
+      origem: anterior.origem,
       delta: {
         gasto: deltaPct(atual.totalGasto, anterior.totalGasto),
         vendas: deltaPct(atual.totalVendas, anterior.totalVendas),
@@ -183,6 +143,8 @@ export const DELETE = handle(async (req: Request) => {
   const { searchParams } = new URL(req.url);
   const id = searchParams.get("id");
   if (!id) return ok({ ok: false });
+  // DELETE so afeta legacy AdsCampanha — itens de sync nao tem id real
+  // e sao recriados pelo proximo ciclo do worker.
   await db.adsCampanha.delete({ where: { id } });
   return ok({ ok: true });
 });

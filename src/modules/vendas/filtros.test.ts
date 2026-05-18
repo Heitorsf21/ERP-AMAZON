@@ -3,6 +3,7 @@ import {
   dataVendaPeriodoSP,
   isVendaAmazonContabilizavel,
   isVendaAmazonPrincipal,
+  isVendaAmazonRemovalOrder,
 } from "./filtros";
 
 describe("filtros de vendas Amazon", () => {
@@ -20,8 +21,19 @@ describe("filtros de vendas Amazon", () => {
       isVendaAmazonContabilizavel({
         statusPedido: "Pending",
         statusFinanceiro: "DEFERRED",
+        valorBrutoCentavos: 4990,
       }),
     ).toBe(true);
+  });
+
+  it("nao contabiliza pedido pendente zerado mesmo com status financeiro diferente", () => {
+    expect(
+      isVendaAmazonContabilizavel({
+        statusPedido: "Pending",
+        statusFinanceiro: "DEFERRED",
+        valorBrutoCentavos: 0,
+      }),
+    ).toBe(false);
   });
 
   it("inclui pedidos pendentes na visao principal", () => {
@@ -61,6 +73,20 @@ describe("filtros de vendas Amazon", () => {
         statusFinanceiro: "DEFERRED",
       }),
     ).toBe(true);
+  });
+
+  it("identifica e remove pedidos S01/Non-Amazon da visao de venda", () => {
+    const removal = {
+      amazonOrderId: "S01-6716734-6047108",
+      marketplace: "Non-Amazon",
+      statusPedido: "Shipped",
+      statusFinanceiro: "PENDENTE",
+      valorBrutoCentavos: 94975,
+    };
+
+    expect(isVendaAmazonRemovalOrder(removal)).toBe(true);
+    expect(isVendaAmazonContabilizavel(removal)).toBe(false);
+    expect(isVendaAmazonPrincipal(removal)).toBe(false);
   });
 
   it("recorta datas usando o dia civil de Sao Paulo", () => {
