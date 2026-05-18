@@ -185,6 +185,10 @@ export const TipoAmazonSyncJob = {
   AMAZON_ADS_BACKFILL: "AMAZON_ADS_BACKFILL",
   // Cache do our_price do listing — fallback para pedidos Pending sem ItemPrice
   LISTING_PRICE_SYNC: "LISTING_PRICE_SYNC",
+  // Estimator de taxas Amazon — usa getMyFeesEstimateForSKU (24h)
+  AMAZON_FEE_ESTIMATE_SYNC: "AMAZON_FEE_ESTIMATE_SYNC",
+  // Verifica expiração da promo FBA (R$5/R$0) e dispara Notificacao quando vence
+  AMAZON_FBA_PROMO_EXPIRY_CHECK: "AMAZON_FBA_PROMO_EXPIRY_CHECK",
 } as const;
 export type TipoAmazonSyncJob =
   (typeof TipoAmazonSyncJob)[keyof typeof TipoAmazonSyncJob];
@@ -279,6 +283,7 @@ export const TipoNotificacao = {
   RECEBIMENTO_RECONCILIADO: "RECEBIMENTO_RECONCILIADO",
   WORKER_REINICIADO: "WORKER_REINICIADO",
   REIMBURSEMENT_FBA_RECEBIDO: "REIMBURSEMENT_FBA_RECEBIDO",
+  CONFIG_REVIEW: "CONFIG_REVIEW",
 } as const;
 export type TipoNotificacao =
   (typeof TipoNotificacao)[keyof typeof TipoNotificacao];

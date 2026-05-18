@@ -120,6 +120,7 @@ type Kpis = {
   trafficConversionPercent: number | null;
   trafficBuyBoxPercent: number | null;
   vendasSemCusto: number;
+  vendasComTaxaEstimada?: number;
   delta: KpisDelta;
 };
 
@@ -805,6 +806,18 @@ function DashboardEcommerceContent() {
           >
             Corrigir custos →
           </Link>
+        </div>
+      )}
+
+      {kpis && (kpis.vendasComTaxaEstimada ?? 0) > 0 && (
+        <div
+          className="flex items-center gap-2.5 rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 text-sm dark:border-sky-800/50 dark:bg-sky-900/20"
+          title="Pedidos PENDENTE ainda não settled pela Amazon. Taxas reais (Comissão + FBA + parcelamento) entram quando Finance Events publica."
+        >
+          <AlertTriangle className="h-4 w-4 shrink-0 text-sky-600 dark:text-sky-500" />
+          <span className="text-sky-800 dark:text-sky-200">
+            <strong>{kpis.vendasComTaxaEstimada} venda(s)</strong> com taxa Amazon <em>estimada</em> (pedidos PENDENTE — settle em até 7 dias).
+          </span>
         </div>
       )}
 

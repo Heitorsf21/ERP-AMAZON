@@ -12,6 +12,7 @@ import {
   getCatalogItem,
   getInventorySummaries,
   getListingsItem,
+  getMyFeesEstimateForSKU,
   getProductOffers,
   getSellerId,
   getSettlementReports,
@@ -1675,4 +1676,147 @@ function readNumber(v: unknown): number | null {
     return Number.isFinite(n) ? n : null;
   }
   return null;
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// AMAZON_FEE_ESTIMATE_SYNC: chama SP-API getMyFeesEstimateForSKU para
+// produtos ativos, salva em AmazonFeeEstimate. Roda 24h.
+// ─────────────────────────────────────────────────────────────────────
+
+const FEE_ESTIMATE_MAX_PER_RUN = 50;
+
+export async function runAmazonFeeEstimateSync(creds: SPAPICredentials) {
+  const sellerId = await getSellerId(creds);
+  if (!sellerId) {
+    return { ok: false, mensagem: "sellerId nao disponivel — pulando." };
+  }
+
+  const produtos = await db.produto.findMany({
+    where: {
+      ativo: true,
+      sku: { not: "" },
+      amazonPrecoListagemCentavos: { gt: 0 },
+    },
+    select: {
+      id: true,
+      sku: true,
+      amazonPrecoListagemCentavos: true,
+      feeEstimate: { select: { atualizadoEm: true } },
+    },
+    orderBy: { amazonUltimaSyncEm: "asc" },
+  });
+
+  const limiteRecente = new Date(Date.now() - 20 * 60 * 60_000);
+  const filaProduto = produtos.filter(
+    (p) => !p.feeEstimate || p.feeEstimate.atualizadoEm < limiteRecente,
+  );
+  const alvos = filaProduto.slice(0, FEE_ESTIMATE_MAX_PER_RUN);
+
+  let okCount = 0;
+  let erros = 0;
+  for (const p of alvos) {
+    const preco = p.amazonPrecoListagemCentavos ?? 0;
+    if (preco <= 0) continue;
+    const est = await getMyFeesEstimateForSKU(creds, sellerId, p.sku, preco);
+    if (!est?.feeDetailList) {
+      erros += 1;
+      continue;
+    }
+
+    let comissaoCentavos = 0;
+    let fbaCentavos = 0;
+    for (const f of est.feeDetailList) {
+      const amt = f.finalFee?.amount ?? f.feeAmount?.amount ?? 0;
+      const centavos = Math.round(amt * 100);
+      if (f.feeType === "ReferralFee" || f.feeType === "VariableClosingFee") {
+        comissaoCentavos += centavos;
+      } else if (f.feeType === "FBAFees" || f.feeType === "FulfillmentFees") {
+        fbaCentavos += centavos;
+      }
+    }
+    const comissaoBps =
+      preco > 0 ? Math.round((comissaoCentavos / preco) * 10000) : 1200;
+
+    await db.amazonFeeEstimate.upsert({
+      where: { produtoId: p.id },
+      create: {
+        produtoId: p.id,
+        comissaoBps,
+        fbaCentavos,
+        ticketAvaliadoCentavos: preco,
+        origem: "api",
+      },
+      update: {
+        comissaoBps,
+        fbaCentavos,
+        ticketAvaliadoCentavos: preco,
+        origem: "api",
+      },
+    });
+    okCount += 1;
+  }
+
+  return {
+    ok: true,
+    totalProdutosAtivos: produtos.length,
+    fila: filaProduto.length,
+    processados: alvos.length,
+    sucesso: okCount,
+    erros,
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// AMAZON_FBA_PROMO_EXPIRY_CHECK: verifica se a promo FBA expirou e
+// dispara Notificacao + desliga a flag. Roda 24h.
+// ─────────────────────────────────────────────────────────────────────
+
+export async function runAmazonFbaPromoExpiryCheck() {
+  const { emitirNotificacao } = await import("@/lib/notificacoes");
+  const { TipoNotificacao } = await import("@/modules/shared/domain");
+  const { invalidateFeeEstimatorConfigCache } = await import(
+    "@/modules/produtos/fee-estimator"
+  );
+
+  const [ativaCfg, expiraCfg] = await Promise.all([
+    db.configuracaoSistema.findUnique({
+      where: { chave: "amazon_fee_fba_promo_ativa" },
+    }),
+    db.configuracaoSistema.findUnique({
+      where: { chave: "amazon_fee_fba_promo_expira_em" },
+    }),
+  ]);
+
+  const ativa = (ativaCfg?.valor ?? "true").toLowerCase() === "true";
+  const expira = expiraCfg?.valor ? new Date(expiraCfg.valor) : null;
+
+  if (!ativa || !expira || !Number.isFinite(expira.getTime())) {
+    return { ok: true, skip: true, ativa, expira: expira?.toISOString() ?? null };
+  }
+
+  const now = new Date();
+  if (now <= expira) {
+    return {
+      ok: true,
+      expirou: false,
+      diasRestantes: Math.ceil((expira.getTime() - now.getTime()) / 86400_000),
+    };
+  }
+
+  await db.configuracaoSistema.upsert({
+    where: { chave: "amazon_fee_fba_promo_ativa" },
+    create: { chave: "amazon_fee_fba_promo_ativa", valor: "false" },
+    update: { valor: "false" },
+  });
+  invalidateFeeEstimatorConfigCache();
+
+  await emitirNotificacao({
+    tipo: TipoNotificacao.CONFIG_REVIEW,
+    titulo: "Promo FBA expirou",
+    descricao: `A promo FBA (R$5/R$0) venceu em ${expira.toISOString().slice(0, 10)}. O estimador agora usa fallback pos-promo. Atualize os valores em Configuracoes se houver nova promo Amazon.`,
+    linkRef: "/configuracoes",
+    dedupeKey: `fba_promo_expirou:${expira.toISOString().slice(0, 10)}`,
+  });
+
+  return { ok: true, expirou: true, expiraEm: expira.toISOString() };
 }

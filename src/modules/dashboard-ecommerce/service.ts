@@ -37,6 +37,8 @@ type VendaDashboard = {
   liquidoMarketplaceCentavos: number | null;
   custoUnitarioCentavos: number | null;
   dataVenda: Date;
+  statusFinanceiro?: string;
+  taxasEstimadas?: boolean;
 };
 
 export type ResultadoImportacaoVendaAmazon = {
@@ -200,12 +202,13 @@ export const dashboardEcommerceService = {
   },
 
   async obterKpis(periodo: IntervaloPeriodo) {
-    const [vendas, vendasReembolsadas, ads, traffic] = await Promise.all([
+    const [vendasRaw, vendasReembolsadas, ads, traffic] = await Promise.all([
       buscarVendas(periodo),
       buscarVendasReembolsadasGestorSeller(periodo),
       fetchAdsGasto(periodo),
       buscarTraffic(periodo),
     ]);
+    const vendas = await enriquecerComEstimativas(vendasRaw);
     const agregado = agregarVendas(vendas);
     const agregadoReembolsados = agregarVendas(vendasReembolsadas);
     const lucroBrutoCentavos = calcularLucroBruto(agregado);
@@ -251,14 +254,16 @@ export const dashboardEcommerceService = {
         ? agregado.custoTotalCentavos
         : null,
       vendasSemCusto: agregado.vendasSemCusto,
+      vendasComTaxaEstimada: vendas.filter((v) => v.taxasEstimadas).length,
     };
   },
 
   async obterTimeline(periodo: IntervaloPeriodo) {
-    const [vendas, ads] = await Promise.all([
+    const [vendasRaw, ads] = await Promise.all([
       buscarVendas(periodo),
       fetchAdsGasto(periodo),
     ]);
+    const vendas = await enriquecerComEstimativas(vendasRaw);
     const agregado = agregarVendas(vendas);
     const porDia = new Map<string, VendaDashboard[]>();
 
@@ -302,10 +307,11 @@ export const dashboardEcommerceService = {
   },
 
   async obterTopProdutos(periodo: IntervaloPeriodo, limit = 15) {
-    const [vendas, adsPorProdutoInfo] = await Promise.all([
+    const [vendasRaw, adsPorProdutoInfo] = await Promise.all([
       buscarVendas(periodo),
       getAdsGastoPorProduto(periodo),
     ]);
+    const vendas = await enriquecerComEstimativas(vendasRaw);
     const totalFaturamento = vendas.reduce(
       (acc, venda) => acc + faturamentoDaVenda(venda),
       0,
@@ -465,6 +471,7 @@ async function buscarVendasBaseGestorSeller(
       liquidoMarketplaceCentavos: true,
       custoUnitarioCentavos: true,
       dataVenda: true,
+      statusFinanceiro: true,
     },
   });
 }
@@ -577,6 +584,53 @@ async function buscarTraffic(periodo: IntervaloPeriodo) {
         ? null
         : Math.round(agregado._avg.buyBoxPercent * 10) / 10,
   };
+}
+
+// Plug do fee-estimator: para vendas PENDENTE sem taxa real (Amazon nao
+// settled ainda), aplica a estimativa Comissao+FBA. Quando settle, taxa real
+// vem do FINANCES_SYNC e sobrescreve no banco — nao mexemos no banco aqui.
+// Parcelamento NAO e estimado — vem do real quando aplicavel.
+async function enriquecerComEstimativas(
+  vendas: VendaDashboard[],
+): Promise<VendaDashboard[]> {
+  const candidatas = vendas.filter(
+    (v) => v.taxasCentavos <= 0 && v.statusFinanceiro === "PENDENTE",
+  );
+  if (candidatas.length === 0) return vendas;
+
+  const skusSet = new Set(candidatas.map((v) => v.sku));
+  const produtos = await db.produto.findMany({
+    where: { sku: { in: [...skusSet] } },
+    select: { id: true, sku: true },
+  });
+  const produtoIdPorSku = new Map(produtos.map((p) => [p.sku, p.id]));
+
+  const { loadFeeEstimatorConfig, estimarFeesVenda } = await import(
+    "@/modules/produtos/fee-estimator"
+  );
+  const cfg = await loadFeeEstimatorConfig();
+
+  return Promise.all(
+    vendas.map(async (v) => {
+      if (v.taxasCentavos > 0 || v.statusFinanceiro !== "PENDENTE") return v;
+      const produtoId = produtoIdPorSku.get(v.sku);
+      if (!produtoId) return v;
+      const bruto = v.valorBrutoCentavos ?? v.precoUnitarioCentavos * v.quantidade;
+      const est = await estimarFeesVenda({
+        produtoId,
+        valorBrutoCentavos: bruto,
+        quantidade: v.quantidade,
+        taxasReaisCentavos: 0,
+        cfg,
+      });
+      return {
+        ...v,
+        taxasCentavos: est.taxasCentavos,
+        liquidoMarketplaceCentavos: bruto - est.taxasCentavos - v.fretesCentavos,
+        taxasEstimadas: true,
+      };
+    }),
+  );
 }
 
 function agregarVendas(vendas: VendaDashboard[]) {

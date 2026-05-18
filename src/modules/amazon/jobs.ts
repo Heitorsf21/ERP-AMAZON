@@ -26,11 +26,31 @@ const SQS_PRIMARY =
 // ORDERS aceita 1/60s — 2min usa ~2.5% da quota.
 // INVENTORY aceita 2 rps — 5min é folgado para FBA.
 // FINANCES aceita 0.5 rps — 30min preserva quota e é frequente.
+const FINANCES_BACKFILL_CURSOR_KEY_INTERNAL = "amazon_finances_backfill_cursor";
+const FINANCES_BACKFILL_END_OFFSET_DAYS_INTERNAL = 2;
+
+// Gate: skip enfileirar FINANCES_BACKFILL quando cursor já alcançou now-2d.
+// Defesa em profundidade: handler interno (`runFinancesBackfill`) também tem
+// auto-no-op. Se cursor regredir (reset manual via script), job volta sozinho.
+async function isFinancesBackfillComplete(): Promise<boolean> {
+  const cfg = await db.configuracaoSistema.findUnique({
+    where: { chave: FINANCES_BACKFILL_CURSOR_KEY_INTERNAL },
+  });
+  if (!cfg?.valor) return false;
+  const cursor = new Date(cfg.valor);
+  if (!Number.isFinite(cursor.getTime())) return false;
+  const endLimit = new Date(
+    Date.now() - FINANCES_BACKFILL_END_OFFSET_DAYS_INTERNAL * 86400_000,
+  );
+  return cursor >= endLimit;
+}
+
 const SCHEDULES: Array<{
   tipo: TipoAmazonSyncJobType;
   intervalMs: number;
   priority: number;
   payload?: Record<string, unknown>;
+  gate?: () => Promise<boolean>;
 }> = [
   {
     tipo: TipoAmazonSyncJob.ORDERS_SYNC,
@@ -91,11 +111,13 @@ const SCHEDULES: Array<{
   // ── Sprint 2: backfill que sustenta a DRE ──
   // Cada execução processa 1 janela e avança cursor; auto-desliga ao
   // alcançar `now - 2 dias`. Prioridade baixa (5) para não competir com
-  // jobs operacionais.
+  // jobs operacionais. Gate evita enfileirar jobs vazios quando cursor já
+  // está em now-2d (auto-no-op de fila, não só do handler).
   {
     tipo: TipoAmazonSyncJob.FINANCES_BACKFILL,
     intervalMs: 30 * 60_000,
     priority: 5,
+    gate: isFinancesBackfillComplete,
   },
   {
     tipo: TipoAmazonSyncJob.SETTLEMENT_BACKFILL,
@@ -158,6 +180,19 @@ const SCHEDULES: Array<{
     tipo: TipoAmazonSyncJob.LISTING_PRICE_SYNC,
     intervalMs: 30 * 60_000,
     priority: 8,
+  },
+  // Estimator de taxas (comissão+FBA) via SP-API getMyFeesEstimateForSKU.
+  // Cobre até 50 SKUs por execução; refresh a cada ~20h.
+  {
+    tipo: TipoAmazonSyncJob.AMAZON_FEE_ESTIMATE_SYNC,
+    intervalMs: 6 * 60 * 60_000,
+    priority: 7,
+  },
+  // Verifica diariamente se a promo FBA (R$5/R$0) expirou — dispara Notificacao.
+  {
+    tipo: TipoAmazonSyncJob.AMAZON_FBA_PROMO_EXPIRY_CHECK,
+    intervalMs: 24 * 60 * 60_000,
+    priority: 5,
   },
 ];
 
@@ -323,6 +358,11 @@ export async function ensureRecurringAmazonJobs(now = new Date()) {
         schedule.tipo === TipoAmazonSyncJob.REVIEWS_SEND)
     ) {
       continue;
+    }
+
+    if (schedule.gate) {
+      const skip = await schedule.gate().catch(() => false);
+      if (skip) continue;
     }
 
     const slot = Math.floor(now.getTime() / schedule.intervalMs);

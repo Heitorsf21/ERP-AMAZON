@@ -72,6 +72,10 @@ const LABELS: Record<keyof typeof TipoNotificacao, { titulo: string; descricao: 
     titulo: "Worker reiniciado",
     descricao: "Worker de jobs precisou ser reiniciado.",
   },
+  CONFIG_REVIEW: {
+    titulo: "Revisar configuracao",
+    descricao: "Configuracao do sistema mudou e merece revisao (ex: promo FBA expirou).",
+  },
 };
 
 export function NotificacoesSection() {

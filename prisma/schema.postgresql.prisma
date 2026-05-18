@@ -288,12 +288,27 @@ model Produto {
   variacoesPai       ProdutoVariacao[]            @relation("ProdutoVariacaoPai")
   variacaoComoFilho  ProdutoVariacao?             @relation("ProdutoVariacaoFilho")
   custoHistorico     ProdutoCustoHistorico[]
+  feeEstimate        AmazonFeeEstimate?
 
   @@index([sku])
   @@index([asin])
   @@index([ativo])
   @@index([amazonUltimaSyncEm])
   @@index([estoqueAtual])
+}
+
+// Estimativa de taxas Amazon (comissão + FBA). Ver doc em schema.prisma.
+model AmazonFeeEstimate {
+  produtoId              String   @id
+  comissaoBps            Int
+  fbaCentavos            Int
+  ticketAvaliadoCentavos Int
+  origem                 String
+  atualizadoEm           DateTime @updatedAt
+
+  produto Produto @relation(fields: [produtoId], references: [id], onDelete: Cascade)
+
+  @@index([atualizadoEm])
 }
 
 // Vigências de custo unitário ao longo do tempo. Ver doc em schema.prisma.

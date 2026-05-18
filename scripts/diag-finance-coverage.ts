@@ -53,7 +53,7 @@ async function main() {
       AND v."taxasCentavos" <= 0
     LIMIT 1;
   `);
-  if (oneOrder.length > 0) {
+  if (oneOrder.length > 0 && oneOrder[0]) {
     const orderId = oneOrder[0].amazonOrderId;
     console.log(`Pedido: ${orderId}`);
     const fts = await db.amazonFinanceTransaction.findMany({

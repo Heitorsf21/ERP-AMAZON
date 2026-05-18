@@ -20,6 +20,8 @@ import {
   isAmazonConfigured,
 } from "@/modules/amazon/service";
 import {
+  runAmazonFbaPromoExpiryCheck,
+  runAmazonFeeEstimateSync,
   runBuyboxCheck,
   runCatalogRefresh,
   runFbaReimbursementsSync,
@@ -298,6 +300,10 @@ async function processJob(
     }
     case TipoAmazonSyncJob.LISTING_PRICE_SYNC:
       return runListingPriceSync(sp!);
+    case TipoAmazonSyncJob.AMAZON_FEE_ESTIMATE_SYNC:
+      return runAmazonFeeEstimateSync(sp!);
+    case TipoAmazonSyncJob.AMAZON_FBA_PROMO_EXPIRY_CHECK:
+      return runAmazonFbaPromoExpiryCheck();
     default:
       throw new Error(`Tipo de job Amazon desconhecido: ${tipo}`);
   }

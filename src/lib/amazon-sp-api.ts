@@ -632,6 +632,73 @@ export async function getProductOffers(
   }
 }
 
+// Product Fees v0 — getMyFeesEstimateForSKU.
+// Aceita roles "Inventory and Order Tracking" e "Finance and Accounting".
+// Retorna estimativa de Commission + FBA fees para um SKU a um preço informado.
+export type SPProductFeesEstimate = {
+  totalFeesEstimate?: { currencyCode?: string; amount?: number };
+  feeDetailList?: Array<{
+    feeType?: string;
+    finalFee?: { currencyCode?: string; amount?: number };
+    feeAmount?: { currencyCode?: string; amount?: number };
+    feePromotion?: { currencyCode?: string; amount?: number };
+    includedFeeDetailList?: Array<{
+      feeType?: string;
+      finalFee?: { currencyCode?: string; amount?: number };
+    }>;
+  }>;
+};
+
+export async function getMyFeesEstimateForSKU(
+  creds: SPAPICredentials,
+  sellerId: string,
+  sku: string,
+  precoCentavos: number,
+): Promise<SPProductFeesEstimate | null> {
+  type FeesResponse = {
+    payload?: {
+      FeesEstimateResult?: {
+        Status?: string;
+        FeesEstimate?: SPProductFeesEstimate;
+        Error?: { Code?: string; Message?: string };
+      };
+    };
+    errors?: Array<{ code: string; message: string }>;
+  };
+  try {
+    const result = await spApiRequest<FeesResponse>(
+      creds,
+      `/products/fees/v0/listings/${encodeURIComponent(sku)}/feesEstimate`,
+      {
+        method: "POST",
+        operation: AmazonSpApiOperation.PRODUCT_FEES_ESTIMATE,
+        body: {
+          FeesEstimateRequest: {
+            MarketplaceId: creds.marketplaceId,
+            IdType: "SellerSKU",
+            IdValue: sku,
+            PriceToEstimateFees: {
+              ListingPrice: {
+                CurrencyCode: "BRL",
+                Amount: precoCentavos / 100,
+              },
+            },
+            Identifier: `${sellerId}-${sku}-${Date.now()}`,
+            IsAmazonFulfilled: true,
+          },
+        },
+      },
+    );
+    const feeResult = result.payload?.FeesEstimateResult;
+    if (!feeResult || feeResult.Status !== "Success") return null;
+    return feeResult.FeesEstimate ?? null;
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.warn(`[getMyFeesEstimateForSKU] SKU ${sku} falhou: ${msg.slice(0, 200)}`);
+    return null;
+  }
+}
+
 export async function getListingsItem(
   creds: SPAPICredentials,
   sellerId: string,

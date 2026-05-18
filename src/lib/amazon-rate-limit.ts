@@ -13,6 +13,7 @@ export const AmazonSpApiOperation = {
   SOLICITATIONS_CREATE_REVIEW: "SOLICITATIONS_CREATE_REVIEW",
   CATALOG_GET_ITEM: "CATALOG_GET_ITEM",
   PRODUCT_PRICING_GET_OFFERS: "PRODUCT_PRICING_GET_OFFERS",
+  PRODUCT_FEES_ESTIMATE: "PRODUCT_FEES_ESTIMATE",
   SELLERS_GET: "SELLERS_GET",
   LISTINGS_GET_ITEM: "LISTINGS_GET_ITEM",
   ADS_REPORTS_CREATE: "ADS_REPORTS_CREATE",
@@ -91,6 +92,12 @@ const OPERATION_LIMITS: Record<AmazonSpApiOperation, OperationLimit> = {
   [AmazonSpApiOperation.PRODUCT_PRICING_GET_OFFERS]: {
     rateLimitPerSecond: 0.5,
     burst: 1,
+  },
+  // Product Fees v0 getMyFeesEstimateForSKU: 1 rps, burst 2.
+  // Aceita roles "Inventory and Order Tracking" / "Finance and Accounting".
+  [AmazonSpApiOperation.PRODUCT_FEES_ESTIMATE]: {
+    rateLimitPerSecond: 1,
+    burst: 2,
   },
   // Sellers v1 getMarketplaceParticipations: 0.016 rps, burst 15.
   [AmazonSpApiOperation.SELLERS_GET]: {
