@@ -271,6 +271,8 @@ model Produto {
   // Usado como fallback em pedidos Pending que ainda nao tem ItemPrice na SP-API.
   amazonPrecoListagemCentavos Int?
   amazonPrecoListagemSyncEm   DateTime?
+  // Slug da categoria Amazon para o fee-estimator. Ver schema.prisma.
+  amazonCategoriaFee          String?
   createdAt                   DateTime  @default(now())
   updatedAt                   DateTime  @updatedAt
 
@@ -304,6 +306,7 @@ model AmazonFeeEstimate {
   fbaCentavos            Int
   ticketAvaliadoCentavos Int
   origem                 String
+  ruleVersion            String?
   atualizadoEm           DateTime @updatedAt
 
   produto Produto @relation(fields: [produtoId], references: [id], onDelete: Cascade)

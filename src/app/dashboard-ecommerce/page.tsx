@@ -121,6 +121,7 @@ type Kpis = {
   trafficBuyBoxPercent: number | null;
   vendasSemCusto: number;
   vendasComTaxaEstimada?: number;
+  origemTaxas?: "real" | "estimado" | "misto" | "nenhuma";
   delta: KpisDelta;
 };
 

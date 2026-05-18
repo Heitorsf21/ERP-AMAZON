@@ -1,5 +1,5 @@
 /**
- * Estimador de taxas Amazon (Comissão + FBA).
+ * Estimador de taxas Amazon (Comissão + FBA + Closing fee mídia).
  *
  * Quando usar:
  *   - VendaAmazon com statusFinanceiro = "PENDENTE" e taxasCentavos = 0
@@ -12,13 +12,22 @@
  * Parcelamento (1.5%) NÃO é estimado — só vem do real (API).
  *
  * Fontes:
- *   - Comissão default global: ConfiguracaoSistema.amazon_fee_referral_default_bps (12.00%)
- *   - Comissão por SKU (opcional): AmazonFeeEstimate.comissaoBps (preenchido por job
- *     AMAZON_FEE_ESTIMATE_SYNC via SP-API getMyFeesEstimateForSKU)
- *   - FBA com promo ativa: R$5 (≤R$99.99) ou R$0 (≥R$100). Janela: até 31/07/2026.
- *   - FBA pós-promo: ConfiguracaoSistema.amazon_fee_fba_fallback_pos_promo_centavos
+ *   - Tabela de comissão por categoria (37 entradas, BR 2026) replicada da
+ *     extensão de análise Amazon — fonte: sell.amazon.com.br/precos.
+ *   - Comissão default global (categoria desconhecida): 12% empirico
+ *     (calibrado pelas planilhas Gestor Seller Out/2025-Abr/2026 do user).
+ *   - FBA promo: R$5 (≤R$99.99) / R$0 (≥R$100). Janela: até 31/07/2026.
+ *   - FBA pós-promo: ConfiguracaoSistema.amazon_fee_fba_fallback_pos_promo_centavos.
+ *   - Closing fee mídia (Livros/DVD/Música/Games): R$1.99.
+ *
+ * Caches em camadas:
+ *   1. Memory Map (chave produtoId:bruto:qtd, TTL 5min) — O(1).
+ *   2. Postgres AmazonFeeEstimate (populado por AMAZON_FEE_ESTIMATE_SYNC) — ~10ms.
+ *   3. Fallback local puro (CPU only).
  */
 import { db } from "@/lib/db";
+
+export const RULE_VERSION_LOCAL = "local-v2-2026-05";
 
 export type FeeEstimateConfig = {
   referralDefaultBps: number;
@@ -32,10 +41,13 @@ export type FeeEstimateConfig = {
 export type FeeEstimateResult = {
   taxasCentavos: number;
   origem: "real" | "api" | "local";
+  ruleVersion: string;
   breakdown: {
     comissaoCentavos: number;
     fbaCentavos: number;
+    closingFeeCentavos: number;
   };
+  categoriaLabel?: string;
 };
 
 const CFG_KEYS = {
@@ -47,9 +59,6 @@ const CFG_KEYS = {
   FBA_FALLBACK_POS_PROMO: "amazon_fee_fba_fallback_pos_promo_centavos",
 } as const;
 
-// Defaults usados quando ConfiguracaoSistema não tem a chave (ex: primeiro deploy
-// antes do seed). Refletem a realidade Brasil 2026: comissão ~12%, promo FBA
-// (≤R$99.99=R$5, ≥R$100=R$0) válida até 31/07/2026.
 const DEFAULTS: FeeEstimateConfig = {
   referralDefaultBps: 1200,
   fbaPromoAtiva: true,
@@ -60,7 +69,90 @@ const DEFAULTS: FeeEstimateConfig = {
 };
 
 const PROMO_LIMITE_CENTAVOS = 9999;
+const MEDIA_CLOSING_FEE_CENTAVOS = 199;
 
+// ─── Tabela de comissão por categoria (BR 2026, 37 entradas) ───
+// Fonte: extensão de análise Amazon (packages/core/src/amazon-fees.ts).
+// `rateBps` = basis points (1200 = 12.00%). `minCentavos` = piso da comissão.
+// `tier?` = comissão tiered (ex: Móveis = 15% até R$200, 10% acima).
+type CommissionRule = {
+  label: string;
+  slug: string;
+  rateBps: number;
+  minCentavos: number;
+  tier?: {
+    thresholdCentavos: number;
+    baseRateBps: number;
+    excessRateBps: number;
+  };
+  isMedia?: boolean;
+};
+
+const COMMISSION_TABLE: CommissionRule[] = [
+  { label: "Comidas e bebidas", slug: "comidas-bebidas", rateBps: 1000, minCentavos: 100 },
+  { label: "Eletrodomesticos linha branca", slug: "eletro-linha-branca", rateBps: 1100, minCentavos: 100 },
+  { label: "Saude e cuidados pessoais", slug: "saude-cuidados-pessoais", rateBps: 1200, minCentavos: 100 },
+  { label: "Bebidas alcoolicas", slug: "bebidas-alcoolicas", rateBps: 1100, minCentavos: 100 },
+  { label: "Pneus e rodas", slug: "pneus-rodas", rateBps: 1000, minCentavos: 100 },
+  { label: "Industria e Ciencia", slug: "industria-ciencia", rateBps: 1200, minCentavos: 100 },
+  { label: "Produtos para bebes", slug: "bebes", rateBps: 1200, minCentavos: 200 },
+  { label: "Pet Shop", slug: "pet-shop", rateBps: 1200, minCentavos: 200 },
+  { label: "Eletroportateis cuidado pessoal", slug: "eletroportateis", rateBps: 1200, minCentavos: 200 },
+  { label: "Cozinha", slug: "cozinha", rateBps: 1200, minCentavos: 200 },
+  { label: "Jardim e Piscina", slug: "jardim-piscina", rateBps: 1200, minCentavos: 200 },
+  { label: "Brinquedos e jogos", slug: "brinquedos-jogos", rateBps: 1200, minCentavos: 200 },
+  { label: "TV, audio e cinema", slug: "tv-audio-cinema", rateBps: 1000, minCentavos: 200 },
+  { label: "PC", slug: "pc", rateBps: 1200, minCentavos: 200 },
+  { label: "Celulares", slug: "celulares", rateBps: 1100, minCentavos: 200 },
+  { label: "Camera e fotografia", slug: "camera-fotografia", rateBps: 1100, minCentavos: 200 },
+  { label: "Videogames e consoles", slug: "videogames-consoles", rateBps: 1100, minCentavos: 200, isMedia: true },
+  { label: "Eletronicos portateis", slug: "eletronicos-portateis", rateBps: 1300, minCentavos: 200 },
+  { label: "Automotivos", slug: "automotivos", rateBps: 1200, minCentavos: 200 },
+  { label: "Casa", slug: "casa", rateBps: 1200, minCentavos: 200 },
+  { label: "Beleza de luxo", slug: "beleza-luxo", rateBps: 1400, minCentavos: 200 },
+  { label: "Beleza", slug: "beleza", rateBps: 1300, minCentavos: 200 },
+  { label: "Esportes, aventura e lazer", slug: "esportes-aventura-lazer", rateBps: 1200, minCentavos: 200 },
+  { label: "Ferramentas e Construcao", slug: "ferramentas-construcao", rateBps: 1100, minCentavos: 200 },
+  { label: "Papelaria e Escritorio", slug: "papelaria-escritorio", rateBps: 1300, minCentavos: 200 },
+  { label: "Bagagem", slug: "bagagem", rateBps: 1400, minCentavos: 200 },
+  { label: "Roupas e acessorios", slug: "roupas-acessorios", rateBps: 1400, minCentavos: 200 },
+  { label: "Calcados, bolsas e oculos", slug: "calcados-bolsas-oculos", rateBps: 1400, minCentavos: 200 },
+  { label: "Relogios", slug: "relogios", rateBps: 1300, minCentavos: 200 },
+  { label: "Joias", slug: "joias", rateBps: 1400, minCentavos: 200 },
+  { label: "Livros", slug: "livros", rateBps: 1500, minCentavos: 200, isMedia: true },
+  {
+    label: "Acessorios para eletronicos e PC",
+    slug: "acessorios-eletronicos-pc",
+    rateBps: 1500,
+    minCentavos: 200,
+    tier: { thresholdCentavos: 10000, baseRateBps: 1500, excessRateBps: 1000 },
+  },
+  {
+    label: "Moveis",
+    slug: "moveis",
+    rateBps: 1500,
+    minCentavos: 200,
+    tier: { thresholdCentavos: 20000, baseRateBps: 1500, excessRateBps: 1000 },
+  },
+  { label: "Video e DVD", slug: "video-dvd", rateBps: 1500, minCentavos: 200, isMedia: true },
+  { label: "Musica", slug: "musica", rateBps: 1500, minCentavos: 200, isMedia: true },
+  { label: "Instrumentos musicais", slug: "instrumentos-musicais", rateBps: 1200, minCentavos: 200 },
+];
+
+const COMMISSION_TABLE_BY_SLUG: Map<string, CommissionRule> = new Map(
+  COMMISSION_TABLE.map((rule) => [rule.slug, rule]),
+);
+
+export function listCommissionCategories(): Array<{ slug: string; label: string }> {
+  return COMMISSION_TABLE.map(({ slug, label }) => ({ slug, label }));
+}
+
+export function findCommissionRule(slug?: string | null): CommissionRule | undefined {
+  if (!slug) return undefined;
+  return COMMISSION_TABLE_BY_SLUG.get(slug);
+}
+
+// ─── Cache de config (TTL 60s) ───
 let cachedConfig: { value: FeeEstimateConfig; at: number } | null = null;
 const CONFIG_CACHE_TTL_MS = 60_000;
 
@@ -116,19 +208,62 @@ export async function loadFeeEstimatorConfig(
   return value;
 }
 
+// ─── Cálculo da comissão respeitando tier + minCentavos ───
+function calcularComissaoCentavos(
+  brutoCentavos: number,
+  rule: { rateBps: number; minCentavos: number; tier?: { thresholdCentavos: number; baseRateBps: number; excessRateBps: number } },
+): number {
+  const bruto = Math.max(0, Math.round(brutoCentavos));
+  let calc: number;
+  if (rule.tier && bruto > rule.tier.thresholdCentavos) {
+    const baseParte = Math.round((rule.tier.thresholdCentavos * rule.tier.baseRateBps) / 10000);
+    const excedenteParte = Math.round(
+      ((bruto - rule.tier.thresholdCentavos) * rule.tier.excessRateBps) / 10000,
+    );
+    calc = baseParte + excedenteParte;
+  } else if (rule.tier) {
+    calc = Math.round((bruto * rule.tier.baseRateBps) / 10000);
+  } else {
+    calc = Math.round((bruto * rule.rateBps) / 10000);
+  }
+  return Math.max(calc, rule.minCentavos);
+}
+
 /**
- * Cálculo puro local (sem I/O). Recebe a config já carregada e devolve os valores.
- * Usado direto pelo estimator quando não há cache API ou nos testes.
+ * Cálculo puro local (sem I/O). Aceita categoria opcional para usar tabela rica.
+ * Sem categoria → usa cfg.referralDefaultBps (default global 12%, calibrado).
  */
 export function calcularFeesLocal(
   valorBrutoCentavos: number,
   cfg: FeeEstimateConfig,
-  override?: { comissaoBps?: number },
+  override?: { comissaoBps?: number; categoriaSlug?: string | null },
   agora = new Date(),
-): { comissaoCentavos: number; fbaCentavos: number } {
+): { comissaoCentavos: number; fbaCentavos: number; closingFeeCentavos: number; categoriaLabel?: string } {
   const bruto = Math.max(0, Math.round(valorBrutoCentavos));
-  const comissaoBps = override?.comissaoBps ?? cfg.referralDefaultBps;
-  const comissaoCentavos = Math.round((bruto * comissaoBps) / 10000);
+
+  // Comissão
+  let comissaoCentavos: number;
+  let categoriaLabel: string | undefined;
+  let isMedia = false;
+
+  if (override?.categoriaSlug) {
+    const rule = COMMISSION_TABLE_BY_SLUG.get(override.categoriaSlug);
+    if (rule) {
+      comissaoCentavos = calcularComissaoCentavos(bruto, rule);
+      categoriaLabel = rule.label;
+      isMedia = rule.isMedia === true;
+    } else {
+      // Slug desconhecido — fallback ao default global
+      const rateBps = override.comissaoBps ?? cfg.referralDefaultBps;
+      comissaoCentavos = Math.round((bruto * rateBps) / 10000);
+    }
+  } else if (override?.comissaoBps != null) {
+    comissaoCentavos = Math.round((bruto * override.comissaoBps) / 10000);
+  } else {
+    comissaoCentavos = Math.round((bruto * cfg.referralDefaultBps) / 10000);
+  }
+
+  // FBA
   const promoVigente =
     cfg.fbaPromoAtiva &&
     (cfg.fbaPromoExpiraEm == null || agora <= cfg.fbaPromoExpiraEm);
@@ -141,19 +276,72 @@ export function calcularFeesLocal(
   } else {
     fbaCentavos = cfg.fbaFallbackPosPromoCentavos;
   }
-  return { comissaoCentavos, fbaCentavos };
+
+  // Closing fee mídia (Livros/DVD/Música/Games físicos)
+  const closingFeeCentavos = isMedia ? MEDIA_CLOSING_FEE_CENTAVOS : 0;
+
+  return { comissaoCentavos, fbaCentavos, closingFeeCentavos, categoriaLabel };
+}
+
+// ─── Memory cache (Map, TTL 5min) ───
+type MemoryCacheEntry = { value: FeeEstimateResult; at: number };
+const memoryCache = new Map<string, MemoryCacheEntry>();
+const MEMORY_CACHE_TTL_MS = 5 * 60_000;
+const MEMORY_CACHE_MAX_ENTRIES = 5000;
+
+function memoryCacheKey(produtoId: string, brutoCentavos: number, qtd: number, categoriaSlug?: string | null) {
+  return `${produtoId}:${brutoCentavos}:${qtd}:${categoriaSlug ?? ""}`;
+}
+
+export function invalidateFeeEstimateMemoryCache(produtoId?: string) {
+  if (!produtoId) {
+    memoryCache.clear();
+    return;
+  }
+  const prefix = `${produtoId}:`;
+  for (const key of memoryCache.keys()) {
+    if (key.startsWith(prefix)) memoryCache.delete(key);
+  }
+}
+
+function memoryCacheGet(key: string, now: number): FeeEstimateResult | null {
+  const entry = memoryCache.get(key);
+  if (!entry) return null;
+  if (now - entry.at >= MEMORY_CACHE_TTL_MS) {
+    memoryCache.delete(key);
+    return null;
+  }
+  return entry.value;
+}
+
+function memoryCacheSet(key: string, value: FeeEstimateResult, now: number) {
+  // LRU lite: se excedeu o limite, apaga 20% mais antigos.
+  if (memoryCache.size >= MEMORY_CACHE_MAX_ENTRIES) {
+    const toRemove = Math.floor(MEMORY_CACHE_MAX_ENTRIES * 0.2);
+    let i = 0;
+    for (const k of memoryCache.keys()) {
+      if (i++ >= toRemove) break;
+      memoryCache.delete(k);
+    }
+  }
+  memoryCache.set(key, { value, at: now });
 }
 
 /**
- * Estima as taxas para UMA venda (1 unidade) ou linha (qty>1, multiplica FBA).
+ * Estima as taxas para UMA linha de venda.
+ *
  * - Se taxasReaisCentavos > 0 → retorna esse valor com origem="real" (não recalcula).
- * - Senão tenta usar cache AmazonFeeEstimate (origem="api"); fallback local (origem="local").
+ * - Senão tenta memory cache (O(1)) → AmazonFeeEstimate (DB) → fallback local puro.
+ *
+ * `categoriaSlug` opcional: quando passado, usa regra da tabela rica (tier + closing fee).
+ * Caso contrário, usa default global 12%.
  */
 export async function estimarFeesVenda(input: {
   produtoId: string;
   valorBrutoCentavos: number;
   quantidade: number;
   taxasReaisCentavos: number;
+  categoriaSlug?: string | null;
   cfg?: FeeEstimateConfig;
   agora?: Date;
 }): Promise<FeeEstimateResult> {
@@ -161,9 +349,20 @@ export async function estimarFeesVenda(input: {
     return {
       taxasCentavos: input.taxasReaisCentavos,
       origem: "real",
-      breakdown: { comissaoCentavos: 0, fbaCentavos: 0 },
+      ruleVersion: "amazon-finance",
+      breakdown: { comissaoCentavos: 0, fbaCentavos: 0, closingFeeCentavos: 0 },
     };
   }
+
+  const now = (input.agora ?? new Date()).getTime();
+  const cacheKey = memoryCacheKey(
+    input.produtoId,
+    input.valorBrutoCentavos,
+    input.quantidade,
+    input.categoriaSlug,
+  );
+  const memHit = memoryCacheGet(cacheKey, now);
+  if (memHit) return memHit;
 
   const cfg = input.cfg ?? (await loadFeeEstimatorConfig());
   const agora = input.agora ?? new Date();
@@ -173,37 +372,59 @@ export async function estimarFeesVenda(input: {
     where: { produtoId: input.produtoId },
   });
 
+  let result: FeeEstimateResult;
+
   if (cache && cache.origem === "api") {
     const local = calcularFeesLocal(
       input.valorBrutoCentavos,
       cfg,
-      { comissaoBps: cache.comissaoBps },
+      { comissaoBps: cache.comissaoBps, categoriaSlug: input.categoriaSlug },
       agora,
     );
-    // FBA do cache reflete uma estimativa API real para o ticket avaliado; reusamos
-    // a comissão da API mas mantemos a regra de FBA local (promo é determinística).
-    return {
-      taxasCentavos: local.comissaoCentavos + local.fbaCentavos * quantidade,
+    const fbaTotal = local.fbaCentavos * quantidade;
+    const closingTotal = local.closingFeeCentavos * quantidade;
+    result = {
+      taxasCentavos: local.comissaoCentavos + fbaTotal + closingTotal,
       origem: "api",
+      ruleVersion: cache.ruleVersion ?? "spapi-cache",
       breakdown: {
         comissaoCentavos: local.comissaoCentavos,
-        fbaCentavos: local.fbaCentavos * quantidade,
+        fbaCentavos: fbaTotal,
+        closingFeeCentavos: closingTotal,
       },
+      categoriaLabel: local.categoriaLabel,
+    };
+  } else {
+    const local = calcularFeesLocal(
+      input.valorBrutoCentavos,
+      cfg,
+      { categoriaSlug: input.categoriaSlug },
+      agora,
+    );
+    const fbaTotal = local.fbaCentavos * quantidade;
+    const closingTotal = local.closingFeeCentavos * quantidade;
+    result = {
+      taxasCentavos: local.comissaoCentavos + fbaTotal + closingTotal,
+      origem: "local",
+      ruleVersion: RULE_VERSION_LOCAL,
+      breakdown: {
+        comissaoCentavos: local.comissaoCentavos,
+        fbaCentavos: fbaTotal,
+        closingFeeCentavos: closingTotal,
+      },
+      categoriaLabel: local.categoriaLabel,
     };
   }
 
-  const local = calcularFeesLocal(input.valorBrutoCentavos, cfg, undefined, agora);
-  return {
-    taxasCentavos: local.comissaoCentavos + local.fbaCentavos * quantidade,
-    origem: "local",
-    breakdown: {
-      comissaoCentavos: local.comissaoCentavos,
-      fbaCentavos: local.fbaCentavos * quantidade,
-    },
-  };
+  memoryCacheSet(cacheKey, result, now);
+  return result;
 }
 
 export const __test_utils__ = {
   DEFAULTS,
   PROMO_LIMITE_CENTAVOS,
+  MEDIA_CLOSING_FEE_CENTAVOS,
+  COMMISSION_TABLE,
+  memoryCache,
+  MEMORY_CACHE_TTL_MS,
 };

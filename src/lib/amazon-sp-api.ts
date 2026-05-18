@@ -655,6 +655,16 @@ export async function getMyFeesEstimateForSKU(
   sku: string,
   precoCentavos: number,
 ): Promise<SPProductFeesEstimate | null> {
+  // Fail-fast: se quota PRODUCT_FEES_ESTIMATE está em cooldown, nem tenta.
+  // O caller usa fallback (cache local ou estimativa pura) sem esperar.
+  // Inspecionamos o cooldown via helper read-only (sem reservar) para não
+  // duplicar o reserve que o spApiRequest fará abaixo.
+  const { getAmazonOperationCooldown } = await import("@/lib/amazon-rate-limit");
+  const cooldownAte = await getAmazonOperationCooldown(
+    AmazonSpApiOperation.PRODUCT_FEES_ESTIMATE,
+  );
+  if (cooldownAte) return null;
+
   type FeesResponse = {
     payload?: {
       FeesEstimateResult?: {

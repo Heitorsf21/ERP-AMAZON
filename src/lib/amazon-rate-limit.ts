@@ -208,6 +208,43 @@ export async function reserveAmazonOperationSlot(
   return { nextAllowedAt };
 }
 
+/**
+ * Variante fail-fast de reserveAmazonOperationSlot.
+ * Retorna `true` se conseguiu reservar (e atualiza cooldown como a versão normal).
+ * Retorna `false` imediatamente se a operação está em cooldown — NÃO lança, NÃO espera.
+ *
+ * Use para chamadas onde estimativa local é aceitável: estimator de fees,
+ * polls oportunistas. NÃO use para sincronização crítica de dados.
+ */
+export async function tryReserveAmazonOperationSlot(
+  operation: AmazonSpApiOperation,
+  now = new Date(),
+): Promise<boolean> {
+  try {
+    await reserveAmazonOperationSlot(operation, now);
+    return true;
+  } catch (err) {
+    if (isAmazonQuotaCooldownError(err)) return false;
+    throw err;
+  }
+}
+
+/**
+ * Inspeção read-only do cooldown atual de uma operação SP-API.
+ * Retorna o `nextAllowedAt` se em cooldown, ou null caso livre.
+ * Sem efeito colateral — não reserva slot, não escreve no DB.
+ */
+export async function getAmazonOperationCooldown(
+  operation: AmazonSpApiOperation,
+  now = new Date(),
+): Promise<Date | null> {
+  const current = await db.amazonApiQuota.findUnique({ where: { operation } });
+  if (current?.nextAllowedAt && current.nextAllowedAt > now) {
+    return current.nextAllowedAt;
+  }
+  return null;
+}
+
 export async function markAmazonOperationSuccess(
   operation: AmazonSpApiOperation,
   status: number,

@@ -1764,14 +1764,21 @@ export async function runAmazonFeeEstimateSync(creds: SPAPICredentials) {
         fbaCentavos,
         ticketAvaliadoCentavos: preco,
         origem: "api",
+        ruleVersion: "spapi-product-fees-v0",
       },
       update: {
         comissaoBps,
         fbaCentavos,
         ticketAvaliadoCentavos: preco,
         origem: "api",
+        ruleVersion: "spapi-product-fees-v0",
       },
     });
+    // Memory cache do fee-estimator pode ter resultado obsoleto deste SKU.
+    const { invalidateFeeEstimateMemoryCache } = await import(
+      "@/modules/produtos/fee-estimator"
+    );
+    invalidateFeeEstimateMemoryCache(p.id);
     okCount += 1;
   }
 

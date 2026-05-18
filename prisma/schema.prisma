@@ -272,6 +272,10 @@ model Produto {
   // Usado como fallback em pedidos Pending que ainda nao tem ItemPrice na SP-API.
   amazonPrecoListagemCentavos Int?
   amazonPrecoListagemSyncEm   DateTime?
+  // Slug da categoria Amazon para o fee-estimator (ex: "cozinha", "casa").
+  // Quando preenchido, usa tabela rica de comissao (tier + closing fee).
+  // Senao usa default global 12%. Lista de slugs em listCommissionCategories().
+  amazonCategoriaFee          String?
   createdAt                   DateTime  @default(now())
   updatedAt                   DateTime  @updatedAt
 
@@ -309,6 +313,7 @@ model AmazonFeeEstimate {
   fbaCentavos            Int
   ticketAvaliadoCentavos Int
   origem                 String
+  ruleVersion            String?
   atualizadoEm           DateTime @updatedAt
 
   produto Produto @relation(fields: [produtoId], references: [id], onDelete: Cascade)

@@ -255,6 +255,7 @@ export const dashboardEcommerceService = {
         : null,
       vendasSemCusto: agregado.vendasSemCusto,
       vendasComTaxaEstimada: vendas.filter((v) => v.taxasEstimadas).length,
+      origemTaxas: deriveOrigemTaxas(vendas),
     };
   },
 
@@ -586,6 +587,19 @@ async function buscarTraffic(periodo: IntervaloPeriodo) {
   };
 }
 
+function deriveOrigemTaxas(vendas: VendaDashboard[]): "real" | "estimado" | "misto" | "nenhuma" {
+  if (vendas.length === 0) return "nenhuma";
+  let real = 0;
+  let estimado = 0;
+  for (const v of vendas) {
+    if (v.taxasEstimadas) estimado += 1;
+    else if (v.taxasCentavos > 0) real += 1;
+  }
+  if (estimado === 0) return "real";
+  if (real === 0) return "estimado";
+  return "misto";
+}
+
 // Plug do fee-estimator: para vendas PENDENTE sem taxa real (Amazon nao
 // settled ainda), aplica a estimativa Comissao+FBA. Quando settle, taxa real
 // vem do FINANCES_SYNC e sobrescreve no banco — nao mexemos no banco aqui.
@@ -601,9 +615,11 @@ async function enriquecerComEstimativas(
   const skusSet = new Set(candidatas.map((v) => v.sku));
   const produtos = await db.produto.findMany({
     where: { sku: { in: [...skusSet] } },
-    select: { id: true, sku: true },
+    select: { id: true, sku: true, amazonCategoriaFee: true },
   });
-  const produtoIdPorSku = new Map(produtos.map((p) => [p.sku, p.id]));
+  const produtoBySku = new Map(
+    produtos.map((p) => [p.sku, { id: p.id, categoriaSlug: p.amazonCategoriaFee }]),
+  );
 
   const { loadFeeEstimatorConfig, estimarFeesVenda } = await import(
     "@/modules/produtos/fee-estimator"
@@ -613,14 +629,15 @@ async function enriquecerComEstimativas(
   return Promise.all(
     vendas.map(async (v) => {
       if (v.taxasCentavos > 0 || v.statusFinanceiro !== "PENDENTE") return v;
-      const produtoId = produtoIdPorSku.get(v.sku);
-      if (!produtoId) return v;
+      const produto = produtoBySku.get(v.sku);
+      if (!produto) return v;
       const bruto = v.valorBrutoCentavos ?? v.precoUnitarioCentavos * v.quantidade;
       const est = await estimarFeesVenda({
-        produtoId,
+        produtoId: produto.id,
         valorBrutoCentavos: bruto,
         quantidade: v.quantidade,
         taxasReaisCentavos: 0,
+        categoriaSlug: produto.categoriaSlug,
         cfg,
       });
       return {

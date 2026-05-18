@@ -26,6 +26,25 @@ const SQS_PRIMARY =
 // ORDERS aceita 1/60s — 2min usa ~2.5% da quota.
 // INVENTORY aceita 2 rps — 5min é folgado para FBA.
 // FINANCES aceita 0.5 rps — 30min preserva quota e é frequente.
+// Gate de AMAZON_FEE_ESTIMATE_SYNC: pula execução quando PRODUCT_FEES_ESTIMATE
+// está em cooldown profundo (>5min). Evita enfileirar jobs vazios quando a
+// quota Amazon está saturada. Recupera natural quando o cooldown limpa.
+async function isProductFeesQuotaSaturated(): Promise<boolean> {
+  try {
+    const { getAmazonOperationCooldown, AmazonSpApiOperation } = await import(
+      "@/lib/amazon-rate-limit"
+    );
+    const cooldownAte = await getAmazonOperationCooldown(
+      AmazonSpApiOperation.PRODUCT_FEES_ESTIMATE,
+    );
+    if (!cooldownAte) return false;
+    const ms = cooldownAte.getTime() - Date.now();
+    return ms > 5 * 60_000;
+  } catch {
+    return false;
+  }
+}
+
 const FINANCES_BACKFILL_CURSOR_KEY_INTERNAL = "amazon_finances_backfill_cursor";
 // Janela coberta pelo FINANCES_SYNC (14d). Quando o cursor do backfill cruza
 // essa fronteira, o sync recorrente cobre tudo a partir dali — backfill vira
@@ -187,10 +206,12 @@ const SCHEDULES: Array<{
   // Estimator de taxas (comissão+FBA) via SP-API getMyFeesEstimateForSKU.
   // Amazon enforces quota agressiva — batch=5 SKUs/exec × 1h = 120 SKUs/dia.
   // Refresh por SKU acontece a cada ~20h (filtro limiteRecente no handler).
+  // Gate: pula execução se quota PRODUCT_FEES_ESTIMATE em cooldown >5min.
   {
     tipo: TipoAmazonSyncJob.AMAZON_FEE_ESTIMATE_SYNC,
     intervalMs: 60 * 60_000,
     priority: 7,
+    gate: isProductFeesQuotaSaturated,
   },
   // Verifica diariamente se a promo FBA (R$5/R$0) expirou — dispara Notificacao.
   {
