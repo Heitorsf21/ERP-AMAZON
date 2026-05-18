@@ -1686,7 +1686,16 @@ function readNumber(v: unknown): number | null {
 const FEE_ESTIMATE_MAX_PER_RUN = 50;
 
 export async function runAmazonFeeEstimateSync(creds: SPAPICredentials) {
-  const sellerId = await getSellerId(creds);
+  // Usa cache em ConfiguracaoSistema.amazon_seller_id (povoado por
+  // scripts/sync-seller-id.ts). Evita estourar rate limit SELLERS_GET
+  // (0.016 rps = 1 req/60s) quando este job concorre com outros.
+  const sellerIdCfg = await db.configuracaoSistema.findUnique({
+    where: { chave: "amazon_seller_id" },
+  });
+  let sellerId = sellerIdCfg?.valor ?? null;
+  if (!sellerId) {
+    sellerId = await getSellerId(creds);
+  }
   if (!sellerId) {
     return { ok: false, mensagem: "sellerId nao disponivel — pulando." };
   }
