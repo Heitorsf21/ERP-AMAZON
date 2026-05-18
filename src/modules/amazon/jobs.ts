@@ -27,11 +27,14 @@ const SQS_PRIMARY =
 // INVENTORY aceita 2 rps — 5min é folgado para FBA.
 // FINANCES aceita 0.5 rps — 30min preserva quota e é frequente.
 const FINANCES_BACKFILL_CURSOR_KEY_INTERNAL = "amazon_finances_backfill_cursor";
-const FINANCES_BACKFILL_END_OFFSET_DAYS_INTERNAL = 2;
+// Janela coberta pelo FINANCES_SYNC (14d). Quando o cursor do backfill cruza
+// essa fronteira, o sync recorrente cobre tudo a partir dali — backfill vira
+// redundante. Usamos 13d (margem de 1d) para evitar oscilação no limite.
+const FINANCES_SYNC_COVERAGE_DAYS = 13;
 
-// Gate: skip enfileirar FINANCES_BACKFILL quando cursor já alcançou now-2d.
-// Defesa em profundidade: handler interno (`runFinancesBackfill`) também tem
-// auto-no-op. Se cursor regredir (reset manual via script), job volta sozinho.
+// Gate: bloqueia enfileiramento de FINANCES_BACKFILL quando cursor já entrou
+// na janela do FINANCES_SYNC. Defesa em profundidade — se cursor regredir
+// (reset manual via scripts/force-finances-backfill.ts), backfill volta sozinho.
 async function isFinancesBackfillComplete(): Promise<boolean> {
   const cfg = await db.configuracaoSistema.findUnique({
     where: { chave: FINANCES_BACKFILL_CURSOR_KEY_INTERNAL },
@@ -39,10 +42,10 @@ async function isFinancesBackfillComplete(): Promise<boolean> {
   if (!cfg?.valor) return false;
   const cursor = new Date(cfg.valor);
   if (!Number.isFinite(cursor.getTime())) return false;
-  const endLimit = new Date(
-    Date.now() - FINANCES_BACKFILL_END_OFFSET_DAYS_INTERNAL * 86400_000,
+  const syncCoverageStart = new Date(
+    Date.now() - FINANCES_SYNC_COVERAGE_DAYS * 86400_000,
   );
-  return cursor >= endLimit;
+  return cursor >= syncCoverageStart;
 }
 
 const SCHEDULES: Array<{
