@@ -868,7 +868,7 @@ export async function fetchOrdersByIdsFromList(
       operation: AmazonSpApiOperation.ORDERS_SEARCH,
       params: {
         MarketplaceIds: creds.marketplaceId,
-        AmazonOrderId: orderIds.slice(0, 50).join(","),
+        AmazonOrderIds: orderIds.slice(0, 50).join(","),
         MaxResultsPerPage: Math.min(orderIds.length, 100),
         LastUpdatedAfter: new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString(),
       },

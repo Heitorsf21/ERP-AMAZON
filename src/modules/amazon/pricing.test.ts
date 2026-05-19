@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   calcularValorBrutoOrderItemCentavos,
   extractAmazonListingEffectivePriceCentavos,
+  mergeAmazonOrderItemsWithSummary,
 } from "./pricing";
 
 const NOW = new Date("2026-05-19T12:00:00.000Z");
@@ -103,5 +104,54 @@ describe("calcularValorBrutoOrderItemCentavos", () => {
         PromotionDiscount: { Amount: "20.00" },
       }),
     ).toBe(0);
+  });
+});
+
+describe("mergeAmazonOrderItemsWithSummary", () => {
+  it("usa preco do resumo quando getOrderItems vem sem ItemPrice", () => {
+    const [item] = mergeAmazonOrderItemsWithSummary(
+      [
+        {
+          OrderItemId: "160235839128441",
+          SellerSKU: "MFS-0017",
+          ASIN: "B0FRJD231P",
+          QuantityOrdered: 1,
+        },
+      ],
+      [
+        {
+          OrderItemId: "160235839128441",
+          SellerSKU: "MFS-0017",
+          ASIN: "B0FRJD231P",
+          QuantityOrdered: 1,
+          ItemPrice: { Amount: "70.97", CurrencyCode: "BRL" },
+        },
+      ],
+    );
+
+    expect(calcularValorBrutoOrderItemCentavos(item!)).toBe(7097);
+  });
+
+  it("preserva ItemPrice real do detalhe quando ele ja existe", () => {
+    const [item] = mergeAmazonOrderItemsWithSummary(
+      [
+        {
+          OrderItemId: "1",
+          SellerSKU: "MFS-0017",
+          ItemPrice: { Amount: "89.99" },
+          PromotionDiscount: { Amount: "19.02" },
+        },
+      ],
+      [
+        {
+          OrderItemId: "1",
+          SellerSKU: "MFS-0017",
+          ItemPrice: { Amount: "70.97" },
+        },
+      ],
+    );
+
+    expect(calcularValorBrutoOrderItemCentavos(item!)).toBe(7097);
+    expect(item!.ItemPrice?.Amount).toBe("89.99");
   });
 });

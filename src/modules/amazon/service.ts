@@ -37,6 +37,7 @@ import {
 import {
   calcularValorBrutoOrderItemCentavos,
   extractAmazonListingEffectivePriceCentavos,
+  mergeAmazonOrderItemsWithSummary,
 } from "@/modules/amazon/pricing";
 import { inferAmazonCategoriaFee } from "@/modules/produtos/amazon-fee-category-mapper";
 import {
@@ -638,7 +639,10 @@ async function syncOrdersInternal(
       try {
         await new Promise((r) => setTimeout(r, 2500));
         const detalhes = await getOrderItems(creds, amazonOrderId);
-        const fallback = detalhes.length > 0 ? detalhes : orderItemsFromOrderSummary(order);
+        const fallback = mergeAmazonOrderItemsWithSummary(
+          detalhes,
+          orderItemsFromOrderSummary(order),
+        );
         itemsPorOrderId.set(amazonOrderId, fallback);
       } catch (err) {
         if (isAmazonRateLimitError(err)) {
