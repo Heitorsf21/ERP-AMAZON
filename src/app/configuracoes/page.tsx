@@ -13,6 +13,7 @@ import { AmazonAdsSection } from "@/components/configuracoes/amazon-ads-section"
 import { DriveSection } from "@/components/configuracoes/drive-section";
 import { NotificacoesSection } from "@/components/configuracoes/notificacoes-section";
 import { SistemaSection } from "@/components/configuracoes/sistema-section";
+import { ImpostoSimplesSection } from "@/components/configuracoes/imposto-simples-section";
 
 export default function ConfiguracoesPage() {
   return (
@@ -56,6 +57,8 @@ export default function ConfiguracoesPage() {
               <PreferenciasSection />
             </CardContent>
           </Card>
+
+          <ImpostoSimplesSection />
 
           <SistemaSection />
         </TabsContent>

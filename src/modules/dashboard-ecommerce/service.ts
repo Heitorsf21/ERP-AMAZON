@@ -21,9 +21,15 @@ import {
   whereVendaAmazonEspelhoGestorSeller,
 } from "@/modules/vendas/filtros";
 import {
+  calcularImpostoSimplesCentavos,
   calcularValoresLinhaVendaAmazon,
   valorBrutoDaVenda,
 } from "@/modules/vendas/valores";
+import { getConfigImpostoSimples } from "@/modules/configuracao/imposto-simples";
+import {
+  findCommissionRule,
+  formatCommissionRule,
+} from "@/modules/produtos/commission-table";
 
 type VendaDashboard = {
   amazonOrderId: string;
@@ -35,10 +41,16 @@ type VendaDashboard = {
   taxasCentavos: number;
   fretesCentavos: number;
   liquidoMarketplaceCentavos: number | null;
+  impostoSimplesCentavos: number;
   custoUnitarioCentavos: number | null;
   dataVenda: Date;
   statusFinanceiro?: string;
   taxasEstimadas?: boolean;
+  categoriaTaxaEstimada?: {
+    slug: string | null;
+    label: string;
+    regra: string;
+  };
 };
 
 export type ResultadoImportacaoVendaAmazon = {
@@ -57,6 +69,7 @@ export const dashboardEcommerceService = {
     const { transactions } = parseAmazonUnifiedTransactionCsv(conteudo);
     const vendas = converterParaVendasAmazon(transactions);
     const reembolsos = converterParaReembolsosAmazon(transactions);
+    const cfgImpostoSimples = await getConfigImpostoSimples();
     const skus = [
       ...new Set(
         [...vendas, ...reembolsos].map((item) => item.sku).filter(Boolean),
@@ -106,6 +119,16 @@ export const dashboardEcommerceService = {
         liquidoMarketplaceCentavos: venda.liquidoMarketplaceCentavos,
       });
 
+      const statusPedidoFinal = venda.statusPedido ?? "ORDERED";
+      const statusFinanceiroFinal = venda.statusFinanceiro ?? "IMPORTADO";
+      const impostoSimplesCentavos = calcularImpostoSimplesCentavos({
+        valorBrutoCentavos: valores.valorBrutoCentavos,
+        aliquotaBps: cfgImpostoSimples.aliquotaBps,
+        ativo: cfgImpostoSimples.ativo,
+        statusPedido: statusPedidoFinal,
+        statusFinanceiro: statusFinanceiroFinal,
+      });
+
       const data = {
         asin: venda.asin ?? produto?.asin ?? null,
         titulo: venda.titulo ?? null,
@@ -115,10 +138,11 @@ export const dashboardEcommerceService = {
         taxasCentavos: valores.taxasCentavos,
         fretesCentavos: valores.fretesCentavos,
         liquidoMarketplaceCentavos: valores.liquidoMarketplaceCentavos,
+        impostoSimplesCentavos,
         liquidacaoId: venda.liquidacaoId ?? null,
         fulfillmentChannel: venda.fulfillmentChannel ?? null,
-        statusPedido: venda.statusPedido ?? "ORDERED",
-        statusFinanceiro: venda.statusFinanceiro ?? "IMPORTADO",
+        statusPedido: statusPedidoFinal,
+        statusFinanceiro: statusFinanceiroFinal,
         marketplace: venda.marketplace,
         dataVenda: venda.dataVenda,
         ultimaSyncEm: new Date(),
@@ -193,6 +217,7 @@ export const dashboardEcommerceService = {
         data: {
           statusPedido: "REEMBOLSADO",
           statusFinanceiro: "REEMBOLSADO",
+          impostoSimplesCentavos: 0,
           ultimaSyncEm: new Date(),
         },
       });
@@ -202,12 +227,14 @@ export const dashboardEcommerceService = {
   },
 
   async obterKpis(periodo: IntervaloPeriodo) {
-    const [vendasRaw, vendasReembolsadas, ads, traffic] = await Promise.all([
-      buscarVendas(periodo),
-      buscarVendasReembolsadasGestorSeller(periodo),
-      fetchAdsGasto(periodo),
-      buscarTraffic(periodo),
-    ]);
+    const [vendasRaw, vendasReembolsadas, ads, traffic, cfgImpostoSimples] =
+      await Promise.all([
+        buscarVendas(periodo),
+        buscarVendasReembolsadasGestorSeller(periodo),
+        fetchAdsGasto(periodo),
+        buscarTraffic(periodo),
+        getConfigImpostoSimples(),
+      ]);
     const vendas = await enriquecerComEstimativas(vendasRaw);
     const agregado = agregarVendas(vendas);
     const agregadoReembolsados = agregarVendas(vendasReembolsadas);
@@ -227,6 +254,9 @@ export const dashboardEcommerceService = {
       faturamentoComReembolsadosCentavos:
         agregado.faturamentoCentavos + agregadoReembolsados.faturamentoCentavos,
       liquidoMarketplaceCentavos: agregado.liquidoMarketplaceCentavos,
+      impostoSimplesCentavos: agregado.impostoSimplesCentavos,
+      impostoSimplesAliquotaBps: cfgImpostoSimples.aliquotaBps,
+      impostoSimplesAtivo: cfgImpostoSimples.ativo,
       lucroBrutoCentavos,
       margemPercentual: percentual(lucroBrutoCentavos, agregado.faturamentoCentavos),
       numeroVendas: agregado.numeroVendas,
@@ -255,6 +285,7 @@ export const dashboardEcommerceService = {
         : null,
       vendasSemCusto: agregado.vendasSemCusto,
       vendasComTaxaEstimada: vendas.filter((v) => v.taxasEstimadas).length,
+      categoriasTaxaEstimada: resumirCategoriasTaxaEstimada(vendas),
       origemTaxas: deriveOrigemTaxas(vendas),
     };
   },
@@ -300,6 +331,7 @@ export const dashboardEcommerceService = {
         data: dia,
         faturamentoCentavos: item.faturamentoCentavos,
         liquidoMarketplaceCentavos: item.liquidoMarketplaceCentavos,
+        impostoSimplesCentavos: item.impostoSimplesCentavos,
         lucroBrutoCentavos,
         lucroPosAdsCentavos:
           lucroBrutoCentavos == null ? null : lucroBrutoCentavos - adsDoDia,
@@ -382,6 +414,7 @@ export const dashboardEcommerceService = {
             totalFaturamento,
           ),
           lucroCentavos: lucroBrutoCentavos,
+          impostoSimplesCentavos: agregado.impostoSimplesCentavos,
           margemPercentual: percentual(
             lucroBrutoCentavos,
             agregado.faturamentoCentavos,
@@ -470,6 +503,7 @@ async function buscarVendasBaseGestorSeller(
       taxasCentavos: true,
       fretesCentavos: true,
       liquidoMarketplaceCentavos: true,
+      impostoSimplesCentavos: true,
       custoUnitarioCentavos: true,
       dataVenda: true,
       statusFinanceiro: true,
@@ -519,6 +553,7 @@ async function buscarVendasReembolsadasGestorSeller(
       taxasCentavos: true,
       fretesCentavos: true,
       liquidoMarketplaceCentavos: true,
+      impostoSimplesCentavos: true,
       custoUnitarioCentavos: true,
       dataVenda: true,
     },
@@ -600,6 +635,53 @@ function deriveOrigemTaxas(vendas: VendaDashboard[]): "real" | "estimado" | "mis
   return "misto";
 }
 
+function formatBps(bps: number): string {
+  const value = bps / 100;
+  return Number.isInteger(value) ? `${value}%` : `${value.toFixed(2)}%`;
+}
+
+function buildCategoriaTaxaEstimada(
+  categoriaSlug: string | null | undefined,
+  defaultBps: number,
+): VendaDashboard["categoriaTaxaEstimada"] {
+  const rule = findCommissionRule(categoriaSlug);
+  if (rule) {
+    return {
+      slug: rule.slug,
+      label: rule.label,
+      regra: formatCommissionRule(rule),
+    };
+  }
+  return {
+    slug: null,
+    label: "Default global",
+    regra: formatBps(defaultBps),
+  };
+}
+
+function resumirCategoriasTaxaEstimada(vendas: VendaDashboard[]) {
+  const map = new Map<
+    string,
+    { slug: string | null; label: string; regra: string; vendas: number }
+  >();
+
+  for (const venda of vendas) {
+    const categoria = venda.categoriaTaxaEstimada;
+    if (!venda.taxasEstimadas || !categoria) continue;
+    const key = categoria.slug ?? "__default__";
+    const atual = map.get(key);
+    if (atual) {
+      atual.vendas += 1;
+    } else {
+      map.set(key, { ...categoria, vendas: 1 });
+    }
+  }
+
+  return [...map.values()].sort(
+    (a, b) => b.vendas - a.vendas || a.label.localeCompare(b.label),
+  );
+}
+
 // Plug do fee-estimator: para vendas PENDENTE sem taxa real (Amazon nao
 // settled ainda), aplica a estimativa Comissao+FBA. Quando settle, taxa real
 // vem do FINANCES_SYNC e sobrescreve no banco — nao mexemos no banco aqui.
@@ -645,6 +727,10 @@ async function enriquecerComEstimativas(
         taxasCentavos: est.taxasCentavos,
         liquidoMarketplaceCentavos: bruto - est.taxasCentavos - v.fretesCentavos,
         taxasEstimadas: true,
+        categoriaTaxaEstimada: buildCategoriaTaxaEstimada(
+          produto.categoriaSlug,
+          cfg.referralDefaultBps,
+        ),
       };
     }),
   );
@@ -656,6 +742,7 @@ function agregarVendas(vendas: VendaDashboard[]) {
   let taxasCentavos = 0;
   let fretesCentavos = 0;
   let liquidoMarketplaceCentavos = 0;
+  let impostoSimplesCentavos = 0;
   let custoTotalCentavos = 0;
   let vendasSemCusto = 0;
   let unidades = 0;
@@ -667,6 +754,7 @@ function agregarVendas(vendas: VendaDashboard[]) {
     liquidoMarketplaceCentavos +=
       venda.liquidoMarketplaceCentavos ??
       faturamentoDaVenda(venda) - venda.taxasCentavos - venda.fretesCentavos;
+    impostoSimplesCentavos += venda.impostoSimplesCentavos ?? 0;
     unidades += venda.quantidade;
 
     if (venda.custoUnitarioCentavos && venda.custoUnitarioCentavos > 0) {
@@ -681,6 +769,7 @@ function agregarVendas(vendas: VendaDashboard[]) {
     taxasCentavos,
     fretesCentavos,
     liquidoMarketplaceCentavos,
+    impostoSimplesCentavos,
     custoTotalCentavos,
     custoCompleto: vendasSemCusto === 0,
     vendasSemCusto,
@@ -691,7 +780,11 @@ function agregarVendas(vendas: VendaDashboard[]) {
 
 function calcularLucroBruto(agregado: ReturnType<typeof agregarVendas>) {
   if (!agregado.custoCompleto) return null;
-  return agregado.liquidoMarketplaceCentavos - agregado.custoTotalCentavos;
+  return (
+    agregado.liquidoMarketplaceCentavos -
+    agregado.custoTotalCentavos -
+    agregado.impostoSimplesCentavos
+  );
 }
 
 function faturamentoDaVenda(venda: VendaDashboard): number {

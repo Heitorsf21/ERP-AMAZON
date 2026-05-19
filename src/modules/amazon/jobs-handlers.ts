@@ -33,6 +33,7 @@ import {
   shouldAutoApplyAmazonRefunds,
   upsertAmazonFinanceTransactions,
 } from "@/modules/amazon/finance-materializer";
+import { inferAmazonCategoriaFee } from "@/modules/produtos/amazon-fee-category-mapper";
 import {
   notificarBuyboxPerdido,
   notificarBuyboxRecuperado,
@@ -42,6 +43,8 @@ import {
 } from "@/lib/notificacoes";
 import { contasReceberService } from "@/modules/contas-a-receber/service";
 import { agruparLinhasVendaAmazon } from "@/modules/vendas/agrupamento";
+import { calcularImpostoSimplesCentavos } from "@/modules/vendas/valores";
+import { getConfigImpostoSimples } from "@/modules/configuracao/imposto-simples";
 import {
   OrigemMovimentacao,
   StatusContaReceber,
@@ -258,11 +261,13 @@ export async function runCatalogRefresh(creds: SPAPICredentials) {
     where: { ativo: true, asin: { not: null } },
     orderBy: [{ amazonCatalogSyncEm: "asc" }],
     take: CATALOG_BATCH_SIZE,
-    select: { id: true, asin: true },
+    select: { id: true, asin: true, amazonCategoriaFee: true },
   });
 
   let atualizados = 0;
   let semDados = 0;
+  let categoriasFeeAtualizadas = 0;
+  let categoriasFeeNaoMapeadas = 0;
 
   for (const p of produtos) {
     if (!p.asin) continue;
@@ -277,6 +282,11 @@ export async function runCatalogRefresh(creds: SPAPICredentials) {
       continue;
     }
 
+    const categoriaFee = inferAmazonCategoriaFee(item);
+    if (!p.amazonCategoriaFee && !categoriaFee) {
+      categoriasFeeNaoMapeadas++;
+    }
+
     await db.produto.update({
       where: { id: p.id },
       data: {
@@ -284,12 +294,24 @@ export async function runCatalogRefresh(creds: SPAPICredentials) {
         amazonTituloOficial: extractTitle(item) ?? undefined,
         amazonCategoria: extractCategory(item) ?? undefined,
         amazonCatalogSyncEm: new Date(),
+        ...(!p.amazonCategoriaFee && categoriaFee
+          ? { amazonCategoriaFee: categoriaFee.slug }
+          : {}),
       },
     });
+    if (!p.amazonCategoriaFee && categoriaFee) {
+      categoriasFeeAtualizadas++;
+    }
     atualizados++;
   }
 
-  return { ok: true, atualizados, semDados };
+  return {
+    ok: true,
+    atualizados,
+    semDados,
+    categoriasFeeAtualizadas,
+    categoriasFeeNaoMapeadas,
+  };
 }
 
 function extractMainImage(item: SPCatalogItem): string | null {
@@ -540,6 +562,7 @@ async function upsertOrdersHistoryRows(
   let criadas = 0;
   let atualizadas = 0;
   let ignoradas = 0;
+  const cfgImpostoSimples = await getConfigImpostoSimples();
   const pedidosBrutos = await upsertRawOrdersHistoryRows(
     rows,
     marketplaceFallback,
@@ -578,6 +601,15 @@ async function upsertOrdersHistoryRows(
     };
     const existente = await db.vendaAmazon.findUnique({ where });
 
+    const statusFinanceiroFinal = existente?.statusFinanceiro ?? "PENDENTE";
+    const impostoSimplesCentavos = calcularImpostoSimplesCentavos({
+      valorBrutoCentavos: r.valorBrutoCentavos,
+      aliquotaBps: cfgImpostoSimples.aliquotaBps,
+      ativo: cfgImpostoSimples.ativo,
+      statusPedido: r.orderStatus,
+      statusFinanceiro: statusFinanceiroFinal,
+    });
+
     const data = {
       asin: r.asin ?? produto?.asin ?? null,
       titulo: r.productName ?? null,
@@ -588,10 +620,11 @@ async function upsertOrdersHistoryRows(
       fretesCentavos: existente?.fretesCentavos ?? r.fretesCentavos,
       liquidoMarketplaceCentavos:
         existente?.liquidoMarketplaceCentavos ?? r.liquidoMarketplaceCentavos,
+      impostoSimplesCentavos,
       marketplace: r.salesChannel ?? marketplaceFallback,
       fulfillmentChannel: r.fulfillmentChannel,
       statusPedido: r.orderStatus,
-      statusFinanceiro: existente?.statusFinanceiro ?? "PENDENTE",
+      statusFinanceiro: statusFinanceiroFinal,
       dataVenda: r.purchaseDate ?? existente?.dataVenda ?? new Date(),
       ultimaSyncEm: new Date(),
     };

@@ -1,3 +1,9 @@
+import {
+  STATUS_PEDIDO_REEMBOLSADO_NORMALIZADO,
+  STATUS_FINANCEIRO_NAO_CONTABILIZAVEL_NORMALIZADO,
+  normalizarStatus,
+} from "./filtros";
+
 export type VendaAmazonValoresInput = {
   quantidade?: number | null;
   precoUnitarioCentavos?: number | null;
@@ -6,6 +12,46 @@ export type VendaAmazonValoresInput = {
   fretesCentavos?: number | null;
   liquidoMarketplaceCentavos?: number | null;
 };
+
+export type ImpostoSimplesInput = {
+  valorBrutoCentavos: number;
+  aliquotaBps: number;
+  ativo: boolean;
+  statusPedido?: string | null;
+  statusFinanceiro?: string | null;
+};
+
+/**
+ * Calcula o imposto Simples Nacional sobre o valor bruto da venda.
+ *
+ * Regras:
+ * - Retorna 0 se a configuracao estiver desativada.
+ * - Retorna 0 quando a venda esta marcada como REEMBOLSADA (em qualquer um
+ *   dos dois campos de status), refletindo que o DAS e abatido no proximo
+ *   mes.
+ * - Caso contrario, aplica `valorBruto * aliquotaBps / 10_000` com
+ *   arredondamento half-away-from-zero (Math.round).
+ *
+ * O valor e SEMPRE expresso em centavos.
+ */
+export function calcularImpostoSimplesCentavos(
+  input: ImpostoSimplesInput,
+): number {
+  if (!input.ativo) return 0;
+  if (input.aliquotaBps <= 0) return 0;
+  if (!Number.isFinite(input.valorBrutoCentavos) || input.valorBrutoCentavos <= 0) {
+    return 0;
+  }
+  const statusPedido = normalizarStatus(input.statusPedido ?? "");
+  const statusFinanceiro = normalizarStatus(input.statusFinanceiro ?? "");
+  if (
+    STATUS_PEDIDO_REEMBOLSADO_NORMALIZADO.has(statusPedido) ||
+    STATUS_FINANCEIRO_NAO_CONTABILIZAVEL_NORMALIZADO.has(statusFinanceiro)
+  ) {
+    return 0;
+  }
+  return Math.round(input.valorBrutoCentavos * input.aliquotaBps / 10_000);
+}
 
 export type ValoresLinhaVendaAmazon = {
   quantidade: number;

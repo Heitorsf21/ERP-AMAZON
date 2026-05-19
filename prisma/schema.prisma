@@ -362,6 +362,7 @@ model VendaAmazon {
   taxasCentavos              Int       @default(0)
   fretesCentavos             Int       @default(0)
   liquidoMarketplaceCentavos Int?
+  impostoSimplesCentavos     Int       @default(0)
   custoUnitarioCentavos      Int?
   liquidacaoId               String?
   marketplace                String?

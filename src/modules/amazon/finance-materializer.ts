@@ -239,6 +239,7 @@ export async function materializarReembolsosAmazon(
           data: {
             statusPedido: "REEMBOLSADO",
             statusFinanceiro: "REEMBOLSADO",
+            impostoSimplesCentavos: 0,
             ultimaSyncEm: new Date(),
           },
         });

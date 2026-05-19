@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { agruparLinhasVendaAmazon } from "@/modules/vendas/agrupamento";
 import {
+  calcularImpostoSimplesCentavos,
   calcularPrecoUnitarioCentavos,
   valorBrutoDaVenda,
   valorBrutoFinanceiroPodeAtualizar,
@@ -116,5 +117,108 @@ describe("valores de VendaAmazon", () => {
         valorBrutoFinanceiroCentavos: 10000,
       }),
     ).toBe(true);
+  });
+});
+
+describe("calcularImpostoSimplesCentavos", () => {
+  const base = {
+    aliquotaBps: 600,
+    ativo: true,
+    statusPedido: "Shipped",
+    statusFinanceiro: "Released",
+  };
+
+  it("aplica 6% sobre valor bruto com round half-away-from-zero", () => {
+    expect(
+      calcularImpostoSimplesCentavos({ ...base, valorBrutoCentavos: 7999 }),
+    ).toBe(480);
+    expect(
+      calcularImpostoSimplesCentavos({ ...base, valorBrutoCentavos: 10000 }),
+    ).toBe(600);
+    expect(
+      calcularImpostoSimplesCentavos({ ...base, valorBrutoCentavos: 12345 }),
+    ).toBe(741);
+  });
+
+  it("retorna 0 quando o flag ativo esta falso", () => {
+    expect(
+      calcularImpostoSimplesCentavos({
+        ...base,
+        ativo: false,
+        valorBrutoCentavos: 10000,
+      }),
+    ).toBe(0);
+  });
+
+  it("retorna 0 quando a aliquota e zero", () => {
+    expect(
+      calcularImpostoSimplesCentavos({
+        ...base,
+        aliquotaBps: 0,
+        valorBrutoCentavos: 10000,
+      }),
+    ).toBe(0);
+  });
+
+  it("retorna 0 para valor bruto invalido ou nao positivo", () => {
+    expect(
+      calcularImpostoSimplesCentavos({ ...base, valorBrutoCentavos: 0 }),
+    ).toBe(0);
+    expect(
+      calcularImpostoSimplesCentavos({ ...base, valorBrutoCentavos: -100 }),
+    ).toBe(0);
+    expect(
+      calcularImpostoSimplesCentavos({
+        ...base,
+        valorBrutoCentavos: Number.NaN,
+      }),
+    ).toBe(0);
+  });
+
+  it("zera quando statusPedido indica reembolso (qualquer variante)", () => {
+    const variantes = ["REEMBOLSADO", "Reembolsado", "Refunded", "REFUNDED"];
+    for (const status of variantes) {
+      expect(
+        calcularImpostoSimplesCentavos({
+          ...base,
+          statusPedido: status,
+          valorBrutoCentavos: 10000,
+        }),
+      ).toBe(0);
+    }
+  });
+
+  it("zera quando statusFinanceiro indica reembolso", () => {
+    expect(
+      calcularImpostoSimplesCentavos({
+        ...base,
+        statusFinanceiro: "REEMBOLSADO",
+        valorBrutoCentavos: 10000,
+      }),
+    ).toBe(0);
+    expect(
+      calcularImpostoSimplesCentavos({
+        ...base,
+        statusFinanceiro: "Refunded",
+        valorBrutoCentavos: 10000,
+      }),
+    ).toBe(0);
+  });
+
+  it("respeita aliquota personalizada (4% Anexo II, 11.2% Anexo IV)", () => {
+    expect(
+      calcularImpostoSimplesCentavos({
+        ...base,
+        aliquotaBps: 400,
+        valorBrutoCentavos: 10000,
+      }),
+    ).toBe(400);
+    expect(
+      calcularImpostoSimplesCentavos({
+        ...base,
+        aliquotaBps: 1120,
+        valorBrutoCentavos: 10000,
+      }),
+    ).toBe(1120);
   });
 });

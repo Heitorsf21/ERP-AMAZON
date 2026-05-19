@@ -49,7 +49,7 @@ const PREFIXO_REMOVAL_ORDER = "S01-";
 const STATUS_PEDIDO_CANCELADO_NORMALIZADO = new Set(
   STATUS_PEDIDO_CANCELADO.map(normalizarStatus),
 );
-const STATUS_PEDIDO_REEMBOLSADO_NORMALIZADO = new Set(
+export const STATUS_PEDIDO_REEMBOLSADO_NORMALIZADO = new Set(
   STATUS_PEDIDO_REEMBOLSADO.map(normalizarStatus),
 );
 const STATUS_PEDIDO_PENDENTE_NORMALIZADO = new Set(
@@ -58,7 +58,7 @@ const STATUS_PEDIDO_PENDENTE_NORMALIZADO = new Set(
 const STATUS_FINANCEIRO_SEM_CONFIRMACAO_NORMALIZADO = new Set(
   STATUS_FINANCEIRO_SEM_CONFIRMACAO.map(normalizarStatus),
 );
-const STATUS_FINANCEIRO_NAO_CONTABILIZAVEL_NORMALIZADO = new Set(
+export const STATUS_FINANCEIRO_NAO_CONTABILIZAVEL_NORMALIZADO = new Set(
   STATUS_FINANCEIRO_NAO_CONTABILIZAVEL.map(normalizarStatus),
 );
 
@@ -359,7 +359,7 @@ export function dataVendaPeriodoSP(
   return dataVenda;
 }
 
-function normalizarStatus(status?: string | null): string {
+export function normalizarStatus(status?: string | null): string {
   return (status ?? "").trim().toUpperCase();
 }
 

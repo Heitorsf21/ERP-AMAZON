@@ -22,6 +22,7 @@ import {
   ChevronDown,
   CircleDollarSign,
   Info,
+  Landmark,
   LineChart,
   Megaphone,
   MousePointerClick,
@@ -102,6 +103,9 @@ type Kpis = {
   faturamentoReembolsadoCentavos: number;
   faturamentoComReembolsadosCentavos: number;
   liquidoMarketplaceCentavos: number;
+  impostoSimplesCentavos: number;
+  impostoSimplesAliquotaBps: number;
+  impostoSimplesAtivo: boolean;
   lucroBrutoCentavos: number | null;
   margemPercentual: number | null;
   numeroVendas: number;
@@ -121,6 +125,12 @@ type Kpis = {
   trafficBuyBoxPercent: number | null;
   vendasSemCusto: number;
   vendasComTaxaEstimada?: number;
+  categoriasTaxaEstimada?: Array<{
+    slug: string | null;
+    label: string;
+    regra: string;
+    vendas: number;
+  }>;
   origemTaxas?: "real" | "estimado" | "misto" | "nenhuma";
   delta: KpisDelta;
 };
@@ -129,6 +139,7 @@ type TimelineItem = {
   data: string;
   faturamentoCentavos: number;
   liquidoMarketplaceCentavos: number;
+  impostoSimplesCentavos: number;
   lucroBrutoCentavos: number | null;
   lucroPosAdsCentavos: number | null;
 };
@@ -146,6 +157,7 @@ type TopProduto = {
   faturadoCentavos: number;
   representatividadePercentual: number | null;
   lucroCentavos: number | null;
+  impostoSimplesCentavos: number;
   margemPercentual: number | null;
   custoAdsCentavos: number;
   lucroPosAdsCentavos: number | null;
@@ -255,7 +267,7 @@ function queryString(periodo: { de: string; ate: string }) {
   return new URLSearchParams(periodo).toString();
 }
 
-type CategoriaKpi = "receita" | "operacao" | "ads" | "trafego";
+type CategoriaKpi = "receita" | "operacao" | "ads" | "trafego" | "imposto";
 
 const categoriaConfig: Record<
   CategoriaKpi,
@@ -280,6 +292,11 @@ const categoriaConfig: Record<
     bar: "bg-violet-500",
     iconBg: "bg-violet-500/10",
     iconText: "text-violet-600 dark:text-violet-400",
+  },
+  imposto: {
+    bar: "bg-rose-500",
+    iconBg: "bg-rose-500/10",
+    iconText: "text-rose-600 dark:text-rose-400",
   },
 };
 
@@ -490,6 +507,15 @@ function DashboardEcommerceContent() {
 
   const d = kpis?.delta;
 
+  const formatBpsToPercent = (bps: number) =>
+    Number.isInteger(bps / 100) ? `${bps / 100}%` : `${(bps / 100).toFixed(2)}%`;
+  const aliquotaLabel = kpis?.impostoSimplesAtivo
+    ? formatBpsToPercent(kpis?.impostoSimplesAliquotaBps ?? 600)
+    : "desativado";
+  const lucroLiquidoDetalhe = kpis?.impostoSimplesAtivo
+    ? `Liquido de Simples ${aliquotaLabel}`
+    : "Simples desativado nas configuracoes";
+
   const kpisPrincipais: KpiCardProps[] = [
     {
       titulo: "Faturamento",
@@ -529,7 +555,17 @@ function DashboardEcommerceContent() {
       categoria: "operacao",
       size: "hero",
       delta: { valor: d?.lucroBruto ?? null, tipo: "percent" },
-      detalhe: kpis?.lucroBrutoCentavos == null ? "aguardando custos" : undefined,
+      detalhe:
+        kpis?.lucroBrutoCentavos == null
+          ? "aguardando custos"
+          : lucroLiquidoDetalhe,
+      tooltip: [
+        {
+          label: "Imposto Simples deduzido",
+          value: formatBRL(kpis?.impostoSimplesCentavos ?? 0),
+        },
+        { label: "Aliquota", value: aliquotaLabel },
+      ],
     },
     {
       titulo: "Margem",
@@ -538,7 +574,10 @@ function DashboardEcommerceContent() {
       categoria: "operacao",
       size: "hero",
       delta: { valor: d?.margem ?? null, tipo: "pp" },
-      detalhe: kpis?.margemPercentual == null ? "aguardando custos" : undefined,
+      detalhe:
+        kpis?.margemPercentual == null
+          ? "aguardando custos"
+          : lucroLiquidoDetalhe,
     },
     {
       titulo: "Vendas",
@@ -571,11 +610,20 @@ function DashboardEcommerceContent() {
       categoria: "operacao",
       size: "medium",
       delta: { valor: d?.roi ?? null, tipo: "pp" },
-      detalhe: kpis?.roiPercentual == null ? "aguardando custos" : undefined,
+      detalhe:
+        kpis?.roiPercentual == null ? "aguardando custos" : lucroLiquidoDetalhe,
     },
   ];
 
   const kpisSecundarios: KpiCardProps[] = [
+    {
+      titulo: "Imposto Simples",
+      valor: formatBRL(kpis?.impostoSimplesCentavos ?? 0),
+      icon: Landmark,
+      categoria: "imposto",
+      size: "compact",
+      detalhe: aliquotaLabel,
+    },
     {
       titulo: "Valor em Ads",
       valor: formatBRL(kpis?.valorAdsCentavos ?? 0),
@@ -604,6 +652,13 @@ function DashboardEcommerceContent() {
         kpis?.lucroPosAdsCentavos == null
           ? "aguardando custos"
           : `MPA ${formatPercent(kpis?.mpaPercentual)}`,
+      tooltip: [
+        {
+          label: "Imposto Simples deduzido",
+          value: formatBRL(kpis?.impostoSimplesCentavos ?? 0),
+        },
+        { label: "Aliquota", value: aliquotaLabel },
+      ],
     },
     {
       titulo: "ROI pos Ads",
@@ -613,7 +668,9 @@ function DashboardEcommerceContent() {
       size: "compact",
       delta: { valor: d?.roiPosAds ?? null, tipo: "pp" },
       detalhe:
-        kpis?.roiPosAdsPercentual == null ? "aguardando custos" : undefined,
+        kpis?.roiPosAdsPercentual == null
+          ? "aguardando custos"
+          : lucroLiquidoDetalhe,
     },
     {
       titulo: "Sessoes",
@@ -812,13 +869,24 @@ function DashboardEcommerceContent() {
 
       {kpis && (kpis.vendasComTaxaEstimada ?? 0) > 0 && (
         <div
-          className="flex items-center gap-2.5 rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 text-sm dark:border-sky-800/50 dark:bg-sky-900/20"
+          className="flex items-start gap-2.5 rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 text-sm dark:border-sky-800/50 dark:bg-sky-900/20"
           title="Pedidos PENDENTE ainda não settled pela Amazon. Taxas reais (Comissão + FBA + parcelamento) entram quando Finance Events publica."
         >
-          <AlertTriangle className="h-4 w-4 shrink-0 text-sky-600 dark:text-sky-500" />
-          <span className="text-sky-800 dark:text-sky-200">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-sky-600 dark:text-sky-500" />
+          <div className="text-sky-800 dark:text-sky-200">
             <strong>{kpis.vendasComTaxaEstimada} venda(s)</strong> com taxa Amazon <em>estimada</em> (pedidos PENDENTE — settle em até 7 dias).
-          </span>
+            {(kpis.categoriasTaxaEstimada?.length ?? 0) > 0 && (
+              <div className="mt-1 text-xs">
+                {kpis.categoriasTaxaEstimada
+                  ?.slice(0, 4)
+                  .map((c) => `${c.label} ${c.regra} (${c.vendas})`)
+                  .join(" · ")}
+                {(kpis.categoriasTaxaEstimada?.length ?? 0) > 4
+                  ? ` · +${(kpis.categoriasTaxaEstimada?.length ?? 0) - 4}`
+                  : ""}
+              </div>
+            )}
+          </div>
         </div>
       )}
 

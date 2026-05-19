@@ -33,6 +33,7 @@ import {
   shouldAutoApplyAmazonRefunds,
   upsertAmazonFinanceTransactions,
 } from "@/modules/amazon/finance-materializer";
+import { inferAmazonCategoriaFee } from "@/modules/produtos/amazon-fee-category-mapper";
 import {
   OrigemAmazonReviewSolicitation,
   OrigemMovimentacaoEstoque,
@@ -44,10 +45,12 @@ import {
 } from "@/modules/shared/domain";
 import { agruparLinhasVendaAmazon } from "@/modules/vendas/agrupamento";
 import {
+  calcularImpostoSimplesCentavos,
   calcularPrecoUnitarioCentavos,
   valorBrutoDaVenda,
   valorBrutoFinanceiroPodeAtualizar,
 } from "@/modules/vendas/valores";
+import { getConfigImpostoSimples } from "@/modules/configuracao/imposto-simples";
 import { addDays, subDays, subHours } from "date-fns";
 
 // Chaves de configuração armazenadas em ConfiguracaoSistema.
@@ -566,6 +569,7 @@ async function syncOrdersInternal(
   try {
     const cursor = await getSystemConfig(cursorKey);
     const cursorDate = cursor ? new Date(cursor) : null;
+    const cfgImpostoSimples = await getConfigImpostoSimples();
     const since =
       options.startDate ??
       (cursorDate && Number.isFinite(cursorDate.getTime())
@@ -829,6 +833,15 @@ async function syncOrdersInternal(
             existente.liquidoMarketplaceCentavos ?? valorBrutoFinal - taxasFinal;
         }
 
+        const statusFinanceiroFinal = existente?.statusFinanceiro ?? "PENDENTE";
+        const impostoSimplesCentavos = calcularImpostoSimplesCentavos({
+          valorBrutoCentavos: valorBrutoFinal,
+          aliquotaBps: cfgImpostoSimples.aliquotaBps,
+          ativo: cfgImpostoSimples.ativo,
+          statusPedido,
+          statusFinanceiro: statusFinanceiroFinal,
+        });
+
         const data = {
           orderItemId: item.OrderItemId ?? null,
           asin: item.ASIN ?? produto?.asin ?? null,
@@ -839,12 +852,13 @@ async function syncOrdersInternal(
           taxasCentavos: taxasFinal,
           fretesCentavos: fretesFinal,
           liquidoMarketplaceCentavos: liquidoFinal,
+          impostoSimplesCentavos,
           marketplace:
             getOrderMarketplaceName(order) ??
             getOrderMarketplace(order, creds.marketplaceId),
           fulfillmentChannel: getOrderFulfillmentChannel(order),
           statusPedido,
-          statusFinanceiro: existente?.statusFinanceiro ?? "PENDENTE",
+          statusFinanceiro: statusFinanceiroFinal,
           precoOrigem: precoOrigemFinal,
           dataVenda: createdAt,
           ultimaSyncEm: new Date(),
@@ -966,6 +980,8 @@ async function syncFinancialEvents(
     quantidade: number;
     precoUnitarioCentavos: number;
     valorBrutoCentavos: number | null;
+    statusPedido: string;
+    statusFinanceiro: string;
   };
   const vendasPorPedido = new Map<string, Promise<VendaFinanceira[]>>();
   const loadVendasPedido = (orderId: string) => {
@@ -979,6 +995,8 @@ async function syncFinancialEvents(
           quantidade: true,
           precoUnitarioCentavos: true,
           valorBrutoCentavos: true,
+          statusPedido: true,
+          statusFinanceiro: true,
         },
       });
       vendasPorPedido.set(orderId, promise);
@@ -1000,6 +1018,7 @@ async function syncFinancialEvents(
   };
 
   try {
+    const cfgImpostoSimples = await getConfigImpostoSimples();
     const transactions = await listFinancialTransactions(
       creds,
       subDays(new Date(), diasAtras),
@@ -1128,6 +1147,21 @@ async function syncFinancialEvents(
             valorBrutoFinanceiroCentavos: linha.valorBrutoCentavos,
           });
 
+          const statusFinanceiroNovo = linha.statusFinanceiro ?? "LIQUIDADO";
+          const recalcularImposto =
+            atualizarBruto || statusFinanceiroNovo !== venda.statusFinanceiro;
+          const impostoSimplesCentavos = recalcularImposto
+            ? calcularImpostoSimplesCentavos({
+                valorBrutoCentavos: atualizarBruto
+                  ? linha.valorBrutoCentavos
+                  : valorBrutoDaVenda(venda),
+                aliquotaBps: cfgImpostoSimples.aliquotaBps,
+                ativo: cfgImpostoSimples.ativo,
+                statusPedido: venda.statusPedido,
+                statusFinanceiro: statusFinanceiroNovo,
+              })
+            : undefined;
+
           await db.vendaAmazon.update({
             where: { id: venda.id },
             data: {
@@ -1142,10 +1176,13 @@ async function syncFinancialEvents(
                     ),
                   }
                 : {}),
+              ...(impostoSimplesCentavos !== undefined
+                ? { impostoSimplesCentavos }
+                : {}),
               liquidoMarketplaceCentavos:
                 linha.liquidoMarketplaceCentavos ?? undefined,
               liquidacaoId: linha.liquidacaoId ?? undefined,
-              statusFinanceiro: linha.statusFinanceiro ?? "LIQUIDADO",
+              statusFinanceiro: statusFinanceiroNovo,
               ultimaSyncEm: new Date(),
             },
           });
@@ -3338,6 +3375,8 @@ async function runDailyReviewAutomationLegacy(): Promise<{
 export type SyncCatalogResult = {
   total: number;
   atualizados: number;
+  categoriasFeeAtualizadas: number;
+  categoriasFeeNaoMapeadas: number;
   erros: string[];
 };
 
@@ -3354,10 +3393,12 @@ export async function syncCatalog(produtoIds?: string[]): Promise<SyncCatalogRes
 
   const produtos = await db.produto.findMany({
     where,
-    select: { id: true, asin: true },
+    select: { id: true, asin: true, amazonCategoriaFee: true },
   });
 
   let atualizados = 0;
+  let categoriasFeeAtualizadas = 0;
+  let categoriasFeeNaoMapeadas = 0;
   const erros: string[] = [];
 
   for (const produto of produtos) {
@@ -3378,6 +3419,10 @@ export async function syncCatalog(produtoIds?: string[]): Promise<SyncCatalogRes
         (c) => c.marketplaceId === creds.marketplaceId,
       ) ?? item.classifications?.[0];
       const categoria = classificacoes?.classifications?.[0]?.displayName;
+      const categoriaFee = inferAmazonCategoriaFee(item);
+      if (!produto.amazonCategoriaFee && !categoriaFee) {
+        categoriasFeeNaoMapeadas++;
+      }
 
       await db.produto.update({
         where: { id: produto.id },
@@ -3386,15 +3431,27 @@ export async function syncCatalog(produtoIds?: string[]): Promise<SyncCatalogRes
           amazonImagemUrl: mainImage?.link ?? null,
           amazonCategoria: categoria ?? null,
           amazonCatalogSyncEm: new Date(),
+          ...(!produto.amazonCategoriaFee && categoriaFee
+            ? { amazonCategoriaFee: categoriaFee.slug }
+            : {}),
         },
       });
+      if (!produto.amazonCategoriaFee && categoriaFee) {
+        categoriasFeeAtualizadas++;
+      }
       atualizados++;
     } catch (e) {
       erros.push(`${produto.asin}: ${e instanceof Error ? e.message : String(e)}`);
     }
   }
 
-  return { total: produtos.length, atualizados, erros };
+  return {
+    total: produtos.length,
+    atualizados,
+    categoriasFeeAtualizadas,
+    categoriasFeeNaoMapeadas,
+    erros,
+  };
 }
 
 // ── B2: Buybox Status (Product Pricing API) ──────────────────────────────────
