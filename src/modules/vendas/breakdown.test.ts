@@ -8,6 +8,7 @@ const mockDb = vi.hoisted(() => ({
   produtoCustoHistorico: { findMany: vi.fn() },
   configuracaoSistema: { findMany: vi.fn() },
   amazonFeeEstimate: { findUnique: vi.fn() },
+  vendaCustoEventual: { findMany: vi.fn() },
 }));
 
 vi.mock("@/lib/db", () => ({ db: mockDb }));
@@ -142,6 +143,7 @@ beforeEach(() => {
   mockDb.produto.findMany.mockResolvedValue([]);
   mockDb.amazonFinanceTransaction.findMany.mockResolvedValue([]);
   mockDb.produtoCustoHistorico.findMany.mockResolvedValue([]);
+  mockDb.vendaCustoEventual.findMany.mockResolvedValue([]);
 });
 
 describe("montarBreakdownVendas · settled (com Finance payload)", () => {
@@ -315,8 +317,58 @@ describe("montarBreakdownVendas · no_data", () => {
   });
 });
 
+describe("montarBreakdownVendas · custos eventuais", () => {
+  it("soma valorCentavos de VendaCustoEventual em custoExtraCentavos e desconta do lucro", async () => {
+    mockDb.produto.findMany.mockResolvedValue([
+      {
+        id: "prod-ext",
+        sku: SKU_OK,
+        asin: null,
+        amazonImagemUrl: null,
+        imagemUrl: null,
+        amazonCategoriaFee: null,
+        custoUnitario: 2000,
+      },
+    ]);
+    mockDb.vendaCustoEventual.findMany.mockResolvedValue([
+      {
+        id: "ce-1",
+        vendaAmazonId: "venda-1",
+        descricao: "Frete devolução",
+        valorCentavos: 1250,
+        criadoEm: new Date("2026-05-19T10:00:00Z"),
+      },
+      {
+        id: "ce-2",
+        vendaAmazonId: "venda-1",
+        descricao: "Embalagem extra",
+        valorCentavos: 500,
+        criadoEm: new Date("2026-05-19T11:00:00Z"),
+      },
+    ]);
+
+    const venda = vendaBase({
+      taxasCentavos: 0,
+      fretesCentavos: 0,
+      statusPedido: "Pending",
+      statusFinanceiro: "PENDENTE",
+    });
+
+    const { breakdownPorVenda } = await montarBreakdownVendas([venda]);
+    const b = breakdownPorVenda.get(venda.id)!;
+
+    expect(b.custoExtraCentavos).toBe(1750);
+    expect(b.custosEventuais).toHaveLength(2);
+    expect(b.custosEventuais[0]?.descricao).toBe("Frete devolução");
+
+    // Lucro: bruto - fees estimadas - imposto - custo produto - custo extra
+    // 7999 - 960 - 500 - 0 - 0 - 0 - 480 - 2000 - 1750 = 2309
+    expect(b.lucroCentavos).toBe(2309);
+  });
+});
+
 describe("montarBreakdownVendas · performance batch", () => {
-  it("executa em ≤ 4 queries Prisma para uma página de 50 vendas mistas", async () => {
+  it("executa em ≤ 5 queries Prisma para uma página de 50 vendas mistas", async () => {
     mockDb.produto.findMany.mockResolvedValue([
       {
         id: "prod-batch",
@@ -338,6 +390,7 @@ describe("montarBreakdownVendas · performance batch", () => {
     expect(mockDb.produto.findMany).toHaveBeenCalledTimes(1);
     expect(mockDb.amazonFinanceTransaction.findMany).toHaveBeenCalledTimes(1);
     expect(mockDb.produtoCustoHistorico.findMany).toHaveBeenCalledTimes(1);
+    expect(mockDb.vendaCustoEventual.findMany).toHaveBeenCalledTimes(1);
   });
 
   it("retorna mapas vazios e não consulta o DB quando lista é vazia", async () => {

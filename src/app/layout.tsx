@@ -5,8 +5,13 @@ import { Providers } from "@/components/providers";
 import { Toaster } from "@/components/ui/sonner";
 
 export const metadata: Metadata = {
-  title: "ERP AMAZON",
-  description: "Sistema interno de gestão (caixa, contas, estoque, compras).",
+  title: {
+    default: "Atlas Seller",
+    template: "%s · Atlas Seller",
+  },
+  description:
+    "Plataforma de gestão MundoFS — caixa, contas, estoque, compras e operação Amazon.",
+  applicationName: "Atlas Seller",
 };
 
 export default function RootLayout({

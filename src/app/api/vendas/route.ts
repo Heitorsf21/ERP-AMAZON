@@ -3,6 +3,7 @@ import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { logger } from "@/lib/logger";
 import { resolverImagemProduto } from "@/lib/amazon-images";
+import { PeriodoPreset, resolverPeriodo } from "@/lib/periodo";
 import { montarBreakdownVendas } from "@/modules/vendas/breakdown";
 import {
   dataVendaPeriodoSP,
@@ -19,23 +20,55 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   const inicio = Date.now();
   try {
     const { searchParams } = req.nextUrl;
+    const preset = searchParams.get("preset");
     const de = searchParams.get("de");
     const ate = searchParams.get("ate");
     const sku = searchParams.get("sku");
-    const status = searchParams.get("status");
+    const status = searchParams.get("status"); // legado, single value
+    const statusesRaw = searchParams.get("statuses"); // novo, CSV
+    const logistica = searchParams.get("logistica");
     const visao = normalizarVisaoVendas(searchParams.get("visao"));
     const pagina = Math.max(1, Number(searchParams.get("pagina") ?? "1"));
     const porPagina = 50;
 
     const filtros: Prisma.VendaAmazonWhereInput = {};
 
-    const dataVenda = dataVendaPeriodoSP(de, ate);
-    if (dataVenda) filtros.dataVenda = dataVenda;
+    // Período: preset tem prioridade sobre de/ate cru
+    if (preset && preset !== PeriodoPreset.PERSONALIZADO) {
+      const intervalo = resolverPeriodo(preset);
+      filtros.dataVenda = {
+        gte: intervalo.de,
+        lte: intervalo.ate,
+      };
+    } else if (preset === PeriodoPreset.PERSONALIZADO && de && ate) {
+      const intervalo = resolverPeriodo(PeriodoPreset.PERSONALIZADO, de, ate);
+      filtros.dataVenda = {
+        gte: intervalo.de,
+        lte: intervalo.ate,
+      };
+    } else {
+      const dataVenda = dataVendaPeriodoSP(de, ate);
+      if (dataVenda) filtros.dataVenda = dataVenda;
+    }
+
     if (sku) {
       filtros.sku = { contains: sku };
     }
-    if (status && status !== "todos") {
-      filtros.OR = [{ statusPedido: status }, { statusFinanceiro: status }];
+    if (logistica) {
+      filtros.fulfillmentChannel = logistica;
+    }
+
+    // Status pode vir como CSV (novo) ou single value (legado)
+    const statusesArr = statusesRaw
+      ? statusesRaw.split(",").map((s) => s.trim()).filter(Boolean)
+      : status && status !== "todos"
+        ? [status]
+        : [];
+    if (statusesArr.length > 0) {
+      filtros.OR = statusesArr.flatMap((s) => [
+        { statusPedido: s },
+        { statusFinanceiro: s },
+      ]);
     }
     const where = whereVendaAmazonPorVisao(visao, filtros);
 

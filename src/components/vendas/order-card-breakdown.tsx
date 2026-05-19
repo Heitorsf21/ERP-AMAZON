@@ -1,17 +1,21 @@
 "use client";
 
+import * as React from "react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   CreditCard,
   DollarSign,
   FileText,
   Info,
+  Loader2,
   Package,
   Percent,
-  Plus,
   ShoppingCart,
   Truck,
+  X,
   XCircle,
 } from "lucide-react";
+import { toast } from "sonner";
 import {
   Tooltip,
   TooltipContent,
@@ -20,7 +24,8 @@ import {
 } from "@/components/ui/tooltip";
 import { formatBRL } from "@/lib/money";
 import { cn } from "@/lib/utils";
-import type { BreakdownVendaPayload } from "./types";
+import { DialogCustoEventual } from "./dialog-custo-eventual";
+import type { BreakdownVendaPayload, CustoEventualPayload } from "./types";
 
 /**
  * Painel "Breakdown Financeiro" exibido à direita do card expandido,
@@ -46,8 +51,10 @@ import type { BreakdownVendaPayload } from "./types";
  */
 export function OrderCardBreakdown({
   breakdown,
+  vendaId,
 }: {
   breakdown: BreakdownVendaPayload;
+  vendaId: string;
 }) {
   if (breakdown.origem === "no_data") {
     return (
@@ -154,15 +161,14 @@ export function OrderCardBreakdown({
         />
       </ul>
 
-      <button
-        type="button"
-        disabled
-        title="Em breve"
-        className="mt-3 inline-flex w-full items-center justify-center gap-1.5 rounded-md border border-dashed border-emerald-300 px-3 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-emerald-900 dark:text-emerald-400 dark:hover:bg-emerald-950/30"
-      >
-        <Plus className="h-3 w-3" aria-hidden="true" />
-        Adicionar custo eventual
-      </button>
+      <CustosEventuaisLista
+        vendaId={vendaId}
+        custos={breakdown.custosEventuais}
+      />
+
+      <div className="mt-3">
+        <DialogCustoEventual vendaId={vendaId} />
+      </div>
 
       <TotalRow
         label="Lucro do pedido"
@@ -170,6 +176,80 @@ export function OrderCardBreakdown({
         loss={lossy}
       />
     </aside>
+  );
+}
+
+function CustosEventuaisLista({
+  vendaId,
+  custos,
+}: {
+  vendaId: string;
+  custos: CustoEventualPayload[];
+}) {
+  const queryClient = useQueryClient();
+  const [removendoId, setRemovendoId] = React.useState<string | null>(null);
+
+  const remover = useMutation({
+    mutationFn: async (custoId: string) => {
+      const res = await fetch(
+        `/api/vendas/${vendaId}/custos-eventuais/${custoId}`,
+        { method: "DELETE" },
+      );
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({}));
+        throw new Error(json.erro ?? "Erro ao remover custo");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["vendas"] });
+      toast.success("Custo removido");
+    },
+    onError: (err) => toast.error(err.message),
+    onSettled: () => setRemovendoId(null),
+  });
+
+  if (custos.length === 0) return null;
+
+  return (
+    <ul className="mt-3 space-y-1 border-t border-dashed border-border/60 pt-2 text-xs">
+      {custos.map((c) => (
+        <li
+          key={c.id}
+          className="flex items-center gap-2 rounded-md bg-background/60 px-2 py-1.5"
+        >
+          <span className="grid h-5 w-5 shrink-0 place-items-center rounded bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-400">
+            <Package className="h-2.5 w-2.5" />
+          </span>
+          <span
+            className="flex-1 truncate text-foreground"
+            title={c.descricao}
+          >
+            {c.descricao}
+          </span>
+          <span className="shrink-0 tabular-nums font-semibold text-red-600 dark:text-red-400">
+            −{formatBRL(c.valorCentavos)}
+          </span>
+          <button
+            type="button"
+            onClick={() => {
+              setRemovendoId(c.id);
+              remover.mutate(c.id);
+            }}
+            disabled={remover.isPending}
+            className="grid h-5 w-5 shrink-0 place-items-center rounded text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50"
+            aria-label="Remover custo"
+            title="Remover"
+          >
+            {remover.isPending && removendoId === c.id ? (
+              <Loader2 className="h-3 w-3 animate-spin" />
+            ) : (
+              <X className="h-3 w-3" />
+            )}
+          </button>
+        </li>
+      ))}
+    </ul>
   );
 }
 

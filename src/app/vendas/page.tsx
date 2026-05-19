@@ -3,7 +3,6 @@
 import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Filter,
   Package,
   Percent,
   ReceiptText,
@@ -12,7 +11,6 @@ import {
   ShoppingBag,
   TrendingUp,
   Upload,
-  X,
   Zap,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -26,8 +24,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { DataTableSkeleton } from "@/components/ui/data-table-skeleton";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { PageHeader } from "@/components/ui/page-header";
 import {
   Table,
@@ -39,6 +35,11 @@ import {
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { OrderCardList, type VendaListagem } from "@/components/vendas";
+import {
+  FiltrosToolbar,
+  type FiltrosVendas,
+} from "@/components/vendas/filtros-toolbar";
+import { PeriodoPreset } from "@/lib/periodo";
 import { formatBRL } from "@/lib/money";
 import { cn } from "@/lib/utils";
 
@@ -99,10 +100,14 @@ type ResultadoImportacao = {
   atualizados?: number;
 };
 
-type Filtros = { de: string; ate: string; sku: string; status: string };
 type AbaVendas = "principal" | "cancelados" | "reembolsados";
 
-const filtrosIniciais: Filtros = { de: "", ate: "", sku: "", status: "" };
+const filtrosIniciais: FiltrosVendas = {
+  periodo: { preset: PeriodoPreset.TRINTA_DIAS },
+  sku: "",
+  logistica: "",
+  statuses: [],
+};
 
 function fmtData(iso: string | null | undefined): string {
   if (!iso) return "-";
@@ -258,122 +263,9 @@ function DialogImportar({
   );
 }
 
-function PainelFiltros({
-  filtros,
-  setFiltros,
-}: {
-  filtros: Filtros;
-  setFiltros: (f: Filtros) => void;
-}) {
-  const ref = React.useRef<HTMLDivElement>(null);
-  const [aberto, setAberto] = React.useState(false);
-  const [rascunho, setRascunho] = React.useState<Filtros>(filtros);
-
-  React.useEffect(() => {
-    if (aberto) setRascunho(filtros);
-  }, [aberto, filtros]);
-
-  React.useEffect(() => {
-    if (!aberto) return;
-    function onClick(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setAberto(false);
-    }
-    document.addEventListener("mousedown", onClick);
-    return () => document.removeEventListener("mousedown", onClick);
-  }, [aberto]);
-
-  const ativos = Object.values(filtros).filter(Boolean).length;
-
-  return (
-    <div ref={ref} className="relative">
-      <Button
-        variant={aberto ? "default" : "secondary"}
-        size="sm"
-        onClick={() => setAberto((v) => !v)}
-        className="gap-2"
-      >
-        <Filter className="h-4 w-4" />
-        Filtros
-        {ativos > 0 && (
-          <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-[10px]">
-            {ativos}
-          </Badge>
-        )}
-      </Button>
-
-      {aberto && (
-        <div className="absolute left-0 top-full z-20 mt-2 w-[min(92vw,520px)] rounded-md border bg-popover p-4 text-popover-foreground shadow-lg">
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div className="space-y-1">
-              <Label>De</Label>
-              <Input
-                type="date"
-                value={rascunho.de}
-                onChange={(e) => setRascunho({ ...rascunho, de: e.target.value })}
-              />
-            </div>
-            <div className="space-y-1">
-              <Label>Ate</Label>
-              <Input
-                type="date"
-                value={rascunho.ate}
-                onChange={(e) => setRascunho({ ...rascunho, ate: e.target.value })}
-              />
-            </div>
-            <div className="space-y-1">
-              <Label>SKU</Label>
-              <Input
-                placeholder="ex: MFS-0017"
-                value={rascunho.sku}
-                onChange={(e) => setRascunho({ ...rascunho, sku: e.target.value })}
-              />
-            </div>
-            <div className="space-y-1">
-              <Label>Status</Label>
-              <select
-                value={rascunho.status}
-                onChange={(e) => setRascunho({ ...rascunho, status: e.target.value })}
-                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              >
-                <option value="">todos</option>
-                <option value="Shipped">enviado</option>
-                <option value="Pending">pendente</option>
-              </select>
-            </div>
-          </div>
-
-          <div className="mt-4 flex justify-between gap-2">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setRascunho(filtrosIniciais)}
-            >
-              limpar
-            </Button>
-            <div className="flex gap-2">
-              <Button variant="outline" size="sm" onClick={() => setAberto(false)}>
-                cancelar
-              </Button>
-              <Button
-                size="sm"
-                onClick={() => {
-                  setFiltros(rascunho);
-                  setAberto(false);
-                }}
-              >
-                aplicar
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
 export default function VendasPage() {
   const queryClient = useQueryClient();
-  const [filtros, setFiltros] = React.useState<Filtros>(filtrosIniciais);
+  const [filtros, setFiltros] = React.useState<FiltrosVendas>(filtrosIniciais);
   const [pagina, setPagina] = React.useState(1);
   const [dialogAberto, setDialogAberto] = React.useState(false);
   const [aba, setAba] = React.useState<AbaVendas>("principal");
@@ -383,10 +275,15 @@ export default function VendasPage() {
 
   const params = React.useMemo(() => {
     const p = new URLSearchParams();
-    if (filtros.de) p.set("de", filtros.de);
-    if (filtros.ate) p.set("ate", filtros.ate);
+    p.set("preset", filtros.periodo.preset);
+    if (filtros.periodo.preset === PeriodoPreset.PERSONALIZADO) {
+      if (filtros.periodo.de) p.set("de", filtros.periodo.de);
+      if (filtros.periodo.ate) p.set("ate", filtros.periodo.ate);
+    }
     if (filtros.sku) p.set("sku", filtros.sku);
-    if (filtros.status) p.set("status", filtros.status);
+    if (filtros.logistica) p.set("logistica", filtros.logistica);
+    if (filtros.statuses.length > 0)
+      p.set("statuses", filtros.statuses.join(","));
     p.set("visao", visaoVendas);
     p.set("pagina", String(pagina));
     return p;
@@ -394,11 +291,14 @@ export default function VendasPage() {
 
   const totaisParams = React.useMemo(() => {
     const p = new URLSearchParams();
-    if (filtros.de) p.set("de", filtros.de);
-    if (filtros.ate) p.set("ate", filtros.ate);
+    p.set("preset", filtros.periodo.preset);
+    if (filtros.periodo.preset === PeriodoPreset.PERSONALIZADO) {
+      if (filtros.periodo.de) p.set("de", filtros.periodo.de);
+      if (filtros.periodo.ate) p.set("ate", filtros.periodo.ate);
+    }
     p.set("visao", visaoVendas);
     return p;
-  }, [filtros.de, filtros.ate, visaoVendas]);
+  }, [filtros.periodo, visaoVendas]);
 
   const vendasQuery = useQuery<{
     vendas: VendaListagem[];
@@ -410,7 +310,7 @@ export default function VendasPage() {
   });
 
   const totaisQuery = useQuery<Totais>({
-    queryKey: ["vendas-totais", filtros.de, filtros.ate, visaoVendas],
+    queryKey: ["vendas-totais", filtros.periodo, visaoVendas],
     queryFn: () => fetch(`/api/vendas/totais?${totaisParams}`).then((r) => r.json()),
   });
 
@@ -480,10 +380,6 @@ export default function VendasPage() {
   const totais = totaisQuery.data;
   const reembolsos = reembolsosQuery.data;
 
-  const filtrosAtivos = Object.entries(filtros).filter(([, value]) =>
-    Boolean(value),
-  );
-
   return (
     <div className="flex flex-col gap-6 p-4 sm:p-6">
       <PageHeader
@@ -542,34 +438,7 @@ export default function VendasPage() {
         />
       </div>
 
-      <div className="flex flex-wrap items-center gap-2">
-        <PainelFiltros filtros={filtros} setFiltros={setFiltros} />
-        {filtrosAtivos.map(([chave, valor]) => (
-          <Badge
-            key={chave}
-            variant="secondary"
-            className="flex items-center gap-1 pr-1"
-          >
-            {chave}: {valor}
-            <button
-              className="ml-1 rounded-sm hover:bg-muted"
-              onClick={() => setFiltros({ ...filtros, [chave]: "" })}
-            >
-              <X className="h-3 w-3" />
-            </button>
-          </Badge>
-        ))}
-        {filtrosAtivos.length > 0 && (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-8 px-2 text-xs"
-            onClick={() => setFiltros(filtrosIniciais)}
-          >
-            limpar todos
-          </Button>
-        )}
-      </div>
+      <FiltrosToolbar filtros={filtros} onChange={setFiltros} />
 
       <Tabs
         value={aba}

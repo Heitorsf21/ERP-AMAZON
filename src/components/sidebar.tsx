@@ -8,12 +8,10 @@ import {
   ChevronRight,
   ChevronDown,
   Menu,
-  Package,
 } from "lucide-react";
 import { HOME_ITEM, NAV_GROUPS, type NavLeaf, type NavGroup as NavGroupT } from "./nav-routes";
-import { useQuery } from "@tanstack/react-query";
-import { fetchJSON } from "@/lib/fetcher";
 import { cn } from "@/lib/utils";
+import { BrandMark } from "@/components/brand-mark";
 import { ThemeToggle } from "@/components/theme-toggle";
 import {
   Sheet,
@@ -177,24 +175,62 @@ function NavGroup({
 
 const STORAGE_GROUPS_KEY = "sidebar-groups-expanded";
 
-function useGroupsState() {
-  const defaultState: Record<string, boolean> = React.useMemo(
-    () => Object.fromEntries(groups.map((g) => [g.id, true])),
-    [],
-  );
-  const [state, setState] = React.useState<Record<string, boolean>>(defaultState);
+/**
+ * Estado dos grupos da sidebar (expandido/colapsado).
+ *
+ * Comportamento:
+ *   1. Por padrão TODOS os grupos iniciam fechados.
+ *   2. O grupo que contém a rota ativa é auto-expandido (mesmo sem
+ *      interação do usuário).
+ *   3. Se o usuário já interagiu manualmente (existe entrada no
+ *      localStorage), as preferências salvas têm prioridade sobre o
+ *      auto-expand.
+ */
+function useGroupsState(pathname: string) {
+  const grupoDaRotaAtiva = React.useMemo(() => {
+    for (const g of groups) {
+      if (g.items.some((item) => isActive(pathname, item.href))) {
+        return g.id;
+      }
+    }
+    return null;
+  }, [pathname]);
 
+  const defaultState: Record<string, boolean> = React.useMemo(
+    () =>
+      Object.fromEntries(
+        groups.map((g) => [g.id, g.id === grupoDaRotaAtiva]),
+      ),
+    [grupoDaRotaAtiva],
+  );
+
+  const [state, setState] = React.useState<Record<string, boolean>>(defaultState);
+  const [hidratado, setHidratado] = React.useState(false);
+
+  // Hidrata do localStorage uma vez. Caso não exista entrada, segue
+  // o defaultState (auto-expand da rota ativa).
   React.useEffect(() => {
     try {
       const raw = localStorage.getItem(STORAGE_GROUPS_KEY);
       if (raw) {
         const parsed = JSON.parse(raw) as Record<string, boolean>;
-        setState({ ...defaultState, ...parsed });
+        setState((prev) => ({ ...prev, ...parsed }));
       }
     } catch {
       /* ignore */
     }
-  }, [defaultState]);
+    setHidratado(true);
+  }, []);
+
+  // Quando a rota muda e o usuário NÃO interagiu manualmente com a
+  // sidebar nesta sessão, expandimos o grupo da nova rota.
+  React.useEffect(() => {
+    if (!hidratado) return;
+    if (!grupoDaRotaAtiva) return;
+    setState((prev) =>
+      prev[grupoDaRotaAtiva] ? prev : { ...prev, [grupoDaRotaAtiva]: true },
+    );
+  }, [grupoDaRotaAtiva, hidratado]);
 
   function toggle(id: string) {
     setState((prev) => {
@@ -213,24 +249,10 @@ function useGroupsState() {
 
 export function SidebarContent({ collapsed = false }: { collapsed?: boolean }) {
   const pathname = usePathname();
-  const { state: groupsExpanded, toggle } = useGroupsState();
+  const { state: groupsExpanded, toggle } = useGroupsState(pathname ?? "");
 
-  const { data: notifCount } = useQuery<{ total: number }>({
-    queryKey: ["notificacoes-count"],
-    queryFn: () => fetchJSON("/api/notificacoes/contar"),
-    refetchInterval: 60_000,
-    staleTime: 30_000,
-  });
-
-  const groupsComBadge = React.useMemo(() => {
-    const count = notifCount?.total ?? 0;
-    return groups.map((g) => ({
-      ...g,
-      items: g.items.map((item) =>
-        item.href === "/notificacoes" ? { ...item, badge: count } : item,
-      ),
-    }));
-  }, [notifCount]);
+  // Badge de notificações migrou para `<NotificationBell>` no topbar.
+  // O grupo original aqui é usado direto, sem enriquecimento.
 
   return (
     <div
@@ -246,23 +268,11 @@ export function SidebarContent({ collapsed = false }: { collapsed?: boolean }) {
           collapsed ? "justify-center" : "gap-2.5",
         )}
       >
-        <div
-          className={cn(
-            "flex shrink-0 items-center justify-center rounded-lg bg-[hsl(var(--sidebar-accent))]",
-            "h-8 w-8 shadow-[0_0_18px_hsl(var(--sidebar-accent)/0.35)]",
-          )}
-        >
-          <Package className="h-4 w-4 text-white" />
-        </div>
+        <BrandMark collapsed={collapsed} className="text-white" />
         {!collapsed && (
-          <div className="flex min-w-0 flex-col leading-tight">
-            <span className="text-[13px] font-semibold tracking-wide text-white">
-              ERP AMAZON
-            </span>
-            <span className="text-[10px] uppercase tracking-[0.18em] text-sidebar-foreground/45">
-              gestão interna
-            </span>
-          </div>
+          <span className="ml-auto text-[10px] uppercase tracking-[0.18em] text-sidebar-foreground/45">
+            interno
+          </span>
         )}
       </div>
 
@@ -283,7 +293,7 @@ export function SidebarContent({ collapsed = false }: { collapsed?: boolean }) {
           )}
 
           <div className={cn("space-y-3", collapsed && "space-y-2")}>
-            {groupsComBadge.map((group, idx) => (
+            {groups.map((group, idx) => (
               <React.Fragment key={group.id}>
                 {collapsed && idx > 0 && (
                   <div className="mx-2 h-px bg-[hsl(var(--sidebar-border))]/70" />

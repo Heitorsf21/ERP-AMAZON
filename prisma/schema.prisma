@@ -378,6 +378,8 @@ model VendaAmazon {
   criadoEm                   DateTime  @default(now())
   atualizadoEm               DateTime  @updatedAt
 
+  custosEventuais            VendaCustoEventual[]
+
   @@unique([amazonOrderId, sku])
   @@index([orderItemId])
   @@index([dataVenda])
@@ -388,6 +390,23 @@ model VendaAmazon {
   @@index([ultimaSyncEm])
   @@index([dataVenda, statusFinanceiro])
   @@index([precoOrigem])
+}
+
+// Custos eventuais ad-hoc por linha de venda (ex: frete devolução,
+// embalagem extra, ajuste manual). NÃO afetam VendaAmazon.taxasCentavos
+// nem fretesCentavos — vivem em registros separados e são somados em
+// runtime pelo `montarBreakdownVendas`.
+model VendaCustoEventual {
+  id            String   @id @default(cuid())
+  vendaAmazonId String
+  descricao     String
+  valorCentavos Int
+  criadoEm      DateTime @default(now())
+  criadoPor     String?
+
+  venda         VendaAmazon @relation(fields: [vendaAmazonId], references: [id], onDelete: Cascade)
+
+  @@index([vendaAmazonId])
 }
 
 model AmazonOrderRaw {

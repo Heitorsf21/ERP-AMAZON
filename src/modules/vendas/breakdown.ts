@@ -66,6 +66,13 @@ export type BreakdownOrigem = "settled" | "estimated" | "no_data";
  * em centavos e sempre POSITIVOS — o sinal (receita ou custo) está
  * codificado na semântica do nome do campo.
  */
+export type CustoEventualLista = {
+  id: string;
+  descricao: string;
+  valorCentavos: number;
+  criadoEm: string;
+};
+
 export type BreakdownVenda = {
   totalItensCentavos: number;
   freteRecebidoCentavos: number;
@@ -78,6 +85,7 @@ export type BreakdownVenda = {
   impostoCentavos: number;
   custoProdutoCentavos: number;
   custoExtraCentavos: number;
+  custosEventuais: CustoEventualLista[];
   lucroCentavos: number;
   margemBps: number;
   origem: BreakdownOrigem;
@@ -140,33 +148,46 @@ export async function montarBreakdownVendas(
   const orderIdsDistintos = [
     ...new Set(vendas.map((v) => v.amazonOrderId).filter(Boolean)),
   ];
+  const vendaIds = vendas.map((v) => v.id);
 
-  const [produtos, transactions, feeCfg, impostoCfg] = await Promise.all([
-    db.produto.findMany({
-      where: { sku: { in: skusDistintos } },
-      select: {
-        id: true,
-        sku: true,
-        asin: true,
-        amazonImagemUrl: true,
-        imagemUrl: true,
-        amazonCategoriaFee: true,
-        custoUnitario: true,
-      },
-    }),
-    orderIdsDistintos.length > 0
-      ? db.amazonFinanceTransaction.findMany({
-          where: { amazonOrderId: { in: orderIdsDistintos } },
-          select: {
-            amazonOrderId: true,
-            transactionType: true,
-            payload: true,
-          },
-        })
-      : Promise.resolve([]),
-    loadFeeEstimatorConfig(),
-    getConfigImpostoSimples(),
-  ]);
+  const [produtos, transactions, custosEventuaisRows, feeCfg, impostoCfg] =
+    await Promise.all([
+      db.produto.findMany({
+        where: { sku: { in: skusDistintos } },
+        select: {
+          id: true,
+          sku: true,
+          asin: true,
+          amazonImagemUrl: true,
+          imagemUrl: true,
+          amazonCategoriaFee: true,
+          custoUnitario: true,
+        },
+      }),
+      orderIdsDistintos.length > 0
+        ? db.amazonFinanceTransaction.findMany({
+            where: { amazonOrderId: { in: orderIdsDistintos } },
+            select: {
+              amazonOrderId: true,
+              transactionType: true,
+              payload: true,
+            },
+          })
+        : Promise.resolve([]),
+      db.vendaCustoEventual.findMany({
+        where: { vendaAmazonId: { in: vendaIds } },
+        orderBy: { criadoEm: "desc" },
+        select: {
+          id: true,
+          vendaAmazonId: true,
+          descricao: true,
+          valorCentavos: true,
+          criadoEm: true,
+        },
+      }),
+      loadFeeEstimatorConfig(),
+      getConfigImpostoSimples(),
+    ]);
 
   for (const p of produtos) {
     produtoPorSku.set(p.sku, {
@@ -208,12 +229,26 @@ export async function montarBreakdownVendas(
       ? await resolverCustoUnitarioEmLote(paresParaCusto, fallbacksCusto)
       : new Map<string, number>();
 
+  // Map<vendaAmazonId, CustoEventualLista[]>
+  const custosEventuaisPorVenda = new Map<string, CustoEventualLista[]>();
+  for (const c of custosEventuaisRows) {
+    const arr = custosEventuaisPorVenda.get(c.vendaAmazonId) ?? [];
+    arr.push({
+      id: c.id,
+      descricao: c.descricao,
+      valorCentavos: c.valorCentavos,
+      criadoEm: c.criadoEm.toISOString(),
+    });
+    custosEventuaisPorVenda.set(c.vendaAmazonId, arr);
+  }
+
   // ── Montagem por venda ──────────────────────────────────────────────────
   for (const venda of vendas) {
     const breakdown = montarUma(venda, {
       produtoPorSku,
       txByOrderId,
       custoMap,
+      custosEventuaisPorVenda,
       feeCfg,
       impostoCfg,
     });
@@ -227,6 +262,7 @@ export async function montarBreakdownVendas(
       ordersUnicos: orderIdsDistintos.length,
       skusUnicos: skusDistintos.length,
       transacoesCarregadas: transactions.length,
+      custosEventuais: custosEventuaisRows.length,
     },
     "vendas breakdown built",
   );
@@ -241,6 +277,7 @@ type ContextoMontagem = {
     Array<{ payload: unknown; transactionType: string | null }>
   >;
   custoMap: Map<string, number>;
+  custosEventuaisPorVenda: Map<string, CustoEventualLista[]>;
   feeCfg: FeeEstimateConfig;
   impostoCfg: { aliquotaBps: number; ativo: boolean };
 };
@@ -325,6 +362,13 @@ function montarUma(
     statusFinanceiro: venda.statusFinanceiro ?? null,
   });
 
+  // Custos eventuais — soma dos valores lançados manualmente (ad-hoc).
+  const custosEventuais = ctx.custosEventuaisPorVenda.get(venda.id) ?? [];
+  const custoExtraCentavos = custosEventuais.reduce(
+    (sum, c) => sum + c.valorCentavos,
+    0,
+  );
+
   const lucroCentavos = origem === "no_data"
     ? 0
     : totalItensCentavos
@@ -336,7 +380,8 @@ function montarUma(
       - closingFeeCentavos
       - promoRebatesCentavos
       - impostoCentavos
-      - custoProdutoCentavos;
+      - custoProdutoCentavos
+      - custoExtraCentavos;
 
   const margemBps =
     totalItensCentavos > 0
@@ -354,7 +399,8 @@ function montarUma(
     promoRebatesCentavos,
     impostoCentavos: origem === "no_data" ? 0 : impostoCentavos,
     custoProdutoCentavos: origem === "no_data" ? 0 : custoProdutoCentavos,
-    custoExtraCentavos: 0,
+    custoExtraCentavos,
+    custosEventuais,
     lucroCentavos,
     margemBps,
     origem,
@@ -377,6 +423,7 @@ export function breakdownVazio(): BreakdownVenda {
     impostoCentavos: 0,
     custoProdutoCentavos: 0,
     custoExtraCentavos: 0,
+    custosEventuais: [],
     lucroCentavos: 0,
     margemBps: 0,
     origem: "no_data",

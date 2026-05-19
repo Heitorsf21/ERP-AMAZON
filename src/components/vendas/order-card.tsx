@@ -62,7 +62,7 @@ export function OrderCard({
       {expanded && breakdown && (
         <div className="grid gap-4 border-t bg-background p-4 sm:p-5 md:grid-cols-[1fr_340px]">
           <OrderCardDetails venda={venda} logisticaLabel={logistica} />
-          <OrderCardBreakdown breakdown={breakdown} />
+          <OrderCardBreakdown breakdown={breakdown} vendaId={venda.id} />
         </div>
       )}
 

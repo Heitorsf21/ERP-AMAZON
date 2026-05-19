@@ -5,14 +5,23 @@ import { cn } from "@/lib/utils";
 import type { BreakdownVendaPayload, VendaListagem } from "./types";
 
 /**
- * Tabela horizontal de 1 linha que reproduz o layout do print do Gestor
- * Seller dentro de cada card de pedido.
+ * Linha de venda dentro do card — sempre visível, mesmo colapsado.
  *
- * Colunas: Item · Qtd · Total · Preço unit. · Líq. marketplace · Imposto
- *          · Custo produto · Custo extra · Lucro · Margem
+ * Layout 2-row responsivo (sem `<table>`, sem scroll horizontal):
  *
- * Quando `breakdown` é `no_data` (pedido cancelado sem movimentação),
- * exibe traços nas colunas financeiras.
+ *   Linha 1 (sempre cabe):
+ *     [thumb 40px] Nome do produto … [qtd × precoUnit] [MarginBadge]
+ *                  SKU Externo: MFS-0033
+ *
+ *   Linha 2 (grid de mini-KPIs):
+ *     [Total] [Líq. mkt] [Imposto] [Custo] [Lucro]
+ *
+ *   - md (≥768px): grid-cols-5 em linha
+ *   - sm (≥640px): grid-cols-3 (2 linhas)
+ *   - mobile (<640px): grid-cols-2 (3 linhas)
+ *
+ * "Custo extra" e "Preço unit." vivem apenas no painel expandido. Quando
+ * `breakdown.origem === "no_data"` mostra traços nos KPIs.
  */
 export function OrderItemsTable({
   venda,
@@ -42,104 +51,91 @@ export function OrderItemsTable({
     ? breakdown.margemBps / 100
     : null;
 
+  const lucroVal = semDados ? "—" : formatBRL(breakdown.lucroCentavos);
+  const lucroTone = semDados
+    ? "text-muted-foreground"
+    : breakdown.lucroCentavos >= 0
+      ? "text-emerald-600 dark:text-emerald-400"
+      : "text-red-600 dark:text-red-400";
+
   return (
-    <div className="w-full overflow-x-auto">
-      <table className="w-full min-w-[1100px] border-collapse text-sm">
-        <thead>
-          <tr className="border-b bg-muted/30 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-            <th className="px-3 py-2 text-left">Item</th>
-            <th className="px-3 py-2 text-right">Qtd</th>
-            <th className="px-3 py-2 text-right">Total</th>
-            <th className="px-3 py-2 text-right">Preço unit.</th>
-            <th className="px-3 py-2 text-right">Líq. marketplace</th>
-            <th className="px-3 py-2 text-right">Imposto</th>
-            <th className="px-3 py-2 text-right">Custo produto</th>
-            <th className="px-3 py-2 text-right">Custo extra</th>
-            <th className="px-3 py-2 text-right">Lucro</th>
-            <th className="px-3 py-2 text-right">Margem</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td className="px-3 py-3">
-              <div className="flex items-center gap-3">
-                <ProductThumb
-                  src={venda.produtoImagemUrl ?? null}
-                  alt={venda.titulo ?? venda.sku}
-                  size={40}
-                  title={venda.titulo ?? venda.sku}
-                />
-                <div className="min-w-0">
-                  <p
-                    className="line-clamp-1 text-sm font-medium text-foreground"
-                    title={venda.titulo ?? ""}
-                  >
-                    {venda.titulo ?? venda.sku}
-                  </p>
-                  <p className="mt-0.5 text-xs text-muted-foreground">
-                    SKU Externo: <span className="font-mono">{venda.sku}</span>
-                  </p>
-                </div>
-              </div>
-            </td>
-            <Cell numeric>{venda.quantidade}</Cell>
-            <Cell numeric>{semDados ? "—" : formatBRL(venda.totalCentavos)}</Cell>
-            <Cell numeric>{semDados ? "—" : formatBRL(precoUnitario)}</Cell>
-            <Cell numeric>{semDados ? "—" : formatBRL(liquidoMarketplace)}</Cell>
-            <Cell numeric muted>
-              {semDados ? "—" : formatBRL(breakdown.impostoCentavos)}
-            </Cell>
-            <Cell numeric muted>
-              {semDados ? "—" : formatBRL(breakdown.custoProdutoCentavos)}
-            </Cell>
-            <Cell numeric muted>
-              {semDados || breakdown.custoExtraCentavos === 0
-                ? "—"
-                : formatBRL(breakdown.custoExtraCentavos)}
-            </Cell>
-            <Cell
-              numeric
-              className={
-                semDados
-                  ? "text-muted-foreground"
-                  : breakdown.lucroCentavos >= 0
-                    ? "font-semibold text-emerald-600 dark:text-emerald-400"
-                    : "font-semibold text-red-600 dark:text-red-400"
-              }
-            >
-              {semDados ? "—" : formatBRL(breakdown.lucroCentavos)}
-            </Cell>
-            <td className="px-3 py-3 text-right">
-              <MarginBadge value={margemPercent} />
-            </td>
-          </tr>
-        </tbody>
-      </table>
+    <div className="flex flex-col gap-3 px-4 py-3 sm:px-5">
+      {/* Linha 1 — produto + qtd + margem */}
+      <div className="flex flex-wrap items-center gap-3">
+        <ProductThumb
+          src={venda.produtoImagemUrl ?? null}
+          alt={venda.titulo ?? venda.sku}
+          size={40}
+          title={venda.titulo ?? venda.sku}
+        />
+        <div className="min-w-0 flex-1">
+          <p
+            className="line-clamp-1 text-sm font-medium text-foreground"
+            title={venda.titulo ?? ""}
+          >
+            {venda.titulo ?? venda.sku}
+          </p>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            SKU Externo:{" "}
+            <span className="font-mono text-foreground/80">{venda.sku}</span>
+            <span className="mx-1.5 text-muted-foreground/50">·</span>
+            {venda.quantidade}× {formatBRL(precoUnitario)}
+          </p>
+        </div>
+        <MarginBadge value={margemPercent} className="shrink-0" />
+      </div>
+
+      {/* Linha 2 — mini-KPIs */}
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-5">
+        <KpiTile
+          label="Total"
+          value={semDados ? "—" : formatBRL(venda.totalCentavos)}
+        />
+        <KpiTile
+          label="Líq. mkt"
+          value={semDados ? "—" : formatBRL(liquidoMarketplace)}
+        />
+        <KpiTile
+          label="Imposto"
+          value={semDados ? "—" : formatBRL(breakdown.impostoCentavos)}
+          muted
+        />
+        <KpiTile
+          label="Custo"
+          value={semDados ? "—" : formatBRL(breakdown.custoProdutoCentavos)}
+          muted
+        />
+        <KpiTile label="Lucro" value={lucroVal} valueClassName={lucroTone} />
+      </div>
     </div>
   );
 }
 
-function Cell({
-  children,
-  numeric,
+function KpiTile({
+  label,
+  value,
   muted,
-  className,
+  valueClassName,
 }: {
-  children: React.ReactNode;
-  numeric?: boolean;
+  label: string;
+  value: string;
   muted?: boolean;
-  className?: string;
+  valueClassName?: string;
 }) {
   return (
-    <td
-      className={cn(
-        "px-3 py-3 align-middle",
-        numeric && "text-right tabular-nums",
-        muted && "text-muted-foreground",
-        className,
-      )}
-    >
-      {children}
-    </td>
+    <div className="rounded-md border bg-card/50 px-3 py-2">
+      <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+        {label}
+      </p>
+      <p
+        className={cn(
+          "mt-0.5 text-sm font-semibold tabular-nums",
+          muted ? "text-foreground/80" : "text-foreground",
+          valueClassName,
+        )}
+      >
+        {value}
+      </p>
+    </div>
   );
 }

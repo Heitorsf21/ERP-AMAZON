@@ -18,7 +18,6 @@ import {
   Banknote,
   Store,
   Cog,
-  Bell,
   Megaphone,
   Activity,
   Truck,
@@ -164,12 +163,6 @@ export const NAV_GROUPS: NavGroup[] = [
         label: "Conector Amazon",
         icon: Globe,
         keywords: ["sp-api", "sincronizar", "api", "credenciais", "marketplace"],
-      },
-      {
-        href: "/notificacoes" as Route,
-        label: "Notificações",
-        icon: Bell,
-        keywords: ["alertas", "sino", "avisos"],
       },
       {
         href: "/sistema" as Route,

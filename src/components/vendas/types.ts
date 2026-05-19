@@ -7,6 +7,13 @@
  */
 import type { BreakdownOrigem } from "@/modules/vendas/breakdown";
 
+export type CustoEventualPayload = {
+  id: string;
+  descricao: string;
+  valorCentavos: number;
+  criadoEm: string;
+};
+
 export type BreakdownVendaPayload = {
   totalItensCentavos: number;
   freteRecebidoCentavos: number;
@@ -19,6 +26,7 @@ export type BreakdownVendaPayload = {
   impostoCentavos: number;
   custoProdutoCentavos: number;
   custoExtraCentavos: number;
+  custosEventuais: CustoEventualPayload[];
   lucroCentavos: number;
   margemBps: number;
   origem: BreakdownOrigem;

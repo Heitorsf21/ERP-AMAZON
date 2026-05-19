@@ -5,7 +5,9 @@ import Link from "next/link";
 import type { Route } from "next";
 import { useRouter } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Search, Package, User, LogOut, Settings, UserCircle, Loader2 } from "lucide-react";
+import { Search, User, LogOut, Settings, UserCircle, Loader2 } from "lucide-react";
+import { BrandMark } from "@/components/brand-mark";
+import { NotificationBell } from "@/components/topbar/notification-bell";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -51,11 +53,8 @@ export function Topbar() {
       {/* Mobile: menu + logo */}
       <div className="flex items-center gap-2 lg:hidden">
         <SidebarMobileSheet />
-        <Link href={"/home" as Route} className="flex items-center gap-2">
-          <div className="flex h-7 w-7 items-center justify-center rounded-md bg-[hsl(var(--sidebar-accent))]">
-            <Package className="h-3.5 w-3.5 text-white" />
-          </div>
-          <span className="text-sm font-semibold">ERP AMAZON</span>
+        <Link href={"/dashboard-ecommerce" as Route} className="flex items-center gap-2">
+          <BrandMark size="sm" />
         </Link>
       </div>
 
@@ -76,8 +75,13 @@ export function Topbar() {
         </Button>
       </div>
 
-      {/* Perfil */}
+      {/* Sino de notificações */}
       <div className="ml-0 lg:ml-auto">
+        <NotificationBell />
+      </div>
+
+      {/* Perfil */}
+      <div>
         <ProfileMenu />
       </div>
     </header>
