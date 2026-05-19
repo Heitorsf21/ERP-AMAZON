@@ -7,6 +7,7 @@ import {
 import {
   createProductReviewAndSellerFeedbackSolicitation,
   getInventorySummaries,
+  getListingsItem,
   listFinancialTransactions,
   getMarketplaceParticipations,
   getOrder,
@@ -33,6 +34,10 @@ import {
   shouldAutoApplyAmazonRefunds,
   upsertAmazonFinanceTransactions,
 } from "@/modules/amazon/finance-materializer";
+import {
+  calcularValorBrutoOrderItemCentavos,
+  extractAmazonListingEffectivePriceCentavos,
+} from "@/modules/amazon/pricing";
 import { inferAmazonCategoriaFee } from "@/modules/produtos/amazon-fee-category-mapper";
 import {
   OrigemAmazonReviewSolicitation,
@@ -730,6 +735,24 @@ async function syncOrdersInternal(
       }
     }
 
+    const skusSemPrecoConfirmado = [
+      ...new Set(
+        Array.from(itemsPorOrderId.values())
+          .flat()
+          .filter(
+            (item) =>
+              !!item.SellerSKU &&
+              calcularValorBrutoOrderItemCentavos(item) <= 0,
+          )
+          .map((item) => item.SellerSKU as string),
+      ),
+    ];
+    await refreshListingPricesForOrderFallback(
+      creds,
+      skusSemPrecoConfirmado,
+      produtosPorSku,
+    );
+
     for (const order of orders) {
       const amazonOrderId = getAmazonOrderId(order);
       if (!amazonOrderId) {
@@ -757,7 +780,7 @@ async function syncOrdersInternal(
       ignoradas += itensDetalhados.length - itensComSku.length;
       const itensAgrupados = agruparLinhasVendaAmazon(
         itensComSku.map((item) => {
-          const valorBrutoCentavos = parseAmountCentavos(item.ItemPrice);
+          const valorBrutoCentavos = calcularValorBrutoOrderItemCentavos(item);
           const taxasCentavos =
             parseAmountCentavos(item.ItemTax) +
             parseAmountCentavos(item.ShippingTax);
@@ -792,8 +815,8 @@ async function syncOrdersInternal(
         const lastUpdatedAt = getOrderLastUpdatedTime(order);
 
         // Decide valorBruto + precoOrigem.
-        // - ItemPrice da SP-API existe (>0) → usa real, marca "sp-api".
-        // - Senão, cache do listing (Produto.amazonPrecoListagemCentavos) → "listing".
+        // - ItemPrice da SP-API existe (>0) → usa real ja liquido de PromotionDiscount.
+        // - Senao, cache do listing (discounted_price ativo ou our_price) → "listing".
         // - Senão, mantém o que já existia no banco; ou zero.
         // - Existente com "sp-api" NUNCA é sobrescrito por "listing" (preserva real).
         let valorBrutoFinal = item.valorBrutoCentavos;
@@ -847,7 +870,10 @@ async function syncOrdersInternal(
           asin: item.ASIN ?? produto?.asin ?? null,
           titulo: item.Title ?? null,
           quantidade: item.quantidade,
-          precoUnitarioCentavos: item.precoUnitarioCentavos,
+          precoUnitarioCentavos: calcularPrecoUnitarioCentavos(
+            valorBrutoFinal,
+            item.quantidade,
+          ),
           valorBrutoCentavos: valorBrutoFinal,
           taxasCentavos: taxasFinal,
           fretesCentavos: fretesFinal,
@@ -980,6 +1006,7 @@ async function syncFinancialEvents(
     quantidade: number;
     precoUnitarioCentavos: number;
     valorBrutoCentavos: number | null;
+    precoOrigem: string | null;
     statusPedido: string;
     statusFinanceiro: string;
   };
@@ -995,6 +1022,7 @@ async function syncFinancialEvents(
           quantidade: true,
           precoUnitarioCentavos: true,
           valorBrutoCentavos: true,
+          precoOrigem: true,
           statusPedido: true,
           statusFinanceiro: true,
         },
@@ -1141,11 +1169,13 @@ async function syncFinancialEvents(
         }
 
         for (const venda of vendasParaAtualizar) {
+          const brutoAtual = valorBrutoDaVenda(venda);
+          const brutoFinanceiroConfirmado = linha.valorBrutoCentavos > 0;
           const atualizarBruto = valorBrutoFinanceiroPodeAtualizar({
-            valorBrutoAtualCentavos: valorBrutoDaVenda(venda),
+            valorBrutoAtualCentavos: brutoAtual,
             quantidadeAtual: venda.quantidade,
             valorBrutoFinanceiroCentavos: linha.valorBrutoCentavos,
-          });
+          }) || (venda.precoOrigem === "listing" && brutoFinanceiroConfirmado);
 
           const statusFinanceiroNovo = linha.statusFinanceiro ?? "LIQUIDADO";
           const recalcularImposto =
@@ -1154,7 +1184,7 @@ async function syncFinancialEvents(
             ? calcularImpostoSimplesCentavos({
                 valorBrutoCentavos: atualizarBruto
                   ? linha.valorBrutoCentavos
-                  : valorBrutoDaVenda(venda),
+                  : brutoAtual,
                 aliquotaBps: cfgImpostoSimples.aliquotaBps,
                 ativo: cfgImpostoSimples.ativo,
                 statusPedido: venda.statusPedido,
@@ -1179,6 +1209,7 @@ async function syncFinancialEvents(
               ...(impostoSimplesCentavos !== undefined
                 ? { impostoSimplesCentavos }
                 : {}),
+              ...(brutoFinanceiroConfirmado ? { precoOrigem: "sp-api" } : {}),
               liquidoMarketplaceCentavos:
                 linha.liquidoMarketplaceCentavos ?? undefined,
               liquidacaoId: linha.liquidacaoId ?? undefined,
@@ -1286,6 +1317,71 @@ async function fetchOrdersById(
   // Usa o endpoint de listagem com filtro AmazonOrderIds — retorna OrderStatus completo.
   // getOrder (endpoint individual) não retorna OrderStatus, gerando status UNKNOWN.
   return fetchOrdersByIdsFromList(creds, ids);
+}
+
+type ProdutoListingFallback = {
+  sku: string;
+  asin: string | null;
+  custoUnitario: number | null;
+  amazonPrecoListagemCentavos: number | null;
+};
+
+async function resolveSellerIdForListingFallback(
+  creds: SPAPICredentials,
+): Promise<string | null> {
+  const row = await db.configuracaoSistema.findUnique({
+    where: { chave: "amazon_seller_id" },
+  });
+  if (row?.valor) return row.valor;
+
+  const sellerId = await getSellerId(creds).catch(() => null);
+  if (!sellerId) return null;
+
+  await db.configuracaoSistema.upsert({
+    where: { chave: "amazon_seller_id" },
+    create: { chave: "amazon_seller_id", valor: sellerId },
+    update: { valor: sellerId },
+  });
+  return sellerId;
+}
+
+async function refreshListingPricesForOrderFallback(
+  creds: SPAPICredentials,
+  skus: string[],
+  produtosPorSku: Map<string, ProdutoListingFallback>,
+): Promise<void> {
+  const uniqueSkus = [...new Set(skus.filter(Boolean))];
+  if (uniqueSkus.length === 0) return;
+
+  const sellerId = await resolveSellerIdForListingFallback(creds);
+  if (!sellerId) return;
+
+  for (const sku of uniqueSkus) {
+    const produto = produtosPorSku.get(sku);
+    if (!produto) continue;
+
+    try {
+      const listing = await getListingsItem(creds, sellerId, sku);
+      const preco = extractAmazonListingEffectivePriceCentavos(listing);
+      await db.produto.update({
+        where: { sku },
+        data: {
+          amazonPrecoListagemCentavos: preco,
+          amazonPrecoListagemSyncEm: new Date(),
+        },
+      });
+      produtosPorSku.set(sku, {
+        ...produto,
+        amazonPrecoListagemCentavos: preco,
+      });
+    } catch (err) {
+      console.warn(
+        `[syncOrders] Falha ao atualizar preco efetivo do listing ${sku}: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
+  }
 }
 
 function getAmazonOrderId(order: SPOrder): string | undefined {
@@ -1426,6 +1522,9 @@ function orderItemsFromOrderSummary(order: SPOrder): SPOrderItemDetail[] {
         QuantityOrdered: Math.max(1, Number(quantity) || 1),
         ItemPrice: toSpMoney(product.price ?? record.price ?? record.ItemPrice),
         ShippingPrice: toSpMoney(record.ShippingPrice ?? record.shippingPrice),
+        PromotionDiscount: toSpMoney(
+          record.PromotionDiscount ?? record.promotionDiscount,
+        ),
         ItemTax: toSpMoney(record.ItemTax ?? record.itemTax),
         ShippingTax: toSpMoney(record.ShippingTax ?? record.shippingTax),
       };

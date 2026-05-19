@@ -33,6 +33,7 @@ import {
   shouldAutoApplyAmazonRefunds,
   upsertAmazonFinanceTransactions,
 } from "@/modules/amazon/finance-materializer";
+import { extractAmazonListingEffectivePriceCentavos } from "@/modules/amazon/pricing";
 import { inferAmazonCategoriaFee } from "@/modules/produtos/amazon-fee-category-mapper";
 import {
   notificarBuyboxPerdido,
@@ -1584,10 +1585,9 @@ function addMonthsUTC(d: Date, months: number) {
 // ─────────────────────────────────────────────────────────────────────
 // LISTING_PRICE_SYNC
 // ─────────────────────────────────────────────────────────────────────
-// Sincroniza o `our_price` do listing (Listings Items v2021-08-01) para
-// cada SKU ativo. Salva em Produto.amazonPrecoListagemCentavos. Usado como
-// fallback de valorBrutoCentavos quando a Orders API ainda não retorna
-// ItemPrice (pedidos Pending).
+// Sincroniza o preco efetivo do listing (discounted_price ativo, ou our_price)
+// para cada SKU ativo. Salva em Produto.amazonPrecoListagemCentavos. Usado como
+// fallback de valorBrutoCentavos quando a Orders API ainda nao retorna ItemPrice.
 //
 // Rate limit LISTINGS_GET_ITEM = 5 rps, burst 10. Lotamos em 100 SKUs por
 // execução (suficiente para inventário típico < 200 ativos); o restante
@@ -1644,7 +1644,7 @@ export async function runListingPriceSync(creds: SPAPICredentials) {
   for (const p of produtos) {
     try {
       const item = await getListingsItem(creds, sellerId, p.sku);
-      const preco = extractListingOurPriceCentavos(item);
+      const preco = extractAmazonListingEffectivePriceCentavos(item);
       await db.produto.update({
         where: { id: p.id },
         data: {
@@ -1665,50 +1665,6 @@ export async function runListingPriceSync(creds: SPAPICredentials) {
   }
 
   return { ok: true, processados: produtos.length, atualizados, semPreco, erros };
-}
-
-// Extrai our_price (com tax) do payload do Listings Items.
-// Estrutura típica: attributes.purchasable_offer[0].our_price[0].schedule[0].value_with_tax
-// Retorna centavos (Int) ou null se não houver preço disponível.
-function extractListingOurPriceCentavos(item: unknown): number | null {
-  if (!isRecord(item)) return null;
-  const attrs = item.attributes;
-  if (!isRecord(attrs)) return null;
-  const offers = readArray(attrs.purchasable_offer);
-  for (const offer of offers) {
-    if (!isRecord(offer)) continue;
-    const ourPrices = readArray(offer.our_price);
-    for (const price of ourPrices) {
-      if (!isRecord(price)) continue;
-      const schedules = readArray(price.schedule);
-      for (const sched of schedules) {
-        if (!isRecord(sched)) continue;
-        const valor =
-          readNumber(sched.value_with_tax) ?? readNumber(sched.value);
-        if (valor != null && valor > 0) {
-          return Math.round(valor * 100);
-        }
-      }
-    }
-  }
-  return null;
-}
-
-function isRecord(v: unknown): v is Record<string, unknown> {
-  return typeof v === "object" && v !== null && !Array.isArray(v);
-}
-
-function readArray(v: unknown): unknown[] {
-  return Array.isArray(v) ? v : [];
-}
-
-function readNumber(v: unknown): number | null {
-  if (typeof v === "number" && Number.isFinite(v)) return v;
-  if (typeof v === "string") {
-    const n = Number(v);
-    return Number.isFinite(n) ? n : null;
-  }
-  return null;
 }
 
 // ─────────────────────────────────────────────────────────────────────
