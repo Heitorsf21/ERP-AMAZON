@@ -86,7 +86,11 @@ async function main() {
         where: { transactionId: shipment.transactionId },
         select: { payload: true },
       });
-      console.log(tx?.payload?.slice(0, 1500));
+      const payload =
+        typeof tx?.payload === "string"
+          ? tx.payload
+          : JSON.stringify(tx?.payload ?? null);
+      console.log(payload.slice(0, 1500));
     }
   }
 

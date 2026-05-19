@@ -54,7 +54,7 @@ type FinanceTxLite = {
   postedDate: Date | null;
   amazonOrderId: string | null;
   sku: string | null;
-  payload: string;
+  payload: unknown;
 };
 
 type Classificacao = {
@@ -297,11 +297,12 @@ function isAdjustment(transactionType: string | null | undefined): boolean {
 }
 
 function inspecionarProductCharges(
-  payload: string,
+  payload: unknown,
   skuAlvo: string,
 ): number | null {
   try {
-    const normalized = normalizeFinanceTransaction(JSON.parse(payload));
+    const parsed = typeof payload === "string" ? JSON.parse(payload) : payload;
+    const normalized = normalizeFinanceTransaction(parsed);
     if (!normalized) return null;
     const item =
       normalized.items.find((i) => i.sku === skuAlvo) ?? normalized.items[0];

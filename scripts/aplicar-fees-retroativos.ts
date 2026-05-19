@@ -217,7 +217,7 @@ async function main() {
 }
 
 function extrairValoresDoPayload(
-  payload: string,
+  payload: unknown,
   skuAlvo: string,
 ): {
   productCharges: number;
@@ -226,7 +226,7 @@ function extrairValoresDoPayload(
   totalAmount: number;
 } | null {
   try {
-    const tx = JSON.parse(payload);
+    const tx = typeof payload === "string" ? JSON.parse(payload) : payload;
     if (!tx || typeof tx !== "object") return null;
 
     const items = readArray((tx as Record<string, unknown>).items);
