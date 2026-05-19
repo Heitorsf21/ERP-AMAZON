@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { useForm, useFieldArray, Controller } from "react-hook-form";
+import { useForm, useFieldArray, Controller, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Plus, Trash2, ArrowLeft, Loader2 } from "lucide-react";
@@ -99,7 +99,7 @@ export default function NovoPedidoPage() {
     onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao criar pedido"),
   });
 
-  const itens = form.watch("itens");
+  const itens = useWatch({ control: form.control, name: "itens" }) ?? [];
   const total = itens.reduce(
     (sum, item) =>
       sum + (Number(item.quantidade) || 0) * (Number(item.custoUnitario) || 0),
@@ -201,8 +201,9 @@ export default function NovoPedidoPage() {
               </TableHeader>
               <TableBody>
                 {fields.map((field, index) => {
-                  const qty = Number(form.watch(`itens.${index}.quantidade`)) || 0;
-                  const custo = Number(form.watch(`itens.${index}.custoUnitario`)) || 0;
+                  const item = itens[index];
+                  const qty = Number(item?.quantidade) || 0;
+                  const custo = Number(item?.custoUnitario) || 0;
                   const subtotal = qty * custo;
                   return (
                     <TableRow key={field.id}>
