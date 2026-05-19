@@ -61,6 +61,12 @@ type Venda = {
   valorBrutoCentavos: number | null;
   taxasCentavos: number;
   fretesCentavos: number;
+  taxasEstimadas?: boolean;
+  categoriaTaxaEstimada?: {
+    slug: string | null;
+    label: string;
+    regra: string;
+  };
   liquidoMarketplaceCentavos: number | null;
   custoUnitarioCentavos: number | null;
   fulfillmentChannel: string | null;
@@ -524,7 +530,7 @@ export default function VendasPage() {
         fmtData(v.dataVenda),
         String(v.quantidade),
         (valorBruto(v) / 100).toFixed(2),
-        (v.taxasCentavos / 100).toFixed(2),
+        `${(v.taxasCentavos / 100).toFixed(2)}${v.taxasEstimadas ? " (estimada)" : ""}`,
         (v.fretesCentavos / 100).toFixed(2),
         v.liquidoMarketplaceCentavos != null ? (v.liquidoMarketplaceCentavos / 100).toFixed(2) : "",
         v.custoUnitarioCentavos != null ? (v.custoUnitarioCentavos / 100).toFixed(2) : "",
@@ -864,7 +870,24 @@ function TabelaVendas({
                   {formatBRL(valorBruto(venda))}
                 </TableCell>
                 <TableCell className="hidden text-right tabular-nums lg:table-cell">
-                  {formatBRL(venda.taxasCentavos + venda.fretesCentavos)}
+                  <div className="flex flex-col items-end gap-1">
+                    <span>
+                      {formatBRL(venda.taxasCentavos + venda.fretesCentavos)}
+                    </span>
+                    {venda.taxasEstimadas && (
+                      <Badge
+                        variant="outline"
+                        className="h-5 px-1.5 text-[10px] font-normal"
+                        title={
+                          venda.categoriaTaxaEstimada
+                            ? `${venda.categoriaTaxaEstimada.label} - ${venda.categoriaTaxaEstimada.regra}`
+                            : "Taxa estimada"
+                        }
+                      >
+                        Estimada
+                      </Badge>
+                    )}
+                  </div>
                 </TableCell>
                 <TableCell className="text-right font-medium tabular-nums">
                   {formatBRL(

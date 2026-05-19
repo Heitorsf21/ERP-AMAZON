@@ -6,6 +6,7 @@ import {
   normalizarVisaoVendas,
   whereVendaAmazonPorVisao,
 } from "@/modules/vendas/filtros";
+import { enriquecerVendasComTaxasEstimadas } from "@/modules/vendas/taxas-estimadas";
 import { valorBrutoDaVenda } from "@/modules/vendas/valores";
 
 export const dynamic = "force-dynamic";
@@ -65,7 +66,9 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       }),
     ]);
 
-    const vendasFormatadas = vendas.map((venda) => ({
+    const vendasComTaxas = await enriquecerVendasComTaxasEstimadas(vendas);
+
+    const vendasFormatadas = vendasComTaxas.map((venda) => ({
       ...venda,
       numeroPedido: venda.amazonOrderId,
       status: venda.statusPedido,
