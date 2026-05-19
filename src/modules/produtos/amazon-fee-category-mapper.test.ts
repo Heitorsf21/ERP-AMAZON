@@ -3,40 +3,35 @@ import {
   inferAmazonCategoriaFee,
   __test_utils__,
 } from "@/modules/produtos/amazon-fee-category-mapper";
-import type { SPCatalogItem } from "@/lib/amazon-sp-api";
+import type { SPCatalogClassification, SPCatalogItem } from "@/lib/amazon-sp-api";
 
 function catalogItem(partial: Partial<SPCatalogItem>): SPCatalogItem {
   return { asin: "B000TESTE", ...partial };
 }
 
+function chain(...names: string[]): SPCatalogClassification {
+  const nodes: SPCatalogClassification[] = names.map((displayName) => ({ displayName }));
+  for (let i = 0; i < nodes.length - 1; i += 1) {
+    nodes[i]!.parent = nodes[i + 1];
+  }
+  return nodes[0]!;
+}
+
 describe("amazon-fee-category-mapper", () => {
-  it("mapeia classification exata com acentos normalizados", () => {
-    const result = inferAmazonCategoriaFee(
-      catalogItem({
-        classifications: [
-          {
-            marketplaceId: "A2Q3Y263D00KWC",
-            classifications: [{ displayName: "Cozinha" }],
-          },
-        ],
-      }),
-    );
-
-    expect(result?.slug).toBe("cozinha");
-    expect(result?.label).toBe("Cozinha");
-    expect(result?.source).toBe("classification");
-  });
-
-  it("prioriza folha da classification antes do parent", () => {
+  it("mapeia leaf Mixers pela arvore principal Cozinha", () => {
     const result = inferAmazonCategoriaFee(
       catalogItem({
         classifications: [
           {
             classifications: [
-              {
-                displayName: "Panelas",
-                parent: { displayName: "Casa" },
-              },
+              chain(
+                "Mixers",
+                "Batedeiras e Mixers",
+                "Liquidificadores, Batedeiras e Processadores de Alimentos",
+                "Eletroportateis",
+                "Categorias",
+                "Cozinha",
+              ),
             ],
           },
         ],
@@ -44,10 +39,98 @@ describe("amazon-fee-category-mapper", () => {
     );
 
     expect(result?.slug).toBe("cozinha");
-    expect(result?.matchedText).toBe("Panelas");
+    expect(result?.matchedText).toContain("Mixers");
   });
 
-  it("usa productType como fallback quando nao ha classification", () => {
+  it("mapeia bolsa de cabo como acessorio eletronico/PC pela arvore", () => {
+    const result = inferAmazonCategoriaFee(
+      catalogItem({
+        classifications: [
+          {
+            classifications: [
+              chain(
+                "Bolsas Organizadoras de Cabo",
+                "Cabos e Acessorios",
+                "Acessorios",
+                "Categorias",
+                "Computadores e Informatica",
+              ),
+            ],
+          },
+        ],
+      }),
+    );
+
+    expect(result?.slug).toBe("acessorios-eletronicos-pc");
+  });
+
+  it("mapeia potes e recipientes pela arvore Cozinha, nao por comida", () => {
+    const result = inferAmazonCategoriaFee(
+      catalogItem({
+        classifications: [
+          {
+            classifications: [
+              chain(
+                "Conteineres de Armazenamento de Alimentos",
+                "Recipientes e Potes para Alimentos",
+                "Armazenamento de Alimentos",
+                "Organizacao",
+                "Categorias",
+                "Cozinha",
+              ),
+            ],
+          },
+        ],
+      }),
+    );
+
+    expect(result?.slug).toBe("cozinha");
+  });
+
+  it("mapeia mascara para dormir pela arvore Saude e Bem-Estar", () => {
+    const result = inferAmazonCategoriaFee(
+      catalogItem({
+        classifications: [
+          {
+            classifications: [
+              chain(
+                "Mascaras para Dormir",
+                "Sono e Ronco",
+                "Medicamentos e Remedios",
+                "Categorias",
+                "Saude e Bem-Estar",
+              ),
+            ],
+          },
+        ],
+      }),
+    );
+
+    expect(result?.slug).toBe("saude-cuidados-pessoais");
+  });
+
+  it("mapeia interfone pela arvore Ferramentas e Materiais de Construcao", () => {
+    const result = inferAmazonCategoriaFee(
+      catalogItem({
+        classifications: [
+          {
+            classifications: [
+              chain(
+                "Interfones",
+                "Eletrica",
+                "Categorias",
+                "Ferramentas e Materiais de Construcao",
+              ),
+            ],
+          },
+        ],
+      }),
+    );
+
+    expect(result?.slug).toBe("ferramentas-construcao");
+  });
+
+  it("usa productType como fallback quando nao ha arvore de classificacao", () => {
     const result = inferAmazonCategoriaFee(
       catalogItem({
         summaries: [{ productType: "LUXURY_BEAUTY" }],
@@ -57,18 +140,49 @@ describe("amazon-fee-category-mapper", () => {
     expect(result?.slug).toBe("beleza-luxo");
   });
 
-  it("nao escolhe categoria quando o texto e ambiguo", () => {
-    expect(__test_utils__.resolveTextSlug("Casa e Cozinha", "classification")).toBeNull();
+  it("nao transforma folha de bolsa de cabo em moda sem parent confiavel", () => {
+    const result = inferAmazonCategoriaFee(
+      catalogItem({
+        classifications: [
+          { classifications: [{ displayName: "Bolsas Organizadoras de Cabo" }] },
+        ],
+      }),
+    );
+
+    expect(result).toBeNull();
+    expect(
+      __test_utils__.resolveTextSlug("Bolsas Organizadoras de Cabo", "classification"),
+    ).toBeNull();
   });
 
-  it("nao escolhe categoria quando classifications de mesmo nivel conflitam", () => {
+  it("nao transforma conteiner de alimentos em Comidas e Bebidas sem parent confiavel", () => {
     const result = inferAmazonCategoriaFee(
       catalogItem({
         classifications: [
           {
             classifications: [
-              { displayName: "Casa" },
-              { displayName: "Cozinha" },
+              { displayName: "Conteineres de Armazenamento de Alimentos" },
+            ],
+          },
+        ],
+      }),
+    );
+
+    expect(result).toBeNull();
+  });
+
+  it("nao escolhe categoria quando o texto e ambiguo", () => {
+    expect(__test_utils__.resolveTextSlug("Casa e Cozinha", "classification")).toBeNull();
+  });
+
+  it("nao escolhe categoria quando classifications conflitam", () => {
+    const result = inferAmazonCategoriaFee(
+      catalogItem({
+        classifications: [
+          {
+            classifications: [
+              chain("Produto", "Casa"),
+              chain("Produto", "Cozinha"),
             ],
           },
         ],

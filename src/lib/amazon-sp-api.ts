@@ -289,6 +289,9 @@ export interface SPCatalogSummary {
   itemName?: string;
   brand?: string;
   productType?: string;
+  browseClassification?: SPCatalogClassification;
+  websiteDisplayGroup?: string;
+  websiteDisplayGroupName?: string;
 }
 
 export interface SPCatalogImage {
@@ -301,6 +304,7 @@ export interface SPCatalogImage {
 export interface SPCatalogClassification {
   displayName?: string;
   classificationId?: string;
+  parent?: SPCatalogClassification;
 }
 
 export interface SPCatalogItem {
@@ -313,6 +317,10 @@ export interface SPCatalogItem {
   classifications?: Array<{
     marketplaceId?: string;
     classifications?: SPCatalogClassification[];
+  }>;
+  productTypes?: Array<{
+    marketplaceId?: string;
+    productType?: string;
   }>;
 }
 
@@ -593,7 +601,7 @@ export async function getCatalogItem(
         operation: AmazonSpApiOperation.CATALOG_GET_ITEM,
         params: {
           marketplaceIds: creds.marketplaceId,
-          includedData: "summaries,images,classifications",
+          includedData: "summaries,images,classifications,productTypes",
         },
       },
     );

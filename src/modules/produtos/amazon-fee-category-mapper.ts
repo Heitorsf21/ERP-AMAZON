@@ -13,7 +13,6 @@ export type AmazonFeeCategoryInference = {
 type Candidate = {
   text: string;
   source: Source;
-  priority: number;
 };
 
 const EXACT_SYNONYMS: Record<string, string> = {
@@ -66,10 +65,14 @@ const EXACT_SYNONYMS: Record<string, string> = {
 const PRODUCT_TYPE_SYNONYMS: Record<string, string> = {
   BABY_PRODUCT: "bebes",
   BEAUTY: "beleza",
+  BODY_POSITIONER: "saude-cuidados-pessoais",
   BOOKS: "livros",
   CELLULAR_PHONE: "celulares",
   COMPUTER: "pc",
+  DISHWARE_BOWL: "cozinha",
   FOOD: "comidas-bebidas",
+  FOOD_MIXER: "cozinha",
+  FOOD_STORAGE_CONTAINER: "cozinha",
   GROCERY: "comidas-bebidas",
   JEWELRY: "joias",
   KITCHEN: "cozinha",
@@ -78,7 +81,10 @@ const PRODUCT_TYPE_SYNONYMS: Record<string, string> = {
   MUSIC: "musica",
   MUSICAL_INSTRUMENTS: "instrumentos-musicais",
   PET_SUPPLIES: "pet-shop",
+  POWER_CONVERTER: "acessorios-eletronicos-pc",
+  POWER_STRIP: "acessorios-eletronicos-pc",
   SHOES: "calcados-bolsas-oculos",
+  SLEEP_MASK: "saude-cuidados-pessoais",
   SPORTS: "esportes-aventura-lazer",
   TOOLS: "ferramentas-construcao",
   TOY_FIGURE: "brinquedos-jogos",
@@ -86,43 +92,6 @@ const PRODUCT_TYPE_SYNONYMS: Record<string, string> = {
   VIDEO_DVD: "video-dvd",
   WATCH: "relogios",
 };
-
-const STRONG_CONTAINS: Array<{ slug: string; terms: string[] }> = [
-  { slug: "comidas-bebidas", terms: ["alimentos", "mantimentos"] },
-  { slug: "bebidas-alcoolicas", terms: ["bebida alcoolica", "vinhos", "cervejas"] },
-  { slug: "eletro-linha-branca", terms: ["linha branca", "lava loucas", "lava roupas"] },
-  { slug: "saude-cuidados-pessoais", terms: ["saude", "higiene pessoal"] },
-  { slug: "pneus-rodas", terms: ["pneus", "rodas"] },
-  { slug: "industria-ciencia", terms: ["industria", "cientifico"] },
-  { slug: "bebes", terms: ["bebe", "maternidade"] },
-  { slug: "pet-shop", terms: ["pet", "animais de estimacao"] },
-  { slug: "eletroportateis", terms: ["eletroportatil", "cuidados pessoais eletricos"] },
-  { slug: "cozinha", terms: ["utensilios de cozinha", "panelas"] },
-  { slug: "jardim-piscina", terms: ["jardim", "piscina"] },
-  { slug: "brinquedos-jogos", terms: ["brinquedos", "jogos"] },
-  { slug: "tv-audio-cinema", terms: ["tv audio", "home theater", "televisores"] },
-  { slug: "celulares", terms: ["celulares", "smartphones"] },
-  { slug: "camera-fotografia", terms: ["fotografia", "camera"] },
-  { slug: "videogames-consoles", terms: ["videogames", "consoles"] },
-  { slug: "eletronicos-portateis", terms: ["eletronicos portateis"] },
-  { slug: "automotivos", terms: ["automotivo", "automotivos"] },
-  { slug: "beleza-luxo", terms: ["beleza de luxo"] },
-  { slug: "beleza", terms: ["beleza"] },
-  { slug: "esportes-aventura-lazer", terms: ["esportes", "aventura", "lazer"] },
-  { slug: "ferramentas-construcao", terms: ["ferramentas", "construcao"] },
-  { slug: "papelaria-escritorio", terms: ["papelaria", "escritorio"] },
-  { slug: "bagagem", terms: ["bagagem", "malas"] },
-  { slug: "roupas-acessorios", terms: ["roupas", "vestuario"] },
-  { slug: "calcados-bolsas-oculos", terms: ["calcados", "bolsas", "oculos"] },
-  { slug: "relogios", terms: ["relogios"] },
-  { slug: "joias", terms: ["joias"] },
-  { slug: "livros", terms: ["livros"] },
-  { slug: "acessorios-eletronicos-pc", terms: ["acessorios para eletronicos", "acessorios eletronicos", "acessorios para pc"] },
-  { slug: "moveis", terms: ["moveis", "mobiliario"] },
-  { slug: "video-dvd", terms: ["video e dvd", "dvd"] },
-  { slug: "musica", terms: ["musica", "cds e vinil"] },
-  { slug: "instrumentos-musicais", terms: ["instrumentos musicais"] },
-];
 
 const EXACT_BY_NORMALIZED = new Map<string, string>();
 for (const [text, slug] of Object.entries(EXACT_SYNONYMS)) {
@@ -149,6 +118,23 @@ function normalizeProductType(value: string): string {
     .replace(/^_+|_+$/g, "");
 }
 
+function hasNode(nodes: string[], value: string): boolean {
+  const normalized = normalizeText(value);
+  return nodes.includes(normalized);
+}
+
+function hasNodeContaining(nodes: string[], terms: string[]): boolean {
+  const normalizedTerms = terms.map(normalizeText);
+  return nodes.some((node) => normalizedTerms.some((term) => node.includes(term)));
+}
+
+function pathLabel(chain: SPCatalogClassification[]): string {
+  return chain
+    .map((node) => node.displayName)
+    .filter((name): name is string => !!name)
+    .join(" > ");
+}
+
 function resolveTextSlug(text: string, source: Source): string | null {
   const normalized = normalizeText(text);
   if (!normalized) return null;
@@ -161,90 +147,135 @@ function resolveTextSlug(text: string, source: Source): string | null {
     if (productType) return productType;
   }
 
-  const hits = new Set<string>();
-  for (const rule of STRONG_CONTAINS) {
-    if (rule.terms.some((term) => normalized.includes(normalizeText(term)))) {
-      hits.add(rule.slug);
-    }
+  return null;
+}
+
+function resolveClassificationChainSlug(
+  chain: SPCatalogClassification[],
+): string | null {
+  const nodes = chain
+    .map((node) => node.displayName)
+    .filter((name): name is string => !!name)
+    .map(normalizeText);
+  if (nodes.length === 0) return null;
+
+  if (hasNode(nodes, "cozinha")) return "cozinha";
+  if (
+    hasNode(nodes, "saude e bem estar") ||
+    hasNode(nodes, "saude e cuidados pessoais")
+  ) {
+    return "saude-cuidados-pessoais";
+  }
+  if (
+    hasNode(nodes, "ferramentas e materiais de construcao") ||
+    hasNode(nodes, "ferramentas e construcao")
+  ) {
+    return "ferramentas-construcao";
+  }
+  if (hasNode(nodes, "computadores e informatica")) {
+    return hasNodeContaining(nodes, ["acessorios", "cabo", "cabos"])
+      ? "acessorios-eletronicos-pc"
+      : "pc";
+  }
+  if (hasNode(nodes, "eletronicos e tecnologia")) {
+    return hasNodeContaining(nodes, [
+      "acessorios",
+      "adaptador",
+      "adaptadores",
+      "alimentacao",
+      "tomada",
+      "tomadas",
+    ])
+      ? "acessorios-eletronicos-pc"
+      : null;
   }
 
-  return hits.size === 1 ? [...hits][0] ?? null : null;
-}
-
-function pushCandidate(
-  candidates: Candidate[],
-  text: string | null | undefined,
-  source: Source,
-  priority: number,
-) {
-  const trimmed = text?.trim();
-  if (!trimmed) return;
-  if (candidates.some((c) => normalizeText(c.text) === normalizeText(trimmed))) return;
-  candidates.push({ text: trimmed, source, priority });
-}
-
-function pushClassificationChain(
-  candidates: Candidate[],
-  classification: SPCatalogClassification | undefined,
-) {
-  let current = classification;
-  let depth = 0;
-  while (current && depth < 5) {
-    pushCandidate(candidates, current.displayName, "classification", depth);
-    current = current.parent;
-    depth += 1;
+  for (const node of nodes) {
+    const exact = EXACT_BY_NORMALIZED.get(node);
+    if (exact) return exact;
   }
+
+  return null;
 }
 
-function collectCandidates(item: SPCatalogItem): Candidate[] {
-  const candidates: Candidate[] = [];
+function collectClassificationChains(item: SPCatalogItem): SPCatalogClassification[][] {
+  const chains: SPCatalogClassification[][] = [];
 
   for (const group of item.classifications ?? []) {
     for (const classification of group.classifications ?? []) {
-      pushClassificationChain(candidates, classification);
+      const chain: SPCatalogClassification[] = [];
+      let current: SPCatalogClassification | undefined = classification;
+      let depth = 0;
+      while (current && depth < 10) {
+        chain.push(current);
+        current = current.parent;
+        depth += 1;
+      }
+      if (chain.length > 0) chains.push(chain);
     }
   }
 
   for (const summary of item.summaries ?? []) {
-    pushCandidate(candidates, summary.productType, "summary", 10);
+    if (summary.browseClassification) chains.push([summary.browseClassification]);
   }
 
+  return chains;
+}
+
+function collectFallbackCandidates(item: SPCatalogItem): Candidate[] {
+  const candidates: Candidate[] = [];
+
+  for (const summary of item.summaries ?? []) {
+    if (summary.productType) {
+      candidates.push({ text: summary.productType, source: "summary" });
+    }
+  }
   for (const productType of item.productTypes ?? []) {
-    pushCandidate(candidates, productType.productType, "productType", 20);
+    if (productType.productType) {
+      candidates.push({ text: productType.productType, source: "productType" });
+    }
   }
 
   return candidates;
 }
 
+function buildInference(
+  slug: string,
+  matchedText: string,
+  source: Source,
+): AmazonFeeCategoryInference | null {
+  const rule = findCommissionRule(slug);
+  if (!rule) return null;
+  return { slug, label: rule.label, matchedText, source };
+}
+
 export function inferAmazonCategoriaFee(
   item: SPCatalogItem,
 ): AmazonFeeCategoryInference | null {
-  const candidates = collectCandidates(item);
-  const priorities = [...new Set(candidates.map((candidate) => candidate.priority))].sort(
-    (a, b) => a - b,
-  );
+  const chainMatches = collectClassificationChains(item)
+    .map((chain) => ({
+      slug: resolveClassificationChainSlug(chain),
+      matchedText: pathLabel(chain),
+    }))
+    .filter((match): match is { slug: string; matchedText: string } => !!match.slug);
+  const chainSlugs = [...new Set(chainMatches.map((match) => match.slug))];
+  if (chainSlugs.length > 1) return null;
+  if (chainSlugs.length === 1) {
+    return buildInference(chainSlugs[0] as string, chainMatches[0]?.matchedText ?? "", "classification");
+  }
 
-  for (const priority of priorities) {
-    const matches = candidates
-      .filter((candidate) => candidate.priority === priority)
-      .map((candidate) => ({
-        candidate,
-        slug: resolveTextSlug(candidate.text, candidate.source),
-      }))
-      .filter((match): match is { candidate: Candidate; slug: string } => !!match.slug);
-
-    const uniqueSlugs = [...new Set(matches.map((match) => match.slug))];
-    if (uniqueSlugs.length > 1) return null;
-    const match = matches[0];
-    if (!match) continue;
-    const rule = findCommissionRule(match.slug);
-    if (!rule) continue;
-    return {
-      slug: match.slug,
-      label: rule.label,
-      matchedText: match.candidate.text,
-      source: match.candidate.source,
-    };
+  const fallbackMatches = collectFallbackCandidates(item)
+    .map((candidate) => ({
+      candidate,
+      slug: resolveTextSlug(candidate.text, candidate.source),
+    }))
+    .filter((match): match is { candidate: Candidate; slug: string } => !!match.slug);
+  const fallbackSlugs = [...new Set(fallbackMatches.map((match) => match.slug))];
+  if (fallbackSlugs.length > 1) return null;
+  if (fallbackSlugs.length === 1) {
+    const match = fallbackMatches[0];
+    if (!match) return null;
+    return buildInference(match.slug, match.candidate.text, match.candidate.source);
   }
 
   return null;
@@ -253,5 +284,6 @@ export function inferAmazonCategoriaFee(
 export const __test_utils__ = {
   normalizeText,
   resolveTextSlug,
-  collectCandidates,
+  resolveClassificationChainSlug,
+  collectClassificationChains,
 };

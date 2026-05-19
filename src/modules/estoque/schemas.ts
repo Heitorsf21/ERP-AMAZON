@@ -4,6 +4,18 @@ import {
   OrigemMovimentacaoEstoque,
   StatusReposicao,
 } from "@/modules/shared/domain";
+import { findCommissionRule } from "@/modules/produtos/commission-table";
+
+const amazonCategoriaFeeSchema = z.preprocess(
+  (v) => (v === "" ? null : v),
+  z
+    .string()
+    .nullable()
+    .optional()
+    .refine((v) => v == null || !!findCommissionRule(v), {
+      message: "Categoria de comissao Amazon invalida",
+    }),
+);
 
 export const criarProdutoSchema = z.object({
   sku: z
@@ -20,6 +32,7 @@ export const criarProdutoSchema = z.object({
   unidade: z.string().max(20).default("un"),
   imagemUrl: z.string().url().optional().nullable(),
   observacoes: z.string().max(500).optional().nullable(),
+  amazonCategoriaFee: amazonCategoriaFeeSchema,
 });
 export type CriarProdutoInput = z.infer<typeof criarProdutoSchema>;
 

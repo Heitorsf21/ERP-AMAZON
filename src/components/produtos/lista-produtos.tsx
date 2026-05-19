@@ -86,6 +86,7 @@ type Produto = {
   amazonImagemUrl: string | null;
   amazonTituloOficial: string | null;
   amazonCategoria: string | null;
+  amazonCategoriaFee: string | null;
   amazonCatalogSyncEm: string | null;
   // B2 — Buybox
   buyboxGanho: boolean | null;

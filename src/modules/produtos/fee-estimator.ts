@@ -12,7 +12,7 @@
  * Parcelamento (1.5%) NÃO é estimado — só vem do real (API).
  *
  * Fontes:
- *   - Tabela de comissão por categoria (37 entradas, BR 2026) replicada da
+ *   - Tabela de comissão por categoria (36 entradas, BR 2026) replicada da
  *     extensão de análise Amazon — fonte: sell.amazon.com.br/precos.
  *   - Comissão default global (categoria desconhecida): 12% empirico
  *     (calibrado pelas planilhas Gestor Seller Out/2025-Abr/2026 do user).
@@ -26,6 +26,12 @@
  *   3. Fallback local puro (CPU only).
  */
 import { db } from "@/lib/db";
+import {
+  COMMISSION_TABLE,
+  calcularComissaoCentavos,
+  findCommissionRule,
+} from "@/modules/produtos/commission-table";
+export { findCommissionRule, listCommissionCategories } from "@/modules/produtos/commission-table";
 
 export const RULE_VERSION_LOCAL = "local-v2-2026-05";
 
@@ -70,87 +76,6 @@ const DEFAULTS: FeeEstimateConfig = {
 
 const PROMO_LIMITE_CENTAVOS = 9999;
 const MEDIA_CLOSING_FEE_CENTAVOS = 199;
-
-// ─── Tabela de comissão por categoria (BR 2026, 37 entradas) ───
-// Fonte: extensão de análise Amazon (packages/core/src/amazon-fees.ts).
-// `rateBps` = basis points (1200 = 12.00%). `minCentavos` = piso da comissão.
-// `tier?` = comissão tiered (ex: Móveis = 15% até R$200, 10% acima).
-type CommissionRule = {
-  label: string;
-  slug: string;
-  rateBps: number;
-  minCentavos: number;
-  tier?: {
-    thresholdCentavos: number;
-    baseRateBps: number;
-    excessRateBps: number;
-  };
-  isMedia?: boolean;
-};
-
-const COMMISSION_TABLE: CommissionRule[] = [
-  { label: "Comidas e bebidas", slug: "comidas-bebidas", rateBps: 1000, minCentavos: 100 },
-  { label: "Eletrodomesticos linha branca", slug: "eletro-linha-branca", rateBps: 1100, minCentavos: 100 },
-  { label: "Saude e cuidados pessoais", slug: "saude-cuidados-pessoais", rateBps: 1200, minCentavos: 100 },
-  { label: "Bebidas alcoolicas", slug: "bebidas-alcoolicas", rateBps: 1100, minCentavos: 100 },
-  { label: "Pneus e rodas", slug: "pneus-rodas", rateBps: 1000, minCentavos: 100 },
-  { label: "Industria e Ciencia", slug: "industria-ciencia", rateBps: 1200, minCentavos: 100 },
-  { label: "Produtos para bebes", slug: "bebes", rateBps: 1200, minCentavos: 200 },
-  { label: "Pet Shop", slug: "pet-shop", rateBps: 1200, minCentavos: 200 },
-  { label: "Eletroportateis cuidado pessoal", slug: "eletroportateis", rateBps: 1200, minCentavos: 200 },
-  { label: "Cozinha", slug: "cozinha", rateBps: 1200, minCentavos: 200 },
-  { label: "Jardim e Piscina", slug: "jardim-piscina", rateBps: 1200, minCentavos: 200 },
-  { label: "Brinquedos e jogos", slug: "brinquedos-jogos", rateBps: 1200, minCentavos: 200 },
-  { label: "TV, audio e cinema", slug: "tv-audio-cinema", rateBps: 1000, minCentavos: 200 },
-  { label: "PC", slug: "pc", rateBps: 1200, minCentavos: 200 },
-  { label: "Celulares", slug: "celulares", rateBps: 1100, minCentavos: 200 },
-  { label: "Camera e fotografia", slug: "camera-fotografia", rateBps: 1100, minCentavos: 200 },
-  { label: "Videogames e consoles", slug: "videogames-consoles", rateBps: 1100, minCentavos: 200, isMedia: true },
-  { label: "Eletronicos portateis", slug: "eletronicos-portateis", rateBps: 1300, minCentavos: 200 },
-  { label: "Automotivos", slug: "automotivos", rateBps: 1200, minCentavos: 200 },
-  { label: "Casa", slug: "casa", rateBps: 1200, minCentavos: 200 },
-  { label: "Beleza de luxo", slug: "beleza-luxo", rateBps: 1400, minCentavos: 200 },
-  { label: "Beleza", slug: "beleza", rateBps: 1300, minCentavos: 200 },
-  { label: "Esportes, aventura e lazer", slug: "esportes-aventura-lazer", rateBps: 1200, minCentavos: 200 },
-  { label: "Ferramentas e Construcao", slug: "ferramentas-construcao", rateBps: 1100, minCentavos: 200 },
-  { label: "Papelaria e Escritorio", slug: "papelaria-escritorio", rateBps: 1300, minCentavos: 200 },
-  { label: "Bagagem", slug: "bagagem", rateBps: 1400, minCentavos: 200 },
-  { label: "Roupas e acessorios", slug: "roupas-acessorios", rateBps: 1400, minCentavos: 200 },
-  { label: "Calcados, bolsas e oculos", slug: "calcados-bolsas-oculos", rateBps: 1400, minCentavos: 200 },
-  { label: "Relogios", slug: "relogios", rateBps: 1300, minCentavos: 200 },
-  { label: "Joias", slug: "joias", rateBps: 1400, minCentavos: 200 },
-  { label: "Livros", slug: "livros", rateBps: 1500, minCentavos: 200, isMedia: true },
-  {
-    label: "Acessorios para eletronicos e PC",
-    slug: "acessorios-eletronicos-pc",
-    rateBps: 1500,
-    minCentavos: 200,
-    tier: { thresholdCentavos: 10000, baseRateBps: 1500, excessRateBps: 1000 },
-  },
-  {
-    label: "Moveis",
-    slug: "moveis",
-    rateBps: 1500,
-    minCentavos: 200,
-    tier: { thresholdCentavos: 20000, baseRateBps: 1500, excessRateBps: 1000 },
-  },
-  { label: "Video e DVD", slug: "video-dvd", rateBps: 1500, minCentavos: 200, isMedia: true },
-  { label: "Musica", slug: "musica", rateBps: 1500, minCentavos: 200, isMedia: true },
-  { label: "Instrumentos musicais", slug: "instrumentos-musicais", rateBps: 1200, minCentavos: 200 },
-];
-
-const COMMISSION_TABLE_BY_SLUG: Map<string, CommissionRule> = new Map(
-  COMMISSION_TABLE.map((rule) => [rule.slug, rule]),
-);
-
-export function listCommissionCategories(): Array<{ slug: string; label: string }> {
-  return COMMISSION_TABLE.map(({ slug, label }) => ({ slug, label }));
-}
-
-export function findCommissionRule(slug?: string | null): CommissionRule | undefined {
-  if (!slug) return undefined;
-  return COMMISSION_TABLE_BY_SLUG.get(slug);
-}
 
 // ─── Cache de config (TTL 60s) ───
 let cachedConfig: { value: FeeEstimateConfig; at: number } | null = null;
@@ -208,27 +133,6 @@ export async function loadFeeEstimatorConfig(
   return value;
 }
 
-// ─── Cálculo da comissão respeitando tier + minCentavos ───
-function calcularComissaoCentavos(
-  brutoCentavos: number,
-  rule: { rateBps: number; minCentavos: number; tier?: { thresholdCentavos: number; baseRateBps: number; excessRateBps: number } },
-): number {
-  const bruto = Math.max(0, Math.round(brutoCentavos));
-  let calc: number;
-  if (rule.tier && bruto > rule.tier.thresholdCentavos) {
-    const baseParte = Math.round((rule.tier.thresholdCentavos * rule.tier.baseRateBps) / 10000);
-    const excedenteParte = Math.round(
-      ((bruto - rule.tier.thresholdCentavos) * rule.tier.excessRateBps) / 10000,
-    );
-    calc = baseParte + excedenteParte;
-  } else if (rule.tier) {
-    calc = Math.round((bruto * rule.tier.baseRateBps) / 10000);
-  } else {
-    calc = Math.round((bruto * rule.rateBps) / 10000);
-  }
-  return Math.max(calc, rule.minCentavos);
-}
-
 /**
  * Cálculo puro local (sem I/O). Aceita categoria opcional para usar tabela rica.
  * Sem categoria → usa cfg.referralDefaultBps (default global 12%, calibrado).
@@ -247,7 +151,7 @@ export function calcularFeesLocal(
   let isMedia = false;
 
   if (override?.categoriaSlug) {
-    const rule = COMMISSION_TABLE_BY_SLUG.get(override.categoriaSlug);
+    const rule = findCommissionRule(override.categoriaSlug);
     if (rule) {
       comissaoCentavos = calcularComissaoCentavos(bruto, rule);
       categoriaLabel = rule.label;

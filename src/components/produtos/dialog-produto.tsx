@@ -16,8 +16,13 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { fetchJSON } from "@/lib/fetcher";
+import {
+  formatCommissionRule,
+  listCommissionCategories,
+} from "@/modules/produtos/commission-table";
 import { criarProdutoSchema, type CriarProdutoInput } from "@/modules/estoque/schemas";
 
 type Props = {
@@ -35,8 +40,11 @@ type Props = {
     unidade: string;
     observacoes?: string | null;
     imagemUrl?: string | null;
+    amazonCategoriaFee?: string | null;
   } | null;
 };
+
+const COMMISSION_CATEGORIES = listCommissionCategories();
 
 export function DialogProduto({ aberto, onOpenChange, produto }: Props) {
   const qc = useQueryClient();
@@ -118,6 +126,7 @@ export function DialogProduto({ aberto, onOpenChange, produto }: Props) {
         estoqueMinimo: produto.estoqueMinimo,
         unidade: produto.unidade,
         observacoes: produto.observacoes ?? "",
+        amazonCategoriaFee: produto.amazonCategoriaFee ?? undefined,
       });
     } else {
       reset({ unidade: "un", estoqueMinimo: 0 });
@@ -139,6 +148,9 @@ export function DialogProduto({ aberto, onOpenChange, produto }: Props) {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["estoque-produtos"] });
+      if (produto?.id) {
+        qc.invalidateQueries({ queryKey: ["estoque-produto", produto.id] });
+      }
       qc.invalidateQueries({ queryKey: ["estoque-totais"] });
       toast.success(isEdit ? "Produto atualizado" : "Produto criado");
       onOpenChange(false);
@@ -184,6 +196,28 @@ export function DialogProduto({ aberto, onOpenChange, produto }: Props) {
           <div className="space-y-1.5">
             <Label htmlFor="descricao">Descrição</Label>
             <Input id="descricao" {...register("descricao")} />
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="amazonCategoriaFee">Categoria de comissao Amazon</Label>
+            <Select
+              id="amazonCategoriaFee"
+              {...register("amazonCategoriaFee", {
+                setValueAs: (v) => (v === "" ? null : v),
+              })}
+            >
+              <option value="">Auto/default 12%</option>
+              {COMMISSION_CATEGORIES.map((categoria) => (
+                <option key={categoria.slug} value={categoria.slug}>
+                  {categoria.label} ({formatCommissionRule(categoria)})
+                </option>
+              ))}
+            </Select>
+            {errors.amazonCategoriaFee && (
+              <p className="text-xs text-destructive">
+                {errors.amazonCategoriaFee.message}
+              </p>
+            )}
           </div>
 
           <div className="grid grid-cols-3 gap-3">

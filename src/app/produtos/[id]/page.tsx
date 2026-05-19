@@ -62,6 +62,7 @@ type Produto = {
   imagemUrl: string | null;
   amazonImagemUrl: string | null;
   amazonTituloOficial: string | null;
+  amazonCategoriaFee: string | null;
   amazonEstoqueTotal: number | null;
   statusReposicao: StatusReposicao;
   movimentacoes: Movimentacao[];
