@@ -3,9 +3,6 @@
 import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  ChevronLeft,
-  ChevronRight,
-  Download,
   Filter,
   Package,
   Percent,
@@ -41,37 +38,9 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { OrderCardList, type VendaListagem } from "@/components/vendas";
 import { formatBRL } from "@/lib/money";
 import { cn } from "@/lib/utils";
-import { valorBrutoDaVenda } from "@/modules/vendas/valores";
-
-type Venda = {
-  id: string;
-  amazonOrderId: string;
-  orderItemId: string | null;
-  marketplace: string | null;
-  statusPedido: string;
-  statusFinanceiro: string;
-  dataVenda: string;
-  sku: string;
-  asin: string | null;
-  titulo: string | null;
-  quantidade: number;
-  precoUnitarioCentavos: number;
-  valorBrutoCentavos: number | null;
-  taxasCentavos: number;
-  fretesCentavos: number;
-  taxasEstimadas?: boolean;
-  categoriaTaxaEstimada?: {
-    slug: string | null;
-    label: string;
-    regra: string;
-  };
-  liquidoMarketplaceCentavos: number | null;
-  custoUnitarioCentavos: number | null;
-  fulfillmentChannel: string | null;
-  ultimaSyncEm: string | null;
-};
 
 type Totais = {
   receitaBrutaCentavos: number;
@@ -150,10 +119,6 @@ function fmtPercentual(value: number) {
     minimumFractionDigits: 1,
     maximumFractionDigits: 1,
   })}%`;
-}
-
-function valorBruto(venda: Venda) {
-  return valorBrutoDaVenda(venda);
 }
 
 function StatusBadge({ status }: { status: string }) {
@@ -436,7 +401,7 @@ export default function VendasPage() {
   }, [filtros.de, filtros.ate, visaoVendas]);
 
   const vendasQuery = useQuery<{
-    vendas: Venda[];
+    vendas: VendaListagem[];
     total: number;
     porPagina: number;
   }>({
@@ -519,47 +484,26 @@ export default function VendasPage() {
     Boolean(value),
   );
 
-  function exportarVendasCSV() {
-    if (!vendas.length) return;
-    const linhas = [
-      ["Pedido Amazon", "SKU", "Produto", "Data", "Qtd.", "Bruto (R$)", "Taxas (R$)", "Frete (R$)", "Líquido (R$)", "Custo (R$)", "Status"],
-      ...vendas.map((v) => [
-        v.amazonOrderId,
-        v.sku,
-        v.titulo ?? "",
-        fmtData(v.dataVenda),
-        String(v.quantidade),
-        (valorBruto(v) / 100).toFixed(2),
-        `${(v.taxasCentavos / 100).toFixed(2)}${v.taxasEstimadas ? " (estimada)" : ""}`,
-        (v.fretesCentavos / 100).toFixed(2),
-        v.liquidoMarketplaceCentavos != null ? (v.liquidoMarketplaceCentavos / 100).toFixed(2) : "",
-        v.custoUnitarioCentavos != null ? (v.custoUnitarioCentavos / 100).toFixed(2) : "",
-        v.statusPedido,
-      ]),
-    ];
-    const csv = linhas.map((l) => l.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(";")).join("\n");
-    const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `vendas_${new Date().toISOString().slice(0, 10)}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-  }
-
   return (
     <div className="flex flex-col gap-6 p-4 sm:p-6">
       <PageHeader
         title="Vendas Amazon"
         description={
           totais?.ultimaImportacao
-            ? `Ultima sincronizacao: ${fmtData(totais.ultimaImportacao.createdAt)}`
-            : "Pedidos, taxas, liquido e reembolsos pela Amazon SP-API"
+            ? `Última sincronização: ${fmtData(totais.ultimaImportacao.createdAt)}`
+            : "Pedidos, taxas, líquido e reembolsos pela Amazon SP-API"
         }
       >
         <Button
           size="sm"
-          variant="secondary"
+          variant="outline"
+          onClick={() => setDialogAberto(true)}
+        >
+          <Upload className="mr-2 h-4 w-4" />
+          Importar
+        </Button>
+        <Button
+          size="sm"
           onClick={() => sincronizar.mutate()}
           disabled={sincronizar.isPending}
         >
@@ -569,10 +513,6 @@ export default function VendasPage() {
             <Zap className="mr-2 h-4 w-4" />
           )}
           Sincronizar
-        </Button>
-        <Button size="sm" variant="outline" onClick={() => setDialogAberto(true)}>
-          <Upload className="mr-2 h-4 w-4" />
-          Importar
         </Button>
       </PageHeader>
 
@@ -585,7 +525,7 @@ export default function VendasPage() {
         <MetricaCard
           label="Pedidos"
           valor={String(totais?.quantidadePedidos ?? 0)}
-          sub="pedidos unicos"
+          sub="pedidos únicos"
           icon={ReceiptText}
         />
         <MetricaCard
@@ -595,7 +535,7 @@ export default function VendasPage() {
           icon={Package}
         />
         <MetricaCard
-          label="Ticket Medio"
+          label="Ticket Médio"
           valor={formatBRL(totais?.ticketMedioCentavos ?? 0)}
           sub="por pedido"
           icon={ShoppingBag}
@@ -604,17 +544,6 @@ export default function VendasPage() {
 
       <div className="flex flex-wrap items-center gap-2">
         <PainelFiltros filtros={filtros} setFiltros={setFiltros} />
-        <Button
-          type="button"
-          variant="outline"
-          size="icon"
-          className="h-9 w-9 shrink-0"
-          title="Exportar página como CSV"
-          onClick={exportarVendasCSV}
-          disabled={!vendas.length}
-        >
-          <Download className="h-4 w-4" />
-        </Button>
         {filtrosAtivos.map(([chave, valor]) => (
           <Badge
             key={chave}
@@ -654,26 +583,26 @@ export default function VendasPage() {
         </TabsList>
 
         <TabsContent value="principal" className="mt-4">
-          <TabelaVendas
+          <OrderCardList
             isLoading={vendasQuery.isLoading}
             vendas={vendas}
             pagina={pagina}
             totalPaginas={totalPaginas}
-            setPagina={setPagina}
             total={total}
+            setPagina={setPagina}
             onImportar={() => setDialogAberto(true)}
           />
         </TabsContent>
 
         <TabsContent value="cancelados" className="mt-4">
-          <TabelaVendas
+          <OrderCardList
             isLoading={vendasQuery.isLoading}
             vendas={vendas}
             pagina={pagina}
             totalPaginas={totalPaginas}
-            setPagina={setPagina}
             total={total}
-            onImportar={() => setDialogAberto(true)}
+            setPagina={setPagina}
+            emptyHint="Nenhum pedido cancelado no período"
           />
         </TabsContent>
 
@@ -802,171 +731,6 @@ export default function VendasPage() {
       </Tabs>
 
       <DialogImportar aberto={dialogAberto} onFechar={() => setDialogAberto(false)} />
-    </div>
-  );
-}
-
-function TabelaVendas({
-  isLoading,
-  vendas,
-  pagina,
-  totalPaginas,
-  setPagina,
-  total,
-  onImportar,
-}: {
-  isLoading: boolean;
-  vendas: Venda[];
-  pagina: number;
-  totalPaginas: number;
-  setPagina: React.Dispatch<React.SetStateAction<number>>;
-  total: number;
-  onImportar: () => void;
-}) {
-  if (isLoading) return <DataTableSkeleton rows={8} columns={8} />;
-  if (vendas.length === 0) return <EmptyState onImportar={onImportar} />;
-
-  return (
-    <>
-      <div className="overflow-hidden rounded-md border">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Data</TableHead>
-              <TableHead className="hidden sm:table-cell">Pedido</TableHead>
-              <TableHead>SKU</TableHead>
-              <TableHead className="hidden md:table-cell">Produto</TableHead>
-              <TableHead className="text-right">Qtd</TableHead>
-              <TableHead className="text-right">Bruto</TableHead>
-              <TableHead className="hidden text-right lg:table-cell">
-                Taxas
-              </TableHead>
-              <TableHead className="text-right">Liquido</TableHead>
-              <TableHead>Status</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {vendas.map((venda) => (
-              <TableRow key={venda.id}>
-                <TableCell className="tabular-nums">
-                  {fmtData(venda.dataVenda)}
-                </TableCell>
-                <TableCell className="hidden font-mono text-xs text-muted-foreground sm:table-cell">
-                  {venda.amazonOrderId}
-                </TableCell>
-                <TableCell className="font-medium">{venda.sku}</TableCell>
-                <TableCell className="hidden max-w-[260px] md:table-cell">
-                  <span
-                    className="line-clamp-1 text-sm text-muted-foreground"
-                    title={venda.titulo ?? ""}
-                  >
-                    {venda.titulo ?? "-"}
-                  </span>
-                </TableCell>
-                <TableCell className="text-right tabular-nums">
-                  {venda.quantidade}
-                </TableCell>
-                <TableCell className="text-right tabular-nums">
-                  {formatBRL(valorBruto(venda))}
-                </TableCell>
-                <TableCell className="hidden text-right tabular-nums lg:table-cell">
-                  <div className="flex flex-col items-end gap-1">
-                    <span>
-                      {formatBRL(venda.taxasCentavos + venda.fretesCentavos)}
-                    </span>
-                    {venda.taxasEstimadas && (
-                      <Badge
-                        variant="outline"
-                        className="h-5 px-1.5 text-[10px] font-normal"
-                        title={
-                          venda.categoriaTaxaEstimada
-                            ? `${venda.categoriaTaxaEstimada.label} - ${venda.categoriaTaxaEstimada.regra}`
-                            : "Taxa estimada"
-                        }
-                      >
-                        Estimada
-                      </Badge>
-                    )}
-                  </div>
-                </TableCell>
-                <TableCell className="text-right font-medium tabular-nums">
-                  {formatBRL(
-                    venda.liquidoMarketplaceCentavos ?? valorBruto(venda),
-                  )}
-                </TableCell>
-                <TableCell>
-                  <div className="flex flex-col gap-1">
-                    <StatusBadge status={venda.statusPedido} />
-                    {venda.statusFinanceiro !== venda.statusPedido && (
-                      <span className="text-xs text-muted-foreground">
-                        {venda.statusFinanceiro}
-                      </span>
-                    )}
-                  </div>
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </div>
-      <Paginacao
-        pagina={pagina}
-        totalPaginas={totalPaginas}
-        setPagina={setPagina}
-        total={total}
-      />
-    </>
-  );
-}
-
-function EmptyState({ onImportar }: { onImportar: () => void }) {
-  return (
-    <div className="flex flex-col items-center gap-3 rounded-md border border-dashed py-16 text-center">
-      <ShoppingBag className="h-10 w-10 text-muted-foreground/40" />
-      <p className="font-medium text-muted-foreground">Nenhuma venda encontrada</p>
-      <Button size="sm" onClick={onImportar}>
-        <Upload className="mr-2 h-4 w-4" />
-        Importar arquivo
-      </Button>
-    </div>
-  );
-}
-
-function Paginacao({
-  pagina,
-  totalPaginas,
-  setPagina,
-  total,
-}: {
-  pagina: number;
-  totalPaginas: number;
-  setPagina: React.Dispatch<React.SetStateAction<number>>;
-  total: number;
-}) {
-  if (totalPaginas <= 1) return null;
-  return (
-    <div className="mt-4 flex items-center justify-between text-sm">
-      <span className="text-muted-foreground">
-        Pagina {pagina} de {totalPaginas} - {total} vendas
-      </span>
-      <div className="flex gap-1">
-        <Button
-          variant="outline"
-          size="sm"
-          disabled={pagina <= 1}
-          onClick={() => setPagina((p) => p - 1)}
-        >
-          <ChevronLeft className="h-4 w-4" />
-        </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          disabled={pagina >= totalPaginas}
-          onClick={() => setPagina((p) => p + 1)}
-        >
-          <ChevronRight className="h-4 w-4" />
-        </Button>
-      </div>
     </div>
   );
 }

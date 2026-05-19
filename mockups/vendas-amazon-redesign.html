@@ -1,0 +1,3453 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Vendas Amazon · Estudo Visual (4 direções)</title>
+  <style>
+    /* =========================================================
+       BASE — reset e tokens compartilhados
+       ========================================================= */
+    *,
+    *::before,
+    *::after { box-sizing: border-box; }
+
+    html, body { margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Inter",
+        Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      font-size: 14px;
+      color: #0f172a;
+      background: #f1f5f9;
+      -webkit-font-smoothing: antialiased;
+      text-rendering: optimizeLegibility;
+    }
+
+    button { font: inherit; cursor: pointer; }
+
+    /* =========================================================
+       SWITCHER — barra superior fixa para alternar versões
+       ========================================================= */
+    .switcher {
+      position: sticky; top: 0; z-index: 50;
+      display: flex; align-items: center; gap: 24px;
+      padding: 10px 20px;
+      background: #0f172a; color: #f8fafc;
+      border-bottom: 1px solid #1e293b;
+    }
+    .switcher__brand {
+      font-weight: 600; font-size: 13px; letter-spacing: 0.02em;
+      color: #f8fafc;
+    }
+    .switcher__brand span { color: #94a3b8; font-weight: 400; margin-left: 6px; }
+    .switcher__tabs { display: flex; gap: 4px; flex-wrap: wrap; }
+    .switcher__tabs button {
+      padding: 7px 14px;
+      background: transparent; color: #cbd5e1;
+      border: 1px solid transparent; border-radius: 6px;
+      font-size: 12.5px; font-weight: 500;
+      transition: all .15s ease;
+    }
+    .switcher__tabs button:hover { background: #1e293b; color: #f8fafc; }
+    .switcher__tabs button.is-active {
+      background: #10b981; color: #052e1c;
+      font-weight: 600;
+    }
+    .switcher__meta {
+      margin-left: auto; font-size: 11.5px; color: #94a3b8;
+    }
+
+    /* Container que abriga cada versão; só uma visível por vez */
+    .version { display: none; }
+    .version.is-active { display: block; }
+
+    /* Nota de design no topo de cada versão */
+    .design-note {
+      max-width: min(1680px, calc(100vw - 32px)); margin: 16px auto 0;
+      padding: 14px 18px;
+      background: #ffffff; border: 1px solid #e2e8f0; border-radius: 10px;
+      box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+      font-size: 13px; color: #334155;
+    }
+    .design-note h3 { margin: 0 0 6px; font-size: 13.5px; color: #0f172a; }
+    .design-note ul { margin: 4px 0 0; padding-left: 18px; }
+    .design-note li { margin: 2px 0; }
+    .design-note .label {
+      display: inline-block; padding: 2px 7px; margin-right: 6px;
+      background: #ecfdf5; color: #047857;
+      border-radius: 4px; font-size: 11px; font-weight: 600;
+      letter-spacing: 0.02em; text-transform: uppercase;
+    }
+    .design-note .label.tradeoff { background: #fef3c7; color: #92400e; }
+    .design-note .label.why { background: #eff6ff; color: #1d4ed8; }
+
+    /* Frame que delimita o mockup */
+    .frame {
+      max-width: min(1680px, calc(100vw - 32px)); margin: 16px auto 40px;
+      background: #ffffff;
+      border: 1px solid #e2e8f0; border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
+    }
+
+    /* Mobile preview no final */
+    .mobile-row {
+      max-width: min(1680px, calc(100vw - 32px)); margin: 0 auto 60px;
+      display: grid; grid-template-columns: 1fr 1fr 1fr;
+      gap: 20px; align-items: start;
+    }
+    .mobile-frame {
+      width: 100%; max-width: 360px;
+      border: 1px solid #cbd5e1; border-radius: 28px;
+      background: #ffffff; overflow: hidden;
+      box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08);
+    }
+    .mobile-frame header { padding: 10px 12px; border-bottom: 1px solid #e2e8f0; font-size: 12px; font-weight: 600; }
+    .mobile-frame .mh { font-size: 11px; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em; padding: 6px 12px 0; }
+    .mobile-cap {
+      font-size: 12px; color: #475569; margin-top: 8px; text-align: center;
+    }
+
+    /* Estado-empty/loading/erro genéricos (são re-estilizados por versão) */
+    .states-row {
+      display: grid; grid-template-columns: 1fr 1fr 1fr;
+      gap: 14px; padding: 16px;
+    }
+    .state-card {
+      border: 1px dashed #cbd5e1; border-radius: 10px;
+      padding: 24px 16px; text-align: center; color: #64748b;
+      background: #f8fafc;
+    }
+    .state-card strong { display: block; color: #0f172a; margin-bottom: 4px; }
+
+    /* =========================================================
+       V1 — "Gestor Seller próxima"
+       Sidebar branca, paleta verde sóbria, cards limpos.
+       ========================================================= */
+    .v1 .frame { background: #f8fafc; }
+
+    .v1 .layout {
+      display: grid; grid-template-columns: 220px 1fr;
+      min-height: 820px;
+    }
+
+    /* Sidebar */
+    .v1 .sidebar {
+      background: #ffffff; border-right: 1px solid #e5e7eb;
+      padding: 18px 12px; display: flex; flex-direction: column;
+    }
+    .v1 .brand {
+      display: flex; align-items: center; gap: 10px;
+      padding: 4px 6px 14px; border-bottom: 1px solid #f1f5f9;
+      margin-bottom: 12px;
+    }
+    .v1 .brand-mark {
+      width: 32px; height: 32px; border-radius: 8px;
+      background: #059669; color: #fff;
+      display: grid; place-items: center; font-weight: 700; font-size: 13px;
+    }
+    .v1 .brand-text { font-weight: 700; font-size: 13.5px; color: #0f172a; line-height: 1.1; }
+    .v1 .brand-text small { display: block; font-weight: 500; color: #64748b; font-size: 11px; }
+
+    .v1 .nav-group { margin: 10px 0 6px; padding: 0 6px; font-size: 10.5px; color: #94a3b8; letter-spacing: 0.08em; text-transform: uppercase; font-weight: 600; }
+    .v1 .nav-item {
+      display: flex; align-items: center; gap: 10px;
+      padding: 8px 10px; border-radius: 7px;
+      font-size: 13px; color: #334155; text-decoration: none;
+      margin-bottom: 2px;
+    }
+    .v1 .nav-item:hover { background: #f1f5f9; color: #0f172a; }
+    .v1 .nav-item.active { background: #ecfdf5; color: #065f46; font-weight: 600; }
+    .v1 .nav-item .ic { width: 16px; height: 16px; flex: 0 0 16px; }
+
+    /* Main */
+    .v1 .main { padding: 24px 28px 40px; }
+
+    .v1 .topbar {
+      display: flex; align-items: center; gap: 16px;
+      margin-bottom: 22px;
+    }
+    .v1 .search {
+      flex: 1; max-width: 480px;
+      display: flex; align-items: center; gap: 8px;
+      padding: 8px 12px; background: #ffffff;
+      border: 1px solid #e2e8f0; border-radius: 8px;
+      color: #94a3b8; font-size: 13px;
+    }
+    .v1 .search kbd { margin-left: auto; background: #f1f5f9; color: #64748b; padding: 1px 6px; border-radius: 4px; font-size: 11px; }
+    .v1 .topbar .user {
+      margin-left: auto; display: flex; align-items: center; gap: 10px;
+      font-size: 13px; font-weight: 500;
+    }
+    .v1 .avatar {
+      width: 30px; height: 30px; border-radius: 50%;
+      background: #f59e0b; color: #fff; display: grid; place-items: center;
+      font-size: 12px; font-weight: 600;
+    }
+
+    .v1 .page-head {
+      display: flex; align-items: flex-end; gap: 16px;
+      margin-bottom: 20px;
+    }
+    .v1 .page-head h1 {
+      margin: 0; font-size: 22px; font-weight: 700; letter-spacing: -0.01em;
+      color: #0f172a;
+    }
+    .v1 .page-head .sync-meta {
+      font-size: 12px; color: #64748b; display: flex; align-items: center; gap: 6px;
+    }
+    .v1 .sync-dot { width: 8px; height: 8px; border-radius: 50%; background: #10b981; }
+    .v1 .page-head .actions { margin-left: auto; display: flex; gap: 8px; }
+    .v1 .btn {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 8px 14px; border-radius: 7px;
+      font-size: 13px; font-weight: 500;
+      border: 1px solid #e2e8f0; background: #ffffff; color: #334155;
+      transition: all .12s ease;
+    }
+    .v1 .btn:hover { background: #f8fafc; }
+    .v1 .btn.primary {
+      background: #059669; color: #ffffff; border-color: #059669;
+    }
+    .v1 .btn.primary:hover { background: #047857; }
+
+    /* KPIs */
+    .v1 .kpis {
+      display: grid; grid-template-columns: repeat(4, 1fr);
+      gap: 12px; margin-bottom: 20px;
+    }
+    .v1 .kpi {
+      background: #ffffff; border: 1px solid #e5e7eb; border-radius: 10px;
+      padding: 14px 16px; position: relative;
+    }
+    .v1 .kpi .kpi-label {
+      font-size: 11.5px; color: #64748b; font-weight: 500;
+      text-transform: uppercase; letter-spacing: 0.04em;
+      margin-bottom: 6px;
+    }
+    .v1 .kpi .kpi-value {
+      font-size: 22px; font-weight: 700; color: #0f172a;
+      letter-spacing: -0.01em;
+      font-variant-numeric: tabular-nums;
+    }
+    .v1 .kpi .kpi-sub {
+      margin-top: 6px; font-size: 12px; color: #64748b;
+      display: flex; align-items: center; gap: 6px;
+    }
+    .v1 .kpi .delta { font-weight: 600; }
+    .v1 .delta.up { color: #047857; }
+    .v1 .delta.down { color: #b91c1c; }
+    .v1 .kpi .kpi-icon {
+      position: absolute; top: 14px; right: 14px;
+      width: 28px; height: 28px; border-radius: 7px;
+      background: #ecfdf5; color: #047857;
+      display: grid; place-items: center;
+    }
+    .v1 .kpi.indigo .kpi-icon { background: #eef2ff; color: #4338ca; }
+    .v1 .kpi.blue   .kpi-icon { background: #eff6ff; color: #1d4ed8; }
+    .v1 .kpi.amber  .kpi-icon { background: #fffbeb; color: #b45309; }
+
+    /* Filtros & Abas */
+    .v1 .filter-bar {
+      display: flex; align-items: center; gap: 10px;
+      margin-bottom: 14px; flex-wrap: wrap;
+    }
+    .v1 .chip {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 7px 12px; background: #ffffff;
+      border: 1px solid #e2e8f0; border-radius: 7px;
+      font-size: 12.5px; color: #334155;
+    }
+    .v1 .chip.active { background: #f0fdf4; border-color: #86efac; color: #065f46; font-weight: 600; }
+    .v1 .chip .x { color: #94a3b8; font-size: 11px; }
+    .v1 .filter-bar .clear { font-size: 12px; color: #64748b; text-decoration: underline; background: none; border: none; padding: 0; }
+    .v1 .filter-bar .export { margin-left: auto; }
+
+    .v1 .tabs {
+      display: flex; gap: 4px; border-bottom: 1px solid #e2e8f0;
+      margin-bottom: 0;
+    }
+    .v1 .tab {
+      padding: 10px 16px; font-size: 13px; font-weight: 500; color: #64748b;
+      background: none; border: none; border-bottom: 2px solid transparent;
+      margin-bottom: -1px;
+    }
+    .v1 .tab.active { color: #047857; border-bottom-color: #059669; font-weight: 600; }
+    .v1 .tab .count {
+      margin-left: 6px; padding: 1px 7px; border-radius: 10px;
+      background: #f1f5f9; color: #64748b; font-size: 11px; font-weight: 600;
+    }
+    .v1 .tab.active .count { background: #ecfdf5; color: #047857; }
+
+    /* Tabela */
+    .v1 .table-wrap {
+      background: #ffffff; border: 1px solid #e5e7eb; border-top: none;
+      border-radius: 0 0 10px 10px; overflow: hidden;
+    }
+    .v1 table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .v1 thead th {
+      text-align: left; padding: 10px 14px;
+      background: #f8fafc; color: #64748b;
+      font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em;
+      border-bottom: 1px solid #e5e7eb;
+    }
+    .v1 thead th.num { text-align: right; }
+    .v1 tbody td {
+      padding: 12px 14px; border-bottom: 1px solid #f1f5f9;
+      vertical-align: middle;
+    }
+    .v1 tbody tr:hover td { background: #f8fafc; }
+    .v1 .col-date {
+      display: flex; flex-direction: column;
+    }
+    .v1 .col-date .d { font-weight: 600; color: #0f172a; }
+    .v1 .col-date .t { font-size: 11.5px; color: #64748b; }
+    .v1 .order-id { color: #1d4ed8; font-size: 12px; font-variant-numeric: tabular-nums; }
+    .v1 .sku-pill {
+      display: inline-block; padding: 2px 7px; background: #f1f5f9;
+      border-radius: 4px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 11.5px; color: #334155; font-weight: 600;
+    }
+    .v1 .product-cell { display: flex; align-items: center; gap: 10px; }
+    .v1 .thumb {
+      width: 32px; height: 32px; border-radius: 6px;
+      background: #f1f5f9; display: grid; place-items: center;
+      color: #94a3b8; flex: 0 0 32px; overflow: hidden;
+    }
+    .v1 .product-cell .nm { font-weight: 500; color: #0f172a; line-height: 1.3; max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .v1 .product-cell .sub { font-size: 11.5px; color: #64748b; }
+    .v1 td.num { text-align: right; font-variant-numeric: tabular-nums; }
+    .v1 td.num.green { color: #047857; font-weight: 600; }
+    .v1 .badge {
+      display: inline-flex; align-items: center; gap: 4px;
+      padding: 3px 9px; border-radius: 999px;
+      font-size: 11.5px; font-weight: 600; letter-spacing: 0.01em;
+    }
+    .v1 .badge.done    { background: #ecfdf5; color: #047857; }
+    .v1 .badge.pending { background: #fffbeb; color: #b45309; }
+    .v1 .badge.cancel  { background: #fef2f2; color: #b91c1c; }
+    .v1 .badge.refund  { background: #faf5ff; color: #6b21a8; }
+    .v1 .badge .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+
+    .v1 .table-foot {
+      display: flex; align-items: center;
+      padding: 10px 14px; background: #ffffff;
+      border-top: 1px solid #f1f5f9; font-size: 12.5px; color: #64748b;
+    }
+    .v1 .table-foot .pager { margin-left: auto; display: flex; gap: 4px; }
+    .v1 .pager .pg {
+      width: 28px; height: 28px; border-radius: 6px;
+      background: #ffffff; border: 1px solid #e2e8f0;
+      display: grid; place-items: center; font-size: 12px; color: #475569;
+    }
+    .v1 .pager .pg.active { background: #059669; color: #fff; border-color: #059669; }
+
+    /* =========================================================
+       V2 — "Operacional densa"
+       Sidebar reduzida, KPIs em pílula horizontal, tabela alta densidade
+       ========================================================= */
+    .v2 .frame { background: #ffffff; }
+    .v2 .layout {
+      display: grid; grid-template-columns: 60px 1fr; min-height: 820px;
+    }
+    .v2 .sidebar {
+      background: #0f172a; color: #cbd5e1; padding: 14px 0;
+      display: flex; flex-direction: column; align-items: center; gap: 4px;
+    }
+    .v2 .sidebar .brand-mark {
+      width: 36px; height: 36px; border-radius: 9px;
+      background: #10b981; color: #052e1c;
+      display: grid; place-items: center; font-weight: 800;
+      margin-bottom: 8px;
+    }
+    .v2 .side-ic {
+      width: 40px; height: 40px; border-radius: 8px;
+      display: grid; place-items: center; color: #94a3b8;
+      position: relative;
+    }
+    .v2 .side-ic:hover { background: #1e293b; color: #f8fafc; }
+    .v2 .side-ic.active { background: #1e293b; color: #10b981; }
+    .v2 .side-ic.active::before {
+      content: ""; position: absolute; left: -8px; top: 8px; bottom: 8px;
+      width: 3px; border-radius: 2px; background: #10b981;
+    }
+    .v2 .side-bottom { margin-top: auto; display: flex; flex-direction: column; gap: 4px; align-items: center; }
+
+    .v2 .main { padding: 16px 22px 24px; }
+
+    .v2 .topbar {
+      display: flex; align-items: center; gap: 14px; margin-bottom: 14px;
+      padding-bottom: 14px; border-bottom: 1px solid #f1f5f9;
+    }
+    .v2 .crumbs { font-size: 12px; color: #94a3b8; }
+    .v2 .crumbs strong { color: #0f172a; font-weight: 600; }
+
+    .v2 .h1-row { display: flex; align-items: center; gap: 12px; flex: 1; }
+    .v2 .h1-row h1 { margin: 0; font-size: 18px; font-weight: 700; color: #0f172a; }
+    .v2 .h1-row .live {
+      font-size: 11px; padding: 2px 7px; border-radius: 4px;
+      background: #ecfdf5; color: #047857; font-weight: 600; display: inline-flex; gap: 4px; align-items: center;
+    }
+    .v2 .live .dot { width: 6px; height: 6px; border-radius: 50%; background: #10b981; }
+    .v2 .actions { display: flex; gap: 6px; }
+    .v2 .btn {
+      padding: 6px 12px; border-radius: 6px; font-size: 12.5px; font-weight: 500;
+      background: #ffffff; color: #334155; border: 1px solid #e2e8f0;
+      display: inline-flex; align-items: center; gap: 5px;
+    }
+    .v2 .btn:hover { background: #f8fafc; }
+    .v2 .btn.primary { background: #059669; color: #fff; border-color: #059669; }
+
+    /* KPIs pill horizontal */
+    .v2 .kpi-strip {
+      display: grid; grid-template-columns: repeat(4, 1fr);
+      gap: 0;
+      border: 1px solid #e5e7eb; border-radius: 10px;
+      background: #ffffff; margin-bottom: 14px;
+      overflow: hidden;
+    }
+    .v2 .kpi {
+      padding: 12px 16px;
+      border-right: 1px solid #f1f5f9;
+      display: flex; flex-direction: column; gap: 4px;
+    }
+    .v2 .kpi:last-child { border-right: none; }
+    .v2 .kpi .kpi-label { font-size: 11px; color: #64748b; font-weight: 500; text-transform: uppercase; letter-spacing: 0.04em; }
+    .v2 .kpi .kpi-row { display: flex; align-items: baseline; gap: 8px; }
+    .v2 .kpi .kpi-value { font-size: 19px; font-weight: 700; color: #0f172a; font-variant-numeric: tabular-nums; }
+    .v2 .kpi .kpi-delta { font-size: 11.5px; font-weight: 600; }
+    .v2 .kpi-delta.up { color: #047857; } .v2 .kpi-delta.down { color: #b91c1c; }
+    .v2 .kpi .kpi-sub { font-size: 11.5px; color: #94a3b8; }
+
+    /* Toolbar densa */
+    .v2 .toolbar {
+      display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+      padding: 8px 10px; background: #f8fafc;
+      border: 1px solid #e5e7eb; border-radius: 8px 8px 0 0;
+      border-bottom: none;
+    }
+    .v2 .chip {
+      display: inline-flex; align-items: center; gap: 5px;
+      padding: 5px 10px; background: #ffffff;
+      border: 1px solid #e2e8f0; border-radius: 6px;
+      font-size: 12px; color: #334155;
+    }
+    .v2 .chip .x { color: #94a3b8; cursor: pointer; }
+    .v2 .chip.active { background: #ecfdf5; color: #047857; border-color: #86efac; font-weight: 600; }
+    .v2 .toolbar .divider { width: 1px; height: 18px; background: #e2e8f0; margin: 0 4px; }
+    .v2 .toolbar .right { margin-left: auto; display: flex; align-items: center; gap: 6px; }
+    .v2 .search-mini {
+      display: inline-flex; align-items: center; gap: 6px;
+      background: #ffffff; border: 1px solid #e2e8f0; border-radius: 6px;
+      padding: 5px 10px; font-size: 12px; color: #94a3b8;
+      width: 220px;
+    }
+    .v2 .search-mini input { background: transparent; border: none; outline: none; color: #0f172a; flex: 1; font-size: 12px; }
+
+    .v2 .tabs {
+      display: flex; padding: 0 6px; background: #ffffff;
+      border: 1px solid #e5e7eb; border-top: none;
+    }
+    .v2 .tab {
+      padding: 8px 12px; font-size: 12.5px; font-weight: 500; color: #64748b;
+      background: none; border: none; border-bottom: 2px solid transparent;
+    }
+    .v2 .tab.active { color: #047857; border-bottom-color: #059669; font-weight: 600; }
+    .v2 .tab .count { margin-left: 4px; color: #94a3b8; font-weight: 500; }
+
+    /* Tabela compacta */
+    .v2 .table-wrap {
+      background: #ffffff; border: 1px solid #e5e7eb; border-top: none;
+      border-radius: 0 0 8px 8px; overflow: hidden;
+    }
+    .v2 table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+    .v2 thead th {
+      text-align: left; padding: 8px 10px;
+      background: #f8fafc; color: #64748b;
+      font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em;
+      border-bottom: 1px solid #e5e7eb;
+      white-space: nowrap;
+    }
+    .v2 thead th.num { text-align: right; }
+    .v2 tbody td {
+      padding: 8px 10px; border-bottom: 1px solid #f1f5f9;
+      vertical-align: middle; white-space: nowrap;
+    }
+    .v2 tbody tr:hover td { background: #fafbfc; }
+    .v2 .col-date .d { font-weight: 600; color: #0f172a; }
+    .v2 .col-date .t { font-size: 10.5px; color: #94a3b8; }
+    .v2 .order-id {
+      color: #1d4ed8; font-size: 11.5px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+    .v2 .sku-pill {
+      padding: 1px 5px; background: #f1f5f9;
+      border-radius: 4px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 11px; color: #334155; font-weight: 600;
+    }
+    .v2 .product-cell { display: flex; align-items: center; gap: 8px; max-width: 320px; }
+    .v2 .thumb {
+      width: 24px; height: 24px; border-radius: 4px;
+      background: #f1f5f9; display: grid; place-items: center;
+      color: #94a3b8; flex: 0 0 24px;
+      font-size: 11px;
+    }
+    .v2 .product-cell .nm { font-size: 12px; color: #0f172a; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .v2 td.num { text-align: right; font-variant-numeric: tabular-nums; }
+    .v2 td.num.bruto { color: #0f172a; font-weight: 600; }
+    .v2 td.num.taxas { color: #b91c1c; }
+    .v2 td.num.liq   { color: #047857; font-weight: 600; }
+    .v2 td.tooltip-cell { position: relative; }
+    .v2 .tag-est { font-size: 10px; color: #94a3b8; margin-left: 4px; }
+    .v2 .badge {
+      display: inline-flex; align-items: center; gap: 4px;
+      padding: 2px 7px; border-radius: 4px;
+      font-size: 10.5px; font-weight: 700; letter-spacing: 0.02em; text-transform: uppercase;
+    }
+    .v2 .badge.done    { background: #ecfdf5; color: #047857; }
+    .v2 .badge.pending { background: #fffbeb; color: #b45309; }
+    .v2 .badge.cancel  { background: #fef2f2; color: #b91c1c; }
+    .v2 .badge.refund  { background: #faf5ff; color: #6b21a8; }
+    .v2 .marketplace { font-size: 11px; color: #64748b; display: inline-flex; align-items: center; gap: 4px; }
+    .v2 .marketplace .mk { padding: 1px 5px; background: #0f172a; color: #fff; border-radius: 3px; font-size: 10px; font-weight: 700; }
+
+    .v2 .table-foot {
+      display: flex; align-items: center; gap: 14px;
+      padding: 8px 12px; background: #f8fafc;
+      border-top: 1px solid #f1f5f9; font-size: 11.5px; color: #64748b;
+    }
+    .v2 .totals {
+      display: flex; gap: 14px;
+    }
+    .v2 .totals span strong { color: #0f172a; font-weight: 700; margin-left: 4px; font-variant-numeric: tabular-nums; }
+    .v2 .table-foot .pager { margin-left: auto; display: flex; gap: 4px; align-items: center; }
+    .v2 .pg { width: 24px; height: 24px; display: grid; place-items: center; border: 1px solid #e2e8f0; border-radius: 4px; background: #fff; font-size: 11px; color: #475569; }
+    .v2 .pg.active { background: #059669; color: #fff; border-color: #059669; }
+
+    /* =========================================================
+       V3 — "Cards por pedido"
+       Cards grandes com breakdown financeiro lateral.
+       ========================================================= */
+    .v3 .frame { background: #f8fafc; }
+    .v3 .layout { display: grid; grid-template-columns: 240px 1fr; min-height: 820px; }
+
+    .v3 .sidebar {
+      background: #ffffff; border-right: 1px solid #e5e7eb;
+      padding: 22px 16px;
+    }
+    .v3 .brand {
+      display: flex; align-items: center; gap: 10px; margin-bottom: 18px;
+    }
+    .v3 .brand-mark {
+      width: 36px; height: 36px; border-radius: 9px;
+      background: linear-gradient(135deg, #059669, #047857);
+      color: #fff; display: grid; place-items: center;
+      font-weight: 800; font-size: 13px;
+    }
+    .v3 .brand-text { font-weight: 700; color: #0f172a; line-height: 1.1; }
+    .v3 .brand-text small { display: block; color: #64748b; font-weight: 500; font-size: 11px; margin-top: 2px; }
+
+    .v3 .nav-group { margin: 18px 0 6px; font-size: 10.5px; color: #94a3b8; letter-spacing: 0.06em; text-transform: uppercase; font-weight: 600; padding: 0 8px; }
+    .v3 .nav-item {
+      display: flex; align-items: center; gap: 10px;
+      padding: 9px 10px; border-radius: 8px;
+      font-size: 13px; color: #334155; text-decoration: none;
+      margin-bottom: 2px;
+    }
+    .v3 .nav-item:hover { background: #f8fafc; }
+    .v3 .nav-item.active { background: #ecfdf5; color: #065f46; font-weight: 600; }
+    .v3 .nav-item .ic { width: 16px; height: 16px; }
+
+    .v3 .main { padding: 26px 30px 40px; }
+    .v3 .page-head { display: flex; align-items: center; gap: 14px; margin-bottom: 6px; }
+    .v3 .page-head h1 { margin: 0; font-size: 24px; font-weight: 700; letter-spacing: -0.01em; }
+    .v3 .page-head .actions { margin-left: auto; display: flex; gap: 8px; }
+    .v3 .page-head .sync-meta { font-size: 12px; color: #64748b; }
+    .v3 .page-head .sync-meta .dot { width: 7px; height: 7px; border-radius: 50%; background: #10b981; display: inline-block; margin-right: 6px; vertical-align: middle; }
+    .v3 .sub-head { color: #64748b; font-size: 13px; margin-bottom: 22px; }
+
+    .v3 .btn {
+      padding: 8px 14px; font-size: 13px; font-weight: 500;
+      border-radius: 8px; border: 1px solid #e2e8f0; background: #ffffff; color: #334155;
+      display: inline-flex; align-items: center; gap: 6px;
+    }
+    .v3 .btn:hover { background: #f8fafc; }
+    .v3 .btn.primary { background: #059669; color: #fff; border-color: #059669; }
+
+    /* KPIs */
+    .v3 .kpis {
+      display: grid; grid-template-columns: repeat(4, 1fr);
+      gap: 14px; margin-bottom: 22px;
+    }
+    .v3 .kpi {
+      background: #ffffff; border-radius: 12px; padding: 16px 18px;
+      border: 1px solid #e5e7eb;
+      position: relative; overflow: hidden;
+    }
+    .v3 .kpi::before {
+      content: ""; position: absolute; left: 0; top: 0; bottom: 0;
+      width: 3px; background: #059669;
+    }
+    .v3 .kpi.b::before { background: #1d4ed8; }
+    .v3 .kpi.c::before { background: #7c3aed; }
+    .v3 .kpi.d::before { background: #b45309; }
+    .v3 .kpi .label { font-size: 11.5px; color: #64748b; font-weight: 500; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 8px; }
+    .v3 .kpi .val { font-size: 24px; font-weight: 700; color: #0f172a; letter-spacing: -0.01em; font-variant-numeric: tabular-nums; }
+    .v3 .kpi .delta { font-size: 12px; margin-top: 6px; color: #64748b; }
+    .v3 .kpi .delta strong { font-weight: 600; }
+    .v3 .kpi .delta.up strong   { color: #047857; }
+    .v3 .kpi .delta.down strong { color: #b91c1c; }
+
+    /* Filter bar + tabs */
+    .v3 .toolbar {
+      display: flex; align-items: center; gap: 10px;
+      margin-bottom: 14px; flex-wrap: wrap;
+    }
+    .v3 .seg {
+      display: inline-flex; padding: 3px; background: #ffffff;
+      border: 1px solid #e2e8f0; border-radius: 9px;
+    }
+    .v3 .seg button {
+      padding: 6px 12px; font-size: 12.5px; font-weight: 500; color: #64748b;
+      background: transparent; border: none; border-radius: 6px;
+    }
+    .v3 .seg button.active { background: #ecfdf5; color: #047857; font-weight: 600; }
+    .v3 .filters {
+      display: inline-flex; gap: 6px;
+    }
+    .v3 .chip {
+      padding: 6px 12px; background: #ffffff; border: 1px solid #e2e8f0;
+      border-radius: 8px; font-size: 12.5px; color: #334155;
+      display: inline-flex; align-items: center; gap: 5px;
+    }
+    .v3 .chip.active { background: #ecfdf5; border-color: #86efac; color: #065f46; }
+    .v3 .toolbar .right { margin-left: auto; display: inline-flex; gap: 6px; }
+
+    .v3 .card-list { display: flex; flex-direction: column; gap: 10px; }
+    .v3 .order-card {
+      background: #ffffff; border: 1px solid #e5e7eb; border-radius: 12px;
+      overflow: hidden;
+    }
+    .v3 .order-card .row1 {
+      display: grid; grid-template-columns: 200px 1fr 220px 110px;
+      gap: 18px; align-items: center;
+      padding: 14px 18px;
+    }
+    .v3 .order-card .col-meta { display: flex; flex-direction: column; gap: 4px; }
+    .v3 .col-meta .d { font-size: 13px; font-weight: 700; color: #0f172a; }
+    .v3 .col-meta .t { font-size: 11.5px; color: #64748b; }
+    .v3 .col-meta .id { font-size: 11.5px; color: #1d4ed8; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; margin-top: 2px; }
+    .v3 .col-meta .mk { font-size: 10.5px; color: #64748b; }
+    .v3 .col-meta .mk b { padding: 1px 5px; background: #0f172a; color: #fff; border-radius: 3px; font-size: 10px; font-weight: 700; margin-right: 4px; }
+
+    .v3 .col-product { display: flex; align-items: center; gap: 12px; min-width: 0; }
+    .v3 .thumb-lg {
+      width: 56px; height: 56px; border-radius: 8px;
+      background: #f1f5f9; display: grid; place-items: center;
+      color: #94a3b8; flex: 0 0 56px;
+    }
+    .v3 .product-info { min-width: 0; }
+    .v3 .product-info .name { font-weight: 600; color: #0f172a; font-size: 14px; line-height: 1.3; margin-bottom: 4px;
+      overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical;
+    }
+    .v3 .product-info .meta { display: flex; gap: 12px; font-size: 11.5px; color: #64748b; }
+    .v3 .product-info .meta .sku { padding: 1px 6px; background: #f1f5f9; border-radius: 4px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: #334155; font-weight: 600; font-size: 11px; }
+
+    .v3 .col-money {
+      display: flex; flex-direction: column; align-items: flex-end; gap: 4px;
+      font-variant-numeric: tabular-nums;
+    }
+    .v3 .col-money .bruto { font-size: 12px; color: #64748b; }
+    .v3 .col-money .bruto strong { color: #0f172a; font-weight: 600; }
+    .v3 .col-money .liq { font-size: 16px; font-weight: 700; color: #047857; }
+    .v3 .col-money .margem { font-size: 11.5px; color: #047857; font-weight: 600; }
+
+    .v3 .col-status {
+      display: flex; flex-direction: column; align-items: flex-end; gap: 6px;
+    }
+    .v3 .badge {
+      display: inline-flex; align-items: center; gap: 5px;
+      padding: 4px 10px; border-radius: 999px;
+      font-size: 11.5px; font-weight: 700; letter-spacing: 0.02em;
+    }
+    .v3 .badge.done    { background: #ecfdf5; color: #047857; }
+    .v3 .badge.pending { background: #fffbeb; color: #b45309; }
+    .v3 .badge.cancel  { background: #fef2f2; color: #b91c1c; }
+    .v3 .badge.refund  { background: #faf5ff; color: #6b21a8; }
+    .v3 .badge .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+    .v3 .expand {
+      font-size: 12px; color: #64748b; background: none; border: none;
+      display: inline-flex; align-items: center; gap: 4px;
+    }
+
+    /* Card expandido */
+    .v3 .order-card.expanded { border-color: #cbd5e1; box-shadow: 0 1px 3px rgba(15, 23, 42, 0.05); }
+    .v3 .order-card .details {
+      display: grid; grid-template-columns: 1fr 320px;
+      gap: 18px; padding: 0 18px 18px;
+      border-top: 1px solid #f1f5f9; padding-top: 16px;
+    }
+    .v3 .detail-block { background: #f8fafc; border: 1px solid #e5e7eb; border-radius: 8px; padding: 14px; }
+    .v3 .detail-block h4 { margin: 0 0 10px; font-size: 12px; color: #475569; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
+    .v3 .kv { display: flex; justify-content: space-between; padding: 5px 0; font-size: 13px; border-bottom: 1px dashed #e2e8f0; }
+    .v3 .kv:last-child { border-bottom: none; }
+    .v3 .kv .k { color: #64748b; }
+    .v3 .kv .v { color: #0f172a; font-weight: 500; font-variant-numeric: tabular-nums; }
+    .v3 .kv.neg .v { color: #b91c1c; }
+    .v3 .kv.pos .v { color: #047857; }
+    .v3 .kv.total { border-top: 1px solid #cbd5e1; margin-top: 6px; padding-top: 10px; font-weight: 700; }
+    .v3 .kv.total .v { color: #047857; font-size: 16px; font-weight: 700; }
+
+    /* =========================================================
+       V4 — "Premium ERP"
+       Visual sofisticado, tipografia caprichada, sparklines.
+       ========================================================= */
+    .v4 .frame { background: #fafbfc; }
+    .v4 .layout { display: grid; grid-template-columns: 248px 1fr; min-height: 820px; }
+    .v4 .sidebar {
+      background: #0b1220;
+      color: #cbd5e1; padding: 20px 14px;
+      display: flex; flex-direction: column;
+    }
+    .v4 .brand {
+      display: flex; align-items: center; gap: 12px;
+      padding: 0 6px 18px; border-bottom: 1px solid #1e293b;
+      margin-bottom: 14px;
+    }
+    .v4 .brand-mark {
+      width: 38px; height: 38px; border-radius: 10px;
+      background: #10b981; color: #052e1c;
+      display: grid; place-items: center; font-weight: 800; font-size: 14px;
+    }
+    .v4 .brand-text { color: #f8fafc; font-weight: 700; line-height: 1.1; letter-spacing: -0.01em; }
+    .v4 .brand-text small { display: block; font-weight: 500; color: #64748b; font-size: 11px; letter-spacing: 0.04em; text-transform: uppercase; margin-top: 3px; }
+
+    .v4 .nav-group { padding: 14px 8px 6px; font-size: 10.5px; color: #475569; letter-spacing: 0.08em; text-transform: uppercase; font-weight: 600; }
+    .v4 .nav-item {
+      display: flex; align-items: center; gap: 10px;
+      padding: 9px 10px; border-radius: 7px;
+      font-size: 13px; color: #cbd5e1; text-decoration: none;
+      margin-bottom: 1px; position: relative;
+    }
+    .v4 .nav-item:hover { background: #131e32; color: #f8fafc; }
+    .v4 .nav-item.active {
+      background: #131e32; color: #f8fafc; font-weight: 600;
+    }
+    .v4 .nav-item.active::before {
+      content: ""; position: absolute; left: -14px; top: 6px; bottom: 6px;
+      width: 3px; background: #10b981; border-radius: 0 2px 2px 0;
+    }
+    .v4 .nav-item .ic { width: 16px; height: 16px; opacity: 0.7; }
+    .v4 .nav-item.active .ic { opacity: 1; color: #10b981; }
+    .v4 .nav-item .pill { margin-left: auto; background: #ef4444; color: #fff; font-size: 10px; padding: 1px 6px; border-radius: 9px; font-weight: 700; }
+
+    .v4 .side-user {
+      margin-top: auto; display: flex; align-items: center; gap: 10px;
+      padding: 10px 8px; border-top: 1px solid #1e293b;
+    }
+    .v4 .side-user .avatar { width: 32px; height: 32px; border-radius: 50%; background: #f59e0b; color: #fff; display: grid; place-items: center; font-weight: 700; font-size: 12px; }
+    .v4 .side-user .nm { color: #f8fafc; font-weight: 600; font-size: 13px; line-height: 1.1; }
+    .v4 .side-user .nm small { display: block; color: #64748b; font-weight: 500; font-size: 11px; margin-top: 2px; }
+
+    .v4 .main { padding: 24px 32px 40px; }
+    .v4 .topbar {
+      display: flex; align-items: center; gap: 16px; margin-bottom: 24px;
+    }
+    .v4 .search {
+      flex: 1; max-width: 420px;
+      display: flex; align-items: center; gap: 8px;
+      padding: 9px 14px;
+      background: #ffffff; border: 1px solid #e2e8f0; border-radius: 9px;
+      color: #94a3b8; font-size: 13px;
+      box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+    }
+    .v4 .search kbd { margin-left: auto; padding: 1px 6px; background: #f1f5f9; color: #64748b; border-radius: 4px; font-size: 11px; }
+
+    .v4 .topbar .meta { margin-left: auto; display: flex; align-items: center; gap: 14px; font-size: 12px; color: #64748b; }
+    .v4 .topbar .meta .dot { width: 7px; height: 7px; border-radius: 50%; background: #10b981; }
+    .v4 .topbar .meta b { color: #0f172a; font-weight: 600; }
+
+    .v4 .page-head {
+      display: flex; align-items: flex-start; gap: 16px;
+      margin-bottom: 26px;
+    }
+    .v4 .page-head h1 {
+      margin: 0; font-size: 26px; font-weight: 700; color: #0f172a;
+      letter-spacing: -0.02em;
+    }
+    .v4 .page-head .subtitle { font-size: 13.5px; color: #64748b; margin-top: 4px; }
+    .v4 .page-head .actions { margin-left: auto; display: flex; gap: 8px; }
+    .v4 .btn {
+      padding: 9px 16px; border-radius: 9px; font-size: 13px; font-weight: 500;
+      background: #ffffff; color: #334155; border: 1px solid #e2e8f0;
+      display: inline-flex; align-items: center; gap: 7px;
+      box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+    }
+    .v4 .btn:hover { background: #f8fafc; }
+    .v4 .btn.primary {
+      background: #0f172a; color: #ffffff; border-color: #0f172a;
+    }
+    .v4 .btn.primary:hover { background: #1e293b; }
+
+    /* KPIs sofisticados com sparkline */
+    .v4 .kpis {
+      display: grid; grid-template-columns: repeat(4, 1fr);
+      gap: 16px; margin-bottom: 26px;
+    }
+    .v4 .kpi {
+      background: #ffffff; border-radius: 14px; padding: 18px 20px;
+      border: 1px solid #e8edf2;
+      box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+    }
+    .v4 .kpi .kpi-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
+    .v4 .kpi .kpi-label {
+      font-size: 12px; color: #64748b; font-weight: 500;
+    }
+    .v4 .kpi .kpi-icon {
+      width: 30px; height: 30px; border-radius: 8px;
+      background: #f1f5f9; color: #475569;
+      display: grid; place-items: center;
+    }
+    .v4 .kpi .kpi-value {
+      font-size: 28px; font-weight: 700; color: #0f172a;
+      letter-spacing: -0.02em; font-variant-numeric: tabular-nums;
+      line-height: 1;
+    }
+    .v4 .kpi .kpi-foot {
+      display: flex; align-items: center; gap: 8px; margin-top: 12px;
+      font-size: 12px; color: #64748b;
+    }
+    .v4 .kpi .delta {
+      padding: 2px 7px; border-radius: 999px;
+      font-size: 11.5px; font-weight: 600;
+      display: inline-flex; align-items: center; gap: 3px;
+    }
+    .v4 .delta.up { background: #ecfdf5; color: #047857; }
+    .v4 .delta.down { background: #fef2f2; color: #b91c1c; }
+    .v4 .spark { margin-top: 10px; height: 32px; width: 100%; }
+
+    /* Section header */
+    .v4 .section-head {
+      display: flex; align-items: center; gap: 14px;
+      margin-bottom: 16px; flex-wrap: wrap;
+    }
+    .v4 .section-title { font-size: 16px; font-weight: 700; color: #0f172a; }
+    .v4 .section-head .sub { font-size: 12px; color: #94a3b8; }
+
+    /* Toolbar elegante */
+    .v4 .toolbar {
+      display: flex; align-items: center; gap: 12px;
+      margin-bottom: 18px; flex-wrap: wrap;
+    }
+    .v4 .tabs {
+      display: inline-flex; padding: 3px; background: #f1f5f9;
+      border-radius: 10px;
+    }
+    .v4 .tab {
+      padding: 7px 16px; font-size: 12.5px; font-weight: 500; color: #64748b;
+      background: transparent; border: none; border-radius: 7px;
+    }
+    .v4 .tab.active { background: #ffffff; color: #0f172a; font-weight: 600; box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06); }
+    .v4 .tab .count { margin-left: 6px; color: #94a3b8; font-size: 11.5px; }
+    .v4 .tab.active .count { color: #047857; }
+
+    .v4 .chip {
+      padding: 7px 12px;
+      background: #ffffff; border: 1px solid #e2e8f0; border-radius: 9px;
+      font-size: 12.5px; color: #334155;
+      display: inline-flex; align-items: center; gap: 6px;
+    }
+    .v4 .chip.active { border-color: #cbd5e1; background: #f8fafc; }
+    .v4 .chip .x { color: #94a3b8; font-size: 11px; }
+    .v4 .toolbar .right { margin-left: auto; display: inline-flex; gap: 8px; align-items: center; }
+    .v4 .density {
+      display: inline-flex; gap: 2px; padding: 2px;
+      border: 1px solid #e2e8f0; border-radius: 7px; background: #fff;
+    }
+    .v4 .density button { padding: 5px 8px; font-size: 11.5px; color: #64748b; background: none; border: none; border-radius: 5px; }
+    .v4 .density button.active { background: #f1f5f9; color: #0f172a; font-weight: 600; }
+
+    /* Tabela premium */
+    .v4 .table-wrap {
+      background: #ffffff; border: 1px solid #e8edf2; border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+    }
+    .v4 table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .v4 thead th {
+      text-align: left; padding: 12px 16px;
+      background: #fafbfc; color: #64748b;
+      font-size: 11.5px; font-weight: 600; letter-spacing: 0.04em;
+      border-bottom: 1px solid #e8edf2;
+    }
+    .v4 thead th.num { text-align: right; }
+    .v4 tbody td {
+      padding: 14px 16px; border-bottom: 1px solid #f1f5f9;
+      vertical-align: middle;
+    }
+    .v4 tbody tr:hover td { background: #fafbfc; }
+
+    .v4 .col-date { font-size: 12.5px; }
+    .v4 .col-date .d { font-weight: 600; color: #0f172a; }
+    .v4 .col-date .t { color: #94a3b8; }
+    .v4 .product-cell { display: flex; align-items: center; gap: 12px; max-width: 380px; }
+    .v4 .thumb {
+      width: 40px; height: 40px; border-radius: 8px;
+      background: #f1f5f9; display: grid; place-items: center;
+      color: #94a3b8; flex: 0 0 40px;
+    }
+    .v4 .product-cell .nm { font-weight: 500; color: #0f172a; font-size: 13px; line-height: 1.3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .v4 .product-cell .meta { display: flex; gap: 8px; align-items: center; margin-top: 3px; font-size: 11px; color: #94a3b8; }
+    .v4 .product-cell .sku-pill { padding: 1px 6px; background: #f1f5f9; color: #334155; border-radius: 3px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-weight: 600; font-size: 10.5px; }
+    .v4 .order-id-link { color: #0f172a; font-size: 12px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .v4 .order-id-link small { color: #94a3b8; }
+    .v4 td.num { text-align: right; font-variant-numeric: tabular-nums; }
+    .v4 td.num.bruto { font-weight: 600; color: #0f172a; }
+    .v4 td.num.liq   { font-weight: 700; color: #047857; }
+    .v4 td.num .est-tag { display: block; font-size: 10.5px; color: #94a3b8; font-weight: 500; }
+    .v4 .badge {
+      display: inline-flex; align-items: center; gap: 5px;
+      padding: 4px 10px; border-radius: 8px;
+      font-size: 11.5px; font-weight: 600; letter-spacing: 0.01em;
+    }
+    .v4 .badge.done    { background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; }
+    .v4 .badge.pending { background: #fffbeb; color: #b45309; border: 1px solid #fde68a; }
+    .v4 .badge.cancel  { background: #fef2f2; color: #b91c1c; border: 1px solid #fecaca; }
+    .v4 .badge.refund  { background: #faf5ff; color: #6b21a8; border: 1px solid #ddd6fe; }
+    .v4 .badge .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+
+    .v4 .table-foot {
+      display: flex; align-items: center; gap: 14px;
+      padding: 14px 18px; background: #fafbfc;
+      border-top: 1px solid #f1f5f9; font-size: 12.5px; color: #64748b;
+    }
+    .v4 .table-foot .pager { margin-left: auto; display: flex; gap: 4px; align-items: center; }
+    .v4 .pg {
+      width: 30px; height: 30px; border-radius: 7px;
+      border: 1px solid #e2e8f0; background: #ffffff; color: #475569;
+      display: grid; place-items: center; font-size: 12px;
+    }
+    .v4 .pg.active { background: #0f172a; color: #fff; border-color: #0f172a; }
+
+    /* =========================================================
+       V5 — "Direção final"
+       Sidebar V1 (com as funções reais do app)
+       + Cards expansíveis V3
+       + Layout do print do Gestor Seller (tabela horizontal de
+         itens dentro do card + breakdown financeiro lateral)
+       ========================================================= */
+    .v5 .frame { background: #f9fafb; }
+    .v5 .layout {
+      display: grid; grid-template-columns: 232px 1fr;
+      min-height: 920px;
+    }
+
+    /* ----- Sidebar (V1) com itens reais ----- */
+    .v5 .sidebar {
+      background: #ffffff; border-right: 1px solid #e5e7eb;
+      padding: 16px 12px 12px;
+      display: flex; flex-direction: column;
+    }
+    .v5 .brand {
+      display: flex; align-items: center; gap: 10px;
+      padding: 4px 4px 14px; margin-bottom: 8px;
+      border-bottom: 1px solid #f1f5f9;
+    }
+    .v5 .brand-mark {
+      width: 34px; height: 34px; border-radius: 8px;
+      background: #10b981; color: #ffffff;
+      display: grid; place-items: center;
+      font-weight: 800; font-size: 14px;
+    }
+    .v5 .brand-text { line-height: 1.1; }
+    .v5 .brand-text strong { font-size: 13.5px; font-weight: 700; color: #0f172a; display: block; }
+    .v5 .brand-text small { font-size: 10.5px; color: #94a3b8; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; }
+
+    .v5 .nav-group {
+      margin: 14px 0 4px; padding: 0 8px;
+      font-size: 10.5px; color: #94a3b8;
+      font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase;
+    }
+    .v5 .nav-item {
+      display: flex; align-items: center; gap: 10px;
+      padding: 8px 10px; border-radius: 7px;
+      font-size: 13px; color: #334155; text-decoration: none;
+      margin-bottom: 1px;
+    }
+    .v5 .nav-item:hover { background: #f1f5f9; color: #0f172a; }
+    .v5 .nav-item.active {
+      background: #ecfdf5; color: #047857; font-weight: 600;
+    }
+    .v5 .nav-item .ic { width: 16px; height: 16px; flex: 0 0 16px; }
+    .v5 .nav-item .pill {
+      margin-left: auto;
+      background: #ef4444; color: #ffffff;
+      font-size: 10px; font-weight: 700;
+      padding: 1px 6px; border-radius: 9px;
+    }
+    .v5 .nav-item .chev {
+      margin-left: auto; color: #94a3b8;
+      transition: transform .15s;
+    }
+
+    .v5 .side-footer {
+      margin-top: auto; padding: 10px 10px 4px;
+      display: flex; align-items: center;
+      font-size: 11px; color: #94a3b8;
+      border-top: 1px solid #f1f5f9;
+    }
+    .v5 .theme-toggle {
+      margin-left: auto;
+      width: 26px; height: 26px; border-radius: 6px;
+      background: #f8fafc; border: 1px solid #e2e8f0;
+      display: grid; place-items: center;
+      color: #475569;
+    }
+
+    /* ----- Topbar global + main ----- */
+    .v5 .topbar {
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
+      align-items: center;
+      gap: 16px;
+      padding: 12px 28px;
+      background: #ffffff;
+      border-bottom: 1px solid #e5e7eb;
+    }
+    .v5 .search {
+      grid-column: 2;
+      justify-self: center;
+      width: 580px; max-width: 100%;
+      display: flex; align-items: center; gap: 8px;
+      padding: 8px 14px;
+      background: #f8fafc;
+      border: 1px solid #e2e8f0; border-radius: 8px;
+      color: #94a3b8; font-size: 13px;
+    }
+    .v5 .search kbd {
+      margin-left: auto;
+      padding: 2px 7px; border-radius: 4px;
+      background: #ffffff; border: 1px solid #e2e8f0;
+      color: #64748b; font-size: 11px; font-family: inherit;
+    }
+    .v5 .topbar .user {
+      grid-column: 3;
+      justify-self: end;
+      display: flex; align-items: center; gap: 10px;
+      font-size: 13px; font-weight: 500; color: #0f172a;
+    }
+    .v5 .avatar {
+      width: 30px; height: 30px; border-radius: 50%;
+      background: #f59e0b; color: #fff;
+      display: grid; place-items: center;
+      font-size: 12px; font-weight: 700;
+    }
+
+    .v5 .main { padding: 22px 28px 32px; }
+
+    /* Page head */
+    .v5 .page-head {
+      display: flex; align-items: flex-start; gap: 16px;
+      margin-bottom: 22px;
+    }
+    .v5 .page-head h1 {
+      margin: 0; font-size: 22px; font-weight: 700;
+      letter-spacing: -0.01em; color: #0f172a;
+    }
+    .v5 .sync-meta {
+      display: inline-flex; align-items: center; gap: 6px;
+      font-size: 12px; color: #64748b;
+      margin-top: 4px;
+    }
+    .v5 .sync-meta .dot {
+      width: 7px; height: 7px; border-radius: 50%;
+      background: #10b981;
+      box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.18);
+    }
+    .v5 .page-head .actions { margin-left: auto; display: flex; gap: 8px; }
+    .v5 .btn {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 8px 14px; border-radius: 8px;
+      font-size: 13px; font-weight: 500;
+      background: #ffffff; color: #334155;
+      border: 1px solid #e2e8f0;
+      transition: all .12s ease;
+    }
+    .v5 .btn:hover { background: #f8fafc; }
+    .v5 .btn.primary {
+      background: #10b981; color: #ffffff; border-color: #10b981;
+    }
+    .v5 .btn.primary:hover { background: #059669; border-color: #059669; }
+
+    /* KPIs */
+    .v5 .kpis {
+      display: grid; grid-template-columns: repeat(4, 1fr);
+      gap: 12px; margin-bottom: 20px;
+    }
+    .v5 .kpi {
+      background: #ffffff; border: 1px solid #e5e7eb; border-radius: 10px;
+      padding: 14px 16px; position: relative;
+    }
+    .v5 .kpi .kpi-label {
+      font-size: 11.5px; color: #64748b; font-weight: 500;
+      margin-bottom: 4px;
+    }
+    .v5 .kpi .kpi-value {
+      font-size: 22px; font-weight: 700; color: #0f172a;
+      letter-spacing: -0.01em;
+      font-variant-numeric: tabular-nums;
+    }
+    .v5 .kpi .kpi-sub {
+      margin-top: 6px; font-size: 12px; color: #64748b;
+      display: inline-flex; align-items: center; gap: 6px;
+    }
+    .v5 .kpi .delta { font-weight: 600; }
+    .v5 .kpi .delta.up   { color: #047857; }
+    .v5 .kpi .delta.down { color: #b91c1c; }
+    .v5 .kpi .kpi-icon {
+      position: absolute; top: 14px; right: 14px;
+      width: 28px; height: 28px; border-radius: 7px;
+      background: #ecfdf5; color: #047857;
+      display: grid; place-items: center;
+    }
+    .v5 .kpi.b .kpi-icon { background: #eef2ff; color: #4338ca; }
+    .v5 .kpi.c .kpi-icon { background: #f0f9ff; color: #0369a1; }
+    .v5 .kpi.d .kpi-icon { background: #fef3c7; color: #b45309; }
+
+    /* Toolbar + filtros */
+    .v5 .toolbar {
+      display: flex; align-items: center; gap: 8px;
+      flex-wrap: wrap; margin-bottom: 14px;
+    }
+    .v5 .chip {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 7px 12px; background: #ffffff;
+      border: 1px solid #e2e8f0; border-radius: 8px;
+      font-size: 12.5px; color: #334155;
+      cursor: pointer;
+    }
+    .v5 .chip:hover { background: #f8fafc; }
+    .v5 .chip.active {
+      background: #ecfdf5; border-color: #86efac; color: #065f46;
+      font-weight: 600;
+    }
+    .v5 .chip .x { color: #94a3b8; font-size: 11px; }
+    .v5 .toolbar .visibility {
+      width: 32px; height: 32px; border: 1px solid #e2e8f0;
+      background: #fff; border-radius: 7px;
+      display: grid; place-items: center; color: #64748b;
+    }
+    .v5 .toolbar .right { margin-left: auto; display: inline-flex; gap: 8px; }
+
+    /* Tabs */
+    .v5 .tabs {
+      display: inline-flex; padding: 4px;
+      background: #f1f5f9; border-radius: 9px;
+      margin-bottom: 14px;
+    }
+    .v5 .tab {
+      padding: 7px 14px; border: none; background: transparent;
+      font-size: 12.5px; font-weight: 500; color: #64748b;
+      border-radius: 6px;
+      display: inline-flex; align-items: center; gap: 6px;
+    }
+    .v5 .tab.active {
+      background: #ffffff; color: #0f172a; font-weight: 600;
+      box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
+    }
+    .v5 .tab .count {
+      padding: 1px 7px; border-radius: 10px;
+      background: #e2e8f0; color: #475569;
+      font-size: 11px; font-weight: 600;
+    }
+    .v5 .tab.active .count { background: #ecfdf5; color: #047857; }
+
+    .v5 .results-meta {
+      display: flex; align-items: center;
+      font-size: 12.5px; color: #64748b;
+      margin-bottom: 14px;
+    }
+    .v5 .results-meta .export {
+      margin-left: auto; color: #475569;
+      text-decoration: none; display: inline-flex; align-items: center; gap: 5px;
+      font-weight: 500;
+    }
+    .v5 .results-meta strong { color: #0f172a; font-weight: 700; }
+
+    /* ----- Card de pedido ----- */
+    .v5 .card-list { display: flex; flex-direction: column; gap: 10px; }
+    .v5 .order-card {
+      background: #ffffff; border: 1px solid #e5e7eb;
+      border-radius: 12px; overflow: hidden;
+      box-shadow: 0 1px 2px rgba(15, 23, 42, 0.03);
+    }
+    .v5 .order-card.expanded {
+      border-color: #cbd5e1;
+      box-shadow: 0 4px 12px rgba(15, 23, 42, 0.05);
+    }
+
+    .v5 .card-head {
+      display: flex; align-items: center; gap: 14px;
+      padding: 12px 18px;
+      border-bottom: 1px solid #f1f5f9;
+      font-size: 12.5px; color: #475569;
+    }
+    .v5 .status-dot {
+      width: 9px; height: 9px; border-radius: 50%;
+      flex: 0 0 9px;
+    }
+    .v5 .status-dot.pending  { background: #f59e0b; box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.2); }
+    .v5 .status-dot.done     { background: #10b981; box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.2); }
+    .v5 .status-dot.cancel   { background: #ef4444; box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.18); }
+    .v5 .status-dot.refund   { background: #8b5cf6; box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.18); }
+    .v5 .meta-item {
+      display: inline-flex; align-items: center; gap: 5px;
+      color: #475569;
+    }
+    .v5 .meta-item .ic { width: 14px; height: 14px; color: #94a3b8; }
+    .v5 .status-badge {
+      display: inline-flex; align-items: center; gap: 5px;
+      padding: 3px 9px; border-radius: 999px;
+      font-size: 11.5px; font-weight: 600;
+    }
+    .v5 .status-badge.pending { background: #fef3c7; color: #b45309; }
+    .v5 .status-badge.done    { background: #d1fae5; color: #047857; }
+    .v5 .status-badge.cancel  { background: #fee2e2; color: #b91c1c; }
+    .v5 .status-badge.refund  { background: #ede9fe; color: #6b21a8; }
+    .v5 .status-badge .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+
+    .v5 .marketplace-tag {
+      margin-left: auto;
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 4px 10px;
+      background: #f8fafc; border: 1px solid #e2e8f0;
+      border-radius: 6px;
+      font-size: 12px; color: #334155; font-weight: 500;
+    }
+    .v5 .marketplace-tag .amazon-mark {
+      width: 18px; height: 18px; border-radius: 4px;
+      background: #ff9900; color: #0f172a;
+      display: grid; place-items: center;
+      font-size: 11px; font-weight: 800; font-style: italic;
+    }
+
+    /* Tabela horizontal do item (como no print) */
+    .v5 .items-table-wrap {
+      width: 100%;
+      overflow-x: auto;
+    }
+    .v5 .items-table {
+      width: 100%;
+      min-width: 1100px;
+      border-collapse: collapse;
+      font-size: 12.5px;
+    }
+    .v5 .items-table thead th {
+      text-align: left;
+      padding: 10px 12px;
+      background: #fafbfc;
+      color: #64748b;
+      font-size: 10.5px; font-weight: 600;
+      text-transform: uppercase; letter-spacing: 0.04em;
+      border-bottom: 1px solid #f1f5f9;
+      white-space: nowrap;
+    }
+    .v5 .items-table thead th.num { text-align: right; }
+    .v5 .items-table tbody td {
+      padding: 12px;
+      vertical-align: middle;
+      white-space: nowrap;
+      color: #0f172a;
+    }
+    .v5 .items-table tbody td.num {
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+    }
+    .v5 .items-table tbody td.num.profit { color: #047857; font-weight: 600; }
+    .v5 .items-table tbody td.num.cost   { color: #64748b; }
+    .v5 .items-table tbody td.num.tax    { color: #64748b; }
+
+    .v5 .item-cell {
+      display: flex; align-items: center; gap: 10px;
+      min-width: 280px; max-width: 360px;
+    }
+    .v5 .item-thumb {
+      width: 36px; height: 36px; border-radius: 6px;
+      background: #f1f5f9; flex: 0 0 36px;
+      display: grid; place-items: center;
+      color: #94a3b8;
+      overflow: hidden;
+    }
+    .v5 .item-info { min-width: 0; }
+    .v5 .item-info .name {
+      font-weight: 500; color: #0f172a;
+      font-size: 13px; line-height: 1.3;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .v5 .item-info .sku {
+      font-size: 11.5px; color: #94a3b8; margin-top: 2px;
+    }
+    .v5 .margin-badge {
+      display: inline-block;
+      padding: 3px 9px; border-radius: 999px;
+      font-size: 11.5px; font-weight: 700;
+      font-variant-numeric: tabular-nums;
+    }
+    .v5 .margin-badge.good { background: #d1fae5; color: #047857; }
+    .v5 .margin-badge.mid  { background: #fef3c7; color: #b45309; }
+    .v5 .margin-badge.low  { background: #fee2e2; color: #b91c1c; }
+    .v5 .margin-badge.na   { background: #e2e8f0; color: #475569; }
+
+    /* Botão "ver detalhes" */
+    .v5 .card-toggle {
+      display: flex; align-items: center; justify-content: center;
+      gap: 8px;
+      width: 100%; padding: 11px 18px;
+      background: #fafbfc;
+      border: none; border-top: 1px solid #f1f5f9;
+      font-size: 11.5px; font-weight: 600;
+      color: #64748b;
+      letter-spacing: 0.08em; text-transform: uppercase;
+      cursor: pointer;
+    }
+    .v5 .card-toggle:hover { background: #f1f5f9; color: #0f172a; }
+    .v5 .card-toggle .chev { transition: transform .15s ease; }
+    .v5 .order-card.expanded .card-toggle .chev { transform: rotate(180deg); }
+
+    /* Painel de detalhes (visível quando expandido) */
+    .v5 .card-details {
+      display: none;
+      grid-template-columns: 1fr 340px;
+      gap: 24px;
+      padding: 18px;
+      background: #ffffff;
+      border-top: 1px solid #f1f5f9;
+    }
+    .v5 .order-card.expanded .card-details { display: grid; }
+    .v5 .details-left { display: flex; flex-direction: column; gap: 12px; }
+    .v5 .detail-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .v5 .detail-block {
+      border: 1px solid #e5e7eb; border-radius: 9px;
+      padding: 12px 14px;
+      background: #ffffff;
+    }
+    .v5 .detail-block label {
+      display: block;
+      font-size: 10.5px; color: #94a3b8;
+      font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase;
+      margin-bottom: 4px;
+    }
+    .v5 .detail-block .v {
+      font-size: 13.5px; color: #0f172a; font-weight: 500;
+    }
+    .v5 .detail-block .v.muted { color: #94a3b8; font-weight: 400; }
+
+    .v5 .id-block {
+      border: 1px solid #e5e7eb; border-radius: 9px;
+      padding: 14px;
+      background: #ffffff;
+    }
+    .v5 .id-block .kv {
+      display: flex; align-items: baseline; gap: 10px;
+      padding: 4px 0;
+      font-size: 13px;
+    }
+    .v5 .id-block .kv .k {
+      color: #64748b; font-weight: 500;
+      min-width: 110px;
+    }
+    .v5 .id-block .kv .v {
+      color: #0f172a; font-weight: 600;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 12.5px;
+    }
+
+    /* Breakdown financeiro lateral */
+    .v5 .breakdown {
+      background: #fafbfc;
+      border: 1px solid #e5e7eb;
+      border-radius: 10px;
+      padding: 14px 16px;
+    }
+    .v5 .breakdown h4 {
+      margin: 0 0 12px;
+      font-size: 10.5px;
+      color: #64748b; font-weight: 700;
+      letter-spacing: 0.08em; text-transform: uppercase;
+    }
+    .v5 .bd-row {
+      display: flex; align-items: center; gap: 10px;
+      padding: 6px 0;
+      font-size: 13px;
+      border-bottom: 1px dashed #f1f5f9;
+    }
+    .v5 .bd-row:last-of-type { border-bottom: none; }
+    .v5 .bd-row .bd-ic {
+      width: 26px; height: 26px; border-radius: 6px;
+      flex: 0 0 26px;
+      display: grid; place-items: center;
+      background: #f1f5f9; color: #475569;
+    }
+    .v5 .bd-row.pos .bd-ic { background: #d1fae5; color: #047857; }
+    .v5 .bd-row.neg .bd-ic { background: #fee2e2; color: #b91c1c; }
+    .v5 .bd-row .bd-label { flex: 1; color: #475569; }
+    .v5 .bd-row .bd-label small {
+      display: block; font-size: 11px;
+      color: #94a3b8; font-weight: 400;
+      margin-top: 1px;
+    }
+    .v5 .bd-row .bd-value {
+      font-weight: 600; color: #0f172a;
+      font-variant-numeric: tabular-nums;
+    }
+    .v5 .bd-row.pos .bd-value { color: #047857; }
+    .v5 .bd-row.neg .bd-value { color: #b91c1c; }
+
+    .v5 .add-custom {
+      width: 100%;
+      padding: 8px 10px;
+      background: transparent; border: 1px dashed #cbd5e1;
+      border-radius: 7px;
+      color: #047857; font-size: 12px; font-weight: 600;
+      margin: 10px 0 6px;
+      display: inline-flex; align-items: center; justify-content: center; gap: 5px;
+    }
+    .v5 .add-custom:hover { background: #ecfdf5; border-color: #86efac; }
+
+    .v5 .bd-total {
+      display: flex; align-items: center; gap: 10px;
+      padding: 12px 0 4px;
+      margin-top: 6px;
+      border-top: 1px solid #e2e8f0;
+      font-size: 14px; font-weight: 700;
+    }
+    .v5 .bd-total .bd-ic {
+      width: 28px; height: 28px; border-radius: 7px; flex: 0 0 28px;
+      background: #d1fae5; color: #047857;
+      display: grid; place-items: center;
+    }
+    .v5 .bd-total .bd-label { flex: 1; color: #0f172a; }
+    .v5 .bd-total .bd-value { color: #047857; font-size: 16px; font-variant-numeric: tabular-nums; }
+    .v5 .bd-total.loss .bd-ic { background: #fee2e2; color: #b91c1c; }
+    .v5 .bd-total.loss .bd-value { color: #b91c1c; }
+
+    /* Paginação */
+    .v5 .pagination {
+      display: flex; align-items: center;
+      margin-top: 16px;
+      font-size: 12.5px; color: #64748b;
+    }
+    .v5 .pagination .pager { margin-left: auto; display: flex; gap: 4px; }
+    .v5 .pager .pg {
+      width: 30px; height: 30px;
+      display: grid; place-items: center;
+      border: 1px solid #e2e8f0; background: #fff;
+      border-radius: 7px;
+      font-size: 12px; color: #475569;
+    }
+    .v5 .pager .pg.active {
+      background: #10b981; color: #fff; border-color: #10b981; font-weight: 700;
+    }
+
+    /* =========================================================
+       Mobile preview shared
+       ========================================================= */
+    .mini { font-size: 11.5px; }
+    .mini-kpi { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 10px 12px; }
+    .mini-kpi .k { background: #f8fafc; border: 1px solid #e5e7eb; border-radius: 7px; padding: 8px; }
+    .mini-kpi .k .lbl { font-size: 10px; color: #64748b; text-transform: uppercase; }
+    .mini-kpi .k .vl { font-size: 14px; font-weight: 700; color: #0f172a; margin-top: 2px; font-variant-numeric: tabular-nums; }
+    .mini-list { padding: 0 12px 12px; }
+    .mini-list .row { display: flex; gap: 8px; padding: 10px 0; border-bottom: 1px solid #f1f5f9; align-items: center; }
+    .mini-list .row .t { width: 22px; height: 22px; border-radius: 4px; background: #f1f5f9; flex: 0 0 22px; }
+    .mini-list .row .nm { font-size: 11.5px; font-weight: 600; color: #0f172a; }
+    .mini-list .row .sub { font-size: 10.5px; color: #64748b; margin-top: 1px; }
+    .mini-list .row .mv { margin-left: auto; text-align: right; }
+    .mini-list .row .mv .b { font-size: 11.5px; font-weight: 700; color: #047857; font-variant-numeric: tabular-nums; }
+    .mini-list .row .mv .s { font-size: 9.5px; color: #94a3b8; }
+    .mini-tabs { display: flex; gap: 4px; padding: 6px 10px; border-bottom: 1px solid #e5e7eb; background: #fff; }
+    .mini-tabs .tab { padding: 5px 10px; border-radius: 6px; font-size: 11px; font-weight: 500; color: #64748b; }
+    .mini-tabs .tab.active { background: #ecfdf5; color: #047857; font-weight: 600; }
+    .mini-filter { display: flex; gap: 4px; padding: 6px 10px; flex-wrap: wrap; }
+    .mini-filter .ch { padding: 3px 8px; font-size: 10.5px; background: #f1f5f9; border-radius: 4px; }
+    .mini .bd-done { color: #047857; font-size: 9.5px; font-weight: 700; text-transform: uppercase; }
+    .mini .bd-pend { color: #b45309; font-size: 9.5px; font-weight: 700; text-transform: uppercase; }
+
+    @media (max-width: 1100px) {
+      .v1 .layout, .v2 .layout, .v3 .layout, .v4 .layout, .v5 .layout {
+        grid-template-columns: 1fr;
+      }
+      .v1 .sidebar, .v3 .sidebar, .v4 .sidebar, .v5 .sidebar { display: none; }
+      .v2 .sidebar { display: none; }
+      .v1 .kpis, .v3 .kpis, .v4 .kpis, .v5 .kpis { grid-template-columns: 1fr 1fr; }
+      .v2 .kpi-strip { grid-template-columns: 1fr 1fr; }
+      .v2 .kpi { border-right: none; border-bottom: 1px solid #f1f5f9; }
+      .v3 .order-card .row1 { grid-template-columns: 1fr; gap: 10px; }
+      .v3 .order-card .details { grid-template-columns: 1fr; }
+      .v5 .card-details { grid-template-columns: 1fr; }
+      .v5 .items-table { display: block; overflow-x: auto; }
+      .v5 .card-head { flex-wrap: wrap; }
+      .v5 .marketplace-tag { margin-left: 0; }
+      .mobile-row { grid-template-columns: 1fr; }
+    }
+
+    /* footer "leia mais" */
+    .section-divider {
+      max-width: min(1680px, calc(100vw - 32px)); margin: 30px auto 12px;
+      display: flex; align-items: center; gap: 12px;
+      color: #64748b; font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; font-weight: 600;
+    }
+    .section-divider::before, .section-divider::after {
+      content: ""; flex: 1; height: 1px; background: #cbd5e1;
+    }
+  </style>
+</head>
+<body>
+
+<!-- ============================ SWITCHER ============================ -->
+<header class="switcher">
+  <div class="switcher__brand">Vendas Amazon <span>· estudo visual · 4 direções</span></div>
+  <nav class="switcher__tabs" id="tabs">
+    <button data-v="5" class="is-active">V5 · Direção final</button>
+    <button data-v="1">V1 · Gestor Seller próxima</button>
+    <button data-v="2">V2 · Operacional densa</button>
+    <button data-v="3">V3 · Cards por pedido</button>
+    <button data-v="4">V4 · Premium ERP</button>
+  </nav>
+  <div class="switcher__meta">Use as abas para alternar entre as versões</div>
+</header>
+
+<!-- ============================================================
+     V1 — Gestor Seller próxima
+     ============================================================ -->
+<section class="version v1" id="v1">
+  <div class="design-note">
+    <h3>V1 · Gestor Seller próxima</h3>
+    <div><span class="label">o que mudou</span>Sidebar branca compacta com grupos nomeados; barra de busca global no topo; KPIs em 4 cards iguais com íconezinho discreto e variação % do período; filtros como chips suaves com badges removíveis; tabela limpa com header em maiúscula menor, badges arredondados de status e paginação simples. Coluna “LÍQUIDO” verde para reforçar leitura.</div>
+    <div><span class="label why">por que funciona</span>Mantém a familiaridade visual de ERPs Amazon-first sem copiar identidade. A escala neutra com um verde único faz a UI parecer parte do produto, não “Bootstrap genérico”. Densidade média evita fadiga em sessões longas.</div>
+    <div><span class="label tradeoff">trade-off</span>Cards de KPI consomem altura útil; se o foco do dia for triagem rápida de pedidos, V2 entrega mais linhas por scroll.</div>
+  </div>
+
+  <div class="frame">
+    <div class="layout">
+      <!-- Sidebar -->
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="brand-mark">A</div>
+          <div class="brand-text">ERP Amazon<small>gestão interna</small></div>
+        </div>
+        <a class="nav-item" href="#"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 12l9-9 9 9"/><path d="M5 10v10h14V10"/></svg>Home</a>
+
+        <div class="nav-group">Financeiro</div>
+        <a class="nav-item" href="#"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18"/></svg>Contas</a>
+
+        <div class="nav-group">E-commerce</div>
+        <a class="nav-item" href="#"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 3h4l2 14h10l2-9H7"/></svg>Dashboard</a>
+        <a class="nav-item" href="#"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 7L12 2 3 7l9 5 9-5z"/><path d="M3 17l9 5 9-5"/></svg>Produtos</a>
+        <a class="nav-item active" href="#"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 3h2l2 12h11l2-9H6"/><circle cx="9" cy="20" r="1.6"/><circle cx="17" cy="20" r="1.6"/></svg>Vendas</a>
+        <a class="nav-item" href="#"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 8h18M3 12h18M3 16h18"/></svg>Compras</a>
+        <a class="nav-item" href="#"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 9h10M7 13h6"/></svg>Expedição</a>
+        <a class="nav-item" href="#"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polygon points="12,2 15,9 22,9 16,14 18,21 12,17 6,21 8,14 2,9 9,9"/></svg>Avaliações</a>
+        <a class="nav-item" href="#"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 4h16v6H4zM4 14h16v6H4z"/></svg>Publicidade</a>
+
+        <div class="nav-group">Sistema</div>
+        <a class="nav-item" href="#"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 21s-7-4.5-7-11a7 7 0 1114 0c0 6.5-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/></svg>Conector</a>
+        <a class="nav-item" href="#"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.8-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 01-4 0v-.1a1.7 1.7 0 00-1.1-1.5 1.7 1.7 0 00-1.8.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.8 1.7 1.7 0 00-1.5-1H3a2 2 0 010-4h.1a1.7 1.7 0 001.5-1.1 1.7 1.7 0 00-.3-1.8l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.8.3H9a1.7 1.7 0 001-1.5V3a2 2 0 014 0v.1a1.7 1.7 0 001 1.5 1.7 1.7 0 001.8-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.8V9c.6.3 1 .9 1 1.6"/></svg>Configurações</a>
+      </aside>
+
+      <!-- Main -->
+      <main class="main">
+        <div class="topbar">
+          <div class="search">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+            Buscar pedidos, SKUs, fornecedores… (&gt; para ações)
+            <kbd>⌘K</kbd>
+          </div>
+          <div class="user"><div class="avatar">HE</div>Heitor</div>
+        </div>
+
+        <div class="page-head">
+          <div>
+            <h1>Vendas Amazon</h1>
+            <div class="sync-meta"><span class="sync-dot"></span> Última sincronização: 18/05/2026 às 09:42</div>
+          </div>
+          <div class="actions">
+            <button class="btn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>Importar</button>
+            <button class="btn primary"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 11-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg>Sincronizar</button>
+          </div>
+        </div>
+
+        <!-- KPIs -->
+        <div class="kpis">
+          <div class="kpi">
+            <div class="kpi-label">Receita bruta</div>
+            <div class="kpi-value">R$ 93.500,29</div>
+            <div class="kpi-sub"><span class="delta up">▲ 12,4%</span> vs. 7d anteriores</div>
+            <div class="kpi-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 17l6-6 4 4 8-8"/><path d="M14 7h7v7"/></svg></div>
+          </div>
+          <div class="kpi indigo">
+            <div class="kpi-label">Pedidos</div>
+            <div class="kpi-value">1.628</div>
+            <div class="kpi-sub"><span class="delta up">▲ 8,2%</span> pedidos únicos</div>
+            <div class="kpi-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 8h10M7 12h10M7 16h6"/></svg></div>
+          </div>
+          <div class="kpi blue">
+            <div class="kpi-label">Unidades</div>
+            <div class="kpi-value">1.771</div>
+            <div class="kpi-sub"><span class="delta up">▲ 9,1%</span> unidades vendidas</div>
+            <div class="kpi-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7l9-4 9 4-9 4z"/><path d="M3 7v10l9 4 9-4V7"/></svg></div>
+          </div>
+          <div class="kpi amber">
+            <div class="kpi-label">Ticket médio</div>
+            <div class="kpi-value">R$ 57,43</div>
+            <div class="kpi-sub"><span class="delta down">▼ 1,2%</span> por pedido</div>
+            <div class="kpi-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M9 12l2 2 4-4"/></svg></div>
+          </div>
+        </div>
+
+        <!-- Filter chips -->
+        <div class="filter-bar">
+          <span class="chip active">Período: 11/05 – 17/05 <span class="x">✕</span></span>
+          <span class="chip">Status: Todos <span class="x">▾</span></span>
+          <span class="chip">Logística: Todas <span class="x">▾</span></span>
+          <span class="chip">SKU: Todos <span class="x">▾</span></span>
+          <button class="clear">Limpar filtros</button>
+          <button class="btn export">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M5 21h14"/></svg>
+            Exportar
+          </button>
+        </div>
+
+        <!-- Tabs + tabela -->
+        <div class="tabs">
+          <button class="tab active">Pedidos <span class="count">10</span></button>
+          <button class="tab">Cancelados <span class="count">1</span></button>
+          <button class="tab">Reembolsados <span class="count">1</span></button>
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Data</th>
+                <th>Pedido / Marketplace</th>
+                <th>SKU</th>
+                <th>Produto</th>
+                <th class="num">Qtd</th>
+                <th class="num">Bruto</th>
+                <th class="num">Taxas</th>
+                <th class="num">Líquido</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><div class="col-date"><span class="d">18/05/2026</span><span class="t">09:14:22</span></div></td>
+                <td><div class="order-id">702-5847780-7813817</div><div style="font-size:11px;color:#94a3b8;">Amazon BR · FBA_SP</div></td>
+                <td><span class="sku-pill">MFS-0036</span></td>
+                <td><div class="product-cell"><div class="thumb">▣</div><div><div class="nm">Kit 3 Potes Marinex Facilita Vap 1 Litro</div><div class="sub">B07RZQYW3X · FBA</div></div></div></td>
+                <td class="num">1</td>
+                <td class="num">R$ 79,99</td>
+                <td class="num">−R$ 14,60</td>
+                <td class="num green">R$ 65,39</td>
+                <td><span class="badge pending"><span class="dot"></span> Pendente</span></td>
+              </tr>
+              <tr>
+                <td><div class="col-date"><span class="d">18/05/2026</span><span class="t">08:42:11</span></div></td>
+                <td><div class="order-id">702-6004541-3453051</div><div style="font-size:11px;color:#94a3b8;">Amazon BR · FBA_SP</div></td>
+                <td><span class="sku-pill">MFS-0032</span></td>
+                <td><div class="product-cell"><div class="thumb">▣</div><div><div class="nm">Conjunto 6 Potes de Vidro 350ml Nadir Figueiredo</div><div class="sub">B093Y7QR5L · FBA</div></div></div></td>
+                <td class="num">1</td>
+                <td class="num">R$ 54,97</td>
+                <td class="num">−R$ 11,60</td>
+                <td class="num green">R$ 43,37</td>
+                <td><span class="badge pending"><span class="dot"></span> Pendente</span></td>
+              </tr>
+              <tr>
+                <td><div class="col-date"><span class="d">17/05/2026</span><span class="t">22:03:36</span></div></td>
+                <td><div class="order-id">702-0368681-6939457</div><div style="font-size:11px;color:#94a3b8;">Amazon BR · FBA_SP</div></td>
+                <td><span class="sku-pill">MFS-0023+A</span></td>
+                <td><div class="product-cell"><div class="thumb">▣</div><div><div class="nm">Bolsa Organizadora Para Cabos e Acessórios</div><div class="sub">B08X4Z2QW1 · FBA</div></div></div></td>
+                <td class="num">1</td>
+                <td class="num">R$ 37,97</td>
+                <td class="num">−R$ 10,32</td>
+                <td class="num green">R$ 27,65</td>
+                <td><span class="badge done"><span class="dot"></span> Concluído</span></td>
+              </tr>
+              <tr>
+                <td><div class="col-date"><span class="d">17/05/2026</span><span class="t">19:48:02</span></div></td>
+                <td><div class="order-id">701-8385042-7585041</div><div style="font-size:11px;color:#94a3b8;">Amazon BR · FBA_SP</div></td>
+                <td><span class="sku-pill">MFS-0033</span></td>
+                <td><div class="product-cell"><div class="thumb">▣</div><div><div class="nm">Kit 12 Tigelas Americano Nadir 350ml com Tampa</div><div class="sub">B09KLM4321 · FBA</div></div></div></td>
+                <td class="num">1</td>
+                <td class="num">R$ 92,90</td>
+                <td class="num">−R$ 16,15</td>
+                <td class="num green">R$ 76,75</td>
+                <td><span class="badge done"><span class="dot"></span> Concluído</span></td>
+              </tr>
+              <tr>
+                <td><div class="col-date"><span class="d">17/05/2026</span><span class="t">15:22:18</span></div></td>
+                <td><div class="order-id">702-1795583-3294638</div><div style="font-size:11px;color:#94a3b8;">Amazon BR · FBA_SP</div></td>
+                <td><span class="sku-pill">MFS-0035</span></td>
+                <td><div class="product-cell"><div class="thumb">▣</div><div><div class="nm">Nadir Figueiredo · Tigela 3L com Tampa</div><div class="sub">B07ZZX3HCV · FBA</div></div></div></td>
+                <td class="num">2</td>
+                <td class="num">R$ 81,94</td>
+                <td class="num">−R$ 18,30</td>
+                <td class="num green">R$ 63,64</td>
+                <td><span class="badge done"><span class="dot"></span> Concluído</span></td>
+              </tr>
+              <tr>
+                <td><div class="col-date"><span class="d">17/05/2026</span><span class="t">14:11:00</span></div></td>
+                <td><div class="order-id">701-5672490-1042649</div><div style="font-size:11px;color:#94a3b8;">Amazon BR · FBM</div></td>
+                <td><span class="sku-pill">MFS-0036</span></td>
+                <td><div class="product-cell"><div class="thumb">▣</div><div><div class="nm">Kit 3 Potes Marinex Facilita Vap 1 Litro</div><div class="sub">B07RZQYW3X · FBM</div></div></div></td>
+                <td class="num">1</td>
+                <td class="num">R$ 79,99</td>
+                <td class="num">−R$ 14,60</td>
+                <td class="num green">R$ 65,39</td>
+                <td><span class="badge done"><span class="dot"></span> Concluído</span></td>
+              </tr>
+            </tbody>
+          </table>
+          <div class="table-foot">
+            <span>Mostrando 1–6 de 10 pedidos · período 11/05 – 17/05</span>
+            <div class="pager">
+              <button class="pg">‹</button>
+              <button class="pg active">1</button>
+              <button class="pg">2</button>
+              <button class="pg">›</button>
+            </div>
+          </div>
+        </div>
+
+      </main>
+    </div>
+  </div>
+
+  <!-- Mobile preview -->
+  <div class="section-divider">Mobile · V1</div>
+  <div class="mobile-row">
+    <div class="mobile-frame mini">
+      <header>Vendas Amazon</header>
+      <div class="mh">14d · sincronizado 09:42</div>
+      <div class="mini-kpi">
+        <div class="k"><div class="lbl">Receita</div><div class="vl">R$ 93,5k</div></div>
+        <div class="k"><div class="lbl">Pedidos</div><div class="vl">1.628</div></div>
+        <div class="k"><div class="lbl">Unidades</div><div class="vl">1.771</div></div>
+        <div class="k"><div class="lbl">Ticket</div><div class="vl">R$ 57,43</div></div>
+      </div>
+      <div class="mini-tabs"><div class="tab active">Pedidos · 10</div><div class="tab">Cancel.</div><div class="tab">Reemb.</div></div>
+      <div class="mini-filter"><span class="ch">Período · 7d</span><span class="ch">FBA</span><span class="ch">Pendente</span></div>
+      <div class="mini-list">
+        <div class="row"><div class="t"></div><div><div class="nm">Kit 3 Potes Marinex…</div><div class="sub">MFS-0036 · 18/05 09:14 · <span class="bd-pend">Pendente</span></div></div><div class="mv"><div class="b">R$ 65,39</div><div class="s">bruto R$ 79,99</div></div></div>
+        <div class="row"><div class="t"></div><div><div class="nm">Conjunto 6 Potes Vidro…</div><div class="sub">MFS-0032 · 18/05 08:42 · <span class="bd-pend">Pendente</span></div></div><div class="mv"><div class="b">R$ 43,37</div><div class="s">bruto R$ 54,97</div></div></div>
+        <div class="row"><div class="t"></div><div><div class="nm">Bolsa Organizadora…</div><div class="sub">MFS-0023+A · 17/05 22:03 · <span class="bd-done">Concluído</span></div></div><div class="mv"><div class="b">R$ 27,65</div><div class="s">bruto R$ 37,97</div></div></div>
+      </div>
+    </div>
+    <div style="grid-column:span 2;color:#475569;font-size:13px;">
+      <strong style="color:#0f172a;display:block;margin-bottom:6px;">Comportamento mobile V1</strong>
+      Sidebar colapsa em hambúrguer no topo. KPIs em grid 2×2. Cards de pedido empilham e os campos secundários (taxas, marketplace) viram subtítulo. Botão flutuante “Sincronizar” no canto inferior direito quando há pedidos pendentes.
+    </div>
+  </div>
+</section>
+
+
+<!-- ============================================================
+     V2 — Operacional densa
+     ============================================================ -->
+<section class="version v2" id="v2">
+  <div class="design-note">
+    <h3>V2 · Operacional densa</h3>
+    <div><span class="label">o que mudou</span>Sidebar reduzida (somente ícones) para liberar largura. KPIs viram uma “strip” horizontal de 4 colunas — sem altura desperdiçada. Toolbar única com filtros, busca e densidade na mesma linha. Tabela compacta com mais colunas: Marketplace, Conta, Logística, Taxas (com tag “est.”), Líquido. Footer com totais agregados sob filtro atual.</div>
+    <div><span class="label why">por que funciona</span>Operação Amazon vive em triagem de pedidos. Mais linhas visíveis = menos scroll = menos clique. A strip de KPIs continua presente mas não rouba o palco.</div>
+    <div><span class="label tradeoff">trade-off</span>Visualmente mais “seca”. Para quem prefere navegar olhando produto/imagem, perde apelo. Demanda explicação rápida ao usuário novo (rótulos de coluna abreviados).</div>
+  </div>
+
+  <div class="frame">
+    <div class="layout">
+      <aside class="sidebar">
+        <div class="brand-mark">A</div>
+        <div class="side-ic" title="Home"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 12l9-9 9 9"/><path d="M5 10v10h14V10"/></svg></div>
+        <div class="side-ic" title="Financeiro"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18"/></svg></div>
+        <div class="side-ic" title="Dashboard"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 3h4l2 14h10l2-9H7"/></svg></div>
+        <div class="side-ic" title="Produtos"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 7L12 2 3 7l9 5 9-5z"/><path d="M3 17l9 5 9-5"/></svg></div>
+        <div class="side-ic active" title="Vendas"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 3h2l2 12h11l2-9H6"/><circle cx="9" cy="20" r="1.6"/><circle cx="17" cy="20" r="1.6"/></svg></div>
+        <div class="side-ic" title="Compras"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 8h18M3 12h18M3 16h18"/></svg></div>
+        <div class="side-ic" title="Expedição"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 9h10M7 13h6"/></svg></div>
+        <div class="side-ic" title="Publicidade"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 4h16v6H4zM4 14h16v6H4z"/></svg></div>
+        <div class="side-bottom">
+          <div class="side-ic" title="Notificações"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M18 16v-5a6 6 0 10-12 0v5l-2 3h16z"/><path d="M10 21h4"/></svg></div>
+          <div class="side-ic" title="Config"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 00.3 1.8 2 2 0 11-2.8 2.8 1.7 1.7 0 00-1.8-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 01-4 0v-.1a1.7 1.7 0 00-1.1-1.5"/></svg></div>
+        </div>
+      </aside>
+
+      <main class="main">
+        <div class="topbar">
+          <div class="h1-row">
+            <div class="crumbs">E-commerce <strong>/ Vendas Amazon</strong></div>
+            <h1 style="margin-left:8px;">Vendas Amazon</h1>
+            <span class="live"><span class="dot"></span> live · 09:42</span>
+          </div>
+          <div class="actions">
+            <button class="btn"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>Importar</button>
+            <button class="btn"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M5 21h14"/></svg>Exportar</button>
+            <button class="btn primary"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 11-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg>Sincronizar</button>
+          </div>
+        </div>
+
+        <!-- KPI strip -->
+        <div class="kpi-strip">
+          <div class="kpi">
+            <div class="kpi-label">Receita bruta</div>
+            <div class="kpi-row"><span class="kpi-value">R$ 93.500,29</span><span class="kpi-delta up">▲ 12,4%</span></div>
+            <div class="kpi-sub">7 dias · vs. R$ 83.181,52</div>
+          </div>
+          <div class="kpi">
+            <div class="kpi-label">Pedidos</div>
+            <div class="kpi-row"><span class="kpi-value">1.628</span><span class="kpi-delta up">▲ 8,2%</span></div>
+            <div class="kpi-sub">únicos · 12 hoje</div>
+          </div>
+          <div class="kpi">
+            <div class="kpi-label">Unidades</div>
+            <div class="kpi-row"><span class="kpi-value">1.771</span><span class="kpi-delta up">▲ 9,1%</span></div>
+            <div class="kpi-sub">vendidas · 1,09 / pedido</div>
+          </div>
+          <div class="kpi">
+            <div class="kpi-label">Ticket médio</div>
+            <div class="kpi-row"><span class="kpi-value">R$ 57,43</span><span class="kpi-delta down">▼ 1,2%</span></div>
+            <div class="kpi-sub">líquido marketplace · R$ 46,12</div>
+          </div>
+        </div>
+
+        <!-- Toolbar -->
+        <div class="toolbar">
+          <span class="chip active">📅 11/05 – 17/05 <span class="x">✕</span></span>
+          <span class="chip">Status ▾</span>
+          <span class="chip">Logística: FBA ▾</span>
+          <span class="chip">Conta ▾</span>
+          <span class="chip">SKU ▾</span>
+          <span class="chip">Marketplace ▾</span>
+          <div class="divider"></div>
+          <span class="chip" style="background:transparent;border:none;color:#64748b;">+ adicionar filtro</span>
+          <div class="right">
+            <div class="search-mini">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+              <input placeholder="Buscar pedido / SKU…">
+            </div>
+            <span class="chip" title="Densidade compacta">≡</span>
+          </div>
+        </div>
+
+        <!-- Tabs -->
+        <div class="tabs">
+          <button class="tab active">Pedidos <span class="count">10</span></button>
+          <button class="tab">Cancelados <span class="count">1</span></button>
+          <button class="tab">Reembolsados <span class="count">1</span></button>
+          <button class="tab">Pendente liquidação <span class="count">874</span></button>
+        </div>
+
+        <!-- Tabela densa -->
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th style="width:34px;"><input type="checkbox"></th>
+                <th>Data</th>
+                <th>Pedido</th>
+                <th>Conta</th>
+                <th>Logística</th>
+                <th>SKU</th>
+                <th>Produto</th>
+                <th class="num">Qtd</th>
+                <th class="num">Bruto</th>
+                <th class="num">Taxas</th>
+                <th class="num">Imposto</th>
+                <th class="num">Custo</th>
+                <th class="num">Líquido</th>
+                <th class="num">Margem</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><input type="checkbox"></td>
+                <td><div class="col-date"><span class="d">18/05</span> <span class="t">09:14</span></div></td>
+                <td><a class="order-id">702-5847780-7813817</a></td>
+                <td><span class="marketplace"><span class="mk">BR</span>FBA_SP</span></td>
+                <td>FBA</td>
+                <td><span class="sku-pill">MFS-0036</span></td>
+                <td><div class="product-cell"><div class="thumb">▣</div><span class="nm">Kit 3 Potes Marinex Facilita Vap 1 Litro</span></div></td>
+                <td class="num">1</td>
+                <td class="num bruto">79,99</td>
+                <td class="num taxas">−14,60 <span class="tag-est">est.</span></td>
+                <td class="num">−5,06</td>
+                <td class="num">−38,40</td>
+                <td class="num liq">21,93</td>
+                <td class="num">27,4%</td>
+                <td><span class="badge pending">Pendente</span></td>
+              </tr>
+              <tr>
+                <td><input type="checkbox"></td>
+                <td><div class="col-date"><span class="d">18/05</span> <span class="t">08:42</span></div></td>
+                <td><a class="order-id">702-6004541-3453051</a></td>
+                <td><span class="marketplace"><span class="mk">BR</span>FBA_SP</span></td>
+                <td>FBA</td>
+                <td><span class="sku-pill">MFS-0032</span></td>
+                <td><div class="product-cell"><div class="thumb">▣</div><span class="nm">Conjunto 6 Potes Vidro 350ml Nadir</span></div></td>
+                <td class="num">1</td>
+                <td class="num bruto">54,97</td>
+                <td class="num taxas">−11,60 <span class="tag-est">est.</span></td>
+                <td class="num">−3,48</td>
+                <td class="num">−29,24</td>
+                <td class="num liq">10,65</td>
+                <td class="num">19,4%</td>
+                <td><span class="badge pending">Pendente</span></td>
+              </tr>
+              <tr>
+                <td><input type="checkbox"></td>
+                <td><div class="col-date"><span class="d">17/05</span> <span class="t">22:03</span></div></td>
+                <td><a class="order-id">702-0368681-6939457</a></td>
+                <td><span class="marketplace"><span class="mk">BR</span>FBA_SP</span></td>
+                <td>FBA</td>
+                <td><span class="sku-pill">MFS-0023+A</span></td>
+                <td><div class="product-cell"><div class="thumb">▣</div><span class="nm">Bolsa Organizadora Cabos Acessórios</span></div></td>
+                <td class="num">1</td>
+                <td class="num bruto">37,97</td>
+                <td class="num taxas">−10,32</td>
+                <td class="num">−2,28</td>
+                <td class="num">−14,09</td>
+                <td class="num liq">11,28</td>
+                <td class="num">29,7%</td>
+                <td><span class="badge done">Concluído</span></td>
+              </tr>
+              <tr>
+                <td><input type="checkbox"></td>
+                <td><div class="col-date"><span class="d">17/05</span> <span class="t">19:48</span></div></td>
+                <td><a class="order-id">701-8385042-7585041</a></td>
+                <td><span class="marketplace"><span class="mk">BR</span>FBA_SP</span></td>
+                <td>FBA</td>
+                <td><span class="sku-pill">MFS-0033</span></td>
+                <td><div class="product-cell"><div class="thumb">▣</div><span class="nm">Kit 12 Tigelas Americano Nadir 350ml</span></div></td>
+                <td class="num">1</td>
+                <td class="num bruto">92,90</td>
+                <td class="num taxas">−16,15</td>
+                <td class="num">−5,94</td>
+                <td class="num">−48,10</td>
+                <td class="num liq">22,71</td>
+                <td class="num">24,4%</td>
+                <td><span class="badge done">Concluído</span></td>
+              </tr>
+              <tr>
+                <td><input type="checkbox"></td>
+                <td><div class="col-date"><span class="d">17/05</span> <span class="t">15:22</span></div></td>
+                <td><a class="order-id">702-1795583-3294638</a></td>
+                <td><span class="marketplace"><span class="mk">BR</span>FBA_SP</span></td>
+                <td>FBA</td>
+                <td><span class="sku-pill">MFS-0035</span></td>
+                <td><div class="product-cell"><div class="thumb">▣</div><span class="nm">Nadir Figueiredo Tigela 3L com Tampa</span></div></td>
+                <td class="num">2</td>
+                <td class="num bruto">81,94</td>
+                <td class="num taxas">−18,30</td>
+                <td class="num">−5,18</td>
+                <td class="num">−42,00</td>
+                <td class="num liq">16,46</td>
+                <td class="num">20,1%</td>
+                <td><span class="badge done">Concluído</span></td>
+              </tr>
+              <tr>
+                <td><input type="checkbox"></td>
+                <td><div class="col-date"><span class="d">17/05</span> <span class="t">14:11</span></div></td>
+                <td><a class="order-id">701-5672490-1042649</a></td>
+                <td><span class="marketplace"><span class="mk">BR</span>FBM</span></td>
+                <td>FBM</td>
+                <td><span class="sku-pill">MFS-0036</span></td>
+                <td><div class="product-cell"><div class="thumb">▣</div><span class="nm">Kit 3 Potes Marinex Facilita Vap</span></div></td>
+                <td class="num">1</td>
+                <td class="num bruto">79,99</td>
+                <td class="num taxas">−14,60</td>
+                <td class="num">−5,06</td>
+                <td class="num">−38,40</td>
+                <td class="num liq">21,93</td>
+                <td class="num">27,4%</td>
+                <td><span class="badge done">Concluído</span></td>
+              </tr>
+              <tr>
+                <td><input type="checkbox"></td>
+                <td><div class="col-date"><span class="d">17/05</span> <span class="t">10:55</span></div></td>
+                <td><a class="order-id">702-9981004-2204125</a></td>
+                <td><span class="marketplace"><span class="mk">BR</span>FBA_SP</span></td>
+                <td>FBA</td>
+                <td><span class="sku-pill">MFS-0041</span></td>
+                <td><div class="product-cell"><div class="thumb">▣</div><span class="nm">Travessa Refratária 2.5L Vidro</span></div></td>
+                <td class="num">1</td>
+                <td class="num bruto">119,90</td>
+                <td class="num taxas">−21,40</td>
+                <td class="num">−7,55</td>
+                <td class="num">−62,12</td>
+                <td class="num liq">28,83</td>
+                <td class="num">24,1%</td>
+                <td><span class="badge done">Concluído</span></td>
+              </tr>
+              <tr>
+                <td><input type="checkbox"></td>
+                <td><div class="col-date"><span class="d">16/05</span> <span class="t">23:11</span></div></td>
+                <td><a class="order-id">702-7711209-4493517</a></td>
+                <td><span class="marketplace"><span class="mk">BR</span>FBA_SP</span></td>
+                <td>FBA</td>
+                <td><span class="sku-pill">MFS-0036</span></td>
+                <td><div class="product-cell"><div class="thumb">▣</div><span class="nm">Kit 3 Potes Marinex Facilita Vap</span></div></td>
+                <td class="num">1</td>
+                <td class="num bruto">79,99</td>
+                <td class="num taxas">−14,60 <span class="tag-est">est.</span></td>
+                <td class="num">−5,06</td>
+                <td class="num">−38,40</td>
+                <td class="num liq">21,93</td>
+                <td class="num">27,4%</td>
+                <td><span class="badge refund">Reembolso</span></td>
+              </tr>
+              <tr>
+                <td><input type="checkbox"></td>
+                <td><div class="col-date"><span class="d">16/05</span> <span class="t">17:33</span></div></td>
+                <td><a class="order-id">702-4488172-0917365</a></td>
+                <td><span class="marketplace"><span class="mk">BR</span>FBA_SP</span></td>
+                <td>FBA</td>
+                <td><span class="sku-pill">MFS-0033</span></td>
+                <td><div class="product-cell"><div class="thumb">▣</div><span class="nm">Kit 12 Tigelas Americano Nadir 350ml</span></div></td>
+                <td class="num">1</td>
+                <td class="num bruto">92,90</td>
+                <td class="num taxas">−16,15</td>
+                <td class="num">−5,94</td>
+                <td class="num">−48,10</td>
+                <td class="num liq">22,71</td>
+                <td class="num">24,4%</td>
+                <td><span class="badge cancel">Cancelado</span></td>
+              </tr>
+            </tbody>
+          </table>
+          <div class="table-foot">
+            <div class="totals">
+              <span>Total bruto: <strong>R$ 720,55</strong></span>
+              <span>Taxas: <strong>−R$ 137,72</strong></span>
+              <span>Líquido: <strong style="color:#047857;">R$ 178,43</strong></span>
+              <span>Margem média: <strong>24,6%</strong></span>
+            </div>
+            <div class="pager">
+              <span style="margin-right:8px;">Página 1 de 2</span>
+              <button class="pg">‹</button>
+              <button class="pg active">1</button>
+              <button class="pg">2</button>
+              <button class="pg">›</button>
+            </div>
+          </div>
+        </div>
+
+      </main>
+    </div>
+  </div>
+
+  <div class="section-divider">Mobile · V2</div>
+  <div class="mobile-row">
+    <div class="mobile-frame mini">
+      <header style="display:flex;align-items:center;gap:6px;">Vendas <span style="font-size:10px;color:#10b981;margin-left:auto;">● live</span></header>
+      <div style="display:flex;gap:6px;padding:8px 10px;font-size:10.5px;font-variant-numeric:tabular-nums;">
+        <div><strong>R$93,5k</strong> <span style="color:#10b981;">+12%</span></div>
+        <div><strong>1.628</strong> ped.</div>
+        <div><strong>1.771</strong> un.</div>
+      </div>
+      <div class="mini-tabs"><div class="tab active">Pedidos · 10</div><div class="tab">Pend. liq · 874</div></div>
+      <div class="mini-filter"><span class="ch">7d</span><span class="ch">FBA</span><span class="ch">+ filtro</span></div>
+      <div class="mini-list">
+        <div class="row"><div><div class="nm">MFS-0036 · 702-5847780</div><div class="sub">18/05 · 09:14 · <span class="bd-pend">Pend.</span></div></div><div class="mv"><div class="b">R$ 65,39</div><div class="s">−14,60 taxas</div></div></div>
+        <div class="row"><div><div class="nm">MFS-0032 · 702-6004541</div><div class="sub">18/05 · 08:42 · <span class="bd-pend">Pend.</span></div></div><div class="mv"><div class="b">R$ 43,37</div><div class="s">−11,60 taxas</div></div></div>
+        <div class="row"><div><div class="nm">MFS-0023+A · 702-0368681</div><div class="sub">17/05 · 22:03 · <span class="bd-done">OK</span></div></div><div class="mv"><div class="b">R$ 27,65</div><div class="s">−10,32 taxas</div></div></div>
+        <div class="row"><div><div class="nm">MFS-0033 · 701-8385042</div><div class="sub">17/05 · 19:48 · <span class="bd-done">OK</span></div></div><div class="mv"><div class="b">R$ 76,75</div><div class="s">−16,15 taxas</div></div></div>
+      </div>
+    </div>
+    <div style="grid-column:span 2;color:#475569;font-size:13px;">
+      <strong style="color:#0f172a;display:block;margin-bottom:6px;">Comportamento mobile V2</strong>
+      KPIs viram microestrip horizontal de 3 valores compactos. Tabela vira lista “pedido + financeiro” onde produto fica em segunda linha (preserva densidade). Botão de filtro como pílula expansiva no topo. Sidebar de ícones some — usa sheet inferior.
+    </div>
+  </div>
+</section>
+
+
+<!-- ============================================================
+     V3 — Cards por pedido
+     ============================================================ -->
+<section class="version v3" id="v3">
+  <div class="design-note">
+    <h3>V3 · Cards por pedido</h3>
+    <div><span class="label">o que mudou</span>Cada pedido é um card com thumb 56px, nome do produto, ID, marketplace, e bloco financeiro lateral (bruto + líquido + margem). Expansão revela breakdown completo (frete, comissão, FBA, imposto, custo, lucro) e metadados (ID Amazon, ASIN, conta). KPIs com bordas laterais coloridas para criar hierarquia.</div>
+    <div><span class="label why">por que funciona</span>Para análise individual de pedidos suspeitos (margem baixa, reembolso, pendente) o card aproxima dados-chave e elimina horizontal scroll. Boa para reuniões de revisão por SKU.</div>
+    <div><span class="label tradeoff">trade-off</span>Densidade cai bastante — 6 a 8 pedidos por viewport. Para alguém que precisa varrer 1.628 pedidos por semana, é mais lento. Resposta: filtro precisa estar afiado nesta versão.</div>
+  </div>
+
+  <div class="frame">
+    <div class="layout">
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="brand-mark">A</div>
+          <div class="brand-text">ERP Amazon<small>gestão interna</small></div>
+        </div>
+        <a class="nav-item" href="#">Home</a>
+        <div class="nav-group">E-commerce</div>
+        <a class="nav-item" href="#">Dashboard</a>
+        <a class="nav-item" href="#">Produtos</a>
+        <a class="nav-item active" href="#">Vendas</a>
+        <a class="nav-item" href="#">Compras</a>
+        <a class="nav-item" href="#">Expedição</a>
+        <a class="nav-item" href="#">Avaliações</a>
+        <a class="nav-item" href="#">Publicidade</a>
+        <div class="nav-group">Configuração</div>
+        <a class="nav-item" href="#">Conector Amazon</a>
+        <a class="nav-item" href="#">Configurações</a>
+      </aside>
+
+      <main class="main">
+        <div class="page-head">
+          <div>
+            <h1>Vendas Amazon</h1>
+            <div class="sub-head"><span class="sync-meta"><span class="dot"></span> Sincronizado às 09:42 · 1.628 pedidos no período</span></div>
+          </div>
+          <div class="actions">
+            <button class="btn">Importar</button>
+            <button class="btn">Exportar</button>
+            <button class="btn primary">Sincronizar</button>
+          </div>
+        </div>
+
+        <div class="kpis">
+          <div class="kpi"><div class="label">Receita bruta</div><div class="val">R$ 93.500,29</div><div class="delta up">7 dias · <strong>▲ 12,4%</strong></div></div>
+          <div class="kpi b"><div class="label">Pedidos</div><div class="val">1.628</div><div class="delta up">únicos · <strong>▲ 8,2%</strong></div></div>
+          <div class="kpi c"><div class="label">Unidades</div><div class="val">1.771</div><div class="delta up">vendidas · <strong>▲ 9,1%</strong></div></div>
+          <div class="kpi d"><div class="label">Ticket médio</div><div class="val">R$ 57,43</div><div class="delta down">por pedido · <strong>▼ 1,2%</strong></div></div>
+        </div>
+
+        <div class="toolbar">
+          <div class="seg">
+            <button class="active">Pedidos · 10</button>
+            <button>Cancelados · 1</button>
+            <button>Reembolsados · 1</button>
+          </div>
+          <div class="filters">
+            <span class="chip active">11/05 – 17/05 <span style="color:#94a3b8;">✕</span></span>
+            <span class="chip">FBA ▾</span>
+            <span class="chip">Status ▾</span>
+            <span class="chip">SKU ▾</span>
+          </div>
+          <div class="right">
+            <button class="btn">Filtros avançados</button>
+          </div>
+        </div>
+
+        <!-- Cards -->
+        <div class="card-list">
+
+          <!-- Card 1 expandido -->
+          <div class="order-card expanded">
+            <div class="row1">
+              <div class="col-meta">
+                <span class="d">18/05/2026</span>
+                <span class="t">09:14:22 · FBA - Logística da Amazon</span>
+                <span class="id">702-5847780-7813817</span>
+                <span class="mk"><b>BR</b>FBA_SP</span>
+              </div>
+              <div class="col-product">
+                <div class="thumb-lg">▣</div>
+                <div class="product-info">
+                  <div class="name">Kit 3 Potes Marinex Facilita Vap 1 Litro Herméticos</div>
+                  <div class="meta">
+                    <span class="sku">MFS-0036</span>
+                    <span>ASIN B07RZQYW3X</span>
+                    <span>Qtd: 1</span>
+                  </div>
+                </div>
+              </div>
+              <div class="col-money">
+                <div class="bruto">Bruto <strong>R$ 79,99</strong></div>
+                <div class="liq">R$ 65,39 líq.</div>
+                <div class="margem">margem 27,4%</div>
+              </div>
+              <div class="col-status">
+                <span class="badge pending"><span class="dot"></span> Pendente</span>
+                <button class="expand">Ocultar detalhes ▴</button>
+              </div>
+            </div>
+
+            <div class="details">
+              <div class="detail-block">
+                <h4>Pedido</h4>
+                <div class="kv"><span class="k">Data de criação</span><span class="v">18/05/2026 09:14:22</span></div>
+                <div class="kv"><span class="k">Data de aprovação</span><span class="v" style="color:#94a3b8;">— pendente</span></div>
+                <div class="kv"><span class="k">Conta / Marketplace</span><span class="v">Amazon BR · FBA_SP</span></div>
+                <div class="kv"><span class="k">Logística</span><span class="v">FBA · Logística da Amazon</span></div>
+                <div class="kv"><span class="k">ID Amazon</span><span class="v" style="font-family:ui-monospace,monospace;">702-5847780-7813817</span></div>
+                <div class="kv"><span class="k">ASIN / SKU</span><span class="v" style="font-family:ui-monospace,monospace;">B07RZQYW3X · MFS-0036</span></div>
+              </div>
+              <div class="detail-block">
+                <h4>Breakdown financeiro</h4>
+                <div class="kv pos"><span class="k">Total dos itens</span><span class="v">+R$ 79,99</span></div>
+                <div class="kv pos"><span class="k">Frete recebido</span><span class="v">+R$ 4,10</span></div>
+                <div class="kv neg"><span class="k">Frete pago</span><span class="v">−R$ 4,10</span></div>
+                <div class="kv neg"><span class="k">Comissão</span><span class="v">−R$ 9,60</span></div>
+                <div class="kv neg"><span class="k">Taxa FBA</span><span class="v">−R$ 5,00 <span style="font-size:10px;color:#94a3b8;">est.</span></span></div>
+                <div class="kv neg"><span class="k">Parcelamento</span><span class="v">−R$ 1,20</span></div>
+                <div class="kv neg"><span class="k">Imposto</span><span class="v">−R$ 5,06</span></div>
+                <div class="kv neg"><span class="k">Custo dos produtos</span><span class="v">−R$ 38,40</span></div>
+                <div class="kv total"><span class="k">Lucro do pedido</span><span class="v">R$ 17,73</span></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Card 2 colapsado -->
+          <div class="order-card">
+            <div class="row1">
+              <div class="col-meta">
+                <span class="d">18/05/2026</span>
+                <span class="t">08:42:11 · FBA</span>
+                <span class="id">702-6004541-3453051</span>
+                <span class="mk"><b>BR</b>FBA_SP</span>
+              </div>
+              <div class="col-product">
+                <div class="thumb-lg">▣</div>
+                <div class="product-info">
+                  <div class="name">Conjunto 6 Potes de Vidro 350ml Nadir Figueiredo</div>
+                  <div class="meta"><span class="sku">MFS-0032</span><span>ASIN B093Y7QR5L</span><span>Qtd: 1</span></div>
+                </div>
+              </div>
+              <div class="col-money">
+                <div class="bruto">Bruto <strong>R$ 54,97</strong></div>
+                <div class="liq">R$ 42,55 líq.</div>
+                <div class="margem">margem 19,4%</div>
+              </div>
+              <div class="col-status">
+                <span class="badge pending"><span class="dot"></span> Pendente</span>
+                <button class="expand">Ver detalhes ▾</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Card 3 -->
+          <div class="order-card">
+            <div class="row1">
+              <div class="col-meta">
+                <span class="d">17/05/2026</span>
+                <span class="t">22:03:36 · FBA</span>
+                <span class="id">702-0368681-6939457</span>
+                <span class="mk"><b>BR</b>FBA_SP</span>
+              </div>
+              <div class="col-product">
+                <div class="thumb-lg">▣</div>
+                <div class="product-info">
+                  <div class="name">Bolsa Organizadora Para Cabos e Acessórios</div>
+                  <div class="meta"><span class="sku">MFS-0023+A</span><span>ASIN B08X4Z2QW1</span><span>Qtd: 1</span></div>
+                </div>
+              </div>
+              <div class="col-money">
+                <div class="bruto">Bruto <strong>R$ 37,97</strong></div>
+                <div class="liq">R$ 27,65 líq.</div>
+                <div class="margem">margem 29,7%</div>
+              </div>
+              <div class="col-status">
+                <span class="badge done"><span class="dot"></span> Concluído</span>
+                <button class="expand">Ver detalhes ▾</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Card 4 -->
+          <div class="order-card">
+            <div class="row1">
+              <div class="col-meta">
+                <span class="d">17/05/2026</span>
+                <span class="t">19:48:02 · FBA</span>
+                <span class="id">701-8385042-7585041</span>
+                <span class="mk"><b>BR</b>FBA_SP</span>
+              </div>
+              <div class="col-product">
+                <div class="thumb-lg">▣</div>
+                <div class="product-info">
+                  <div class="name">Kit 12 Tigelas Americano Nadir 350ml com Tampa</div>
+                  <div class="meta"><span class="sku">MFS-0033</span><span>ASIN B09KLM4321</span><span>Qtd: 1</span></div>
+                </div>
+              </div>
+              <div class="col-money">
+                <div class="bruto">Bruto <strong>R$ 92,90</strong></div>
+                <div class="liq">R$ 73,84 líq.</div>
+                <div class="margem">margem 20,3%</div>
+              </div>
+              <div class="col-status">
+                <span class="badge done"><span class="dot"></span> Concluído</span>
+                <button class="expand">Ver detalhes ▾</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Card 5 -->
+          <div class="order-card">
+            <div class="row1">
+              <div class="col-meta">
+                <span class="d">16/05/2026</span>
+                <span class="t">17:33:00 · FBA</span>
+                <span class="id">702-4488172-0917365</span>
+                <span class="mk"><b>BR</b>FBA_SP</span>
+              </div>
+              <div class="col-product">
+                <div class="thumb-lg">▣</div>
+                <div class="product-info">
+                  <div class="name">Kit 12 Tigelas Americano Nadir 350ml com Tampa</div>
+                  <div class="meta"><span class="sku">MFS-0033</span><span>ASIN B09KLM4321</span><span>Qtd: 1</span></div>
+                </div>
+              </div>
+              <div class="col-money">
+                <div class="bruto">Bruto <strong>R$ 92,90</strong></div>
+                <div class="liq" style="color:#b91c1c;">−R$ 8,40</div>
+                <div class="margem" style="color:#b91c1c;">prejuízo</div>
+              </div>
+              <div class="col-status">
+                <span class="badge cancel"><span class="dot"></span> Cancelado</span>
+                <button class="expand">Ver detalhes ▾</button>
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- Paginação simples -->
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:18px;font-size:12.5px;color:#64748b;">
+          <span>Mostrando 5 de 10 pedidos · página 1 de 2</span>
+          <div style="display:flex;gap:4px;">
+            <button class="btn" style="padding:6px 10px;">‹</button>
+            <button class="btn" style="background:#059669;color:#fff;border-color:#059669;padding:6px 12px;">1</button>
+            <button class="btn" style="padding:6px 12px;">2</button>
+            <button class="btn" style="padding:6px 10px;">›</button>
+          </div>
+        </div>
+
+      </main>
+    </div>
+  </div>
+
+  <div class="section-divider">Mobile · V3</div>
+  <div class="mobile-row">
+    <div class="mobile-frame mini">
+      <header>Vendas Amazon</header>
+      <div class="mini-kpi">
+        <div class="k"><div class="lbl">Receita</div><div class="vl">R$ 93,5k</div></div>
+        <div class="k"><div class="lbl">Pedidos</div><div class="vl">1.628</div></div>
+      </div>
+      <div style="padding:8px 12px;display:grid;gap:8px;">
+        <div style="border:1px solid #e5e7eb;border-radius:10px;padding:10px;">
+          <div style="display:flex;justify-content:space-between;font-size:10.5px;color:#64748b;"><span>18/05 · 09:14</span><span class="bd-pend">Pendente</span></div>
+          <div style="font-weight:600;font-size:12px;margin-top:4px;line-height:1.3;">Kit 3 Potes Marinex Facilita Vap 1L</div>
+          <div style="font-size:10.5px;color:#94a3b8;margin-top:2px;">MFS-0036 · 702-5847780</div>
+          <div style="display:flex;justify-content:space-between;margin-top:6px;padding-top:6px;border-top:1px dashed #e2e8f0;">
+            <span style="font-size:10.5px;color:#64748b;">Bruto R$ 79,99</span>
+            <span style="font-weight:700;font-size:13px;color:#047857;">R$ 65,39</span>
+          </div>
+        </div>
+        <div style="border:1px solid #e5e7eb;border-radius:10px;padding:10px;">
+          <div style="display:flex;justify-content:space-between;font-size:10.5px;color:#64748b;"><span>17/05 · 22:03</span><span class="bd-done">Concluído</span></div>
+          <div style="font-weight:600;font-size:12px;margin-top:4px;line-height:1.3;">Bolsa Organizadora Cabos</div>
+          <div style="font-size:10.5px;color:#94a3b8;margin-top:2px;">MFS-0023+A · 702-0368681</div>
+          <div style="display:flex;justify-content:space-between;margin-top:6px;padding-top:6px;border-top:1px dashed #e2e8f0;">
+            <span style="font-size:10.5px;color:#64748b;">Bruto R$ 37,97</span>
+            <span style="font-weight:700;font-size:13px;color:#047857;">R$ 27,65</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div style="grid-column:span 2;color:#475569;font-size:13px;">
+      <strong style="color:#0f172a;display:block;margin-bottom:6px;">Comportamento mobile V3</strong>
+      Cards ficam ainda mais à vontade — eles já eram “mobile-first” por natureza. Toque no card abre tela cheia com breakdown completo. KPI vira carrossel horizontal de 4 mini-cards. Botão sincronizar sticky no rodapé.
+    </div>
+  </div>
+</section>
+
+
+<!-- ============================================================
+     V4 — Premium ERP
+     ============================================================ -->
+<section class="version v4" id="v4">
+  <div class="design-note">
+    <h3>V4 · Premium ERP</h3>
+    <div><span class="label">o que mudou</span>Sidebar escura com accent verde. Tipografia mais cuidada (tamanhos maiores no H1, letter-spacing controlado). KPIs ganham sparklines pequenas e badges de variação arredondados. Tabela com mais respiro (linhas 56px, thumb 40px), tabs em estilo segment-control, controle de densidade e busca elegante. Botão primário em preto (estilo Linear) ao invés de verde — dá ar premium sem perder a paleta.</div>
+    <div><span class="label why">por que funciona</span>Comunica maturidade do produto sem cair em "dashboard genérico". A sidebar escura ancora a UI; o conteúdo respira com tons quase-brancos. Sparkline contextualiza KPI no tempo sem abrir gráfico separado.</div>
+    <div><span class="label tradeoff">trade-off</span>Densidade reduzida vs. V2. Sidebar dark pode pesar em uso prolongado de dia (mitigado pela área principal clara). Mais peso visual para manter alinhado conforme novas features chegam.</div>
+  </div>
+
+  <div class="frame">
+    <div class="layout">
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="brand-mark">A</div>
+          <div class="brand-text">ERP Amazon<small>Gestão Interna</small></div>
+        </div>
+        <a class="nav-item" href="#"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 12l9-9 9 9"/><path d="M5 10v10h14V10"/></svg>Home</a>
+        <div class="nav-group">Financeiro</div>
+        <a class="nav-item" href="#"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="6" width="18" height="13" rx="2"/></svg>Contas a pagar</a>
+        <a class="nav-item" href="#"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="6" width="18" height="13" rx="2"/></svg>Contas a receber</a>
+        <div class="nav-group">E-commerce</div>
+        <a class="nav-item" href="#"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 3h4l2 14h10l2-9H7"/></svg>Dashboard</a>
+        <a class="nav-item" href="#"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 7L12 2 3 7l9 5 9-5z"/></svg>Produtos</a>
+        <a class="nav-item active" href="#"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 3h2l2 12h11l2-9H6"/></svg>Vendas</a>
+        <a class="nav-item" href="#"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 8h18M3 12h18M3 16h18"/></svg>Compras</a>
+        <a class="nav-item" href="#"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="5" width="18" height="14" rx="2"/></svg>Expedição</a>
+        <a class="nav-item" href="#"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polygon points="12,2 15,9 22,9 16,14 18,21 12,17 6,21 8,14 2,9 9,9"/></svg>Avaliações</a>
+        <a class="nav-item" href="#"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 4h16v6H4zM4 14h16v6H4z"/></svg>Publicidade</a>
+        <div class="nav-group">Sistema</div>
+        <a class="nav-item" href="#"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M18 16v-5a6 6 0 10-12 0v5l-2 3h16z"/></svg>Notificações <span class="pill">3</span></a>
+        <a class="nav-item" href="#"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19 12h2M3 12h2M12 3v2M12 19v2"/></svg>Configurações</a>
+
+        <div class="side-user">
+          <div class="avatar">HE</div>
+          <div class="nm">Heitor F. Silva<small>admin</small></div>
+        </div>
+      </aside>
+
+      <main class="main">
+        <div class="topbar">
+          <div class="search">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+            Buscar pedidos, SKUs… (&gt; para ações)
+            <kbd>⌘K</kbd>
+          </div>
+          <div class="meta">
+            <span><span class="dot"></span> SP-API <b>online</b></span>
+            <span>Quota <b>78%</b></span>
+            <span>Worker <b>09:42</b></span>
+          </div>
+        </div>
+
+        <div class="page-head">
+          <div>
+            <h1>Vendas Amazon</h1>
+            <div class="subtitle">7 dias · 11/05 a 17/05 · sincronizado 09:42 · 1.628 pedidos</div>
+          </div>
+          <div class="actions">
+            <button class="btn">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>
+              Importar
+            </button>
+            <button class="btn">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 15v4a2 2 0 002 2h14a2 2 0 002-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>
+              Exportar
+            </button>
+            <button class="btn primary">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 11-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg>
+              Sincronizar
+            </button>
+          </div>
+        </div>
+
+        <!-- KPIs Premium -->
+        <div class="kpis">
+          <div class="kpi">
+            <div class="kpi-head">
+              <span class="kpi-label">Receita bruta</span>
+              <span class="kpi-icon"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 17l6-6 4 4 8-8"/><path d="M14 7h7v7"/></svg></span>
+            </div>
+            <div class="kpi-value">R$ 93.500,29</div>
+            <svg class="spark" viewBox="0 0 200 40" preserveAspectRatio="none">
+              <path d="M0,28 L20,25 L40,30 L60,22 L80,24 L100,18 L120,15 L140,17 L160,12 L180,10 L200,6" stroke="#10b981" stroke-width="2" fill="none"/>
+              <path d="M0,28 L20,25 L40,30 L60,22 L80,24 L100,18 L120,15 L140,17 L160,12 L180,10 L200,6 L200,40 L0,40 Z" fill="#10b981" fill-opacity="0.08"/>
+            </svg>
+            <div class="kpi-foot"><span class="delta up">▲ 12,4%</span><span>vs. semana anterior</span></div>
+          </div>
+          <div class="kpi">
+            <div class="kpi-head">
+              <span class="kpi-label">Pedidos</span>
+              <span class="kpi-icon"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 8h10M7 12h10M7 16h6"/></svg></span>
+            </div>
+            <div class="kpi-value">1.628</div>
+            <svg class="spark" viewBox="0 0 200 40" preserveAspectRatio="none">
+              <path d="M0,26 L20,28 L40,22 L60,24 L80,20 L100,18 L120,22 L140,16 L160,14 L180,12 L200,10" stroke="#1d4ed8" stroke-width="2" fill="none"/>
+              <path d="M0,26 L20,28 L40,22 L60,24 L80,20 L100,18 L120,22 L140,16 L160,14 L180,12 L200,10 L200,40 L0,40 Z" fill="#1d4ed8" fill-opacity="0.08"/>
+            </svg>
+            <div class="kpi-foot"><span class="delta up">▲ 8,2%</span><span>pedidos únicos</span></div>
+          </div>
+          <div class="kpi">
+            <div class="kpi-head">
+              <span class="kpi-label">Unidades</span>
+              <span class="kpi-icon"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7l9-4 9 4-9 4z"/><path d="M3 7v10l9 4 9-4V7"/></svg></span>
+            </div>
+            <div class="kpi-value">1.771</div>
+            <svg class="spark" viewBox="0 0 200 40" preserveAspectRatio="none">
+              <path d="M0,30 L20,26 L40,24 L60,22 L80,18 L100,20 L120,16 L140,14 L160,12 L180,8 L200,10" stroke="#7c3aed" stroke-width="2" fill="none"/>
+              <path d="M0,30 L20,26 L40,24 L60,22 L80,18 L100,20 L120,16 L140,14 L160,12 L180,8 L200,10 L200,40 L0,40 Z" fill="#7c3aed" fill-opacity="0.08"/>
+            </svg>
+            <div class="kpi-foot"><span class="delta up">▲ 9,1%</span><span>vendidas</span></div>
+          </div>
+          <div class="kpi">
+            <div class="kpi-head">
+              <span class="kpi-label">Ticket médio</span>
+              <span class="kpi-icon"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M9 12l2 2 4-4"/></svg></span>
+            </div>
+            <div class="kpi-value">R$ 57,43</div>
+            <svg class="spark" viewBox="0 0 200 40" preserveAspectRatio="none">
+              <path d="M0,18 L20,16 L40,20 L60,18 L80,22 L100,20 L120,24 L140,22 L160,26 L180,24 L200,28" stroke="#b45309" stroke-width="2" fill="none"/>
+              <path d="M0,18 L20,16 L40,20 L60,18 L80,22 L100,20 L120,24 L140,22 L160,26 L180,24 L200,28 L200,40 L0,40 Z" fill="#b45309" fill-opacity="0.08"/>
+            </svg>
+            <div class="kpi-foot"><span class="delta down">▼ 1,2%</span><span>por pedido</span></div>
+          </div>
+        </div>
+
+        <div class="section-head">
+          <div class="section-title">Pedidos do período</div>
+          <span class="sub">10 resultados · ordenado por data ↓</span>
+        </div>
+
+        <div class="toolbar">
+          <div class="tabs">
+            <button class="tab active">Pedidos <span class="count">10</span></button>
+            <button class="tab">Cancelados <span class="count">1</span></button>
+            <button class="tab">Reembolsados <span class="count">1</span></button>
+          </div>
+          <span class="chip active">11/05 – 17/05 <span class="x">✕</span></span>
+          <span class="chip">FBA <span class="x">▾</span></span>
+          <span class="chip">Pendente <span class="x">✕</span></span>
+          <span class="chip" style="background:transparent;border-style:dashed;color:#64748b;">+ filtro</span>
+          <div class="right">
+            <div class="density">
+              <button>Confortável</button>
+              <button class="active">Padrão</button>
+              <button>Compacto</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Data</th>
+                <th>Produto</th>
+                <th>Pedido</th>
+                <th class="num">Qtd</th>
+                <th class="num">Bruto</th>
+                <th class="num">Taxas</th>
+                <th class="num">Líquido</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><div class="col-date"><span class="d">18 mai 26</span><br><span class="t">09:14</span></div></td>
+                <td><div class="product-cell"><div class="thumb">▣</div><div><div class="nm">Kit 3 Potes Marinex Facilita Vap 1 Litro</div><div class="meta"><span class="sku-pill">MFS-0036</span><span>FBA · BR</span></div></div></div></td>
+                <td><a class="order-id-link">702-5847780-7813817 <small>↗</small></a></td>
+                <td class="num">1</td>
+                <td class="num bruto">R$ 79,99</td>
+                <td class="num">−R$ 14,60 <span class="est-tag">estimada</span></td>
+                <td class="num liq">R$ 65,39</td>
+                <td><span class="badge pending"><span class="dot"></span> Pendente</span></td>
+              </tr>
+              <tr>
+                <td><div class="col-date"><span class="d">18 mai 26</span><br><span class="t">08:42</span></div></td>
+                <td><div class="product-cell"><div class="thumb">▣</div><div><div class="nm">Conjunto 6 Potes Vidro 350ml Nadir Figueiredo</div><div class="meta"><span class="sku-pill">MFS-0032</span><span>FBA · BR</span></div></div></div></td>
+                <td><a class="order-id-link">702-6004541-3453051 <small>↗</small></a></td>
+                <td class="num">1</td>
+                <td class="num bruto">R$ 54,97</td>
+                <td class="num">−R$ 11,60 <span class="est-tag">estimada</span></td>
+                <td class="num liq">R$ 43,37</td>
+                <td><span class="badge pending"><span class="dot"></span> Pendente</span></td>
+              </tr>
+              <tr>
+                <td><div class="col-date"><span class="d">17 mai 26</span><br><span class="t">22:03</span></div></td>
+                <td><div class="product-cell"><div class="thumb">▣</div><div><div class="nm">Bolsa Organizadora Para Cabos e Acessórios</div><div class="meta"><span class="sku-pill">MFS-0023+A</span><span>FBA · BR</span></div></div></div></td>
+                <td><a class="order-id-link">702-0368681-6939457 <small>↗</small></a></td>
+                <td class="num">1</td>
+                <td class="num bruto">R$ 37,97</td>
+                <td class="num">−R$ 10,32</td>
+                <td class="num liq">R$ 27,65</td>
+                <td><span class="badge done"><span class="dot"></span> Concluído</span></td>
+              </tr>
+              <tr>
+                <td><div class="col-date"><span class="d">17 mai 26</span><br><span class="t">19:48</span></div></td>
+                <td><div class="product-cell"><div class="thumb">▣</div><div><div class="nm">Kit 12 Tigelas Americano Nadir 350ml com Tampa</div><div class="meta"><span class="sku-pill">MFS-0033</span><span>FBA · BR</span></div></div></div></td>
+                <td><a class="order-id-link">701-8385042-7585041 <small>↗</small></a></td>
+                <td class="num">1</td>
+                <td class="num bruto">R$ 92,90</td>
+                <td class="num">−R$ 16,15</td>
+                <td class="num liq">R$ 76,75</td>
+                <td><span class="badge done"><span class="dot"></span> Concluído</span></td>
+              </tr>
+              <tr>
+                <td><div class="col-date"><span class="d">17 mai 26</span><br><span class="t">15:22</span></div></td>
+                <td><div class="product-cell"><div class="thumb">▣</div><div><div class="nm">Nadir Figueiredo · Tigela 3L com Tampa</div><div class="meta"><span class="sku-pill">MFS-0035</span><span>FBA · BR</span></div></div></div></td>
+                <td><a class="order-id-link">702-1795583-3294638 <small>↗</small></a></td>
+                <td class="num">2</td>
+                <td class="num bruto">R$ 81,94</td>
+                <td class="num">−R$ 18,30</td>
+                <td class="num liq">R$ 63,64</td>
+                <td><span class="badge done"><span class="dot"></span> Concluído</span></td>
+              </tr>
+              <tr>
+                <td><div class="col-date"><span class="d">17 mai 26</span><br><span class="t">14:11</span></div></td>
+                <td><div class="product-cell"><div class="thumb">▣</div><div><div class="nm">Kit 3 Potes Marinex Facilita Vap 1 Litro</div><div class="meta"><span class="sku-pill">MFS-0036</span><span>FBM · BR</span></div></div></div></td>
+                <td><a class="order-id-link">701-5672490-1042649 <small>↗</small></a></td>
+                <td class="num">1</td>
+                <td class="num bruto">R$ 79,99</td>
+                <td class="num">−R$ 14,60</td>
+                <td class="num liq">R$ 65,39</td>
+                <td><span class="badge done"><span class="dot"></span> Concluído</span></td>
+              </tr>
+            </tbody>
+          </table>
+          <div class="table-foot">
+            <span>Mostrando 1 a 6 de 10 pedidos</span>
+            <div class="pager">
+              <button class="pg">‹</button>
+              <button class="pg active">1</button>
+              <button class="pg">2</button>
+              <button class="pg">›</button>
+            </div>
+          </div>
+        </div>
+
+      </main>
+    </div>
+  </div>
+
+  <div class="section-divider">Mobile · V4</div>
+  <div class="mobile-row">
+    <div class="mobile-frame mini">
+      <header style="display:flex;align-items:center;gap:6px;background:#0b1220;color:#fff;">Vendas Amazon <span style="margin-left:auto;font-size:9.5px;color:#10b981;">● online</span></header>
+      <div class="mini-kpi">
+        <div class="k"><div class="lbl">Receita</div><div class="vl">R$ 93,5k</div></div>
+        <div class="k"><div class="lbl">Pedidos</div><div class="vl">1.628</div></div>
+        <div class="k"><div class="lbl">Unidades</div><div class="vl">1.771</div></div>
+        <div class="k"><div class="lbl">Ticket</div><div class="vl">R$ 57,43</div></div>
+      </div>
+      <div class="mini-tabs"><div class="tab active">Pedidos · 10</div><div class="tab">Cancel.</div><div class="tab">Reemb.</div></div>
+      <div class="mini-filter"><span class="ch">7d</span><span class="ch">FBA</span><span class="ch">+ filtro</span></div>
+      <div class="mini-list">
+        <div class="row"><div class="t" style="width:30px;height:30px;flex:0 0 30px;"></div><div><div class="nm">Kit 3 Potes Marinex…</div><div class="sub">MFS-0036 · 18/05 · <span class="bd-pend">Pendente</span></div></div><div class="mv"><div class="b">R$ 65,39</div><div class="s">bruto 79,99</div></div></div>
+        <div class="row"><div class="t" style="width:30px;height:30px;flex:0 0 30px;"></div><div><div class="nm">Conjunto 6 Potes…</div><div class="sub">MFS-0032 · 18/05 · <span class="bd-pend">Pendente</span></div></div><div class="mv"><div class="b">R$ 43,37</div><div class="s">bruto 54,97</div></div></div>
+        <div class="row"><div class="t" style="width:30px;height:30px;flex:0 0 30px;"></div><div><div class="nm">Bolsa Organizadora…</div><div class="sub">MFS-0023+A · 17/05 · <span class="bd-done">Concluído</span></div></div><div class="mv"><div class="b">R$ 27,65</div><div class="s">bruto 37,97</div></div></div>
+      </div>
+    </div>
+    <div style="grid-column:span 2;color:#475569;font-size:13px;">
+      <strong style="color:#0f172a;display:block;margin-bottom:6px;">Comportamento mobile V4</strong>
+      Header em dark mode preserva o "tom premium" mesmo no celular. KPIs em grid 2×2 com tipografia maior. Lista de pedidos com thumbs 30px e badge inline no subtítulo. Sticky bottom-bar com "Filtros" e "Sincronizar".
+    </div>
+  </div>
+</section>
+
+
+<!-- ============================================================
+     V5 — Direção final (sidebar V1 + cards V3 + layout do print)
+     ============================================================ -->
+<section class="version v5 is-active" id="v5">
+  <div class="design-note">
+    <h3>V5 · Direção final</h3>
+    <div><span class="label">combinação aprovada</span>Sidebar V1 com a navegação real do ERP (Home, Financeiro, E-commerce com Vendas ativo, Configuração com Notificações). Visual da listagem inspirado no print do Gestor Seller que você enviou: cada pedido vira card com header (status + data/hora/logística + marketplace), tabela horizontal de itens dentro do card (Item · Qtd · Total · Preço unit. · Líq. marketplace · Imposto · Custo · Custo extra · Lucro · Margem) e, ao expandir, painel com Data de criação/aprovação + ID/ASIN/SKU à esquerda e <strong>Breakdown Financeiro</strong> lateral à direita (igual ao print).</div>
+    <div><span class="label why">o que mudou em relação à V3</span>O conteúdo expandido segue exatamente o do print: tabela horizontal de item visível mesmo no estado colapsado, blocos de data em destaque, ID/ASIN/SKU agrupados em bloco único, painel de breakdown lateral com ícones coloridos por natureza (entrada verde, saída vermelha), botão "Adicionar custo eventual" e total "Lucro do pedido" arrematado em verde. Os 3 cards de estado da parte de baixo foram removidos em todas as versões.</div>
+  </div>
+
+  <div class="frame">
+    <div class="layout">
+
+      <!-- ============ SIDEBAR V1 com navegação real ============ -->
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="brand-mark">A</div>
+          <div class="brand-text">
+            <strong>ERP Amazon</strong>
+            <small>Gestão interna</small>
+          </div>
+        </div>
+
+        <a class="nav-item" href="#">
+          <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12l9-9 9 9"/><path d="M5 10v10h14V10"/></svg>
+          Home
+        </a>
+        <a class="nav-item" href="#">
+          <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18M8 15h3"/></svg>
+          Financeiro
+          <svg class="chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
+        </a>
+
+        <div class="nav-group">E-commerce</div>
+        <a class="nav-item" href="#">
+          <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>
+          Dashboard
+        </a>
+        <a class="nav-item" href="#">
+          <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 00-1-1.7l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.7l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><path d="M3.3 7L12 12l8.7-5M12 22V12"/></svg>
+          Produtos
+        </a>
+        <a class="nav-item active" href="#">
+          <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="21" r="1.6"/><circle cx="18" cy="21" r="1.6"/><path d="M1 1h4l2.7 13.4a2 2 0 002 1.6h9.7a2 2 0 002-1.6L23 6H6"/></svg>
+          Vendas
+        </a>
+        <a class="nav-item" href="#">
+          <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18l-2 12H5L3 6z"/><path d="M3 6L2 2H0"/><circle cx="9" cy="22" r="1.4"/><circle cx="17" cy="22" r="1.4"/></svg>
+          Compras
+        </a>
+        <a class="nav-item" href="#">
+          <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M1 3h15v13H1z"/><path d="M16 8h4l3 3v5h-7z"/><circle cx="5.5" cy="18.5" r="2.4"/><circle cx="18.5" cy="18.5" r="2.4"/></svg>
+          Expedição
+        </a>
+        <a class="nav-item" href="#">
+          <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polygon points="12,2 15.1,8.6 22,9.3 16.8,14 18.2,21 12,17.5 5.8,21 7.2,14 2,9.3 8.9,8.6"/></svg>
+          Avaliações
+        </a>
+        <a class="nav-item" href="#">
+          <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l18-8v18l-18-8z"/><path d="M11 11v8M7 11v4"/></svg>
+          Publicidade
+        </a>
+        <a class="nav-item" href="#">
+          <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l2 5 5 2-5 2-2 5-2-5-5-2 5-2z"/><path d="M19 14l1 2.5L22 18l-2 1-1 2-1-2-2-1 2-1z"/></svg>
+          Genius Pro
+        </a>
+
+        <div class="nav-group">Configuração</div>
+        <a class="nav-item" href="#">
+          <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 007.5 1l3-3a5 5 0 00-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 00-7.5-1l-3 3a5 5 0 007 7l1.7-1.7"/></svg>
+          Conector Amazon
+        </a>
+        <a class="nav-item" href="#">
+          <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 16v-5a6 6 0 10-12 0v5l-2 3h16z"/><path d="M10 21h4"/></svg>
+          Notificações
+          <span class="pill">1</span>
+        </a>
+        <a class="nav-item" href="#">
+          <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+          Saúde do Sistema
+        </a>
+        <a class="nav-item" href="#">
+          <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+          Meu Perfil
+        </a>
+        <a class="nav-item" href="#">
+          <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 00.3 1.8 2 2 0 11-2.8 2.8 1.7 1.7 0 00-1.8-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 01-4 0v-.1a1.7 1.7 0 00-1.1-1.5 1.7 1.7 0 00-1.8.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.8 1.7 1.7 0 00-1.5-1H3a2 2 0 010-4h.1a1.7 1.7 0 001.5-1.1 1.7 1.7 0 00-.3-1.8l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.8.3H9a1.7 1.7 0 001-1.5V3a2 2 0 014 0v.1a1.7 1.7 0 001 1.5 1.7 1.7 0 001.8-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.8V9c.6.3 1 .9 1 1.6"/></svg>
+          Configurações
+        </a>
+
+        <div class="side-footer">
+          v0.6.0
+          <button class="theme-toggle" title="Alternar tema">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.8A9 9 0 1111.2 3a7 7 0 009.8 9.8z"/></svg>
+          </button>
+        </div>
+      </aside>
+
+      <!-- ============ CONTEÚDO PRINCIPAL ============ -->
+      <div>
+        <!-- topbar global -->
+        <div class="topbar">
+          <div class="search">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+            Buscar produtos, contas, fornecedores… ( &gt; para ações )
+            <kbd>⌘K</kbd>
+          </div>
+          <div class="user">
+            <div class="avatar">HE</div>
+            Heitor
+          </div>
+        </div>
+
+        <main class="main">
+          <!-- page head -->
+          <div class="page-head">
+            <div>
+              <h1>Vendas Amazon</h1>
+              <div class="sync-meta"><span class="dot"></span> Última sincronização: 18/05/2026 às 09:42</div>
+            </div>
+            <div class="actions">
+              <button class="btn">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/></svg>
+                Importar
+              </button>
+              <button class="btn primary">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 11-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg>
+                Sincronizar
+              </button>
+            </div>
+          </div>
+
+          <!-- KPIs -->
+          <div class="kpis">
+            <div class="kpi">
+              <div class="kpi-label">Receita Bruta</div>
+              <div class="kpi-value">R$ 93.500,29</div>
+              <div class="kpi-sub"><span class="delta up">▲ 12,4%</span> em 7 dias</div>
+              <div class="kpi-icon">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 17l6-6 4 4 8-8"/><path d="M14 7h7v7"/></svg>
+              </div>
+            </div>
+            <div class="kpi b">
+              <div class="kpi-label">Pedidos</div>
+              <div class="kpi-value">1.628</div>
+              <div class="kpi-sub"><span class="delta up">▲ 8,2%</span> pedidos únicos</div>
+              <div class="kpi-icon">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 8h10M7 12h10M7 16h6"/></svg>
+              </div>
+            </div>
+            <div class="kpi c">
+              <div class="kpi-label">Unidades</div>
+              <div class="kpi-value">1.771</div>
+              <div class="kpi-sub"><span class="delta up">▲ 9,1%</span> unidades vendidas</div>
+              <div class="kpi-icon">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 00-1-1.7l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.7l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><path d="M3.3 7L12 12l8.7-5M12 22V12"/></svg>
+              </div>
+            </div>
+            <div class="kpi d">
+              <div class="kpi-label">Ticket Médio</div>
+              <div class="kpi-value">R$ 57,43</div>
+              <div class="kpi-sub"><span class="delta down">▼ 1,2%</span> por pedido</div>
+              <div class="kpi-icon">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M9 12l2 2 4-4"/></svg>
+              </div>
+            </div>
+          </div>
+
+          <!-- toolbar -->
+          <div class="toolbar">
+            <button class="chip active">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 3H2l8 9.5V19l4 2v-8.5z"/></svg>
+              Filtros avançados
+            </button>
+            <button class="chip">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+              11/05/2026 — 17/05/2026
+            </button>
+            <button class="visibility" title="Mostrar/ocultar colunas">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+            </button>
+            <div class="right">
+              <button class="btn">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+                Exportar
+              </button>
+            </div>
+          </div>
+
+          <!-- tabs -->
+          <div class="tabs">
+            <button class="tab active">Pedidos <span class="count">10</span></button>
+            <button class="tab">Cancelados <span class="count">1</span></button>
+            <button class="tab">Reembolsados <span class="count">1</span></button>
+          </div>
+
+          <div class="results-meta">
+            Exibindo <strong style="margin: 0 4px;">10</strong> de <strong style="margin: 0 4px;">10</strong> pedidos · 11/05 — 17/05/2026
+            <a class="export" href="#">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+              Exportar CSV
+            </a>
+          </div>
+
+          <!-- ============ CARDS DE PEDIDO ============ -->
+          <div class="card-list">
+
+            <!-- ===== Card 1 — EXPANDIDO (replica do print) ===== -->
+            <div class="order-card expanded">
+              <div class="card-head">
+                <span class="status-dot pending"></span>
+                <span class="meta-item">
+                  <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+                  13/05/2026
+                </span>
+                <span class="meta-item">
+                  <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+                  22:03:36
+                </span>
+                <span class="meta-item">
+                  <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 3h15v13H1z"/><path d="M16 8h4l3 3v5h-7z"/><circle cx="5.5" cy="18.5" r="2.4"/><circle cx="18.5" cy="18.5" r="2.4"/></svg>
+                  FBA - Logística da Amazon
+                </span>
+                <span class="status-badge pending"><span class="dot"></span> Pendente</span>
+                <span class="marketplace-tag">
+                  <span class="amazon-mark">a</span>
+                  FBA_SP
+                </span>
+              </div>
+
+              <div class="items-table-wrap"><table class="items-table">
+                <thead>
+                  <tr>
+                    <th>Item</th>
+                    <th class="num">Qtd</th>
+                    <th class="num">Total</th>
+                    <th class="num">Preço unit.</th>
+                    <th class="num">Líq. marketplace</th>
+                    <th class="num">Imposto</th>
+                    <th class="num">Custo produto</th>
+                    <th class="num">Custo extra</th>
+                    <th class="num">Lucro</th>
+                    <th class="num">Margem</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>
+                      <div class="item-cell">
+                        <div class="item-thumb">▣</div>
+                        <div class="item-info">
+                          <div class="name">Conjunto 6 Potes de Vidro 350ml Nadir Figueredo</div>
+                          <div class="sku">SKU Externo: MFS-0032</div>
+                        </div>
+                      </div>
+                    </td>
+                    <td class="num">1</td>
+                    <td class="num">R$ 54,97</td>
+                    <td class="num">R$ 54,97</td>
+                    <td class="num">R$ 42,55</td>
+                    <td class="num tax">R$ 3,48</td>
+                    <td class="num cost">R$ 29,24</td>
+                    <td class="num cost">—</td>
+                    <td class="num profit">R$ 9,82</td>
+                    <td class="num"><span class="margin-badge mid">16,92%</span></td>
+                  </tr>
+                </tbody>
+              </table></div>
+
+              <div class="card-details">
+                <div class="details-left">
+                  <div class="detail-row">
+                    <div class="detail-block">
+                      <label>Data de criação</label>
+                      <div class="v">13/05/2026, 22:03:36</div>
+                    </div>
+                    <div class="detail-block">
+                      <label>Data de aprovação</label>
+                      <div class="v muted">—</div>
+                    </div>
+                  </div>
+
+                  <div class="id-block">
+                    <div class="kv">
+                      <span class="k">ID do pedido</span>
+                      <span class="v">702-6769633-0924242</span>
+                    </div>
+                    <div class="kv">
+                      <span class="k">ASIN</span>
+                      <span class="v">B08GFCFZJ1</span>
+                    </div>
+                    <div class="kv">
+                      <span class="k">SKU interno</span>
+                      <span class="v">MFS-0032</span>
+                    </div>
+                    <div class="kv">
+                      <span class="k">Conta · MKT</span>
+                      <span class="v" style="font-family:inherit;font-weight:500;">Amazon BR · FBA_SP</span>
+                    </div>
+                    <div class="kv">
+                      <span class="k">Logística</span>
+                      <span class="v" style="font-family:inherit;font-weight:500;">FBA — Logística da Amazon</span>
+                    </div>
+                  </div>
+                </div>
+
+                <aside class="breakdown">
+                  <h4>Breakdown Financeiro</h4>
+                  <div class="bd-row pos">
+                    <div class="bd-ic">
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="21" r="1.6"/><circle cx="18" cy="21" r="1.6"/><path d="M1 1h4l2.7 13.4a2 2 0 002 1.6h9.7a2 2 0 002-1.6L23 6H6"/></svg>
+                    </div>
+                    <div class="bd-label">Total dos itens</div>
+                    <div class="bd-value">+R$ 54,97</div>
+                  </div>
+                  <div class="bd-row pos">
+                    <div class="bd-ic">
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 3h15v13H1z"/><path d="M16 8h4l3 3v5h-7z"/><circle cx="5.5" cy="18.5" r="2.4"/><circle cx="18.5" cy="18.5" r="2.4"/></svg>
+                    </div>
+                    <div class="bd-label">Valor recebido frete<small>recebido da plataforma</small></div>
+                    <div class="bd-value">+R$ 3,08</div>
+                  </div>
+                  <div class="bd-row neg">
+                    <div class="bd-ic">
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 3h15v13H1z"/><path d="M16 8h4l3 3v5h-7z"/><circle cx="5.5" cy="18.5" r="2.4"/><circle cx="18.5" cy="18.5" r="2.4"/></svg>
+                    </div>
+                    <div class="bd-label">Valor pago frete<small>descontado pela plataforma</small></div>
+                    <div class="bd-value">−R$ 3,08</div>
+                  </div>
+                  <div class="bd-row neg">
+                    <div class="bd-ic">
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="6.5" cy="6.5" r="2.5"/><circle cx="17.5" cy="17.5" r="2.5"/><path d="M19 5L5 19"/></svg>
+                    </div>
+                    <div class="bd-label">Comissão</div>
+                    <div class="bd-value">−R$ 6,60</div>
+                  </div>
+                  <div class="bd-row neg">
+                    <div class="bd-ic">
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg>
+                    </div>
+                    <div class="bd-label">Taxa FBA</div>
+                    <div class="bd-value">−R$ 5,00</div>
+                  </div>
+                  <div class="bd-row neg">
+                    <div class="bd-ic">
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg>
+                    </div>
+                    <div class="bd-label">Taxa parcelamento</div>
+                    <div class="bd-value">−R$ 0,82</div>
+                  </div>
+                  <div class="bd-row neg">
+                    <div class="bd-ic">
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/></svg>
+                    </div>
+                    <div class="bd-label">Imposto</div>
+                    <div class="bd-value">−R$ 3,48</div>
+                  </div>
+                  <div class="bd-row neg">
+                    <div class="bd-ic">
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 00-1-1.7l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.7l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/></svg>
+                    </div>
+                    <div class="bd-label">Custo dos produtos</div>
+                    <div class="bd-value">−R$ 29,24</div>
+                  </div>
+
+                  <button class="add-custom">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+                    Adicionar custo eventual
+                  </button>
+
+                  <div class="bd-total">
+                    <div class="bd-ic">
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>
+                    </div>
+                    <div class="bd-label">Lucro do pedido</div>
+                    <div class="bd-value">R$ 9,82</div>
+                  </div>
+                </aside>
+              </div>
+
+              <button class="card-toggle">
+                Ocultar detalhes
+                <svg class="chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
+              </button>
+            </div>
+
+            <!-- ===== Card 2 — colapsado ===== -->
+            <div class="order-card">
+              <div class="card-head">
+                <span class="status-dot pending"></span>
+                <span class="meta-item">
+                  <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+                  18/05/2026
+                </span>
+                <span class="meta-item">
+                  <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+                  09:14:22
+                </span>
+                <span class="meta-item">
+                  <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 3h15v13H1z"/><path d="M16 8h4l3 3v5h-7z"/><circle cx="5.5" cy="18.5" r="2.4"/><circle cx="18.5" cy="18.5" r="2.4"/></svg>
+                  FBA - Logística da Amazon
+                </span>
+                <span class="status-badge pending"><span class="dot"></span> Pendente</span>
+                <span class="marketplace-tag"><span class="amazon-mark">a</span>FBA_SP</span>
+              </div>
+
+              <div class="items-table-wrap"><table class="items-table">
+                <thead>
+                  <tr>
+                    <th>Item</th>
+                    <th class="num">Qtd</th>
+                    <th class="num">Total</th>
+                    <th class="num">Preço unit.</th>
+                    <th class="num">Líq. marketplace</th>
+                    <th class="num">Imposto</th>
+                    <th class="num">Custo produto</th>
+                    <th class="num">Custo extra</th>
+                    <th class="num">Lucro</th>
+                    <th class="num">Margem</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>
+                      <div class="item-cell">
+                        <div class="item-thumb">▣</div>
+                        <div class="item-info">
+                          <div class="name">Kit 3 Potes Marinex Facilita Vap 1 Litro Herméticos</div>
+                          <div class="sku">SKU Externo: MFS-0036</div>
+                        </div>
+                      </div>
+                    </td>
+                    <td class="num">1</td>
+                    <td class="num">R$ 79,99</td>
+                    <td class="num">R$ 79,99</td>
+                    <td class="num">R$ 61,79</td>
+                    <td class="num tax">R$ 5,06</td>
+                    <td class="num cost">R$ 38,40</td>
+                    <td class="num cost">—</td>
+                    <td class="num profit">R$ 17,73</td>
+                    <td class="num"><span class="margin-badge mid">22,16%</span></td>
+                  </tr>
+                </tbody>
+              </table></div>
+
+              <div class="card-details">
+                <div class="details-left">
+                  <div class="detail-row">
+                    <div class="detail-block"><label>Data de criação</label><div class="v">18/05/2026, 09:14:22</div></div>
+                    <div class="detail-block"><label>Data de aprovação</label><div class="v muted">— aguardando liquidação</div></div>
+                  </div>
+                  <div class="id-block">
+                    <div class="kv"><span class="k">ID do pedido</span><span class="v">702-5847780-7813817</span></div>
+                    <div class="kv"><span class="k">ASIN</span><span class="v">B07RZQYW3X</span></div>
+                    <div class="kv"><span class="k">SKU interno</span><span class="v">MFS-0036</span></div>
+                    <div class="kv"><span class="k">Conta · MKT</span><span class="v" style="font-family:inherit;font-weight:500;">Amazon BR · FBA_SP</span></div>
+                    <div class="kv"><span class="k">Logística</span><span class="v" style="font-family:inherit;font-weight:500;">FBA — Logística da Amazon</span></div>
+                  </div>
+                </div>
+                <aside class="breakdown">
+                  <h4>Breakdown Financeiro</h4>
+                  <div class="bd-row pos"><div class="bd-ic"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="21" r="1.6"/><circle cx="18" cy="21" r="1.6"/><path d="M1 1h4l2.7 13.4a2 2 0 002 1.6h9.7a2 2 0 002-1.6L23 6H6"/></svg></div><div class="bd-label">Total dos itens</div><div class="bd-value">+R$ 79,99</div></div>
+                  <div class="bd-row pos"><div class="bd-ic"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 3h15v13H1z"/><path d="M16 8h4l3 3v5h-7z"/><circle cx="5.5" cy="18.5" r="2.4"/><circle cx="18.5" cy="18.5" r="2.4"/></svg></div><div class="bd-label">Valor recebido frete<small>recebido da plataforma</small></div><div class="bd-value">+R$ 4,10</div></div>
+                  <div class="bd-row neg"><div class="bd-ic"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 3h15v13H1z"/><path d="M16 8h4l3 3v5h-7z"/><circle cx="5.5" cy="18.5" r="2.4"/><circle cx="18.5" cy="18.5" r="2.4"/></svg></div><div class="bd-label">Valor pago frete<small>descontado pela plataforma</small></div><div class="bd-value">−R$ 4,10</div></div>
+                  <div class="bd-row neg"><div class="bd-ic"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="6.5" cy="6.5" r="2.5"/><circle cx="17.5" cy="17.5" r="2.5"/><path d="M19 5L5 19"/></svg></div><div class="bd-label">Comissão</div><div class="bd-value">−R$ 11,60</div></div>
+                  <div class="bd-row neg"><div class="bd-ic"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg></div><div class="bd-label">Taxa FBA</div><div class="bd-value">−R$ 6,00</div></div>
+                  <div class="bd-row neg"><div class="bd-ic"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg></div><div class="bd-label">Taxa parcelamento</div><div class="bd-value">−R$ 1,20</div></div>
+                  <div class="bd-row neg"><div class="bd-ic"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/></svg></div><div class="bd-label">Imposto</div><div class="bd-value">−R$ 5,06</div></div>
+                  <div class="bd-row neg"><div class="bd-ic"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 00-1-1.7l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.7l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/></svg></div><div class="bd-label">Custo dos produtos</div><div class="bd-value">−R$ 38,40</div></div>
+                  <button class="add-custom"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>Adicionar custo eventual</button>
+                  <div class="bd-total"><div class="bd-ic"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg></div><div class="bd-label">Lucro do pedido</div><div class="bd-value">R$ 17,73</div></div>
+                </aside>
+              </div>
+
+              <button class="card-toggle">
+                Ver detalhes do pedido
+                <svg class="chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
+              </button>
+            </div>
+
+            <!-- ===== Card 3 — colapsado, concluído ===== -->
+            <div class="order-card">
+              <div class="card-head">
+                <span class="status-dot done"></span>
+                <span class="meta-item">
+                  <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+                  17/05/2026
+                </span>
+                <span class="meta-item">
+                  <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+                  22:03:36
+                </span>
+                <span class="meta-item">
+                  <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 3h15v13H1z"/><path d="M16 8h4l3 3v5h-7z"/><circle cx="5.5" cy="18.5" r="2.4"/><circle cx="18.5" cy="18.5" r="2.4"/></svg>
+                  FBA - Logística da Amazon
+                </span>
+                <span class="status-badge done"><span class="dot"></span> Concluído</span>
+                <span class="marketplace-tag"><span class="amazon-mark">a</span>FBA_SP</span>
+              </div>
+
+              <div class="items-table-wrap"><table class="items-table">
+                <thead>
+                  <tr>
+                    <th>Item</th>
+                    <th class="num">Qtd</th>
+                    <th class="num">Total</th>
+                    <th class="num">Preço unit.</th>
+                    <th class="num">Líq. marketplace</th>
+                    <th class="num">Imposto</th>
+                    <th class="num">Custo produto</th>
+                    <th class="num">Custo extra</th>
+                    <th class="num">Lucro</th>
+                    <th class="num">Margem</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>
+                      <div class="item-cell">
+                        <div class="item-thumb">▣</div>
+                        <div class="item-info">
+                          <div class="name">Bolsa Organizadora Para Cabos e Acessórios</div>
+                          <div class="sku">SKU Externo: MFS-0023+A</div>
+                        </div>
+                      </div>
+                    </td>
+                    <td class="num">1</td>
+                    <td class="num">R$ 37,97</td>
+                    <td class="num">R$ 37,97</td>
+                    <td class="num">R$ 27,65</td>
+                    <td class="num tax">R$ 2,28</td>
+                    <td class="num cost">R$ 14,09</td>
+                    <td class="num cost">—</td>
+                    <td class="num profit">R$ 11,28</td>
+                    <td class="num"><span class="margin-badge good">29,71%</span></td>
+                  </tr>
+                </tbody>
+              </table></div>
+
+              <div class="card-details">
+                <div class="details-left">
+                  <div class="detail-row">
+                    <div class="detail-block"><label>Data de criação</label><div class="v">17/05/2026, 22:03:36</div></div>
+                    <div class="detail-block"><label>Data de aprovação</label><div class="v">18/05/2026, 04:11:00</div></div>
+                  </div>
+                  <div class="id-block">
+                    <div class="kv"><span class="k">ID do pedido</span><span class="v">702-0368681-6939457</span></div>
+                    <div class="kv"><span class="k">ASIN</span><span class="v">B08X4Z2QW1</span></div>
+                    <div class="kv"><span class="k">SKU interno</span><span class="v">MFS-0023+A</span></div>
+                    <div class="kv"><span class="k">Conta · MKT</span><span class="v" style="font-family:inherit;font-weight:500;">Amazon BR · FBA_SP</span></div>
+                    <div class="kv"><span class="k">Logística</span><span class="v" style="font-family:inherit;font-weight:500;">FBA — Logística da Amazon</span></div>
+                  </div>
+                </div>
+                <aside class="breakdown">
+                  <h4>Breakdown Financeiro</h4>
+                  <div class="bd-row pos"><div class="bd-ic"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="21" r="1.6"/><circle cx="18" cy="21" r="1.6"/><path d="M1 1h4l2.7 13.4a2 2 0 002 1.6h9.7a2 2 0 002-1.6L23 6H6"/></svg></div><div class="bd-label">Total dos itens</div><div class="bd-value">+R$ 37,97</div></div>
+                  <div class="bd-row neg"><div class="bd-ic"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="6.5" cy="6.5" r="2.5"/><circle cx="17.5" cy="17.5" r="2.5"/><path d="M19 5L5 19"/></svg></div><div class="bd-label">Comissão</div><div class="bd-value">−R$ 7,55</div></div>
+                  <div class="bd-row neg"><div class="bd-ic"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg></div><div class="bd-label">Taxa FBA</div><div class="bd-value">−R$ 2,30</div></div>
+                  <div class="bd-row neg"><div class="bd-ic"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg></div><div class="bd-label">Taxa parcelamento</div><div class="bd-value">−R$ 0,47</div></div>
+                  <div class="bd-row neg"><div class="bd-ic"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/></svg></div><div class="bd-label">Imposto</div><div class="bd-value">−R$ 2,28</div></div>
+                  <div class="bd-row neg"><div class="bd-ic"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 00-1-1.7l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.7l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/></svg></div><div class="bd-label">Custo dos produtos</div><div class="bd-value">−R$ 14,09</div></div>
+                  <button class="add-custom"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>Adicionar custo eventual</button>
+                  <div class="bd-total"><div class="bd-ic"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg></div><div class="bd-label">Lucro do pedido</div><div class="bd-value">R$ 11,28</div></div>
+                </aside>
+              </div>
+
+              <button class="card-toggle">
+                Ver detalhes do pedido
+                <svg class="chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
+              </button>
+            </div>
+
+            <!-- ===== Card 4 — colapsado, concluído ===== -->
+            <div class="order-card">
+              <div class="card-head">
+                <span class="status-dot done"></span>
+                <span class="meta-item">
+                  <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+                  17/05/2026
+                </span>
+                <span class="meta-item">
+                  <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+                  19:48:02
+                </span>
+                <span class="meta-item">
+                  <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 3h15v13H1z"/><path d="M16 8h4l3 3v5h-7z"/><circle cx="5.5" cy="18.5" r="2.4"/><circle cx="18.5" cy="18.5" r="2.4"/></svg>
+                  FBA - Logística da Amazon
+                </span>
+                <span class="status-badge done"><span class="dot"></span> Concluído</span>
+                <span class="marketplace-tag"><span class="amazon-mark">a</span>FBA_SP</span>
+              </div>
+
+              <div class="items-table-wrap"><table class="items-table">
+                <thead>
+                  <tr>
+                    <th>Item</th>
+                    <th class="num">Qtd</th>
+                    <th class="num">Total</th>
+                    <th class="num">Preço unit.</th>
+                    <th class="num">Líq. marketplace</th>
+                    <th class="num">Imposto</th>
+                    <th class="num">Custo produto</th>
+                    <th class="num">Custo extra</th>
+                    <th class="num">Lucro</th>
+                    <th class="num">Margem</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>
+                      <div class="item-cell">
+                        <div class="item-thumb">▣</div>
+                        <div class="item-info">
+                          <div class="name">Kit 12 Tigelas Americano Nadir 350ml com Tampa</div>
+                          <div class="sku">SKU Externo: MFS-0033</div>
+                        </div>
+                      </div>
+                    </td>
+                    <td class="num">1</td>
+                    <td class="num">R$ 92,90</td>
+                    <td class="num">R$ 92,90</td>
+                    <td class="num">R$ 73,84</td>
+                    <td class="num tax">R$ 5,94</td>
+                    <td class="num cost">R$ 48,10</td>
+                    <td class="num cost">—</td>
+                    <td class="num profit">R$ 18,86</td>
+                    <td class="num"><span class="margin-badge mid">20,30%</span></td>
+                  </tr>
+                </tbody>
+              </table></div>
+
+              <div class="card-details">
+                <div class="details-left">
+                  <div class="detail-row">
+                    <div class="detail-block"><label>Data de criação</label><div class="v">17/05/2026, 19:48:02</div></div>
+                    <div class="detail-block"><label>Data de aprovação</label><div class="v">18/05/2026, 02:00:00</div></div>
+                  </div>
+                  <div class="id-block">
+                    <div class="kv"><span class="k">ID do pedido</span><span class="v">701-8385042-7585041</span></div>
+                    <div class="kv"><span class="k">ASIN</span><span class="v">B09KLM4321</span></div>
+                    <div class="kv"><span class="k">SKU interno</span><span class="v">MFS-0033</span></div>
+                    <div class="kv"><span class="k">Conta · MKT</span><span class="v" style="font-family:inherit;font-weight:500;">Amazon BR · FBA_SP</span></div>
+                    <div class="kv"><span class="k">Logística</span><span class="v" style="font-family:inherit;font-weight:500;">FBA — Logística da Amazon</span></div>
+                  </div>
+                </div>
+                <aside class="breakdown">
+                  <h4>Breakdown Financeiro</h4>
+                  <div class="bd-row pos"><div class="bd-ic"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="21" r="1.6"/><circle cx="18" cy="21" r="1.6"/><path d="M1 1h4l2.7 13.4a2 2 0 002 1.6h9.7a2 2 0 002-1.6L23 6H6"/></svg></div><div class="bd-label">Total dos itens</div><div class="bd-value">+R$ 92,90</div></div>
+                  <div class="bd-row neg"><div class="bd-ic"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="6.5" cy="6.5" r="2.5"/><circle cx="17.5" cy="17.5" r="2.5"/><path d="M19 5L5 19"/></svg></div><div class="bd-label">Comissão</div><div class="bd-value">−R$ 14,00</div></div>
+                  <div class="bd-row neg"><div class="bd-ic"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg></div><div class="bd-label">Taxa FBA</div><div class="bd-value">−R$ 5,00</div></div>
+                  <div class="bd-row neg"><div class="bd-ic"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg></div><div class="bd-label">Taxa parcelamento</div><div class="bd-value">−R$ 1,00</div></div>
+                  <div class="bd-row neg"><div class="bd-ic"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/></svg></div><div class="bd-label">Imposto</div><div class="bd-value">−R$ 5,94</div></div>
+                  <div class="bd-row neg"><div class="bd-ic"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 00-1-1.7l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.7l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/></svg></div><div class="bd-label">Custo dos produtos</div><div class="bd-value">−R$ 48,10</div></div>
+                  <button class="add-custom"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>Adicionar custo eventual</button>
+                  <div class="bd-total"><div class="bd-ic"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg></div><div class="bd-label">Lucro do pedido</div><div class="bd-value">R$ 18,86</div></div>
+                </aside>
+              </div>
+
+              <button class="card-toggle">
+                Ver detalhes do pedido
+                <svg class="chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
+              </button>
+            </div>
+
+            <!-- ===== Card 5 — colapsado, cancelado ===== -->
+            <div class="order-card">
+              <div class="card-head">
+                <span class="status-dot cancel"></span>
+                <span class="meta-item">
+                  <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+                  16/05/2026
+                </span>
+                <span class="meta-item">
+                  <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+                  17:33:00
+                </span>
+                <span class="meta-item">
+                  <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 3h15v13H1z"/><path d="M16 8h4l3 3v5h-7z"/><circle cx="5.5" cy="18.5" r="2.4"/><circle cx="18.5" cy="18.5" r="2.4"/></svg>
+                  FBA - Logística da Amazon
+                </span>
+                <span class="status-badge cancel"><span class="dot"></span> Cancelado</span>
+                <span class="marketplace-tag"><span class="amazon-mark">a</span>FBA_SP</span>
+              </div>
+
+              <div class="items-table-wrap"><table class="items-table">
+                <thead>
+                  <tr>
+                    <th>Item</th>
+                    <th class="num">Qtd</th>
+                    <th class="num">Total</th>
+                    <th class="num">Preço unit.</th>
+                    <th class="num">Líq. marketplace</th>
+                    <th class="num">Imposto</th>
+                    <th class="num">Custo produto</th>
+                    <th class="num">Custo extra</th>
+                    <th class="num">Lucro</th>
+                    <th class="num">Margem</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>
+                      <div class="item-cell">
+                        <div class="item-thumb">▣</div>
+                        <div class="item-info">
+                          <div class="name">Kit 12 Tigelas Americano Nadir 350ml com Tampa</div>
+                          <div class="sku">SKU Externo: MFS-0033</div>
+                        </div>
+                      </div>
+                    </td>
+                    <td class="num">1</td>
+                    <td class="num">R$ 92,90</td>
+                    <td class="num">R$ 92,90</td>
+                    <td class="num">—</td>
+                    <td class="num tax">—</td>
+                    <td class="num cost">—</td>
+                    <td class="num cost">—</td>
+                    <td class="num" style="color:#94a3b8;">—</td>
+                    <td class="num"><span class="margin-badge na">N/A</span></td>
+                  </tr>
+                </tbody>
+              </table></div>
+
+              <div class="card-details">
+                <div class="details-left">
+                  <div class="detail-row">
+                    <div class="detail-block"><label>Data de criação</label><div class="v">16/05/2026, 17:33:00</div></div>
+                    <div class="detail-block"><label>Data de cancelamento</label><div class="v">16/05/2026, 19:12:45</div></div>
+                  </div>
+                  <div class="id-block">
+                    <div class="kv"><span class="k">ID do pedido</span><span class="v">702-4488172-0917365</span></div>
+                    <div class="kv"><span class="k">ASIN</span><span class="v">B09KLM4321</span></div>
+                    <div class="kv"><span class="k">SKU interno</span><span class="v">MFS-0033</span></div>
+                    <div class="kv"><span class="k">Conta · MKT</span><span class="v" style="font-family:inherit;font-weight:500;">Amazon BR · FBA_SP</span></div>
+                    <div class="kv"><span class="k">Motivo</span><span class="v" style="font-family:inherit;font-weight:500;color:#b91c1c;">Cancelado antes do despacho · sem cobrança</span></div>
+                  </div>
+                </div>
+                <aside class="breakdown">
+                  <h4>Breakdown Financeiro</h4>
+                  <div class="bd-row" style="opacity:0.6;"><div class="bd-ic"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="21" r="1.6"/><circle cx="18" cy="21" r="1.6"/><path d="M1 1h4l2.7 13.4a2 2 0 002 1.6h9.7a2 2 0 002-1.6L23 6H6"/></svg></div><div class="bd-label">Total dos itens</div><div class="bd-value">—</div></div>
+                  <div class="bd-row" style="opacity:0.6;"><div class="bd-ic"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="6.5" cy="6.5" r="2.5"/><circle cx="17.5" cy="17.5" r="2.5"/><path d="M19 5L5 19"/></svg></div><div class="bd-label">Comissão</div><div class="bd-value">—</div></div>
+                  <div class="bd-row" style="opacity:0.6;"><div class="bd-ic"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg></div><div class="bd-label">Taxa FBA</div><div class="bd-value">—</div></div>
+                  <div style="margin-top:10px;padding:10px 12px;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;font-size:12px;color:#991b1b;line-height:1.4;">
+                    Pedido cancelado antes da liquidação. Nenhum valor foi cobrado nem repassado pela Amazon.
+                  </div>
+                  <div class="bd-total loss"><div class="bd-ic"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="10"/><path d="M4.9 4.9L19.1 19.1"/></svg></div><div class="bd-label">Sem movimentação</div><div class="bd-value">R$ 0,00</div></div>
+                </aside>
+              </div>
+
+              <button class="card-toggle">
+                Ver detalhes do pedido
+                <svg class="chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
+              </button>
+            </div>
+
+          </div>
+
+          <div class="pagination">
+            <span>Mostrando <strong style="color:#0f172a;">1 a 5</strong> de <strong style="color:#0f172a;">10</strong> pedidos</span>
+            <div class="pager">
+              <button class="pg">‹</button>
+              <button class="pg active">1</button>
+              <button class="pg">2</button>
+              <button class="pg">›</button>
+            </div>
+          </div>
+
+        </main>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     SCRIPT — toggle entre versões + expand de cards (V3)
+     ============================================================ -->
+<script>
+  const tabs = document.querySelectorAll('#tabs button');
+  const versions = document.querySelectorAll('.version');
+
+  tabs.forEach(btn => {
+    btn.addEventListener('click', () => {
+      tabs.forEach(b => b.classList.remove('is-active'));
+      btn.classList.add('is-active');
+      const id = 'v' + btn.dataset.v;
+      versions.forEach(v => v.classList.toggle('is-active', v.id === id));
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    });
+  });
+
+  // Cards V3: clicar em "Ver detalhes" expande
+  document.querySelectorAll('.v3 .order-card .expand').forEach(btn => {
+    btn.addEventListener('click', () => {
+      btn.closest('.order-card').classList.toggle('expanded');
+      btn.textContent = btn.closest('.order-card').classList.contains('expanded')
+        ? 'Ocultar detalhes ▴'
+        : 'Ver detalhes ▾';
+    });
+  });
+
+  // Cards V5: toggle expand/collapse
+  document.querySelectorAll('.v5 .card-toggle').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const card = btn.closest('.order-card');
+      const willExpand = !card.classList.contains('expanded');
+      card.classList.toggle('expanded');
+      const chev = btn.querySelector('.chev');
+      // Substitui o texto preservando o SVG
+      btn.firstChild.textContent = willExpand ? 'Ocultar detalhes ' : 'Ver detalhes do pedido ';
+      if (chev) btn.appendChild(chev);
+    });
+  });
+</script>
+
+</body>
+</html>

@@ -1,17 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
+import { logger } from "@/lib/logger";
+import { resolverImagemProduto } from "@/lib/amazon-images";
+import { montarBreakdownVendas } from "@/modules/vendas/breakdown";
 import {
   dataVendaPeriodoSP,
   normalizarVisaoVendas,
   whereVendaAmazonPorVisao,
 } from "@/modules/vendas/filtros";
-import { enriquecerVendasComTaxasEstimadas } from "@/modules/vendas/taxas-estimadas";
+import { buildCategoriaTaxaEstimada } from "@/modules/vendas/taxas-estimadas";
+import { loadFeeEstimatorConfig } from "@/modules/produtos/fee-estimator";
 import { valorBrutoDaVenda } from "@/modules/vendas/valores";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
+  const inicio = Date.now();
   try {
     const { searchParams } = req.nextUrl;
     const de = searchParams.get("de");
@@ -66,16 +71,54 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       }),
     ]);
 
-    const vendasComTaxas = await enriquecerVendasComTaxasEstimadas(vendas);
+    // Breakdown inline (substitui enriquecerVendasComTaxasEstimadas).
+    // Uma única passagem batch: ≤4 queries Prisma independente do tamanho.
+    const { breakdownPorVenda, produtoPorSku } = await montarBreakdownVendas(vendas);
 
-    const vendasFormatadas = vendasComTaxas.map((venda) => ({
-      ...venda,
-      numeroPedido: venda.amazonOrderId,
-      status: venda.statusPedido,
-      dataCompra: venda.dataVenda,
-      skuExterno: venda.sku,
-      totalCentavos: valorBrutoDaVenda(venda),
-    }));
+    // Config do estimador (cache 60s) — usada apenas para o label de
+    // categoria do filtro legado `categoriaTaxaEstimada`.
+    const cfgFee = await loadFeeEstimatorConfig();
+
+    const vendasFormatadas = vendas.map((venda) => {
+      const breakdown = breakdownPorVenda.get(venda.id);
+      const produto = produtoPorSku.get(venda.sku) ?? null;
+      const taxasEstimadas = breakdown?.origem === "estimated";
+      const categoriaTaxaEstimada = taxasEstimadas
+        ? buildCategoriaTaxaEstimada(
+            breakdown?.categoriaTaxaSlug ?? null,
+            cfgFee.referralDefaultBps,
+          )
+        : undefined;
+
+      return {
+        ...venda,
+        numeroPedido: venda.amazonOrderId,
+        status: venda.statusPedido,
+        dataCompra: venda.dataVenda,
+        skuExterno: venda.sku,
+        totalCentavos: valorBrutoDaVenda(venda),
+        breakdown,
+        taxasEstimadas,
+        categoriaTaxaEstimada,
+        // Enriquecimento de produto vindo da mesma passagem batch:
+        produtoImagemUrl: resolverImagemProduto(
+          produto?.amazonImagemUrl ?? null,
+          produto?.amazonAsin ?? venda.asin,
+          produto?.imagemUrl ?? null,
+        ),
+        produtoAsin: produto?.amazonAsin ?? venda.asin,
+      };
+    });
+
+    logger.info(
+      {
+        pageDurationMs: Date.now() - inicio,
+        vendaCount: vendas.length,
+        visao,
+        pagina,
+      },
+      "api vendas list",
+    );
 
     return NextResponse.json({
       vendas: vendasFormatadas,
@@ -84,7 +127,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       porPagina,
     });
   } catch (err) {
-    console.error("[GET /api/vendas]", err);
+    logger.error({ err }, "api vendas list error");
     return NextResponse.json({ erro: "Erro interno" }, { status: 500 });
   }
 }

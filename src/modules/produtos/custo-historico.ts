@@ -66,6 +66,100 @@ export async function resolverCustoUnitario(
     : null;
 }
 
+export type CustoFallbackPorProduto = {
+  produtoId: string;
+  custoUnitario: number | null;
+};
+
+/**
+ * Versão batch de `resolverCustoUnitario` — para a listagem de Vendas.
+ *
+ * Faz no máximo 2 queries:
+ *   1. ProdutoCustoHistorico com `produtoId IN (...)` — busca todas as
+ *      vigências dos produtos da página.
+ *   2. Produto com `id IN (...)` para fallback de `custoUnitario` quando
+ *      nenhuma vigência cobre a data.
+ *
+ * Para cada par (produtoId, dataVenda), escolhe a vigência válida com
+ * maior `vigenciaInicio <= dataVenda` e `vigenciaFim` nula ou `> dataVenda`.
+ *
+ * Retorna `Map<chave, centavos>` onde a chave é `${produtoId}::${dataVendaISO}`
+ * (string estável) para que callers com a mesma (produto, dia) reaproveitem.
+ */
+export async function resolverCustoUnitarioEmLote(
+  pares: Array<{ produtoId: string; dataVenda: Date }>,
+  fallbacks?: CustoFallbackPorProduto[],
+): Promise<Map<string, number>> {
+  const resultado = new Map<string, number>();
+  if (pares.length === 0) return resultado;
+
+  const produtoIds = [...new Set(pares.map((p) => p.produtoId))];
+
+  const [vigencias, fallbacksFromDb] = await Promise.all([
+    db.produtoCustoHistorico.findMany({
+      where: { produtoId: { in: produtoIds } },
+      select: {
+        produtoId: true,
+        custoCentavos: true,
+        vigenciaInicio: true,
+        vigenciaFim: true,
+      },
+      orderBy: { vigenciaInicio: "desc" },
+    }),
+    fallbacks
+      ? Promise.resolve(fallbacks)
+      : db.produto.findMany({
+          where: { id: { in: produtoIds } },
+          select: { id: true, custoUnitario: true },
+        }).then((produtos) =>
+          produtos.map((p) => ({
+            produtoId: p.id,
+            custoUnitario: p.custoUnitario && p.custoUnitario > 0 ? p.custoUnitario : null,
+          })),
+        ),
+  ]);
+
+  const vigenciasPorProduto = new Map<string, typeof vigencias>();
+  for (const v of vigencias) {
+    const arr = vigenciasPorProduto.get(v.produtoId) ?? [];
+    arr.push(v);
+    vigenciasPorProduto.set(v.produtoId, arr);
+  }
+
+  const fallbackPorProduto = new Map<string, number | null>();
+  for (const f of fallbacksFromDb) {
+    fallbackPorProduto.set(f.produtoId, f.custoUnitario);
+  }
+
+  for (const { produtoId, dataVenda } of pares) {
+    const chave = chaveResolucao(produtoId, dataVenda);
+    if (resultado.has(chave)) continue;
+
+    const lista = vigenciasPorProduto.get(produtoId) ?? [];
+    const valida = lista.find((v) =>
+      v.vigenciaInicio.getTime() <= dataVenda.getTime() &&
+      (v.vigenciaFim == null || v.vigenciaFim.getTime() > dataVenda.getTime()),
+    );
+
+    if (valida) {
+      resultado.set(chave, valida.custoCentavos);
+      continue;
+    }
+
+    const fallback = fallbackPorProduto.get(produtoId);
+    if (fallback != null && fallback > 0) {
+      resultado.set(chave, fallback);
+    }
+  }
+
+  return resultado;
+}
+
+/** Chave canônica para o Map retornado por `resolverCustoUnitarioEmLote`. */
+export function chaveResolucao(produtoId: string, dataVenda: Date): string {
+  return `${produtoId}::${dataVenda.toISOString()}`;
+}
+
 /**
  * Insere uma vigência, fechando a anterior se houver sobreposição.
  * Não atualiza VendaAmazon — chame reaplicarCustoEmVendas separadamente
