@@ -296,9 +296,13 @@ export default function VendasPage() {
       if (filtros.periodo.de) p.set("de", filtros.periodo.de);
       if (filtros.periodo.ate) p.set("ate", filtros.periodo.ate);
     }
+    if (filtros.sku) p.set("sku", filtros.sku);
+    if (filtros.logistica) p.set("logistica", filtros.logistica);
+    if (filtros.statuses.length > 0)
+      p.set("statuses", filtros.statuses.join(","));
     p.set("visao", visaoVendas);
     return p;
-  }, [filtros.periodo, visaoVendas]);
+  }, [filtros, visaoVendas]);
 
   const vendasQuery = useQuery<{
     vendas: VendaListagem[];
@@ -310,7 +314,7 @@ export default function VendasPage() {
   });
 
   const totaisQuery = useQuery<Totais>({
-    queryKey: ["vendas-totais", filtros.periodo, visaoVendas],
+    queryKey: ["vendas-totais", filtros, visaoVendas],
     queryFn: () => fetch(`/api/vendas/totais?${totaisParams}`).then((r) => r.json()),
   });
 

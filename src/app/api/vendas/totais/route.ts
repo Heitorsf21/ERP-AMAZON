@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
+import { PeriodoPreset, resolverPeriodo } from "@/lib/periodo";
 import {
   dataVendaPeriodoSP,
   normalizarVisaoVendas,
@@ -13,14 +14,44 @@ export const dynamic = "force-dynamic";
 export async function GET(req: NextRequest): Promise<NextResponse> {
   try {
     const { searchParams } = req.nextUrl;
+    const preset = searchParams.get("preset");
     const de = searchParams.get("de");
     const ate = searchParams.get("ate");
+    const sku = searchParams.get("sku");
+    const status = searchParams.get("status");
+    const statusesRaw = searchParams.get("statuses");
+    const logistica = searchParams.get("logistica");
     const visao = normalizarVisaoVendas(searchParams.get("visao"));
 
     const filtros: Prisma.VendaAmazonWhereInput = {};
 
-    const dataVenda = dataVendaPeriodoSP(de, ate);
-    if (dataVenda) filtros.dataVenda = dataVenda;
+    // Período — mesmo bloco que `/api/vendas`, para que KPIs reflitam
+    // o mesmo recorte que a lista.
+    if (preset && preset !== PeriodoPreset.PERSONALIZADO) {
+      const intervalo = resolverPeriodo(preset);
+      filtros.dataVenda = { gte: intervalo.de, lte: intervalo.ate };
+    } else if (preset === PeriodoPreset.PERSONALIZADO && de && ate) {
+      const intervalo = resolverPeriodo(PeriodoPreset.PERSONALIZADO, de, ate);
+      filtros.dataVenda = { gte: intervalo.de, lte: intervalo.ate };
+    } else {
+      const dataVenda = dataVendaPeriodoSP(de, ate);
+      if (dataVenda) filtros.dataVenda = dataVenda;
+    }
+
+    if (sku) filtros.sku = { contains: sku };
+    if (logistica) filtros.fulfillmentChannel = logistica;
+
+    const statusesArr = statusesRaw
+      ? statusesRaw.split(",").map((s) => s.trim()).filter(Boolean)
+      : status && status !== "todos"
+        ? [status]
+        : [];
+    if (statusesArr.length > 0) {
+      filtros.OR = statusesArr.flatMap((s) => [
+        { statusPedido: s },
+        { statusFinanceiro: s },
+      ]);
+    }
 
     const where = whereVendaAmazonPorVisao(visao, filtros);
 
