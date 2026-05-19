@@ -1,8 +1,12 @@
 import { cn } from "@/lib/utils";
+import { normalizarNomeMarketplace } from "@/lib/amazon-marketplace";
 
 /**
- * Pílula que identifica a conta/marketplace Amazon do pedido (FBA_SP, FBM, etc).
- * Usa o "a" itálico em laranja como marca visual sem importar SVG externo.
+ * Pílula que identifica o marketplace Amazon do pedido (ex: `amazon.com.br`).
+ *
+ * O backend grava em `VendaAmazon.marketplace` ora o nome amigável vindo do
+ * `SalesChannel`, ora o `marketplaceId` cru — aqui aplicamos
+ * `normalizarNomeMarketplace` para o usuário sempre ver o domínio.
  */
 export function MarketplaceTag({
   label,
@@ -11,7 +15,7 @@ export function MarketplaceTag({
   label: string | null | undefined;
   className?: string;
 }) {
-  const value = (label ?? "").trim() || "—";
+  const value = normalizarNomeMarketplace(label);
   return (
     <span
       className={cn(
@@ -19,13 +23,33 @@ export function MarketplaceTag({
         className,
       )}
     >
-      <span
-        aria-hidden="true"
-        className="grid h-4 w-4 place-items-center rounded-sm bg-orange-400 text-[10px] font-extrabold italic text-slate-900"
-      >
-        a
-      </span>
+      <AmazonSmile className="h-3.5 w-4 shrink-0" />
       <span className="font-medium">{value}</span>
     </span>
+  );
+}
+
+/**
+ * "Sorriso" da Amazon (arco laranja com ponta de seta), desenhado em SVG
+ * para não depender de asset externo nem importar a logo completa
+ * (`amazon` + smile) — o texto ao lado já cobre o nome.
+ */
+function AmazonSmile({ className }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 28 14"
+      xmlns="http://www.w3.org/2000/svg"
+      aria-hidden="true"
+      className={className}
+      fill="none"
+    >
+      <path
+        d="M2 4c3 7 16 9 23 3"
+        stroke="#FF9900"
+        strokeWidth="2"
+        strokeLinecap="round"
+      />
+      <path d="M20 1l5 5-7 1z" fill="#FF9900" />
+    </svg>
   );
 }

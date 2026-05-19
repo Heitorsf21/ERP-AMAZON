@@ -54,7 +54,7 @@ export function OrderCard({
         statusFinanceiro={venda.statusFinanceiro}
         dataVenda={venda.dataVenda}
         logisticaLabel={logistica}
-        marketplaceLabel={venda.marketplace ?? venda.fulfillmentChannel ?? "—"}
+        marketplaceLabel={venda.marketplace}
       />
 
       <OrderItemsTable venda={venda} breakdown={breakdown} />
