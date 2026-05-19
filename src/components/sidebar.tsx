@@ -269,11 +269,6 @@ export function SidebarContent({ collapsed = false }: { collapsed?: boolean }) {
         )}
       >
         <BrandMark collapsed={collapsed} className="text-white" />
-        {!collapsed && (
-          <span className="ml-auto text-[10px] uppercase tracking-[0.18em] text-sidebar-foreground/45">
-            interno
-          </span>
-        )}
       </div>
 
       {/* Nav */}
