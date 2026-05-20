@@ -27,34 +27,76 @@ afterEach(() => {
   invalidateFeeEstimateMemoryCache();
 });
 
-describe("fee-estimator: FBA promo", () => {
+describe("fee-estimator: FBA promo (qty=1)", () => {
   it("aplica FBA R$5 para produto ≤ R$99.99 com promo ativa", () => {
-    const r = calcularFeesLocal(6000, cfgPromo, undefined, dentroDaJanela);
+    const r = calcularFeesLocal(6000, 1, cfgPromo, undefined, dentroDaJanela);
     expect(r.fbaCentavos).toBe(500);
     expect(r.comissaoCentavos).toBe(720); // 12% de R$60
     expect(r.closingFeeCentavos).toBe(0);
   });
 
   it("aplica FBA R$5 no limite R$99.99", () => {
-    const r = calcularFeesLocal(9999, cfgPromo, undefined, dentroDaJanela);
+    const r = calcularFeesLocal(9999, 1, cfgPromo, undefined, dentroDaJanela);
     expect(r.fbaCentavos).toBe(500);
   });
 
   it("aplica FBA R$0 para produto ≥ R$100 com promo ativa", () => {
-    const r = calcularFeesLocal(12000, cfgPromo, undefined, dentroDaJanela);
+    const r = calcularFeesLocal(12000, 1, cfgPromo, undefined, dentroDaJanela);
     expect(r.fbaCentavos).toBe(0);
     expect(r.comissaoCentavos).toBe(1440); // 12% de R$120
   });
 
   it("aplica fallback pós-promo (R$10.05) quando promo desligada", () => {
-    const r = calcularFeesLocal(6000, cfgSemPromo, undefined, dentroDaJanela);
+    const r = calcularFeesLocal(6000, 1, cfgSemPromo, undefined, dentroDaJanela);
     expect(r.fbaCentavos).toBe(1005);
   });
 
   it("aplica fallback pós-promo quando data passou de expira_em", () => {
     const depoisDoFim = new Date("2026-08-01T12:00:00-03:00");
-    const r = calcularFeesLocal(6000, cfgPromo, undefined, depoisDoFim);
+    const r = calcularFeesLocal(6000, 1, cfgPromo, undefined, depoisDoFim);
     expect(r.fbaCentavos).toBe(1005);
+  });
+});
+
+describe("fee-estimator: FBA por unidade (qty>1) — Amazon Brasil per-unit rule", () => {
+  it("3 un × R$41,57 (unit < R$100) → 3 × R$5 = R$15", () => {
+    // Caso real reportado pelo usuário (pedido 701-2310526-4297041).
+    // Total da linha = R$124,71, mas cada unidade < R$100 → FBA cobra R$5/un.
+    const r = calcularFeesLocal(12471, 3, cfgPromo, undefined, dentroDaJanela);
+    expect(r.fbaCentavos).toBe(1500); // R$5 × 3
+  });
+
+  it("3 un × R$120 (unit ≥ R$100) → 3 × R$0 = R$0 (isenção total)", () => {
+    const r = calcularFeesLocal(36000, 3, cfgPromo, undefined, dentroDaJanela);
+    expect(r.fbaCentavos).toBe(0);
+  });
+
+  it("2 un × R$50 (unit < R$100, total > R$100) → 2 × R$5 (NÃO usa total na avaliação)", () => {
+    // Antes do fix, esse caso retornaria R$0 (avaliava total > R$100).
+    // Após o fix, avalia unit < R$100 → R$5/un × 2 = R$10.
+    const r = calcularFeesLocal(10000, 2, cfgPromo, undefined, dentroDaJanela);
+    expect(r.fbaCentavos).toBe(1000);
+  });
+
+  it("comissão (% sobre bruto total) escala corretamente com qty", () => {
+    const r = calcularFeesLocal(12471, 3, cfgPromo, undefined, dentroDaJanela);
+    expect(r.comissaoCentavos).toBe(Math.round(12471 * 0.12)); // 1497
+  });
+
+  it("closingFee mídia × qty (Livros)", () => {
+    const r = calcularFeesLocal(
+      10000,
+      4,
+      cfgPromo,
+      { categoriaSlug: "livros" },
+      dentroDaJanela,
+    );
+    expect(r.closingFeeCentavos).toBe(199 * 4); // 796
+  });
+
+  it("quantidade < 1 cai pra 1 (defensivo)", () => {
+    const r = calcularFeesLocal(6000, 0, cfgPromo, undefined, dentroDaJanela);
+    expect(r.fbaCentavos).toBe(500); // tratada como qty=1
   });
 });
 
@@ -62,6 +104,7 @@ describe("fee-estimator: comissão", () => {
   it("usa override comissaoBps quando passado", () => {
     const r = calcularFeesLocal(
       6000,
+      1,
       cfgPromo,
       { comissaoBps: 1500 },
       dentroDaJanela,
@@ -70,7 +113,7 @@ describe("fee-estimator: comissão", () => {
   });
 
   it("zera valores negativos defensivamente", () => {
-    const r = calcularFeesLocal(-100, cfgPromo, undefined, dentroDaJanela);
+    const r = calcularFeesLocal(-100, 1, cfgPromo, undefined, dentroDaJanela);
     expect(r.comissaoCentavos).toBe(0);
     expect(r.fbaCentavos).toBe(500);
   });
@@ -80,6 +123,7 @@ describe("fee-estimator: tabela de categorias", () => {
   it("Cozinha → 12% sem closing fee", () => {
     const r = calcularFeesLocal(
       6000,
+      1,
       cfgPromo,
       { categoriaSlug: "cozinha" },
       dentroDaJanela,
@@ -92,6 +136,7 @@ describe("fee-estimator: tabela de categorias", () => {
   it("Beleza → 13%", () => {
     const r = calcularFeesLocal(
       6000,
+      1,
       cfgPromo,
       { categoriaSlug: "beleza" },
       dentroDaJanela,
@@ -102,6 +147,7 @@ describe("fee-estimator: tabela de categorias", () => {
   it("Livros → 15% + closing fee R$1.99", () => {
     const r = calcularFeesLocal(
       5000,
+      1,
       cfgPromo,
       { categoriaSlug: "livros" },
       dentroDaJanela,
@@ -113,6 +159,7 @@ describe("fee-estimator: tabela de categorias", () => {
   it("Móveis abaixo de R$200 → 15%", () => {
     const r = calcularFeesLocal(
       15000,
+      1,
       cfgPromo,
       { categoriaSlug: "moveis" },
       dentroDaJanela,
@@ -123,6 +170,7 @@ describe("fee-estimator: tabela de categorias", () => {
   it("Móveis R$300 → 15% sobre R$200 + 10% sobre R$100", () => {
     const r = calcularFeesLocal(
       30000,
+      1,
       cfgPromo,
       { categoriaSlug: "moveis" },
       dentroDaJanela,
@@ -134,6 +182,7 @@ describe("fee-estimator: tabela de categorias", () => {
   it("Acessórios eletrônicos R$150 → tier (15% × 100 + 10% × 50)", () => {
     const r = calcularFeesLocal(
       15000,
+      1,
       cfgPromo,
       { categoriaSlug: "acessorios-eletronicos-pc" },
       dentroDaJanela,
@@ -145,6 +194,7 @@ describe("fee-estimator: tabela de categorias", () => {
   it("Slug desconhecido → fallback default 12%", () => {
     const r = calcularFeesLocal(
       6000,
+      1,
       cfgPromo,
       { categoriaSlug: "categoria-nao-existe" },
       dentroDaJanela,
@@ -156,6 +206,7 @@ describe("fee-estimator: tabela de categorias", () => {
   it("Comida → 10% com piso de R$1 (preço muito baixo)", () => {
     const r = calcularFeesLocal(
       500, // R$5 — 10% = R$0.50, abaixo do piso de R$1
+      1,
       cfgPromo,
       { categoriaSlug: "comidas-bebidas" },
       dentroDaJanela,
@@ -166,6 +217,7 @@ describe("fee-estimator: tabela de categorias", () => {
   it("Bebês → 12% com piso de R$2 (preço muito baixo)", () => {
     const r = calcularFeesLocal(
       500, // R$5 — 12% = R$0.60, abaixo do piso de R$2
+      1,
       cfgPromo,
       { categoriaSlug: "bebes" },
       dentroDaJanela,

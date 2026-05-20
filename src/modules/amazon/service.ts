@@ -1495,7 +1495,7 @@ async function upsertAmazonOrderRaw(
   });
 }
 
-function orderItemsFromOrderSummary(order: SPOrder): SPOrderItemDetail[] {
+export function orderItemsFromOrderSummary(order: SPOrder): SPOrderItemDetail[] {
   const rawItems: unknown[] = Array.isArray(order.orderItems)
     ? order.orderItems
     : readDeepArray(order, ["orderItems", "OrderItems", "items"]);
@@ -1524,7 +1524,16 @@ function orderItemsFromOrderSummary(order: SPOrder): SPOrderItemDetail[] {
           readStringFromRecord(record, ["Title", "title"]) ??
           readStringFromRecord(product, ["Title", "title", "itemName"]),
         QuantityOrdered: Math.max(1, Number(quantity) || 1),
-        ItemPrice: toSpMoney(product.price ?? record.price ?? record.ItemPrice),
+        // Bug fix: o `product.price` da Order Summary vem por UNIDADE.
+        // Multiplicamos pela quantidade para casar com a semantica de `ItemPrice`
+        // da SP-API Orders, que e sempre TOTAL DA LINHA (preco unit x qty).
+        // Sem isso, pedidos multi-unidade vinhos so pelo summary (fallback,
+        // sem detalhes de getOrderItems) gravam valorBrutoCentavos com 1/qty
+        // do valor real, gerando margem absurdamente negativa nos cards.
+        ItemPrice: toSpMoneyTotalLinha(
+          product.price ?? record.price ?? record.ItemPrice,
+          Math.max(1, Number(quantity) || 1),
+        ),
         ShippingPrice: toSpMoney(record.ShippingPrice ?? record.shippingPrice),
         PromotionDiscount: toSpMoney(
           record.PromotionDiscount ?? record.promotionDiscount,
@@ -1547,6 +1556,30 @@ function toSpMoney(
     : undefined;
   return {
     Amount: (centavos / 100).toFixed(2),
+    ...(currency ? { CurrencyCode: currency } : {}),
+  };
+}
+
+/**
+ * Variante de `toSpMoney` que multiplica o valor por `qty` antes de formatar.
+ *
+ * Usada exclusivamente em `orderItemsFromOrderSummary` para converter o
+ * `product.price` (UNITARIO no summary) em `ItemPrice` no formato esperado
+ * pela camada de pricing (TOTAL DA LINHA, conforme doc SP-API Orders).
+ */
+function toSpMoneyTotalLinha(
+  value: unknown,
+  qty: number,
+): { Amount?: string; CurrencyCode?: string } | undefined {
+  if (value == null) return undefined;
+  const centavos = extractAmountCentavos(value);
+  if (!centavos) return undefined;
+  const total = centavos * Math.max(1, qty);
+  const currency = isObjectRecord(value)
+    ? readStringFromRecord(value, ["CurrencyCode", "currencyCode", "currency"])
+    : undefined;
+  return {
+    Amount: (total / 100).toFixed(2),
     ...(currency ? { CurrencyCode: currency } : {}),
   };
 }

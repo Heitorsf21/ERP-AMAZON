@@ -136,16 +136,32 @@ export async function loadFeeEstimatorConfig(
 /**
  * Cálculo puro local (sem I/O). Aceita categoria opcional para usar tabela rica.
  * Sem categoria → usa cfg.referralDefaultBps (default global 12%, calibrado).
+ *
+ * `valorBrutoCentavos` = TOTAL da linha (preço unitário × quantidade).
+ * `quantidade` = número de unidades da linha (≥1).
+ *
+ * Retorna TODOS os valores já agregados pela linha (× quantidade quando a
+ * Amazon tarifa por unidade). Calleres não devem multiplicar de novo.
+ *
+ * Regras Amazon Brasil (per-unit, confirmadas em sellercentral.amazon.com.br):
+ *   - Promo FBA: avaliada contra o PREÇO UNITÁRIO de cada item.
+ *     R$5/un se unit ≤ R$99.99 · R$0/un se unit ≥ R$100.
+ *   - Closing fee mídia: R$1.99/un.
+ *   - Comissão: % sobre o bruto total (matematicamente equivalente a
+ *     `% × unit × qty`).
  */
 export function calcularFeesLocal(
   valorBrutoCentavos: number,
+  quantidade: number,
   cfg: FeeEstimateConfig,
   override?: { comissaoBps?: number; categoriaSlug?: string | null },
   agora = new Date(),
 ): { comissaoCentavos: number; fbaCentavos: number; closingFeeCentavos: number; categoriaLabel?: string } {
   const bruto = Math.max(0, Math.round(valorBrutoCentavos));
+  const qty = Math.max(1, Math.round(quantidade));
+  const precoUnitario = Math.round(bruto / qty);
 
-  // Comissão
+  // Comissão (% sobre bruto total — invariante a qty)
   let comissaoCentavos: number;
   let categoriaLabel: string | undefined;
   let isMedia = false;
@@ -167,22 +183,23 @@ export function calcularFeesLocal(
     comissaoCentavos = Math.round((bruto * cfg.referralDefaultBps) / 10000);
   }
 
-  // FBA
+  // FBA: tarifa por unidade, avaliada contra o PREÇO UNITÁRIO. Total = unit × qty.
   const promoVigente =
     cfg.fbaPromoAtiva &&
     (cfg.fbaPromoExpiraEm == null || agora <= cfg.fbaPromoExpiraEm);
-  let fbaCentavos: number;
+  let fbaUnitario: number;
   if (promoVigente) {
-    fbaCentavos =
-      bruto <= PROMO_LIMITE_CENTAVOS
+    fbaUnitario =
+      precoUnitario <= PROMO_LIMITE_CENTAVOS
         ? cfg.fbaPromoUnder100Centavos
         : cfg.fbaPromoOver100Centavos;
   } else {
-    fbaCentavos = cfg.fbaFallbackPosPromoCentavos;
+    fbaUnitario = cfg.fbaFallbackPosPromoCentavos;
   }
+  const fbaCentavos = fbaUnitario * qty;
 
-  // Closing fee mídia (Livros/DVD/Música/Games físicos)
-  const closingFeeCentavos = isMedia ? MEDIA_CLOSING_FEE_CENTAVOS : 0;
+  // Closing fee mídia (Livros/DVD/Música/Games físicos) — R$1.99 por unidade.
+  const closingFeeCentavos = (isMedia ? MEDIA_CLOSING_FEE_CENTAVOS : 0) * qty;
 
   return { comissaoCentavos, fbaCentavos, closingFeeCentavos, categoriaLabel };
 }
@@ -281,40 +298,40 @@ export async function estimarFeesVenda(input: {
   if (cache && cache.origem === "api") {
     const local = calcularFeesLocal(
       input.valorBrutoCentavos,
+      quantidade,
       cfg,
       { comissaoBps: cache.comissaoBps, categoriaSlug: input.categoriaSlug },
       agora,
     );
-    const fbaTotal = local.fbaCentavos * quantidade;
-    const closingTotal = local.closingFeeCentavos * quantidade;
     result = {
-      taxasCentavos: local.comissaoCentavos + fbaTotal + closingTotal,
+      taxasCentavos:
+        local.comissaoCentavos + local.fbaCentavos + local.closingFeeCentavos,
       origem: "api",
       ruleVersion: cache.ruleVersion ?? "spapi-cache",
       breakdown: {
         comissaoCentavos: local.comissaoCentavos,
-        fbaCentavos: fbaTotal,
-        closingFeeCentavos: closingTotal,
+        fbaCentavos: local.fbaCentavos,
+        closingFeeCentavos: local.closingFeeCentavos,
       },
       categoriaLabel: local.categoriaLabel,
     };
   } else {
     const local = calcularFeesLocal(
       input.valorBrutoCentavos,
+      quantidade,
       cfg,
       { categoriaSlug: input.categoriaSlug },
       agora,
     );
-    const fbaTotal = local.fbaCentavos * quantidade;
-    const closingTotal = local.closingFeeCentavos * quantidade;
     result = {
-      taxasCentavos: local.comissaoCentavos + fbaTotal + closingTotal,
+      taxasCentavos:
+        local.comissaoCentavos + local.fbaCentavos + local.closingFeeCentavos,
       origem: "local",
       ruleVersion: RULE_VERSION_LOCAL,
       breakdown: {
         comissaoCentavos: local.comissaoCentavos,
-        fbaCentavos: fbaTotal,
-        closingFeeCentavos: closingTotal,
+        fbaCentavos: local.fbaCentavos,
+        closingFeeCentavos: local.closingFeeCentavos,
       },
       categoriaLabel: local.categoriaLabel,
     };

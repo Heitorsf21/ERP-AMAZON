@@ -264,6 +264,69 @@ describe("montarBreakdownVendas · estimated (pendente sem Finance)", () => {
     expect(produtoPorSku.get(SKU_OK)?.amazonImagemUrl).toBe("https://example.com/img.jpg");
   });
 
+  it("FBA per-unit: 3 un × R$41,57 (unit < R$100, total > R$100) → 3 × R$5", async () => {
+    // Reproduz o caso real do pedido 701-2310526-4297041 reportado pelo usuário.
+    // Antes do fix: total > R$100 → fbaCentavos=0; depois × qty=3 = 0 (errado).
+    // Após o fix: avalia preço UNITÁRIO (R$41,57 < R$100) → R$5 × 3 = R$15.
+    mockDb.produto.findMany.mockResolvedValue([
+      {
+        id: "prod-multi",
+        sku: SKU_OK,
+        asin: "B0GNTK1NRD",
+        amazonImagemUrl: null,
+        imagemUrl: null,
+        amazonCategoriaFee: null,
+        custoUnitario: 2560,
+      },
+    ]);
+
+    const venda = vendaBase({
+      quantidade: 3,
+      precoUnitarioCentavos: 4157,
+      valorBrutoCentavos: 12471,
+      taxasCentavos: 0,
+      fretesCentavos: 0,
+      statusPedido: "Pending",
+      statusFinanceiro: "PENDENTE",
+    });
+
+    const { breakdownPorVenda } = await montarBreakdownVendas([venda]);
+    const b = breakdownPorVenda.get(venda.id)!;
+
+    expect(b.origem).toBe("estimated");
+    expect(b.totalItensCentavos).toBe(12471);
+    expect(b.taxaFbaCentavos).toBe(1500); // 3 × R$5 (unit R$41,57 < R$100)
+    expect(b.comissaoCentavos).toBe(1497); // 12% de R$124,71
+    expect(b.custoProdutoCentavos).toBe(7680); // 3 × R$25,60
+  });
+
+  it("FBA per-unit: 3 un × R$120 (unit ≥ R$100) → 3 × R$0 (isenção total)", async () => {
+    mockDb.produto.findMany.mockResolvedValue([
+      {
+        id: "prod-high",
+        sku: SKU_OK,
+        asin: null,
+        amazonImagemUrl: null,
+        imagemUrl: null,
+        amazonCategoriaFee: null,
+        custoUnitario: 5000,
+      },
+    ]);
+
+    const venda = vendaBase({
+      quantidade: 3,
+      precoUnitarioCentavos: 12000,
+      valorBrutoCentavos: 36000,
+      statusPedido: "Pending",
+      statusFinanceiro: "PENDENTE",
+    });
+
+    const { breakdownPorVenda } = await montarBreakdownVendas([venda]);
+    const b = breakdownPorVenda.get(venda.id)!;
+
+    expect(b.taxaFbaCentavos).toBe(0);
+  });
+
   it("zera frete recebido/pago quando origem é estimada (sem payload)", async () => {
     mockDb.produto.findMany.mockResolvedValue([
       {

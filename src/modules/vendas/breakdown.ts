@@ -331,14 +331,18 @@ function montarUma(
     fretePagoCentavos = freteAgregadoCentavos;
   } else if (totalItensCentavos > 0 && produto?.produtoId != null) {
     origem = "estimated";
+    // calcularFeesLocal ja retorna fbaCentavos e closingFeeCentavos agregados
+    // pela quantidade (FBA avaliado contra o PRECO UNITARIO de cada item,
+    // conforme regra Amazon Brasil 2026: R$5/un se unit <= R$99.99).
     const est = calcularFeesLocal(
       totalItensCentavos,
+      quantidade,
       ctx.feeCfg,
       { categoriaSlug: produto.amazonCategoriaFee },
     );
     comissaoCentavos = est.comissaoCentavos;
-    taxaFbaCentavos = est.fbaCentavos * quantidade;
-    closingFeeCentavos = est.closingFeeCentavos * quantidade;
+    taxaFbaCentavos = est.fbaCentavos;
+    closingFeeCentavos = est.closingFeeCentavos;
     taxaParcelamentoCentavos = 0; // Não é estimável
     categoriaSlug = produto.amazonCategoriaFee;
     categoriaLabel = est.categoriaLabel ?? null;
