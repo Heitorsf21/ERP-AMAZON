@@ -1,4 +1,6 @@
-# Contexto — ERP Amazon
+# Contexto — Atlas Seller (ERP Amazon)
+
+Marca visual = **Atlas Seller** (rebrand do "ERP Amazon"). Logo MundoFS em `public/atlas-symbol.png` (símbolo) e `public/logo-mundofs.png` (full). Componente `src/components/brand-mark.tsx` é a fonte única do branding na sidebar/topbar. Rota raiz `/` redireciona para `/dashboard-ecommerce` (não `/home`).
 
 ## Stack
 - Next.js 16.2.4 App Router · TypeScript · Prisma 5.22 · React 18 · pino · recharts · lucide-react · Radix
@@ -10,7 +12,7 @@
 - Financeiro: DossieFinanceiro · DocumentoFinanceiro · ContaPagar · ContaReceber · Movimentacao · Fornecedor · Categoria
 - Estoque/Compras: Produto · MovimentacaoEstoque · PedidoCompra · ItemPedidoCompra
 - Auth/Sistema: Usuario · ConfiguracaoSistema · Notificacao · ImportacaoLote
-- Amazon: AmazonSyncLog · AmazonSyncJob · AmazonApiQuota · AmazonReviewSolicitation · AmazonSettlementReport · BuyBoxSnapshot · VendaAmazon · AmazonReembolso · LoteImportacaoFBA · VendaFBA · LoteMetricaGS · ProdutoMetricaGestorSeller · AmazonAdsMetricaDiaria · AmazonSkuTrafficDaily · AmazonOrderRaw · AmazonFeeEstimate · AmazonFinanceTransaction
+- Amazon: AmazonSyncLog · AmazonSyncJob · AmazonApiQuota · AmazonReviewSolicitation · AmazonSettlementReport · BuyBoxSnapshot · VendaAmazon · VendaCustoEventual · AmazonReembolso · LoteImportacaoFBA · VendaFBA · LoteMetricaGS · ProdutoMetricaGestorSeller · AmazonAdsMetricaDiaria · AmazonSkuTrafficDaily · AmazonOrderRaw · AmazonFeeEstimate · AmazonFinanceTransaction
 - Custo histórico: ProdutoCustoHistorico (vigências por data)
 - Ads: AdsGastoManual · AdsCampanha
 
@@ -28,7 +30,7 @@ CSV Unified Transaction: 9 linhas cabeçalho + nomes + 24 campos. Status Liberad
 ### VendaAmazon (independente de Gestor Seller)
 Chave única `(amazonOrderId, sku)`. `liquidoMarketplaceCentavos = valorBruto - taxasCentavos - fretesCentavos`. Filtro **`whereVendaAmazonEspelhoGestorSeller()`** em `src/modules/vendas/filtros.ts` filtra cancelados + Removal Orders + Pending sem valor. Backfill: `REPORTS_BACKFILL` em janelas de 30d, cursor `amazon_orders_history_cursor`, início `amazon_loja_aberta_em` (default 2025-07-28). `Produto.custoUnitario Int?` (fallback) + `ProdutoCustoHistorico` (vigências por data — fonte de verdade do custo). Custo resolvido via `resolverCustoUnitario(produtoId, dataVenda)`.
 
-**Invariante crítico — `VendaAmazon.taxasCentavos` é APENAS REAL** (Finance API ou SP-API Orders). Estimativas NUNCA são persistidas aqui — vivem apenas em memória no service do dashboard. DRE/Contas a Receber estão protegidos via `whereVendaAmazonContabilizavelEstrito()` que exclui PENDENTE. Write sites: `service.ts:854/860/1131`.
+**Invariante crítico — `VendaAmazon.taxasCentavos` é APENAS REAL** (Finance API ou SP-API Orders). Estimativas NUNCA são persistidas aqui — vivem apenas em memória no service do dashboard. DRE/Contas a Receber estão protegidos via `whereVendaAmazonContabilizavelEstrito()` que exclui PENDENTE. Write sites em `service.ts`: bloco de Orders (~L788 e L882-884) e bloco de Finance (~L1127/L1202).
 
 ### Fee Estimator (taxas Amazon estimadas, v2)
 - Módulo `src/modules/produtos/fee-estimator.ts` com **tabela COMMISSION_TABLE** de 36 categorias BR (rateBps + minCentavos + tier opcional). Tiers: Móveis 15%/10% acima R$200, Acessórios eletrônicos 15%/10% acima R$100.
@@ -41,6 +43,23 @@ Chave única `(amazonOrderId, sku)`. `liquidoMarketplaceCentavos = valorBruto - 
 
 ### Snapshot Gestor Seller (LEGADO — removido)
 Foi removido em 2c349dc. Sistema opera 100% standalone com VendaAmazon + ProdutoCustoHistorico + fee-estimator.
+
+### Vendas (`/vendas` — UI redesenhada V5)
+- Cards expansíveis substituem a tabela. Um card = uma linha `VendaAmazon` (chave `amazonOrderId+sku`). Pedidos multi-SKU viram múltiplos cards.
+- Header do card: status + data/hora + logística + `MarketplaceTag` (pílula com smile da Amazon). Layout interno do item em 2 linhas responsivas (md:grid-cols-5 / sm:grid-cols-3 / mobile:grid-cols-2) — **zero scroll horizontal**.
+- Painel expandido mostra `OrderCardBreakdown` (comissão/FBA/parcelamento/frete/imposto/custo/lucro) via `montarBreakdownVendas` em [src/modules/vendas/breakdown.ts](src/modules/vendas/breakdown.ts). 5 queries Prisma em paralelo (vendas + produtos + custos históricos + fee estimates + **custos eventuais**). Helpers privados de `service.ts` (`findTopBreakdownAmount`/`sumBreakdowns`) NUNCA importar — usar [src/modules/vendas/breakdown-parser.ts](src/modules/vendas/breakdown-parser.ts) isolado.
+- Filtros como chips toolbar (`<FiltrosToolbar>`): Período (presets idênticos ao Dashboard E-commerce, reusa `<FiltroPeriodo>` + `src/lib/periodo.ts`) · Logística (FBA/FBM) · Status (multi-select) · SKU · "Limpar".
+- API `/api/vendas` e `/api/vendas/totais` aceitam os MESMOS filtros (preset, sku, logistica, statuses CSV) — KPIs no topo precisam reagir a todos os chips, não só ao período.
+- Lookup de produto é por `sku` (em batch), não por `produtoId` — `VendaAmazon` não tem `produtoId`.
+
+### Custos eventuais por venda
+- Modelo `VendaCustoEventual` (cascade com `VendaAmazon`) guarda custos avulsos lançados manualmente (ex: frete devolução). **NÃO toca os campos sagrados** de `VendaAmazon`.
+- Endpoints: `POST/GET /api/vendas/[vendaId]/custos-eventuais` e `DELETE /api/vendas/[vendaId]/custos-eventuais/[custoId]`. Validação Zod.
+- Soma agregada em `breakdown.custoExtraCentavos` e subtrai do lucro. UI: `<DialogCustoEventual>` dentro do painel expandido do card.
+
+### Marketplace normalizer
+- [src/lib/amazon-marketplace.ts](src/lib/amazon-marketplace.ts) mapeia marketplaceId cru (`A2Q3Y263D00KWC`, `ATVPDKIKX0DER`, …) → domínio amigável (`amazon.com.br`, `amazon.com`, …). Default vazio = `amazon.com.br` (ERP single-marketplace BR).
+- `<MarketplaceTag>` em [src/components/vendas/marketplace-tag.tsx](src/components/vendas/marketplace-tag.tsx) aplica o normalizador + SVG inline do smile laranja `#FF9900`.
 
 ### Reembolsos (finance pipeline)
 `src/modules/amazon/finance-normalizer.ts` converte `SPFinanceTransaction` em `NormalizedFinanceTransaction` (item-level: SKU/ASIN/qty/fees/promos; transaction-level: settlementId/refundId). `finance-materializer.ts` aplica ações `CRIAR_REEMBOLSO | ATUALIZAR_REEMBOLSO | MARCAR_VENDA_REEMBOLSADA | IGNORAR` em `AmazonReembolso`+`VendaAmazon`. Recovery: `npx tsx scripts/recover-zero-pending.ts --apply` (default `--dry-run`). Audit `amazon:reliability:audit` foi removido (legado).
@@ -84,6 +103,8 @@ LWA OAuth2 (refresh_token → access_token, header `x-amz-access-token`). Sem AW
 ## Notificações (sino — sem email/Slack/Telegram)
 Modelo `Notificacao` (dedupeKey @unique). Helpers `src/lib/notificacoes.ts`. Tipos: ESTOQUE_CRITICO · BUYBOX_PERDIDO/RECUPERADO · REEMBOLSO_ALTO · ACOS_ALTO · LIQUIDACAO_ATRASADA · CUSTO_AUSENTE · JOB_FALHANDO · QUOTA_BLOQUEADA · SETTLEMENT_NOVO · RECEBIMENTO_RECONCILIADO · WORKER_REINICIADO · REIMBURSEMENT_FBA_RECEBIDO · CONFIG_REVIEW.
 
+**UI**: o sino vive no **topbar** (`src/components/topbar/notification-bell.tsx`) entre busca e perfil — popover com últimas 10 não-lidas + link "Ver todas" → `/notificacoes`. Saiu da sidebar (era um item do grupo Configuração). Página `/notificacoes` permanece intacta.
+
 ## Criptografia
 `src/lib/crypto.ts` AES-256-GCM. Master em `CONFIG_ENCRYPTION_KEY` (32 bytes hex). `saveAmazonConfig()` cripta chaves matching `secret|token|password|senha|_key|_apikey`. Legado em texto puro ainda lido.
 
@@ -95,12 +116,20 @@ export async function POST(_req: Request, { params }: Params) {
 }
 ```
 
-## UI compartilhado (`src/components/ui/`)
-- **`kpi-card.tsx`** — KPI básico (label/value/sub/icon, cores blue|green|red|orange|violet|slate). Para o dashboard e-commerce há custom inline com `borderColor` por categoria.
-- **`product-thumb.tsx`** — thumb 32/40/48/56px com fallback `ImageOff`. Usa `resolverImagemProduto()` de `src/lib/amazon-images.ts` (ordem: imagemUrl manual → amazonImagemUrl → imagemDoAsin).
-- **`margin-badge.tsx`** — pílula colorida automática: verde ≥25% · âmbar 10-24% · vermelho <10% · slate N/A.
-- **`trend-indicator.tsx`** — TrendingUp/Down (lucide) com polaridade invertível (custos = positivo é ruim).
+## UI compartilhado (`src/components/`)
+- **`brand-mark.tsx`** — branding Atlas Seller (símbolo `public/atlas-symbol.png` + texto). Aceita `size: "sm" | "md"` e `collapsed` (esconde texto). Usado em sidebar (md) e topbar mobile (sm).
+- **`ui/kpi-card.tsx`** — KPI básico (label/value/sub/icon, cores blue|green|red|orange|violet|slate). Para o dashboard e-commerce há custom inline com `borderColor` por categoria.
+- **`ui/product-thumb.tsx`** — thumb 32/40/48/56px com fallback `ImageOff`. Usa `resolverImagemProduto()` de `src/lib/amazon-images.ts` (ordem: imagemUrl manual → amazonImagemUrl → imagemDoAsin).
+- **`ui/margin-badge.tsx`** — pílula colorida automática: verde ≥25% · âmbar 10-24% · vermelho <10% · slate N/A.
+- **`ui/trend-indicator.tsx`** — TrendingUp/Down (lucide) com polaridade invertível (custos = positivo é ruim).
+- **`ui/filtro-periodo.tsx`** — chip + popover com 8 presets (Hoje, Ontem, 7d, 30d, Mês atual, Mês passado, Ano atual, Personalizado) reusando `src/lib/periodo.ts`. Compartilhado entre `/vendas` e (futuro) Dashboard E-commerce.
+- **`vendas/marketplace-tag.tsx`** — pílula `amazon.com.br` com SVG inline do smile laranja. Aplica `normalizarNomeMarketplace`.
 - Outros: `badge` · `card` · `dialog` · `popover` · `tooltip` · `table` · `skeleton` · `sonner` (toasts).
+
+### Sidebar (`src/components/sidebar.tsx`)
+- Todos os grupos iniciam fechados, **exceto** o grupo que contém a rota ativa (auto-expand).
+- Preferência persistida em `localStorage["sidebar-groups-expanded"]` — uma vez que o usuário toggle, o auto-expand respeita o estado salvo.
+- Item "Notificações" foi removido (sino migrou pro topbar — ver acima).
 
 ## Dashboard E-commerce (`/dashboard-ecommerce`)
 Layout 8 KPIs primários + "Ver mais 8" secundários (toggle). Bordas laterais coloridas por categoria: **receita=verde** (Faturamento, Líq.Marketplace) · **operação=azul** (Lucro, Margem, Vendas, Unidades, Ticket, ROI) · **ads=âmbar** · **tráfego=violeta**. Chart "Resumo de receitas" = 3 áreas empilhadas (Faturamento violeta + Líq.Marketplace azul + Lucro emerald). Top 15 com `ProductThumb` 40px + `MarginBadge`. Filtro de período no header (inline). Service `obterTopProdutos` expõe `imagemUrl/amazonImagemUrl/asin`; `obterTimeline` inclui `liquidoMarketplaceCentavos`.
