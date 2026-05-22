@@ -388,29 +388,31 @@ export async function putMarketingStreamSubscription(
   creds: AdsAPICredentials,
   input: PutMarketingStreamSubscriptionInput,
 ): Promise<MarketingStreamSubscription> {
+  // POST /streams/subscriptions com dataSetId NO BODY (nao no path).
+  // O path so e usado com subscriptionId real (formato amzn1.fead.cs.<token>)
+  // para archive/update.
   const body: Record<string, unknown> = {
+    dataSetId: input.dataSetId,
     destinationArn: input.destinationArn,
+    clientRequestToken: input.clientRequestToken ?? `erp-${input.dataSetId}-${Date.now()}`,
   };
   if (input.notes) body.notes = input.notes;
-  if (input.clientRequestToken) body.clientRequestToken = input.clientRequestToken;
 
-  return adsApiRequest<MarketingStreamSubscription>(
-    creds,
-    `/streams/subscriptions/${encodeURIComponent(input.dataSetId)}`,
-    {
-      method: "PUT",
-      body,
-      operation: AmazonSpApiOperation.ADS_STREAM_SUBSCRIPTIONS_PUT,
-      contentType: "application/vnd.MarketingStreamSubscriptions.v1+json",
-      accept: "application/vnd.MarketingStreamSubscriptions.v1+json",
-    },
-  );
+  return adsApiRequest<MarketingStreamSubscription>(creds, "/streams/subscriptions", {
+    method: "POST",
+    body,
+    operation: AmazonSpApiOperation.ADS_STREAM_SUBSCRIPTIONS_PUT,
+    contentType: "application/vnd.MarketingStreamSubscriptions.v1+json",
+    accept: "application/vnd.MarketingStreamSubscriptions.v1+json",
+  });
 }
 
 export async function archiveMarketingStreamSubscription(
   creds: AdsAPICredentials,
   subscriptionId: string,
 ): Promise<MarketingStreamSubscription> {
+  // Archive: PUT /streams/subscriptions/{subscriptionId}.
+  // subscriptionId tem formato amzn1.fead.cs.<token>.
   return adsApiRequest<MarketingStreamSubscription>(
     creds,
     `/streams/subscriptions/${encodeURIComponent(subscriptionId)}`,

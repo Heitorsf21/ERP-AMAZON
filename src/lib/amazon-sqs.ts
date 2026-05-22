@@ -163,6 +163,46 @@ export async function recordAndDispatchSqsMessage(
   }
 
   const notification = parseSqsNotificationBody(message.Body);
+
+  // SNS SubscriptionConfirmation: precisa GET no SubscribeURL pra ativar o fluxo.
+  // Marketing Stream entrega via SNS topics dedicados por dataset (primeira
+  // mensagem de cada e sempre uma confirmacao). Confirmamos e marcamos como
+  // processada — nao gera job de ingest.
+  const snsType = typeof (notification as { Type?: string }).Type === "string"
+    ? (notification as { Type?: string }).Type
+    : null;
+  if (snsType === "SubscriptionConfirmation") {
+    const notificationId =
+      message.MessageId ??
+      createHash("sha256").update(message.Body).digest("hex");
+    const result = await confirmSnsSubscription(notification);
+    const topicArn = result.topicArn ?? "";
+    const notificationType = `SNS_SUBSCRIPTION_CONFIRMATION:${topicArn}`;
+    await db.amazonNotification.upsert({
+      where: { notificationId },
+      create: {
+        notificationId,
+        notificationType,
+        payloadJson: JSON.stringify(notification),
+        rawJson: message.Body,
+        processadoEm: result.confirmed ? new Date() : null,
+        erro: result.error ?? null,
+        jobsCriadosIds: JSON.stringify([]),
+      },
+      update: {
+        notificationType,
+        payloadJson: JSON.stringify(notification),
+        rawJson: message.Body,
+        processadoEm: result.confirmed ? new Date() : null,
+        erro: result.error ?? null,
+      },
+    });
+    if (!result.confirmed) {
+      throw new Error(`SubscriptionConfirmation falhou: ${result.error}`);
+    }
+    return { processed: true, notificationId, jobsCriadosIds: [] };
+  }
+
   const streamDataset = getMarketingStreamDataset(notification);
   const notificationType = streamDataset
     ? `MARKETING_STREAM:${streamDataset}`
@@ -361,11 +401,56 @@ function extractMarketingStreamRecords(notif: AmazonSqsNotification): unknown[] 
 export function parseSqsNotificationBody(body: string): AmazonSqsNotification {
   const parsed = parseJsonObject(body);
 
+  // SubscriptionConfirmation / UnsubscribeConfirmation: o campo Message e texto plano
+  // ("You have chosen to subscribe..."). NAO tentar parsear como JSON.
+  const type = typeof parsed.Type === "string" ? parsed.Type : null;
+  if (type === "SubscriptionConfirmation" || type === "UnsubscribeConfirmation") {
+    return parsed as AmazonSqsNotification;
+  }
+
+  // Envelope SNS "Notification" tipico: Message contem JSON encadeado.
   if (typeof parsed.Message === "string") {
-    return parseJsonObject(parsed.Message) as AmazonSqsNotification;
+    try {
+      return parseJsonObject(parsed.Message) as AmazonSqsNotification;
+    } catch {
+      // Message nao e JSON — retorna o envelope cru pra o dispatcher decidir.
+      return parsed as AmazonSqsNotification;
+    }
   }
 
   return parsed as AmazonSqsNotification;
+}
+
+/**
+ * Confirma uma subscription SNS pendente (fetch GET no SubscribeURL).
+ * Marketing Stream entrega via SNS topics dedicados por dataset; a primeira
+ * mensagem de cada subscription e um SubscriptionConfirmation que precisa
+ * de HTTP GET no SubscribeURL para ativar o fluxo de dados.
+ */
+async function confirmSnsSubscription(
+  notification: AmazonSqsNotification,
+): Promise<{ confirmed: boolean; topicArn: string | null; error?: string }> {
+  const subscribeUrl =
+    (notification as { SubscribeURL?: string }).SubscribeURL ??
+    (notification as { subscribeURL?: string }).subscribeURL ??
+    null;
+  const topicArn =
+    (notification as { TopicArn?: string }).TopicArn ??
+    (notification as { topicArn?: string }).topicArn ??
+    null;
+  if (!subscribeUrl) {
+    return { confirmed: false, topicArn, error: "SubscribeURL ausente." };
+  }
+  const response = await fetch(subscribeUrl, { method: "GET" });
+  if (!response.ok) {
+    const text = await response.text().catch(() => "");
+    return {
+      confirmed: false,
+      topicArn,
+      error: `SubscribeURL ${response.status}: ${text.slice(0, 200)}`,
+    };
+  }
+  return { confirmed: true, topicArn };
 }
 
 export function extractOrderIdsFromNotification(
