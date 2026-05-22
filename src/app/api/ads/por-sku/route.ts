@@ -1,5 +1,6 @@
 import { handle, ok } from "@/lib/api";
 import { db } from "@/lib/db";
+import { PeriodoPreset, resolverPeriodo } from "@/lib/periodo";
 import {
   getAdsPorSku,
   tacosPercentual,
@@ -15,8 +16,14 @@ export const GET = handle(async (req: Request) => {
 
   if (!de || !ate) throw new Error("Parâmetros 'de' e 'ate' são obrigatórios");
 
-  const inicio = new Date(`${de}T00:00:00.000Z`);
-  const fim = new Date(`${ate}T23:59:59.999Z`);
+  // Interpreta YYYY-MM-DD como dia BRT (timezone America/Sao_Paulo) — front
+  // envia dia local do <input type="date">. UTC midnight pega 21h do dia
+  // anterior em BRT e contamina a query.
+  const { de: inicio, ate: fim } = resolverPeriodo(
+    PeriodoPreset.PERSONALIZADO,
+    de,
+    ate,
+  );
 
   const itens = await getAdsPorSku({ de: inicio, ate: fim });
   const skus = itens.map((i) => i.sku);

@@ -1,4 +1,5 @@
 import { handle, ok } from "@/lib/api";
+import { PeriodoPreset, resolverPeriodo } from "@/lib/periodo";
 import { getAdsTimeline } from "@/modules/amazon/ads-aggregation";
 
 export const dynamic = "force-dynamic";
@@ -18,10 +19,9 @@ export const GET = handle(async (req: Request) => {
   // pode ser custoso. Front sempre passa de/ate.
   if (!de || !ate) return ok([]);
 
-  const periodo = {
-    de: new Date(`${de}T00:00:00.000Z`),
-    ate: new Date(`${ate}T23:59:59.999Z`),
-  };
+  // Interpretar de/ate como dia BRT (timezone America/Sao_Paulo) — NAO UTC
+  // midnight. resolverPeriodo PERSONALIZADO faz fromZonedTime com TIMEZONE.
+  const periodo = resolverPeriodo(PeriodoPreset.PERSONALIZADO, de, ate);
 
   const serie = await getAdsTimeline(periodo, granularidade);
 

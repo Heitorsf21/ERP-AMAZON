@@ -1,5 +1,6 @@
 import { handle, ok } from "@/lib/api";
 import { db } from "@/lib/db";
+import { PeriodoPreset, resolverPeriodo } from "@/lib/periodo";
 import {
   getAdsCampanhas,
   tacosPercentual,
@@ -27,12 +28,11 @@ function deltaPct(atual: number, anterior: number): number | null {
   return ((atual - anterior) / Math.abs(anterior)) * 100;
 }
 
-function parseDataInicio(d: string): Date {
-  return new Date(`${d}T00:00:00.000Z`);
-}
-
-function parseDataFim(d: string): Date {
-  return new Date(`${d}T23:59:59.999Z`);
+// Interpreta YYYY-MM-DD como dia BRT (timezone America/Sao_Paulo), NAO UTC.
+// O front envia dias em local time (<input type="date">) — UTC midnight
+// pega 21h do dia anterior em BRT e contamina a query.
+function parsePeriodoBrt(de: string, ate: string) {
+  return resolverPeriodo(PeriodoPreset.PERSONALIZADO, de, ate);
 }
 
 async function carregarBloco(de: Date, ate: Date) {
@@ -94,8 +94,7 @@ export const GET = handle(async (req: Request) => {
     return ok({ ...shapeBase(bloco), faturamentoAmazon: null });
   }
 
-  const inicio = parseDataInicio(de);
-  const fim = parseDataFim(ate);
+  const { de: inicio, ate: fim } = parsePeriodoBrt(de, ate);
   const atual = await carregarBloco(inicio, fim);
   const baseRetorno = shapeBase(atual);
 
