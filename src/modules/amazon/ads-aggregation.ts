@@ -15,8 +15,28 @@
  * sao puros e reutilizaveis.
  */
 
+import { formatInTimeZone } from "date-fns-tz";
 import { db } from "@/lib/db";
+import { TIMEZONE } from "@/lib/date";
 import { dividirPorFronteiraHoje, type IntervaloPeriodo } from "@/lib/periodo";
+
+/**
+ * O Ads Reporting API entrega "date" (YYYY-MM-DD) no timezone do profile (BRT).
+ * Persistimos como UTC midnight ancorado ao dia BRT — ex: dia BRT 21/05 vira
+ * `2026-05-21T00:00:00.000Z`. Mas o periodo do dashboard vem BRT-shifted em UTC
+ * (ex: "Ontem" = `2026-05-21T03:00:00Z` ate `2026-05-22T02:59:59Z`).
+ *
+ * Esse helper realinha: converte os limites BRT-shifted UTC para o "primeiro dia
+ * BRT" e "ultimo dia BRT" como UTC midnight, alinhando com a coluna `data`.
+ */
+function rangeDataDiario(periodo: IntervaloPeriodo): { gte: Date; lte: Date } {
+  const inicioDiaBrt = formatInTimeZone(periodo.de, TIMEZONE, "yyyy-MM-dd");
+  const fimDiaBrt = formatInTimeZone(periodo.ate, TIMEZONE, "yyyy-MM-dd");
+  return {
+    gte: new Date(`${inicioDiaBrt}T00:00:00.000Z`),
+    lte: new Date(`${fimDiaBrt}T23:59:59.999Z`),
+  };
+}
 
 export type FonteAds =
   | "SYNC"
@@ -165,7 +185,7 @@ async function aggregarHistorico(
   periodo: IntervaloPeriodo,
 ): Promise<AdsMetricasBase> {
   const agg = await db.amazonAdsMetricaDiaria.aggregate({
-    where: { data: { gte: periodo.de, lte: periodo.ate } },
+    where: { data: rangeDataDiario(periodo) },
     _sum: {
       gastoCentavos: true,
       vendasCentavos: true,
@@ -220,7 +240,7 @@ async function temGastoSync(periodo: IntervaloPeriodo): Promise<boolean> {
     promises.push(
       db.amazonAdsMetricaDiaria
         .aggregate({
-          where: { data: { gte: div.historico.de, lte: div.historico.ate } },
+          where: { data: rangeDataDiario(div.historico) },
           _sum: { gastoCentavos: true },
         })
         .then((a) => a._sum.gastoCentavos ?? 0),
@@ -341,7 +361,7 @@ export async function getAdsCampanhas(
       div.historico
         ? db.amazonAdsMetricaDiaria.groupBy({
             by: ["campaignId", "sku", "asin"],
-            where: { data: { gte: div.historico.de, lte: div.historico.ate } },
+            where: { data: rangeDataDiario(div.historico) },
             _sum: {
               gastoCentavos: true,
               vendasCentavos: true,
@@ -536,7 +556,7 @@ export async function getAdsTimeline(
       div.historico
         ? db.amazonAdsMetricaDiaria.groupBy({
             by: ["data"],
-            where: { data: { gte: div.historico.de, lte: div.historico.ate } },
+            where: { data: rangeDataDiario(div.historico) },
             _sum: {
               gastoCentavos: true,
               vendasCentavos: true,
@@ -658,7 +678,7 @@ export async function getAdsPorSku(
         ? db.amazonAdsMetricaDiaria.groupBy({
             by: ["sku", "asin"],
             where: {
-              data: { gte: div.historico.de, lte: div.historico.ate },
+              data: rangeDataDiario(div.historico),
               sku: { not: null },
             },
             _sum: {
@@ -809,7 +829,7 @@ export async function getAdsGastoPorProduto(
         ? db.amazonAdsMetricaDiaria.groupBy({
             by: ["produtoId"],
             where: {
-              data: { gte: div.historico.de, lte: div.historico.ate },
+              data: rangeDataDiario(div.historico),
               produtoId: { not: null },
             },
             _sum: { gastoCentavos: true },
@@ -840,7 +860,7 @@ export async function getAdsGastoPorProduto(
         ? db.amazonAdsMetricaDiaria.groupBy({
             by: ["sku"],
             where: {
-              data: { gte: div.historico.de, lte: div.historico.ate },
+              data: rangeDataDiario(div.historico),
               produtoId: null,
               sku: { not: null },
             },
@@ -892,7 +912,7 @@ export async function getAdsGastoPorProduto(
       div.historico
         ? db.amazonAdsMetricaDiaria.aggregate({
             where: {
-              data: { gte: div.historico.de, lte: div.historico.ate },
+              data: rangeDataDiario(div.historico),
               produtoId: null,
               sku: null,
             },

@@ -107,18 +107,20 @@ async function upsertMarketingStreamRows(rows: MarketingStreamParsedRow[]) {
     };
 
     try {
-      const existing = await db.amazonAdsMetricaHoraria.findUnique({
+      // findFirst em vez de findUnique: Prisma findUnique com composite key
+      // rejeita null em campos nullable (asin/sku/adGroupId/adId). sp-traffic
+      // entrega records por ad/keyword sem SKU/ASIN — todos null. findFirst
+      // aceita null e o indice unico SQL tolera null != null em multiplas rows.
+      const existing = await db.amazonAdsMetricaHoraria.findFirst({
         where: {
-          horaInicio_dataset_campaignId_adGroupId_adId_asin_sku: {
-            horaInicio: r.horaInicio,
-            dataset: r.dataset,
-            campaignId: r.campaignId,
-            adGroupId: r.adGroupId,
-            adId: r.adId,
-            asin: r.asin,
-            sku: r.sku,
-          },
-        } as never,
+          horaInicio: r.horaInicio,
+          dataset: r.dataset,
+          campaignId: r.campaignId,
+          adGroupId: r.adGroupId,
+          adId: r.adId,
+          asin: r.asin,
+          sku: r.sku,
+        },
       });
 
       if (!existing) {
