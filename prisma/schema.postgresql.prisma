@@ -287,6 +287,7 @@ model Produto {
   returnsAmazon      AmazonReturn[]
   skuTrafficDaily    AmazonSkuTrafficDaily[]
   adsMetricasDiarias AmazonAdsMetricaDiaria[]
+  adsMetricasHorarias AmazonAdsMetricaHoraria[]
   variacoesPai       ProdutoVariacao[]            @relation("ProdutoVariacaoPai")
   variacaoComoFilho  ProdutoVariacao?             @relation("ProdutoVariacaoFilho")
   custoHistorico     ProdutoCustoHistorico[]
@@ -1135,5 +1136,46 @@ model AmazonAdsMetricaDiaria {
   @@index([sku, data])
   @@index([asin, data])
   @@index([data])
+  @@index([produtoId])
+}
+
+// Marketing Stream hourly metrics — push-based intraday data (sp-traffic, sp-conversion,
+// sd-*, sb-*). Tabela separada de AmazonAdsMetricaDiaria porque tem ciclo de vida proprio
+// (purgada apos reconciliacao com daily report). Sem FK em campaignId pois eventos podem
+// chegar antes de AmazonAdsCampanha existir (campanha recem-criada). produtoId tem FK
+// (resolvido por SKU no handler).
+model AmazonAdsMetricaHoraria {
+  id             String   @id @default(cuid())
+  horaInicio     DateTime
+  dataset        String
+  profileId      String
+  campaignId     String
+  adGroupId      String?
+  adId           String?
+  asin           String?
+  sku            String?
+  impressoes     Int      @default(0)
+  cliques        Int      @default(0)
+  gastoCentavos  Int      @default(0)
+  vendasCentavos Int      @default(0)
+  unidades       Int      @default(0)
+  pedidos        Int      @default(0)
+  produtoId      String?
+  marketplaceId  String?
+  currencyCode   String?
+  eventoTimeMin  DateTime
+  eventoTimeMax  DateTime
+  payloadJson    Json
+  criadoEm       DateTime @default(now())
+  atualizadoEm   DateTime @updatedAt
+
+  produto Produto? @relation(fields: [produtoId], references: [id], onDelete: SetNull)
+
+  @@unique([horaInicio, dataset, campaignId, adGroupId, adId, asin, sku])
+  @@index([horaInicio])
+  @@index([profileId, horaInicio])
+  @@index([sku, horaInicio])
+  @@index([dataset, horaInicio])
+  @@index([campaignId, horaInicio])
   @@index([produtoId])
 }

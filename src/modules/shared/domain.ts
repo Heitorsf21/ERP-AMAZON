@@ -183,6 +183,8 @@ export const TipoAmazonSyncJob = {
   // Sprint 5.5 — Amazon Advertising (Sponsored Products)
   AMAZON_ADS_REPORT_SYNC: "AMAZON_ADS_REPORT_SYNC",
   AMAZON_ADS_BACKFILL: "AMAZON_ADS_BACKFILL",
+  // Marketing Stream — ingestao push-based intraday (sp-traffic/sp-conversion/sd-*/sb-*)
+  AMAZON_ADS_STREAM_INGEST: "AMAZON_ADS_STREAM_INGEST",
   // Cache do our_price do listing — fallback para pedidos Pending sem ItemPrice
   LISTING_PRICE_SYNC: "LISTING_PRICE_SYNC",
   // Estimator de taxas Amazon — usa getMyFeesEstimateForSKU (24h)

@@ -42,6 +42,7 @@ import {
   runAmazonAdsReportSync,
 } from "@/modules/amazon/ads-handlers";
 import { getAmazonAdsCredentials } from "@/modules/amazon/ads-service";
+import { runMarketingStreamIngest } from "@/modules/amazon/marketing-stream-handlers";
 import { StatusAmazonSyncJob, TipoAmazonSyncJob } from "@/modules/shared/domain";
 
 const HEARTBEAT_KEY = "worker_heartbeat_at";
@@ -62,6 +63,11 @@ type SyncPayload = {
   windowDias?: number;
   notificationId?: string;
   eventTime?: string;
+  // Marketing Stream ingest (AMAZON_ADS_STREAM_INGEST)
+  records?: unknown[];
+  dataset?: string;
+  profileId?: string;
+  dedupeKey?: string;
 };
 
 export async function processAmazonSyncJobs(options: WorkerOptions = {}) {
@@ -204,10 +210,12 @@ async function processJob(
 
   // Para jobs que precisam de credenciais SP-API, busca-as uma única vez.
   // REVIEWS_DISCOVERY/SEND buscam suas próprias creds via getCredentialsOrThrow.
+  // AMAZON_ADS_STREAM_INGEST processa payload local — nao precisa de creds.
   const needCreds =
     !isAdsJob &&
     tipo !== TipoAmazonSyncJob.REVIEWS_DISCOVERY &&
-    tipo !== TipoAmazonSyncJob.REVIEWS_SEND;
+    tipo !== TipoAmazonSyncJob.REVIEWS_SEND &&
+    tipo !== TipoAmazonSyncJob.AMAZON_ADS_STREAM_INGEST;
 
   let creds: Awaited<ReturnType<typeof getAmazonConfig>> | null = null;
   if (needCreds) {
@@ -286,6 +294,8 @@ async function processJob(
       }
       return runAmazonAdsReportSync(adsCreds, payload);
     }
+    case TipoAmazonSyncJob.AMAZON_ADS_STREAM_INGEST:
+      return runMarketingStreamIngest(payload);
     case TipoAmazonSyncJob.AMAZON_ADS_BACKFILL: {
       const adsCreds = await getAmazonAdsCredentials();
       if (!adsCreds) {

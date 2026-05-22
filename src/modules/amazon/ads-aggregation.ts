@@ -16,9 +16,16 @@
  */
 
 import { db } from "@/lib/db";
-import type { IntervaloPeriodo } from "@/lib/periodo";
+import { dividirPorFronteiraHoje, type IntervaloPeriodo } from "@/lib/periodo";
 
-export type FonteAds = "SYNC" | "LEGACY" | "MANUAL" | "MIXED" | "VAZIO";
+export type FonteAds =
+  | "SYNC"
+  | "STREAM"
+  | "MIXED_STREAM_SYNC"
+  | "LEGACY"
+  | "MANUAL"
+  | "MIXED"
+  | "VAZIO";
 
 export type AdsMetricasBase = {
   gastoCentavos: number;
@@ -151,25 +158,13 @@ function inicioSemanaUtc(date: Date): Date {
 }
 
 // ────────────────────────────────────────────────────────────────────────────
-// Probe de fonte: olha se ha gasto sincronizado no periodo
+// Aggregations: histórico (daily report) vs intraday (Marketing Stream).
 // ────────────────────────────────────────────────────────────────────────────
 
-async function temGastoSync(periodo: IntervaloPeriodo): Promise<boolean> {
-  const agg = await db.amazonAdsMetricaDiaria.aggregate({
-    where: { data: { gte: periodo.de, lte: periodo.ate } },
-    _sum: { gastoCentavos: true },
-  });
-  return (agg._sum.gastoCentavos ?? 0) > 0;
-}
-
-// ────────────────────────────────────────────────────────────────────────────
-// getAdsResumo — totais agregados do periodo
-// ────────────────────────────────────────────────────────────────────────────
-
-export async function getAdsResumo(
+async function aggregarHistorico(
   periodo: IntervaloPeriodo,
-): Promise<AdsResumo> {
-  const sync = await db.amazonAdsMetricaDiaria.aggregate({
+): Promise<AdsMetricasBase> {
+  const agg = await db.amazonAdsMetricaDiaria.aggregate({
     where: { data: { gte: periodo.de, lte: periodo.ate } },
     _sum: {
       gastoCentavos: true,
@@ -180,18 +175,103 @@ export async function getAdsResumo(
       unidades: true,
     },
   });
+  return {
+    gastoCentavos: agg._sum.gastoCentavos ?? 0,
+    vendasAtribuidasCentavos: agg._sum.vendasCentavos ?? 0,
+    impressoes: agg._sum.impressoes ?? 0,
+    cliques: agg._sum.cliques ?? 0,
+    pedidos: agg._sum.pedidos ?? 0,
+    unidades: agg._sum.unidades ?? 0,
+  };
+}
 
-  const gastoSync = sync._sum.gastoCentavos ?? 0;
-  if (gastoSync > 0) {
-    const base: AdsMetricasBase = {
-      gastoCentavos: gastoSync,
-      vendasAtribuidasCentavos: sync._sum.vendasCentavos ?? 0,
-      impressoes: sync._sum.impressoes ?? 0,
-      cliques: sync._sum.cliques ?? 0,
-      pedidos: sync._sum.pedidos ?? 0,
-      unidades: sync._sum.unidades ?? 0,
+async function aggregarStream(
+  periodo: IntervaloPeriodo,
+): Promise<AdsMetricasBase> {
+  const agg = await db.amazonAdsMetricaHoraria.aggregate({
+    where: { horaInicio: { gte: periodo.de, lte: periodo.ate } },
+    _sum: {
+      gastoCentavos: true,
+      vendasCentavos: true,
+      impressoes: true,
+      cliques: true,
+      pedidos: true,
+      unidades: true,
+    },
+  });
+  return {
+    gastoCentavos: agg._sum.gastoCentavos ?? 0,
+    vendasAtribuidasCentavos: agg._sum.vendasCentavos ?? 0,
+    impressoes: agg._sum.impressoes ?? 0,
+    cliques: agg._sum.cliques ?? 0,
+    pedidos: agg._sum.pedidos ?? 0,
+    unidades: agg._sum.unidades ?? 0,
+  };
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Probe de fonte: olha se ha gasto sincronizado no periodo
+// ────────────────────────────────────────────────────────────────────────────
+
+async function temGastoSync(periodo: IntervaloPeriodo): Promise<boolean> {
+  const div = dividirPorFronteiraHoje(periodo);
+  const promises: Promise<number>[] = [];
+  if (div.historico) {
+    promises.push(
+      db.amazonAdsMetricaDiaria
+        .aggregate({
+          where: { data: { gte: div.historico.de, lte: div.historico.ate } },
+          _sum: { gastoCentavos: true },
+        })
+        .then((a) => a._sum.gastoCentavos ?? 0),
+    );
+  }
+  if (div.intraday) {
+    promises.push(
+      db.amazonAdsMetricaHoraria
+        .aggregate({
+          where: { horaInicio: { gte: div.intraday.de, lte: div.intraday.ate } },
+          _sum: { gastoCentavos: true },
+        })
+        .then((a) => a._sum.gastoCentavos ?? 0),
+    );
+  }
+  const totals = await Promise.all(promises);
+  return totals.some((t) => t > 0);
+}
+
+function classificarFonteSync(
+  historicoTemDado: boolean,
+  intradayTemDado: boolean,
+): FonteAds {
+  if (historicoTemDado && intradayTemDado) return "MIXED_STREAM_SYNC";
+  if (intradayTemDado) return "STREAM";
+  return "SYNC";
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// getAdsResumo — totais agregados do periodo
+// ────────────────────────────────────────────────────────────────────────────
+
+export async function getAdsResumo(
+  periodo: IntervaloPeriodo,
+): Promise<AdsResumo> {
+  const div = dividirPorFronteiraHoje(periodo);
+  const [historicoBase, intradayBase] = await Promise.all([
+    div.historico ? aggregarHistorico(div.historico) : METRICAS_BASE_VAZIA,
+    div.intraday ? aggregarStream(div.intraday) : METRICAS_BASE_VAZIA,
+  ]);
+
+  const historicoTemDado = historicoBase.gastoCentavos > 0;
+  const intradayTemDado = intradayBase.gastoCentavos > 0;
+
+  if (historicoTemDado || intradayTemDado) {
+    const base = acumular(historicoBase, intradayBase);
+    return {
+      ...base,
+      ...calcularDerivadas(base),
+      fonte: classificarFonteSync(historicoTemDado, intradayTemDado),
     };
-    return { ...base, ...calcularDerivadas(base), fonte: "SYNC" };
   }
 
   // Fallback legacy + manual
@@ -256,18 +336,90 @@ export async function getAdsCampanhas(
   const usaSync = await temGastoSync(periodo);
 
   if (usaSync) {
-    const grupos = await db.amazonAdsMetricaDiaria.groupBy({
-      by: ["campaignId", "sku", "asin"],
-      where: { data: { gte: periodo.de, lte: periodo.ate } },
+    const div = dividirPorFronteiraHoje(periodo);
+    const [historicoGrupos, intradayGrupos] = await Promise.all([
+      div.historico
+        ? db.amazonAdsMetricaDiaria.groupBy({
+            by: ["campaignId", "sku", "asin"],
+            where: { data: { gte: div.historico.de, lte: div.historico.ate } },
+            _sum: {
+              gastoCentavos: true,
+              vendasCentavos: true,
+              impressoes: true,
+              cliques: true,
+              pedidos: true,
+              unidades: true,
+            },
+          })
+        : Promise.resolve([] as never[]),
+      div.intraday
+        ? db.amazonAdsMetricaHoraria.groupBy({
+            by: ["campaignId", "sku", "asin"],
+            where: {
+              horaInicio: { gte: div.intraday.de, lte: div.intraday.ate },
+            },
+            _sum: {
+              gastoCentavos: true,
+              vendasCentavos: true,
+              impressoes: true,
+              cliques: true,
+              pedidos: true,
+              unidades: true,
+            },
+          })
+        : Promise.resolve([] as never[]),
+    ]);
+
+    type CampanhaKey = { campaignId: string; sku: string | null; asin: string | null };
+    const mapaCamp = new Map<string, CampanhaKey & AdsMetricasBase>();
+    const acumularEm = (
+      campaignId: string,
+      sku: string | null,
+      asin: string | null,
+      base: AdsMetricasBase,
+    ) => {
+      const k = `${campaignId}|${sku ?? ""}|${asin ?? ""}`;
+      const atual = mapaCamp.get(k) ?? {
+        campaignId,
+        sku: sku ?? null,
+        asin: asin ?? null,
+        ...METRICAS_BASE_VAZIA,
+      };
+      mapaCamp.set(k, { ...atual, ...acumular(atual, base) });
+    };
+    for (const g of historicoGrupos) {
+      acumularEm(g.campaignId, g.sku ?? null, g.asin ?? null, {
+        gastoCentavos: g._sum.gastoCentavos ?? 0,
+        vendasAtribuidasCentavos: g._sum.vendasCentavos ?? 0,
+        impressoes: g._sum.impressoes ?? 0,
+        cliques: g._sum.cliques ?? 0,
+        pedidos: g._sum.pedidos ?? 0,
+        unidades: g._sum.unidades ?? 0,
+      });
+    }
+    for (const g of intradayGrupos) {
+      acumularEm(g.campaignId, g.sku ?? null, g.asin ?? null, {
+        gastoCentavos: g._sum.gastoCentavos ?? 0,
+        vendasAtribuidasCentavos: g._sum.vendasCentavos ?? 0,
+        impressoes: g._sum.impressoes ?? 0,
+        cliques: g._sum.cliques ?? 0,
+        pedidos: g._sum.pedidos ?? 0,
+        unidades: g._sum.unidades ?? 0,
+      });
+    }
+    const grupos = Array.from(mapaCamp.values()).map((g) => ({
+      campaignId: g.campaignId,
+      sku: g.sku,
+      asin: g.asin,
       _sum: {
-        gastoCentavos: true,
-        vendasCentavos: true,
-        impressoes: true,
-        cliques: true,
-        pedidos: true,
-        unidades: true,
+        gastoCentavos: g.gastoCentavos,
+        vendasCentavos: g.vendasAtribuidasCentavos,
+        impressoes: g.impressoes,
+        cliques: g.cliques,
+        pedidos: g.pedidos,
+        unidades: g.unidades,
       },
-    });
+    }));
 
     const campaignIds = Array.from(new Set(grupos.map((g) => g.campaignId)));
     const campanhas = campaignIds.length
@@ -315,12 +467,18 @@ export async function getAdsCampanhas(
         }),
       METRICAS_BASE_VAZIA,
     );
+    const historicoTemGasto = historicoGrupos.some(
+      (g) => (g._sum.gastoCentavos ?? 0) > 0,
+    );
+    const intradayTemGasto = intradayGrupos.some(
+      (g) => (g._sum.gastoCentavos ?? 0) > 0,
+    );
     return {
       itens,
       resumo: {
         ...resumoBase,
         ...calcularDerivadas(resumoBase),
-        fonte: "SYNC",
+        fonte: classificarFonteSync(historicoTemGasto, intradayTemGasto),
       },
     };
   }
@@ -373,24 +531,60 @@ export async function getAdsTimeline(
   const buckets = new Map<string, AdsMetricasBase>();
 
   if (usaSync) {
-    const grupos = await db.amazonAdsMetricaDiaria.groupBy({
-      by: ["data"],
-      where: { data: { gte: periodo.de, lte: periodo.ate } },
-      _sum: {
-        gastoCentavos: true,
-        vendasCentavos: true,
-        impressoes: true,
-        cliques: true,
-        pedidos: true,
-        unidades: true,
-      },
-    });
+    const div = dividirPorFronteiraHoje(periodo);
+    const [historicoGrupos, intradayGrupos] = await Promise.all([
+      div.historico
+        ? db.amazonAdsMetricaDiaria.groupBy({
+            by: ["data"],
+            where: { data: { gte: div.historico.de, lte: div.historico.ate } },
+            _sum: {
+              gastoCentavos: true,
+              vendasCentavos: true,
+              impressoes: true,
+              cliques: true,
+              pedidos: true,
+              unidades: true,
+            },
+          })
+        : Promise.resolve([] as never[]),
+      div.intraday
+        ? db.amazonAdsMetricaHoraria.groupBy({
+            by: ["horaInicio"],
+            where: {
+              horaInicio: { gte: div.intraday.de, lte: div.intraday.ate },
+            },
+            _sum: {
+              gastoCentavos: true,
+              vendasCentavos: true,
+              impressoes: true,
+              cliques: true,
+              pedidos: true,
+              unidades: true,
+            },
+          })
+        : Promise.resolve([] as never[]),
+    ]);
 
-    for (const g of grupos) {
+    for (const g of historicoGrupos) {
       const chave =
         granularidade === "week"
           ? diaIso(inicioSemanaUtc(g.data))
           : diaIso(g.data);
+      const base: AdsMetricasBase = {
+        gastoCentavos: g._sum.gastoCentavos ?? 0,
+        vendasAtribuidasCentavos: g._sum.vendasCentavos ?? 0,
+        impressoes: g._sum.impressoes ?? 0,
+        cliques: g._sum.cliques ?? 0,
+        pedidos: g._sum.pedidos ?? 0,
+        unidades: g._sum.unidades ?? 0,
+      };
+      buckets.set(chave, acumular(buckets.get(chave) ?? METRICAS_BASE_VAZIA, base));
+    }
+    for (const g of intradayGrupos) {
+      const chave =
+        granularidade === "week"
+          ? diaIso(inicioSemanaUtc(g.horaInicio))
+          : diaIso(g.horaInicio);
       const base: AdsMetricasBase = {
         gastoCentavos: g._sum.gastoCentavos ?? 0,
         vendasAtribuidasCentavos: g._sum.vendasCentavos ?? 0,
@@ -458,39 +652,76 @@ export async function getAdsPorSku(
   const mapa = new Map<string, AdsMetricasBase & { asin: string | null }>();
 
   if (usaSync) {
-    const grupos = await db.amazonAdsMetricaDiaria.groupBy({
-      by: ["sku", "asin"],
-      where: {
-        data: { gte: periodo.de, lte: periodo.ate },
-        sku: { not: null },
-      },
-      _sum: {
-        gastoCentavos: true,
-        vendasCentavos: true,
-        impressoes: true,
-        cliques: true,
-        pedidos: true,
-        unidades: true,
-      },
-    });
+    const div = dividirPorFronteiraHoje(periodo);
+    const [historicoGrupos, intradayGrupos] = await Promise.all([
+      div.historico
+        ? db.amazonAdsMetricaDiaria.groupBy({
+            by: ["sku", "asin"],
+            where: {
+              data: { gte: div.historico.de, lte: div.historico.ate },
+              sku: { not: null },
+            },
+            _sum: {
+              gastoCentavos: true,
+              vendasCentavos: true,
+              impressoes: true,
+              cliques: true,
+              pedidos: true,
+              unidades: true,
+            },
+          })
+        : Promise.resolve([] as never[]),
+      div.intraday
+        ? db.amazonAdsMetricaHoraria.groupBy({
+            by: ["sku", "asin"],
+            where: {
+              horaInicio: { gte: div.intraday.de, lte: div.intraday.ate },
+              sku: { not: null },
+            },
+            _sum: {
+              gastoCentavos: true,
+              vendasCentavos: true,
+              impressoes: true,
+              cliques: true,
+              pedidos: true,
+              unidades: true,
+            },
+          })
+        : Promise.resolve([] as never[]),
+    ]);
 
-    for (const g of grupos) {
-      const sku = g.sku;
-      if (!sku) continue;
+    const acumularEm = (
+      sku: string | null,
+      asin: string | null,
+      base: AdsMetricasBase,
+    ) => {
+      if (!sku) return;
       const atual =
-        mapa.get(sku) ?? { ...METRICAS_BASE_VAZIA, asin: g.asin ?? null };
-      const base: AdsMetricasBase = {
+        mapa.get(sku) ?? { ...METRICAS_BASE_VAZIA, asin: asin ?? null };
+      const somado = acumular(atual, base);
+      mapa.set(sku, {
+        ...somado,
+        asin: atual.asin ?? asin ?? null,
+      });
+    };
+    for (const g of historicoGrupos) {
+      acumularEm(g.sku ?? null, g.asin ?? null, {
         gastoCentavos: g._sum.gastoCentavos ?? 0,
         vendasAtribuidasCentavos: g._sum.vendasCentavos ?? 0,
         impressoes: g._sum.impressoes ?? 0,
         cliques: g._sum.cliques ?? 0,
         pedidos: g._sum.pedidos ?? 0,
         unidades: g._sum.unidades ?? 0,
-      };
-      const somado = acumular(atual, base);
-      mapa.set(sku, {
-        ...somado,
-        asin: atual.asin ?? g.asin ?? null,
+      });
+    }
+    for (const g of intradayGrupos) {
+      acumularEm(g.sku ?? null, g.asin ?? null, {
+        gastoCentavos: g._sum.gastoCentavos ?? 0,
+        vendasAtribuidasCentavos: g._sum.vendasCentavos ?? 0,
+        impressoes: g._sum.impressoes ?? 0,
+        cliques: g._sum.cliques ?? 0,
+        pedidos: g._sum.pedidos ?? 0,
+        unidades: g._sum.unidades ?? 0,
       });
     }
   } else {
@@ -570,33 +801,72 @@ export async function getAdsGastoPorProduto(
   let gastoSemProduto = 0;
 
   if (usaSync) {
-    // 1) Linhas com produtoId direto
-    const comProduto = await db.amazonAdsMetricaDiaria.groupBy({
-      by: ["produtoId"],
-      where: {
-        data: { gte: periodo.de, lte: periodo.ate },
-        produtoId: { not: null },
-      },
-      _sum: { gastoCentavos: true },
-    });
-    for (const g of comProduto) {
+    const div = dividirPorFronteiraHoje(periodo);
+
+    // 1) Linhas com produtoId direto (historico + intraday)
+    const [comProdutoHist, comProdutoIntra] = await Promise.all([
+      div.historico
+        ? db.amazonAdsMetricaDiaria.groupBy({
+            by: ["produtoId"],
+            where: {
+              data: { gte: div.historico.de, lte: div.historico.ate },
+              produtoId: { not: null },
+            },
+            _sum: { gastoCentavos: true },
+          })
+        : Promise.resolve([] as never[]),
+      div.intraday
+        ? db.amazonAdsMetricaHoraria.groupBy({
+            by: ["produtoId"],
+            where: {
+              horaInicio: { gte: div.intraday.de, lte: div.intraday.ate },
+              produtoId: { not: null },
+            },
+            _sum: { gastoCentavos: true },
+          })
+        : Promise.resolve([] as never[]),
+    ]);
+    for (const g of [...comProdutoHist, ...comProdutoIntra]) {
       if (!g.produtoId) continue;
-      porProdutoId.set(g.produtoId, g._sum.gastoCentavos ?? 0);
+      porProdutoId.set(
+        g.produtoId,
+        (porProdutoId.get(g.produtoId) ?? 0) + (g._sum.gastoCentavos ?? 0),
+      );
     }
 
-    // 2) Linhas sem produtoId mas com SKU -> tenta resolver via Produto
-    const semProdutoComSku = await db.amazonAdsMetricaDiaria.groupBy({
-      by: ["sku"],
-      where: {
-        data: { gte: periodo.de, lte: periodo.ate },
-        produtoId: null,
-        sku: { not: null },
-      },
-      _sum: { gastoCentavos: true },
-    });
-    const skusOrfaos = semProdutoComSku
-      .map((g) => g.sku)
-      .filter((s): s is string => !!s);
+    // 2) Linhas sem produtoId mas com SKU -> resolve via Produto
+    const [semProdutoComSkuHist, semProdutoComSkuIntra] = await Promise.all([
+      div.historico
+        ? db.amazonAdsMetricaDiaria.groupBy({
+            by: ["sku"],
+            where: {
+              data: { gte: div.historico.de, lte: div.historico.ate },
+              produtoId: null,
+              sku: { not: null },
+            },
+            _sum: { gastoCentavos: true },
+          })
+        : Promise.resolve([] as never[]),
+      div.intraday
+        ? db.amazonAdsMetricaHoraria.groupBy({
+            by: ["sku"],
+            where: {
+              horaInicio: { gte: div.intraday.de, lte: div.intraday.ate },
+              produtoId: null,
+              sku: { not: null },
+            },
+            _sum: { gastoCentavos: true },
+          })
+        : Promise.resolve([] as never[]),
+    ]);
+    const todosOrfaos = [...semProdutoComSkuHist, ...semProdutoComSkuIntra];
+    const skusOrfaos = Array.from(
+      new Set(
+        todosOrfaos
+          .map((g) => g.sku)
+          .filter((s): s is string => !!s),
+      ),
+    );
     const produtosResolvidos = skusOrfaos.length
       ? await db.produto.findMany({
           where: { sku: { in: skusOrfaos } },
@@ -606,7 +876,7 @@ export async function getAdsGastoPorProduto(
     const produtoIdPorSku = new Map(
       produtosResolvidos.map((p) => [p.sku, p.id] as const),
     );
-    for (const g of semProdutoComSku) {
+    for (const g of todosOrfaos) {
       const gasto = g._sum.gastoCentavos ?? 0;
       if (!gasto) continue;
       const pid = g.sku ? produtoIdPorSku.get(g.sku) : undefined;
@@ -617,18 +887,44 @@ export async function getAdsGastoPorProduto(
       }
     }
 
-    // 3) Linhas totalmente orfas (sem sku nem produtoId) -> sem produto
-    const orfas = await db.amazonAdsMetricaDiaria.aggregate({
-      where: {
-        data: { gte: periodo.de, lte: periodo.ate },
-        produtoId: null,
-        sku: null,
-      },
-      _sum: { gastoCentavos: true },
-    });
-    gastoSemProduto += orfas._sum.gastoCentavos ?? 0;
+    // 3) Linhas totalmente orfas -> sem produto
+    const [orfasHist, orfasIntra] = await Promise.all([
+      div.historico
+        ? db.amazonAdsMetricaDiaria.aggregate({
+            where: {
+              data: { gte: div.historico.de, lte: div.historico.ate },
+              produtoId: null,
+              sku: null,
+            },
+            _sum: { gastoCentavos: true },
+          })
+        : Promise.resolve({ _sum: { gastoCentavos: 0 } }),
+      div.intraday
+        ? db.amazonAdsMetricaHoraria.aggregate({
+            where: {
+              horaInicio: { gte: div.intraday.de, lte: div.intraday.ate },
+              produtoId: null,
+              sku: null,
+            },
+            _sum: { gastoCentavos: true },
+          })
+        : Promise.resolve({ _sum: { gastoCentavos: 0 } }),
+    ]);
+    gastoSemProduto += (orfasHist._sum.gastoCentavos ?? 0) + (orfasIntra._sum.gastoCentavos ?? 0);
 
-    return { porProdutoId, gastoSemProduto, fonte: "SYNC" };
+    const historicoTemDado =
+      comProdutoHist.length > 0 ||
+      semProdutoComSkuHist.length > 0 ||
+      (orfasHist._sum.gastoCentavos ?? 0) > 0;
+    const intradayTemDado =
+      comProdutoIntra.length > 0 ||
+      semProdutoComSkuIntra.length > 0 ||
+      (orfasIntra._sum.gastoCentavos ?? 0) > 0;
+    return {
+      porProdutoId,
+      gastoSemProduto,
+      fonte: classificarFonteSync(historicoTemDado, intradayTemDado),
+    };
   }
 
   // Fallback: legacy (AdsCampanha por SKU -> Produto) + manual (AdsGastoManual.produtoId)

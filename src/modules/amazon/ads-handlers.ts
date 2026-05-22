@@ -136,6 +136,25 @@ async function stepAdsReportLifecycle(
 
 // ── Persistencia ──────────────────────────────────────────────────────────
 
+async function purgeHourlyForCoveredDays(
+  rows: ReturnType<typeof parseSpAdvertisedProductRows>,
+): Promise<number> {
+  if (rows.length === 0) return 0;
+  // Daily report representa verdade T-1+. Purgamos hourly nos dias que o report
+  // cobriu (libera espaco e remove redundancia, mantendo "hoje" intacto).
+  const dias = new Set(rows.map((r) => r.data.toISOString().slice(0, 10)));
+  let purgadas = 0;
+  for (const diaIso of dias) {
+    const inicio = new Date(`${diaIso}T00:00:00.000Z`);
+    const fim = new Date(`${diaIso}T23:59:59.999Z`);
+    const res = await db.amazonAdsMetricaHoraria.deleteMany({
+      where: { horaInicio: { gte: inicio, lte: fim } },
+    });
+    purgadas += res.count;
+  }
+  return purgadas;
+}
+
 async function upsertAdsRows(
   rows: ReturnType<typeof parseSpAdvertisedProductRows>,
   syncedAt: Date,
@@ -233,7 +252,8 @@ async function upsertAdsRows(
     }
   }
 
-  return { criadas: novas, atualizadas };
+  const horariasPurgadas = await purgeHourlyForCoveredDays(rows);
+  return { criadas: novas, atualizadas, horariasPurgadas };
 }
 
 // ── Alerta ACOS_ALTO ──────────────────────────────────────────────────────

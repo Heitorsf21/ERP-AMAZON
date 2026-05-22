@@ -342,6 +342,88 @@ export async function downloadAdsReport(
   return [];
 }
 
+// ── Marketing Stream subscriptions ─────────────────────────────────────────
+//
+// Marketing Stream entrega eventos hourly (sp-traffic, sp-conversion, sd-*, sb-*)
+// via SQS standard. Cada subscription cobre UM dataset. O destinationArn aponta
+// para a nossa fila SQS (a mesma do SP-API Notifications, ou outra dedicada).
+//
+// Rate: PUT eh raro (config admin); GET lista varias subscriptions de uma vez.
+
+export interface MarketingStreamSubscription {
+  subscriptionId?: string;
+  dataSetId: string;
+  destinationArn?: string;
+  status?: string; // ACTIVE | ARCHIVED
+  createdDate?: string;
+  notes?: string;
+  clientRequestToken?: string;
+  [key: string]: unknown;
+}
+
+export interface PutMarketingStreamSubscriptionInput {
+  dataSetId: string;
+  destinationArn: string;
+  notes?: string;
+  clientRequestToken?: string;
+}
+
+export async function listMarketingStreamSubscriptions(
+  creds: AdsAPICredentials,
+): Promise<MarketingStreamSubscription[]> {
+  const payload = await adsApiRequest<{ subscriptions?: MarketingStreamSubscription[] } | MarketingStreamSubscription[]>(
+    creds,
+    "/streams/subscriptions",
+    {
+      method: "GET",
+      operation: AmazonSpApiOperation.ADS_STREAM_SUBSCRIPTIONS_LIST,
+      accept: "application/vnd.MarketingStreamSubscriptions.v1+json",
+    },
+  );
+  if (Array.isArray(payload)) return payload;
+  return payload?.subscriptions ?? [];
+}
+
+export async function putMarketingStreamSubscription(
+  creds: AdsAPICredentials,
+  input: PutMarketingStreamSubscriptionInput,
+): Promise<MarketingStreamSubscription> {
+  const body: Record<string, unknown> = {
+    destinationArn: input.destinationArn,
+  };
+  if (input.notes) body.notes = input.notes;
+  if (input.clientRequestToken) body.clientRequestToken = input.clientRequestToken;
+
+  return adsApiRequest<MarketingStreamSubscription>(
+    creds,
+    `/streams/subscriptions/${encodeURIComponent(input.dataSetId)}`,
+    {
+      method: "PUT",
+      body,
+      operation: AmazonSpApiOperation.ADS_STREAM_SUBSCRIPTIONS_PUT,
+      contentType: "application/vnd.MarketingStreamSubscriptions.v1+json",
+      accept: "application/vnd.MarketingStreamSubscriptions.v1+json",
+    },
+  );
+}
+
+export async function archiveMarketingStreamSubscription(
+  creds: AdsAPICredentials,
+  subscriptionId: string,
+): Promise<MarketingStreamSubscription> {
+  return adsApiRequest<MarketingStreamSubscription>(
+    creds,
+    `/streams/subscriptions/${encodeURIComponent(subscriptionId)}`,
+    {
+      method: "PUT",
+      body: { status: "ARCHIVED" },
+      operation: AmazonSpApiOperation.ADS_STREAM_SUBSCRIPTIONS_PUT,
+      contentType: "application/vnd.MarketingStreamSubscriptions.v1+json",
+      accept: "application/vnd.MarketingStreamSubscriptions.v1+json",
+    },
+  );
+}
+
 // ── Campaigns (Sponsored Products v3) ──────────────────────────────────────
 
 export async function listSponsoredProductsCampaigns(

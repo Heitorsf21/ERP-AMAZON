@@ -4,6 +4,7 @@ import {
   extractOrderIdsFromNotification,
   parseSqsNotificationBody,
 } from "@/lib/amazon-sqs";
+import { getMarketingStreamDataset } from "@/modules/amazon/parsers/marketing-stream-events";
 
 describe("amazon-sqs", () => {
   it("parseia notificacao SP-API direta", () => {
@@ -75,6 +76,34 @@ describe("amazon-sqs", () => {
       reportType: "GET_V2_SETTLEMENT_REPORT_DATA_FLAT_FILE_V2",
       reportId: "1234567890",
     });
+  });
+
+  it("detecta mensagem Marketing Stream via payload.datasetId", () => {
+    const notification = parseSqsNotificationBody(
+      JSON.stringify({
+        notificationVersion: "1.0",
+        notificationType: "marketing-stream:sp-traffic",
+        payload: {
+          datasetId: "sp-traffic",
+          timeWindowStart: "2026-05-21T14:00:00.000Z",
+          campaignId: "C1",
+          profileId: "1",
+          cost: 1_000_000,
+        },
+      }),
+    );
+
+    expect(getMarketingStreamDataset(notification)).toBe("sp-traffic");
+  });
+
+  it("nao confunde notificacao SP-API normal com Marketing Stream", () => {
+    const notification = parseSqsNotificationBody(
+      JSON.stringify({
+        NotificationType: "ORDER_CHANGE",
+        Payload: { AmazonOrderId: "1" },
+      }),
+    );
+    expect(getMarketingStreamDataset(notification)).toBeNull();
   });
 
   it("extrai reportType de reports nao-settlement para o dispatcher ignorar", () => {

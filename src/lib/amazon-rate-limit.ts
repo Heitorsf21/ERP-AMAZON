@@ -21,6 +21,8 @@ export const AmazonSpApiOperation = {
   ADS_REPORTS_DOWNLOAD: "ADS_REPORTS_DOWNLOAD",
   ADS_PROFILES_GET: "ADS_PROFILES_GET",
   ADS_CAMPAIGNS_LIST: "ADS_CAMPAIGNS_LIST",
+  ADS_STREAM_SUBSCRIPTIONS_LIST: "ADS_STREAM_SUBSCRIPTIONS_LIST",
+  ADS_STREAM_SUBSCRIPTIONS_PUT: "ADS_STREAM_SUBSCRIPTIONS_PUT",
 } as const;
 
 export type AmazonSpApiOperation =
@@ -134,6 +136,16 @@ const OPERATION_LIMITS: Record<AmazonSpApiOperation, OperationLimit> = {
   [AmazonSpApiOperation.ADS_CAMPAIGNS_LIST]: {
     rateLimitPerSecond: 5,
     burst: 10,
+  },
+  // GET /streams/subscriptions — listagem de subscriptions Marketing Stream (admin).
+  [AmazonSpApiOperation.ADS_STREAM_SUBSCRIPTIONS_LIST]: {
+    rateLimitPerSecond: 1,
+    burst: 5,
+  },
+  // PUT /streams/subscriptions/{dataSetId} — criar/archive subscription (admin raro).
+  [AmazonSpApiOperation.ADS_STREAM_SUBSCRIPTIONS_PUT]: {
+    rateLimitPerSecond: 0.2,
+    burst: 5,
   },
 };
 

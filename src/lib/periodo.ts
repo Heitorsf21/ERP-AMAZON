@@ -98,6 +98,41 @@ export function formatarDataInputPeriodo(date: Date): string {
   return format(toZonedTime(date, TIMEZONE), "yyyy-MM-dd");
 }
 
+export type DivisaoPeriodoHoje = {
+  historico: IntervaloPeriodo | null;
+  intraday: IntervaloPeriodo | null;
+  fronteira: Date;
+};
+
+/**
+ * Divide um periodo na fronteira "inicio de hoje" (timezone America/Sao_Paulo).
+ *
+ * Uso: Marketing Stream serve dados intraday (hoje); daily report serve dados
+ * historicos (ontem ou anterior). Essa funcao separa um periodo arbitrario nas
+ * duas faixas para que cada fonte responda apenas pelo que e seu.
+ */
+export function dividirPorFronteiraHoje(
+  periodo: IntervaloPeriodo,
+  agora: Date = new Date(),
+): DivisaoPeriodoHoje {
+  const hojeInicio = fromZonedTime(
+    startOfDay(toZonedTime(agora, TIMEZONE)),
+    TIMEZONE,
+  );
+
+  if (periodo.ate < hojeInicio) {
+    return { historico: { ...periodo }, intraday: null, fronteira: hojeInicio };
+  }
+  if (periodo.de >= hojeInicio) {
+    return { historico: null, intraday: { ...periodo }, fronteira: hojeInicio };
+  }
+  return {
+    historico: { de: periodo.de, ate: new Date(hojeInicio.getTime() - 1) },
+    intraday: { de: hojeInicio, ate: periodo.ate },
+    fronteira: hojeInicio,
+  };
+}
+
 export function formatarDiaPeriodo(date: Date): string {
   return format(toZonedTime(date, TIMEZONE), "yyyy-MM-dd");
 }

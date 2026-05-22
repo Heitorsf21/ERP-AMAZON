@@ -14,7 +14,13 @@ import {
 import { createHash } from "node:crypto";
 import { db } from "@/lib/db";
 import { enqueueAmazonSyncJob } from "@/modules/amazon/jobs";
+import {
+  getMarketingStreamDataset,
+  type MarketingStreamDataset,
+} from "@/modules/amazon/parsers/marketing-stream-events";
 import { TipoAmazonSyncJob } from "@/modules/shared/domain";
+
+const STREAM_INGEST_CHUNK = 500;
 
 export type SqsConfig = {
   queueUrl: string;
@@ -157,7 +163,10 @@ export async function recordAndDispatchSqsMessage(
   }
 
   const notification = parseSqsNotificationBody(message.Body);
-  const notificationType = getNotificationType(notification);
+  const streamDataset = getMarketingStreamDataset(notification);
+  const notificationType = streamDataset
+    ? `MARKETING_STREAM:${streamDataset}`
+    : getNotificationType(notification);
   if (!notificationType) {
     throw new Error("Notificacao SQS sem NotificationType.");
   }
@@ -206,7 +215,13 @@ export async function recordAndDispatchSqsMessage(
   });
 
   try {
-    const jobsCriadosIds = await dispatchNotification(notification, notificationId);
+    const jobsCriadosIds = streamDataset
+      ? await dispatchMarketingStreamNotification(
+          notification,
+          notificationId,
+          streamDataset,
+        )
+      : await dispatchNotification(notification, notificationId);
     await db.amazonNotification.update({
       where: { notificationId },
       data: {
@@ -295,6 +310,52 @@ export async function dispatchNotification(
     default:
       return [];
   }
+}
+
+export async function dispatchMarketingStreamNotification(
+  notif: AmazonSqsNotification,
+  notificationId: string,
+  dataset: MarketingStreamDataset,
+): Promise<string[]> {
+  const records = extractMarketingStreamRecords(notif);
+  const chunks: unknown[][] = [];
+  if (records.length === 0) {
+    chunks.push([]);
+  } else {
+    for (let i = 0; i < records.length; i += STREAM_INGEST_CHUNK) {
+      chunks.push(records.slice(i, i + STREAM_INGEST_CHUNK));
+    }
+  }
+
+  const jobIds: string[] = [];
+  for (let i = 0; i < chunks.length; i++) {
+    const job = await enqueueAmazonSyncJob(
+      TipoAmazonSyncJob.AMAZON_ADS_STREAM_INGEST,
+      {
+        dataset,
+        records: chunks[i],
+        notificationId,
+      },
+      {
+        dedupeKey: `sqs:MARKETING_STREAM:${dataset}:${notificationId}:${i}`,
+        priority: 30,
+      },
+    );
+    jobIds.push(job.id);
+  }
+  return jobIds;
+}
+
+function extractMarketingStreamRecords(notif: AmazonSqsNotification): unknown[] {
+  const payload = getPayload(notif);
+  if (Array.isArray(payload)) return payload;
+  if (payload && typeof payload === "object") {
+    const obj = payload as Record<string, unknown>;
+    if (Array.isArray(obj.records)) return obj.records;
+    if (Array.isArray(obj.Records)) return obj.Records;
+    return [payload];
+  }
+  return [notif as unknown];
 }
 
 export function parseSqsNotificationBody(body: string): AmazonSqsNotification {

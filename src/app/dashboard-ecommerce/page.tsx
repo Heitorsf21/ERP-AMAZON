@@ -113,6 +113,8 @@ type Kpis = {
   ticketMedioCentavos: number;
   roiPercentual: number | null;
   valorAdsCentavos: number;
+  valorAdsFonte?: string;
+  valorAdsParcial?: boolean;
   tacosPercentual: number | null;
   lucroPosAdsCentavos: number | null;
   mpaPercentual: number | null;
@@ -631,6 +633,13 @@ function DashboardEcommerceContent() {
       categoria: "ads",
       size: "compact",
       delta: { valor: d?.valorAds ?? null, tipo: "percent", inverso: true },
+      badge: kpis?.valorAdsParcial
+        ? {
+            texto: "Parcial",
+            classe:
+              "bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-950 dark:text-amber-200",
+          }
+        : null,
     },
     {
       titulo: "TACOS",

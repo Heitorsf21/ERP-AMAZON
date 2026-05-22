@@ -280,6 +280,9 @@ export const dashboardEcommerceService = {
       trafficRevenueOrderedCentavos: traffic.revenueOrderedCentavos,
       trafficConversionPercent: percentual(traffic.unitsOrdered, traffic.sessions),
       trafficBuyBoxPercent: traffic.buyBoxPercent,
+      valorAdsFonte: ads.fonte,
+      valorAdsParcial:
+        ads.fonte === "STREAM" || ads.fonte === "MIXED_STREAM_SYNC",
       custoTotalCentavos: agregado.custoCompleto
         ? agregado.custoTotalCentavos
         : null,
@@ -304,11 +307,15 @@ export const dashboardEcommerceService = {
       porDia.set(dia, [...(porDia.get(dia) ?? []), venda]);
     }
 
-    // Quando ha sync de Ads, usamos o gasto REAL por dia (vindo de
-    // AmazonAdsMetricaDiaria). Caso contrario, rateamos proporcionalmente
-    // ao faturamento — granularidade legacy nao e diaria confiavel.
+    // Quando ha sync de Ads (daily ou intraday stream), usamos o gasto REAL
+    // por dia. Caso contrario, rateamos proporcionalmente ao faturamento —
+    // granularidade legacy nao e diaria confiavel.
+    const temDadoReal =
+      ads.fonte === "SYNC" ||
+      ads.fonte === "STREAM" ||
+      ads.fonte === "MIXED_STREAM_SYNC";
     const adsRealPorDia = new Map<string, number>();
-    if (ads.fonte === "SYNC") {
+    if (temDadoReal) {
       const pontos = await getAdsTimeline(periodo, "day");
       for (const p of pontos) adsRealPorDia.set(p.data, p.gastoCentavos);
     }
@@ -318,7 +325,7 @@ export const dashboardEcommerceService = {
       const item = agregarVendas(vendasDoDia);
       const lucroBrutoCentavos = calcularLucroBruto(item);
       const adsDoDia =
-        ads.fonte === "SYNC"
+        temDadoReal
           ? (adsRealPorDia.get(dia) ?? 0)
           : agregado.faturamentoCentavos > 0
             ? Math.round(
