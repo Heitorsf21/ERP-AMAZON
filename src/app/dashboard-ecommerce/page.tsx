@@ -50,7 +50,7 @@ import {
 import { ErrorBoundary } from "@/components/ui/error-boundary";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { MarginBadge } from "@/components/ui/margin-badge";
+import { MarginBadge, MPA_THRESHOLDS } from "@/components/ui/margin-badge";
 import { PageHeader } from "@/components/ui/page-header";
 import {
   Popover,
@@ -1069,6 +1069,7 @@ function DashboardEcommerceContent() {
                   <TableHead className="text-center">Margem</TableHead>
                   <TableHead className="text-right">Custo ADS</TableHead>
                   <TableHead className="text-right">Lucro pos Ads</TableHead>
+                  <TableHead className="text-center">MPA</TableHead>
                   <TableHead className="w-[60px]" />
                 </TableRow>
               </TableHeader>
@@ -1076,7 +1077,7 @@ function DashboardEcommerceContent() {
                 {loadingTop ? (
                   <TableRow>
                     <TableCell
-                      colSpan={11}
+                      colSpan={12}
                       className="py-10 text-center text-muted-foreground"
                     >
                       Carregando produtos...
@@ -1085,7 +1086,7 @@ function DashboardEcommerceContent() {
                 ) : produtosOrdenados.length === 0 ? (
                   <TableRow>
                     <TableCell
-                      colSpan={11}
+                      colSpan={12}
                       className="py-10 text-center text-muted-foreground"
                     >
                       Sem vendas no periodo.
@@ -1163,6 +1164,12 @@ function DashboardEcommerceContent() {
                           ) : (
                             formatBRL(produto.lucroPosAdsCentavos)
                           )}
+                        </TableCell>
+                        <TableCell className="text-center">
+                          <MarginBadge
+                            value={produto.mpaPercentual}
+                            thresholds={MPA_THRESHOLDS}
+                          />
                         </TableCell>
                         <TableCell>
                           <Button

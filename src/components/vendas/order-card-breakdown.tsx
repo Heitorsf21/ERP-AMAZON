@@ -8,6 +8,7 @@ import {
   FileText,
   Info,
   Loader2,
+  Megaphone,
   Package,
   Percent,
   ShoppingCart,
@@ -22,6 +23,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { MarginBadge, MPA_THRESHOLDS } from "@/components/ui/margin-badge";
 import { formatBRL } from "@/lib/money";
 import { cn } from "@/lib/utils";
 import { DialogCustoEventual } from "./dialog-custo-eventual";
@@ -77,6 +79,9 @@ export function OrderCardBreakdown({
   }
 
   const lossy = breakdown.lucroCentavos < 0;
+  const mpaPercent = breakdown.totalItensCentavos > 0
+    ? breakdown.mpaBps / 100
+    : null;
 
   return (
     <aside className="rounded-lg border bg-muted/30 p-4">
@@ -159,6 +164,15 @@ export function OrderCardBreakdown({
           value={breakdown.custoProdutoCentavos}
           variant="neg"
         />
+        {breakdown.custoAdsCentavos > 0 && (
+          <Line
+            icon={Megaphone}
+            label="Custo Ads"
+            sub="rateio Amazon Ads do SKU no dia"
+            value={breakdown.custoAdsCentavos}
+            variant="neg"
+          />
+        )}
       </ul>
 
       <CustosEventuaisLista
@@ -175,6 +189,38 @@ export function OrderCardBreakdown({
         value={breakdown.lucroCentavos}
         loss={lossy}
       />
+
+      {breakdown.custoAdsCentavos > 0 && (
+        <div className="mt-2 flex items-center gap-2.5 rounded-md border border-dashed border-border/60 bg-background/40 px-2.5 py-2">
+          <span className="grid h-6 w-6 shrink-0 place-items-center rounded-md bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400">
+            <Megaphone className="h-3 w-3" />
+          </span>
+          <span className="flex-1 text-xs">
+            <span className="block font-medium text-foreground">
+              Lucro pós Ads
+            </span>
+            <span className="block text-[10px] text-muted-foreground">
+              após rateio de publicidade
+            </span>
+          </span>
+          <span
+            className={cn(
+              "shrink-0 text-sm font-bold tabular-nums",
+              breakdown.lucroPosAdsCentavos >= 0
+                ? "text-emerald-600 dark:text-emerald-400"
+                : "text-red-600 dark:text-red-400",
+            )}
+          >
+            {formatBRL(breakdown.lucroPosAdsCentavos)}
+          </span>
+          <MarginBadge
+            value={mpaPercent}
+            thresholds={MPA_THRESHOLDS}
+            prefix="MPA"
+            className="shrink-0"
+          />
+        </div>
+      )}
     </aside>
   );
 }

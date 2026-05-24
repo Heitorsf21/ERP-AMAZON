@@ -32,6 +32,7 @@
  */
 import { db } from "@/lib/db";
 import { logger } from "@/lib/logger";
+import { formatarDiaPeriodo } from "@/lib/periodo";
 import { getConfigImpostoSimples } from "@/modules/configuracao/imposto-simples";
 import {
   calcularFeesLocal,
@@ -88,6 +89,16 @@ export type BreakdownVenda = {
   custosEventuais: CustoEventualLista[];
   lucroCentavos: number;
   margemBps: number;
+  /**
+   * Custo de Ads atribuído à venda específica via rateio sobre os "attributed
+   * sales" do SKU no mesmo dia BRT em `AmazonAdsMetricaDiaria`. Zero quando
+   * não há sync de Ads cobrindo o dia/SKU. Não considera ads gerais sem SKU.
+   */
+  custoAdsCentavos: number;
+  /** lucroCentavos − custoAdsCentavos. */
+  lucroPosAdsCentavos: number;
+  /** Margem pós-Ads (lucroPosAds / totalItens) em basis points (10000 = 100%). */
+  mpaBps: number;
   origem: BreakdownOrigem;
   categoriaTaxaSlug: string | null;
   categoriaTaxaLabel: string | null;
@@ -150,44 +161,72 @@ export async function montarBreakdownVendas(
   ];
   const vendaIds = vendas.map((v) => v.id);
 
-  const [produtos, transactions, custosEventuaisRows, feeCfg, impostoCfg] =
-    await Promise.all([
-      db.produto.findMany({
-        where: { sku: { in: skusDistintos } },
-        select: {
-          id: true,
-          sku: true,
-          asin: true,
-          amazonImagemUrl: true,
-          imagemUrl: true,
-          amazonCategoriaFee: true,
-          custoUnitario: true,
-        },
-      }),
-      orderIdsDistintos.length > 0
-        ? db.amazonFinanceTransaction.findMany({
-            where: { amazonOrderId: { in: orderIdsDistintos } },
-            select: {
-              amazonOrderId: true,
-              transactionType: true,
-              payload: true,
-            },
-          })
-        : Promise.resolve([]),
-      db.vendaCustoEventual.findMany({
-        where: { vendaAmazonId: { in: vendaIds } },
-        orderBy: { criadoEm: "desc" },
-        select: {
-          id: true,
-          vendaAmazonId: true,
-          descricao: true,
-          valorCentavos: true,
-          criadoEm: true,
-        },
-      }),
-      loadFeeEstimatorConfig(),
-      getConfigImpostoSimples(),
-    ]);
+  // Limites do range de dias BRT cobertos pelas vendas — usado para a query
+  // de AmazonAdsMetricaDiaria (rateio de ads por venda específica).
+  const datasVendas = vendas.map((v) => v.dataVenda.getTime());
+  const adsRangeGte = new Date(
+    `${formatarDiaPeriodo(new Date(Math.min(...datasVendas)))}T00:00:00.000Z`,
+  );
+  const adsRangeLte = new Date(
+    `${formatarDiaPeriodo(new Date(Math.max(...datasVendas)))}T23:59:59.999Z`,
+  );
+
+  const [
+    produtos,
+    transactions,
+    custosEventuaisRows,
+    adsMetricasDiarias,
+    feeCfg,
+    impostoCfg,
+  ] = await Promise.all([
+    db.produto.findMany({
+      where: { sku: { in: skusDistintos } },
+      select: {
+        id: true,
+        sku: true,
+        asin: true,
+        amazonImagemUrl: true,
+        imagemUrl: true,
+        amazonCategoriaFee: true,
+        custoUnitario: true,
+      },
+    }),
+    orderIdsDistintos.length > 0
+      ? db.amazonFinanceTransaction.findMany({
+          where: { amazonOrderId: { in: orderIdsDistintos } },
+          select: {
+            amazonOrderId: true,
+            transactionType: true,
+            payload: true,
+          },
+        })
+      : Promise.resolve([]),
+    db.vendaCustoEventual.findMany({
+      where: { vendaAmazonId: { in: vendaIds } },
+      orderBy: { criadoEm: "desc" },
+      select: {
+        id: true,
+        vendaAmazonId: true,
+        descricao: true,
+        valorCentavos: true,
+        criadoEm: true,
+      },
+    }),
+    db.amazonAdsMetricaDiaria.findMany({
+      where: {
+        sku: { in: skusDistintos },
+        data: { gte: adsRangeGte, lte: adsRangeLte },
+      },
+      select: {
+        data: true,
+        sku: true,
+        gastoCentavos: true,
+        vendasCentavos: true,
+      },
+    }),
+    loadFeeEstimatorConfig(),
+    getConfigImpostoSimples(),
+  ]);
 
   for (const p of produtos) {
     produtoPorSku.set(p.sku, {
@@ -242,6 +281,38 @@ export async function montarBreakdownVendas(
     custosEventuaisPorVenda.set(c.vendaAmazonId, arr);
   }
 
+  // Map<"sku|yyyy-MM-dd", { gasto, vendasAtribuidas }> — soma todas as
+  // campanhas/adGroups daquele SKU no mesmo dia BRT.
+  const adsPorSkuDia = new Map<
+    string,
+    { gastoCentavos: number; vendasAtribuidasCentavos: number }
+  >();
+  for (const row of adsMetricasDiarias) {
+    if (!row.sku) continue;
+    const chave = `${row.sku}|${formatarDiaPeriodo(row.data)}`;
+    const atual = adsPorSkuDia.get(chave);
+    if (atual) {
+      atual.gastoCentavos += row.gastoCentavos;
+      atual.vendasAtribuidasCentavos += row.vendasCentavos;
+    } else {
+      adsPorSkuDia.set(chave, {
+        gastoCentavos: row.gastoCentavos,
+        vendasAtribuidasCentavos: row.vendasCentavos,
+      });
+    }
+  }
+
+  // Soma de faturamento por (sku, dia) — usado como fallback de rateio quando
+  // o sync de Ads existe mas a Amazon atribuiu R$0 de vendas naquele dia.
+  const faturamentoPorSkuDia = new Map<string, number>();
+  for (const venda of vendas) {
+    const chave = `${venda.sku}|${formatarDiaPeriodo(venda.dataVenda)}`;
+    faturamentoPorSkuDia.set(
+      chave,
+      (faturamentoPorSkuDia.get(chave) ?? 0) + valorBrutoDaVenda(venda),
+    );
+  }
+
   // ── Montagem por venda ──────────────────────────────────────────────────
   for (const venda of vendas) {
     const breakdown = montarUma(venda, {
@@ -249,6 +320,8 @@ export async function montarBreakdownVendas(
       txByOrderId,
       custoMap,
       custosEventuaisPorVenda,
+      adsPorSkuDia,
+      faturamentoPorSkuDia,
       feeCfg,
       impostoCfg,
     });
@@ -263,6 +336,7 @@ export async function montarBreakdownVendas(
       skusUnicos: skusDistintos.length,
       transacoesCarregadas: transactions.length,
       custosEventuais: custosEventuaisRows.length,
+      adsMetricasDiarias: adsMetricasDiarias.length,
     },
     "vendas breakdown built",
   );
@@ -278,6 +352,11 @@ type ContextoMontagem = {
   >;
   custoMap: Map<string, number>;
   custosEventuaisPorVenda: Map<string, CustoEventualLista[]>;
+  adsPorSkuDia: Map<
+    string,
+    { gastoCentavos: number; vendasAtribuidasCentavos: number }
+  >;
+  faturamentoPorSkuDia: Map<string, number>;
   feeCfg: FeeEstimateConfig;
   impostoCfg: { aliquotaBps: number; ativo: boolean };
 };
@@ -392,6 +471,19 @@ function montarUma(
       ? Math.round((lucroCentavos / totalItensCentavos) * 10000)
       : 0;
 
+  // Ads atribuído à venda específica (rateio sobre attributed sales 7d do
+  // SKU no mesmo dia BRT). Só vale quando há sync de Ads — não estima.
+  const custoAdsCentavos =
+    origem === "no_data"
+      ? 0
+      : ratearAdsParaVenda(venda, totalItensCentavos, ctx);
+
+  const lucroPosAdsCentavos = lucroCentavos - custoAdsCentavos;
+  const mpaBps =
+    totalItensCentavos > 0
+      ? Math.round((lucroPosAdsCentavos / totalItensCentavos) * 10000)
+      : 0;
+
   return {
     totalItensCentavos: origem === "no_data" ? 0 : totalItensCentavos,
     freteRecebidoCentavos,
@@ -407,10 +499,49 @@ function montarUma(
     custosEventuais,
     lucroCentavos,
     margemBps,
+    custoAdsCentavos,
+    lucroPosAdsCentavos,
+    mpaBps,
     origem,
     categoriaTaxaSlug: categoriaSlug,
     categoriaTaxaLabel: categoriaLabel,
   };
+}
+
+/**
+ * Rateia o gasto de Ads do SKU/dia para esta venda específica.
+ *
+ * Estratégia: usa o `vendasCentavos` (attributed sales 7d da Amazon Ads) do
+ * mesmo SKU+dia BRT como denominador — é a melhor proxy disponível para
+ * "quanto desta venda veio de tráfego pago". Fallback: rateio proporcional
+ * ao faturamento das vendas do SKU naquele dia (quando a Amazon atribuiu R$0
+ * mas houve gasto registrado).
+ *
+ * Retorna sempre cap superior ao gasto total do SKU/dia para evitar que
+ * múltiplas vendas pequenas com vendasAtribuidas inflado estourem o gasto.
+ */
+function ratearAdsParaVenda(
+  venda: VendaParaBreakdown,
+  totalItensCentavos: number,
+  ctx: ContextoMontagem,
+): number {
+  if (totalItensCentavos <= 0) return 0;
+  const chave = `${venda.sku}|${formatarDiaPeriodo(venda.dataVenda)}`;
+  const ads = ctx.adsPorSkuDia.get(chave);
+  if (!ads || ads.gastoCentavos <= 0) return 0;
+
+  const denominador =
+    ads.vendasAtribuidasCentavos > 0
+      ? ads.vendasAtribuidasCentavos
+      : (ctx.faturamentoPorSkuDia.get(chave) ?? 0);
+  if (denominador <= 0) return 0;
+
+  const rateio = Math.round(
+    ads.gastoCentavos * (totalItensCentavos / denominador),
+  );
+  // Cap: a soma do rateio de todas as vendas do SKU/dia nunca deve exceder
+  // o gasto real — limitar individualmente é defesa em profundidade.
+  return Math.min(rateio, ads.gastoCentavos);
 }
 
 /** Helper exportado também para os testes — useful para previews tipo SSR. */
@@ -430,6 +561,9 @@ export function breakdownVazio(): BreakdownVenda {
     custosEventuais: [],
     lucroCentavos: 0,
     margemBps: 0,
+    custoAdsCentavos: 0,
+    lucroPosAdsCentavos: 0,
+    mpaBps: 0,
     origem: "no_data",
     categoriaTaxaSlug: null,
     categoriaTaxaLabel: null,

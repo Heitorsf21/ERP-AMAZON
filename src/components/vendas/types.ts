@@ -29,6 +29,9 @@ export type BreakdownVendaPayload = {
   custosEventuais: CustoEventualPayload[];
   lucroCentavos: number;
   margemBps: number;
+  custoAdsCentavos: number;
+  lucroPosAdsCentavos: number;
+  mpaBps: number;
   origem: BreakdownOrigem;
   categoriaTaxaSlug: string | null;
   categoriaTaxaLabel: string | null;
