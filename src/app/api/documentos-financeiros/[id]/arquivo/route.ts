@@ -3,6 +3,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { db } from "@/lib/db";
 import { logger } from "@/lib/logger";
+import { requireSession } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -10,6 +11,7 @@ type Params = { params: Promise<{ id: string }> };
 
 export async function GET(req: Request, { params }: Params) {
   try {
+    await requireSession();
     const { id } = await params;
     const url = new URL(req.url);
     const download = url.searchParams.get("download") === "1";
@@ -77,6 +79,7 @@ export async function GET(req: Request, { params }: Params) {
       },
     });
   } catch (err) {
+    if (err instanceof Response) return err as NextResponse;
     logger.error({ err }, "falha ao servir arquivo de documento");
     return NextResponse.json(
       { error: "falha ao servir arquivo" },

@@ -6,6 +6,11 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { PasswordInput } from "@/components/ui/password-input";
+import {
+  PASSWORD_POLICY_MIN_LENGTH,
+  validatePasswordClient,
+} from "@/lib/password-policy";
 
 export function AlterarSenhaForm() {
   const [senhaAtual, setSenhaAtual] = useState("");
@@ -19,8 +24,9 @@ export function AlterarSenhaForm() {
     if (enviando) return;
     setErro(null);
 
-    if (senhaNova.length < 8) {
-      setErro("A senha nova deve ter ao menos 8 caracteres.");
+    const policyErr = validatePasswordClient(senhaNova);
+    if (policyErr) {
+      setErro(policyErr);
       return;
     }
     if (senhaNova !== confirmacao) {
@@ -75,28 +81,21 @@ export function AlterarSenhaForm() {
       <div className="grid gap-3 sm:grid-cols-2">
         <div className="space-y-1.5">
           <Label htmlFor="senhaNova">Nova senha</Label>
-          <Input
+          <PasswordInput
             id="senhaNova"
-            type="password"
-            autoComplete="new-password"
             value={senhaNova}
-            onChange={(e) => setSenhaNova(e.target.value)}
-            required
-            minLength={8}
+            onChange={setSenhaNova}
             disabled={enviando}
           />
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="confirmacao">Confirmar nova senha</Label>
-          <Input
+          <PasswordInput
             id="confirmacao"
-            type="password"
-            autoComplete="new-password"
             value={confirmacao}
-            onChange={(e) => setConfirmacao(e.target.value)}
-            required
-            minLength={8}
+            onChange={setConfirmacao}
             disabled={enviando}
+            showRequirements={false}
           />
         </div>
       </div>
@@ -105,7 +104,10 @@ export function AlterarSenhaForm() {
           {erro}
         </p>
       )}
-      <Button type="submit" disabled={enviando}>
+      <Button
+        type="submit"
+        disabled={enviando || senhaNova.length < PASSWORD_POLICY_MIN_LENGTH}
+      >
         {enviando ? (
           <>
             <Loader2 className="mr-2 h-4 w-4 animate-spin" />

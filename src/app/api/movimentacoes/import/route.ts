@@ -1,6 +1,7 @@
 import type { NextRequest } from "next/server";
 import { z } from "zod";
-import { handle, ok } from "@/lib/api";
+import { handleAuth, ok } from "@/lib/api";
+import { UsuarioRole } from "@/lib/auth";
 import { financeiroService } from "@/modules/financeiro/service";
 import { linhaImportacaoSchema } from "@/modules/financeiro/schemas";
 import { FormatoImportacao } from "@/modules/shared/domain";
@@ -13,12 +14,15 @@ const payloadSchema = z.object({
   linhas: z.array(linhaImportacaoSchema).min(1, "nenhuma linha para importar"),
 });
 
-export const POST = handle(async (req: NextRequest) => {
-  const body = await req.json();
-  const { nomeArquivo, formato, linhas } = payloadSchema.parse(body);
-  const resultado = await financeiroService.importarLote(linhas, {
-    nomeArquivo,
-    formato,
-  });
-  return ok(resultado, { status: 201 });
-});
+export const POST = handleAuth(
+  [UsuarioRole.FINANCEIRO],
+  async (req: NextRequest) => {
+    const body = await req.json();
+    const { nomeArquivo, formato, linhas } = payloadSchema.parse(body);
+    const resultado = await financeiroService.importarLote(linhas, {
+      nomeArquivo,
+      formato,
+    });
+    return ok(resultado, { status: 201 });
+  },
+);

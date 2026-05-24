@@ -2,12 +2,16 @@
 // Credentials stored in ConfiguracaoSistema to be configurable from the UI.
 
 import { google } from "googleapis";
+import { randomBytes } from "node:crypto";
 import { db } from "@/lib/db";
 import {
   decryptConfigValue,
   encryptConfigValue,
   isSecretConfigKey,
 } from "@/lib/crypto";
+
+const OAUTH_STATE_KEY = "gmail_oauth_state";
+const OAUTH_STATE_TTL_MS = 10 * 60_000; // 10 minutos
 
 // ─── Config helpers ──────────────────────────────────────────────────────────
 
@@ -46,11 +50,50 @@ async function makeOAuth2() {
 
 export async function gerarUrlAutorizacao(): Promise<string> {
   const oauth2 = await makeOAuth2();
+
+  // CSRF: state aleatorio guardado server-side com expiracao, validado no callback.
+  const state = randomBytes(32).toString("hex");
+  await setCfg(
+    OAUTH_STATE_KEY,
+    JSON.stringify({ state, exp: Date.now() + OAUTH_STATE_TTL_MS }),
+  );
+
   return oauth2.generateAuthUrl({
     access_type: "offline",
     scope: ["https://www.googleapis.com/auth/gmail.readonly"],
     prompt: "consent",
+    state,
   });
+}
+
+/**
+ * Valida o `state` recebido no callback OAuth contra o que foi gerado em
+ * `gerarUrlAutorizacao`. Consome o state de uso unico (timingSafe + remocao).
+ */
+export async function consumirEstadoOAuth(state: string | null | undefined): Promise<boolean> {
+  if (!state || typeof state !== "string") return false;
+  const raw = await cfg(OAUTH_STATE_KEY);
+  if (!raw) return false;
+
+  let stored: { state?: string; exp?: number };
+  try {
+    stored = JSON.parse(raw) as { state?: string; exp?: number };
+  } catch {
+    return false;
+  }
+
+  // Consome (uso unico) — ignora a expiracao se ja vencido.
+  await db.configuracaoSistema.deleteMany({ where: { chave: OAUTH_STATE_KEY } });
+
+  if (!stored.state || typeof stored.exp !== "number") return false;
+  if (stored.exp < Date.now()) return false;
+
+  // Comparacao constant-time.
+  const a = Buffer.from(state);
+  const b = Buffer.from(stored.state);
+  if (a.length !== b.length) return false;
+  const { timingSafeEqual } = await import("node:crypto");
+  return timingSafeEqual(a, b);
 }
 
 export async function trocarCodigo(code: string): Promise<void> {

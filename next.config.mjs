@@ -9,6 +9,15 @@ const nextConfig = {
   typescript: {
     ignoreBuildErrors: true,
   },
+  // Allowlist explicita para imagens externas servidas via next/image.
+  // Sem esta lista o Next bloqueia hosts externos em build/runtime. Manter
+  // sincronizada com `img-src` da CSP em src/proxy.ts.
+  images: {
+    remotePatterns: [
+      { protocol: "https", hostname: "m.media-amazon.com" },
+      { protocol: "https", hostname: "images-na.ssl-images-amazon.com" },
+    ],
+  },
   experimental: {
     // Limita o número de workers paralelos (evita PostCSS workers órfãos no Windows).
     cpus: 2,

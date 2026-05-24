@@ -1,5 +1,6 @@
 import { subDays } from "date-fns";
-import { handle, ok } from "@/lib/api";
+import { handleAuth, ok } from "@/lib/api";
+import { UsuarioRole } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { whereVendaAmazonContabilizavelEstrito } from "@/modules/vendas/filtros";
 
@@ -7,7 +8,7 @@ export const dynamic = "force-dynamic";
 
 // Resumo agregado por produto para enriquecer a tabela principal sem N+1.
 // Retorna agregados comerciais e de trafego por produto ativo.
-export const GET = handle(async () => {
+export const GET = handleAuth([UsuarioRole.OPERADOR], async () => {
   const desde30d = subDays(new Date(), 30);
   const desde15dBuybox = subDays(new Date(), 15);
 

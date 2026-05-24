@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
+import { requireRole, UsuarioRole } from "@/lib/auth";
+import { logger } from "@/lib/logger";
 import {
   dataVendaPeriodoSP,
   whereVendaAmazonContabilizavelEstrito,
@@ -11,6 +13,7 @@ export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
   try {
+    await requireRole(UsuarioRole.OPERADOR);
     const { searchParams } = req.nextUrl;
     const de = searchParams.get("de");
     const ate = searchParams.get("ate");
@@ -123,7 +126,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       porPagina,
     });
   } catch (err) {
-    console.error("[GET /api/vendas/reembolsos]", err);
+    if (err instanceof Response) return err as NextResponse;
+    logger.error({ err }, "[GET /api/vendas/reembolsos] falha");
     return NextResponse.json({ erro: "Erro interno" }, { status: 500 });
   }
 }

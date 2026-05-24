@@ -1,5 +1,6 @@
 import { z } from "zod";
-import { handle, ok, erro } from "@/lib/api";
+import { handleAuth, ok, erro } from "@/lib/api";
+import { UsuarioRole } from "@/lib/auth";
 import { db } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
@@ -10,7 +11,9 @@ type Params = { params: Promise<{ id: string }> };
  * GET /api/produtos/:id/custo-historico
  * Lista todas as vigências do produto, ordenadas por vigenciaInicio.
  */
-export const GET = handle(async (_req: Request, { params }: Params) => {
+export const GET = handleAuth(
+  [UsuarioRole.OPERADOR],
+  async (_req: Request, { params }: Params) => {
   const { id } = await params;
   const produto = await db.produto.findUnique({ where: { id } });
   if (!produto) return erro(404, "produto não encontrado");
@@ -29,7 +32,8 @@ export const GET = handle(async (_req: Request, { params }: Params) => {
     },
     vigencias,
   });
-});
+},
+);
 
 const aplicarSchema = z.object({
   modo: z.enum(["A_PARTIR_DE_HOJE", "PERIODO", "HISTORICO_COMPLETO"]),
@@ -46,7 +50,9 @@ const aplicarSchema = z.object({
  * Para PERIODO: de + ate obrigatórios (YYYY-MM-DD).
  * Reaplica custo nas VendaAmazon afetadas automaticamente.
  */
-export const POST = handle(async (req: Request, { params }: Params) => {
+export const POST = handleAuth(
+  [UsuarioRole.OPERADOR],
+  async (req: Request, { params }: Params) => {
   const { id } = await params;
   const body = aplicarSchema.parse(await req.json());
 
@@ -93,7 +99,8 @@ export const POST = handle(async (req: Request, { params }: Params) => {
 
   const r = await reaplicarCustoEmVendas({ produtoId: id });
   return ok({ ok: true, vendasAtualizadas: r.atualizadas });
-});
+},
+);
 
 const deleteSchema = z.object({
   vigenciaId: z.string().cuid(),
@@ -104,7 +111,9 @@ const deleteSchema = z.object({
  * Remove uma vigência específica (body: { vigenciaId }).
  * Reaplica custo nas vendas afetadas.
  */
-export const DELETE = handle(async (req: Request, { params }: Params) => {
+export const DELETE = handleAuth(
+  [UsuarioRole.OPERADOR],
+  async (req: Request, { params }: Params) => {
   const { id } = await params;
   const body = deleteSchema.parse(await req.json());
 
@@ -120,4 +129,5 @@ export const DELETE = handle(async (req: Request, { params }: Params) => {
   );
   const r = await reaplicarCustoEmVendas({ produtoId: id });
   return ok({ ok: true, vendasAtualizadas: r.atualizadas });
-});
+},
+);

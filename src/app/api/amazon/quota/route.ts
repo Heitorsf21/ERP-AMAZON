@@ -1,9 +1,9 @@
-import { handle, ok } from "@/lib/api";
+import { handleAuth, ok } from "@/lib/api";
 import { getAmazonQuotaSnapshot } from "@/lib/amazon-rate-limit";
 
 export const dynamic = "force-dynamic";
 
-export const GET = handle(async () => {
+export const GET = handleAuth(async () => {
   const quota = await getAmazonQuotaSnapshot();
   return ok(quota);
 });

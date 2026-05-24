@@ -21,6 +21,7 @@ import { db } from "@/lib/db";
 import { getSession } from "@/lib/auth";
 import { AlterarSenhaForm } from "./alterar-senha-form";
 import { EncerrarSessaoButton } from "./encerrar-sessao-button";
+import { EncerrarTodasSessoesButton } from "./encerrar-todas-sessoes-button";
 import { DadosForm } from "./dados-form";
 import { Toggle2FA } from "./toggle-2fa";
 import { UploadAvatar } from "@/components/perfil/upload-avatar";
@@ -174,7 +175,7 @@ export default async function PerfilPage() {
                 </div>
                 <CardTitle className="text-base">Senha</CardTitle>
                 <CardDescription>
-                  Use uma senha forte com ao menos 8 caracteres.
+                  Mínimo de 12 caracteres, com maiúscula, minúscula, número e especial.
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -215,8 +216,9 @@ export default async function PerfilPage() {
                 .
               </CardDescription>
             </CardHeader>
-            <CardContent>
+            <CardContent className="flex flex-wrap gap-2">
               <EncerrarSessaoButton />
+              <EncerrarTodasSessoesButton />
             </CardContent>
           </Card>
         </TabsContent>

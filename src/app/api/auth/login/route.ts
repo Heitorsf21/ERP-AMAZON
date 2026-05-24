@@ -10,7 +10,7 @@ import {
   buildSessionExpiry,
   signSession,
 } from "@/lib/session";
-import { enviarEmail } from "@/lib/email";
+import { enviarEmail, escapeHtml } from "@/lib/email";
 import { recordLoginFailure, resetLoginFailures } from "@/lib/auth-rate-limit";
 import { TipoAuditLog } from "@/modules/shared/domain";
 
@@ -45,7 +45,7 @@ export async function POST(req: Request) {
     : false;
 
   if (!user || !user.ativo || !senhaOk) {
-    const failureLimit = recordLoginFailure(req, email);
+    const failureLimit = await recordLoginFailure(req, email);
 
     await auditLog({
       req,
@@ -76,7 +76,7 @@ export async function POST(req: Request) {
     );
   }
 
-  resetLoginFailures(req, email);
+  await resetLoginFailures(req, email);
 
   // Se 2FA habilitado, gera challenge e envia código por email — NÃO cria sessão.
   if (user.twoFactorEnabled && user.twoFactorMethod === "EMAIL") {
@@ -100,7 +100,7 @@ export async function POST(req: Request) {
       html: `
         <div style="font-family: -apple-system, sans-serif; max-width: 480px; margin: 0 auto;">
           <h2 style="color: #0b1220;">Código de verificação</h2>
-          <p>Olá ${user.nome},</p>
+          <p>Olá ${escapeHtml(user.nome)},</p>
           <p>Seu código de acesso ao ERP é:</p>
           <p style="font-size: 32px; font-weight: bold; letter-spacing: 6px; background: #f3f4f6; padding: 16px; text-align: center; border-radius: 8px;">${codigo}</p>
           <p style="color: #6b7280; font-size: 13px;">Este código expira em 5 minutos. Se você não tentou entrar, ignore este email.</p>
@@ -127,6 +127,7 @@ export async function POST(req: Request) {
     nome: user.nome,
     role: user.role,
     exp: buildSessionExpiry(lembrar),
+    v: user.sessionVersion,
   });
 
   await auditLog({

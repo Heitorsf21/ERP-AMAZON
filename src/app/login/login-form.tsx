@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Verificacao2FA } from "@/components/auth/verificacao-2fa";
+import { safeNextPath } from "@/lib/safe-redirect";
 
 type LoginResponse =
   | { usuario: { id: string; email: string; nome: string; role: string } }
@@ -75,7 +76,7 @@ export function LoginForm({ nextPath }: { nextPath?: string }) {
       }
 
       // Login direto
-      const destino = nextPath && nextPath.startsWith("/") ? nextPath : "/home";
+      const destino = safeNextPath(nextPath);
       startTransition(() => {
         router.replace(destino);
         router.refresh();
@@ -87,7 +88,7 @@ export function LoginForm({ nextPath }: { nextPath?: string }) {
   }
 
   function onVerificado() {
-    const destino = nextPath && nextPath.startsWith("/") ? nextPath : "/home";
+    const destino = safeNextPath(nextPath);
     startTransition(() => {
       router.replace(destino);
       router.refresh();

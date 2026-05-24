@@ -47,10 +47,12 @@ export async function POST(req: Request) {
 
   const senhaHash = await bcrypt.hash(parsed.data.novaSenha, 12);
 
+  // Invalida QUALQUER sessao ativa do usuario (atacante que tentou exfiltrar
+  // o cookie nao pode continuar usando-o apos o reset).
   await db.$transaction([
     db.usuario.update({
       where: { id: reg.usuarioId },
-      data: { senhaHash },
+      data: { senhaHash, sessionVersion: { increment: 1 } },
     }),
     db.tokenRecuperacaoSenha.update({
       where: { id: reg.id },

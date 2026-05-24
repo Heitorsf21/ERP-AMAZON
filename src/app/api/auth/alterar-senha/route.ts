@@ -2,8 +2,14 @@ import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { getSession } from "@/lib/auth";
+import { bumpSessionVersion, getSession } from "@/lib/auth";
 import { strongPasswordSchema } from "@/lib/password-policy";
+import {
+  SESSION_COOKIE_NAME,
+  buildSessionCookieOptions,
+  buildSessionExpiry,
+  signSession,
+} from "@/lib/session";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -44,11 +50,25 @@ export async function POST(req: Request) {
     return NextResponse.json({ erro: "SENHA_ATUAL_INCORRETA" }, { status: 400 });
   }
 
-  const senhaHash = await bcrypt.hash(parsed.data.senhaNova, 10);
+  const senhaHash = await bcrypt.hash(parsed.data.senhaNova, 12);
   await db.usuario.update({
     where: { id: user.id },
     data: { senhaHash },
   });
 
-  return NextResponse.json({ ok: true });
+  // Invalida sessoes em outros devices (incrementa sessionVersion). Reemite
+  // o cookie do device atual com o novo `v` para o usuario nao ser deslogado.
+  const novoV = await bumpSessionVersion(user.id);
+
+  const res = NextResponse.json({ ok: true });
+  const token = await signSession({
+    uid: user.id,
+    email: user.email,
+    nome: user.nome,
+    role: user.role,
+    exp: buildSessionExpiry(false),
+    v: novoV,
+  });
+  res.cookies.set(SESSION_COOKIE_NAME, token, buildSessionCookieOptions(false));
+  return res;
 }

@@ -1,11 +1,12 @@
-import { handle, ok, erro } from "@/lib/api";
+import { handleAuth, ok, erro } from "@/lib/api";
+import { UsuarioRole } from "@/lib/auth";
 import { buscarEmailsComAnexos, marcarProcessado } from "@/lib/gmail";
 import { processarAnexo } from "@/lib/email-processor";
 import { db } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
-export const POST = handle(async (req: Request) => {
+export const POST = handleAuth([UsuarioRole.ADMIN], async (req: Request) => {
   const body = (await req.json().catch(() => ({}))) as { diasAtras?: number };
   const diasAtras = body.diasAtras ?? 14;
 

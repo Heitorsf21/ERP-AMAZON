@@ -14,6 +14,10 @@ import { TipoAuditLog } from "@/modules/shared/domain";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+// Limite de tentativas por challenge. Ao atingir, o challenge eh invalidado
+// (usadoEm = now) e exige novo login (re-envia codigo por email).
+const MAX_TENTATIVAS_POR_CHALLENGE = 5;
+
 const schema = z.object({
   challengeId: z.string().min(8).max(64),
   codigo: z
@@ -62,16 +66,45 @@ export async function POST(req: Request) {
     );
   }
 
+  // Pre-check: ja estourou o limite? (defesa redundante caso outro request
+  // tenha marcado usadoEm entre nossa leitura e este ponto.)
+  if (challenge.tentativas >= MAX_TENTATIVAS_POR_CHALLENGE) {
+    return NextResponse.json(
+      { erro: "CHALLENGE_BLOQUEADO" },
+      { status: 401 },
+    );
+  }
+
   const codigoOk = await bcrypt.compare(codigo, challenge.codigoHash);
   if (!codigoOk) {
+    const novaTentativa = challenge.tentativas + 1;
+    const limiteAtingido = novaTentativa >= MAX_TENTATIVAS_POR_CHALLENGE;
+
+    await db.codigoVerificacao2FA.update({
+      where: { id: challenge.id },
+      data: {
+        tentativas: novaTentativa,
+        // Ao atingir o limite, invalida o challenge de uma vez.
+        usadoEm: limiteAtingido ? new Date() : undefined,
+      },
+    });
+
     await auditLog({
       req,
       acao: TipoAuditLog.LOGIN_FALHA,
       entidade: "Usuario",
       entidadeId: challenge.usuarioId,
-      metadata: { etapa: "2FA", motivo: "codigo_incorreto" },
+      metadata: {
+        etapa: "2FA",
+        motivo: limiteAtingido ? "challenge_bloqueado_por_tentativas" : "codigo_incorreto",
+        tentativas: novaTentativa,
+      },
     });
-    return NextResponse.json({ erro: "CODIGO_INCORRETO" }, { status: 401 });
+
+    return NextResponse.json(
+      { erro: limiteAtingido ? "CHALLENGE_BLOQUEADO" : "CODIGO_INCORRETO" },
+      { status: 401 },
+    );
   }
 
   await db.$transaction([
@@ -91,6 +124,7 @@ export async function POST(req: Request) {
     nome: challenge.usuario.nome,
     role: challenge.usuario.role,
     exp: buildSessionExpiry(lembrar),
+    v: challenge.usuario.sessionVersion,
   });
 
   await auditLog({

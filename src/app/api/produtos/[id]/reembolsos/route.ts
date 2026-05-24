@@ -1,5 +1,6 @@
 import { subDays } from "date-fns";
-import { handle, ok, erro } from "@/lib/api";
+import { handleAuth, ok, erro } from "@/lib/api";
+import { UsuarioRole } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { whereVendaAmazonContabilizavelEstrito } from "@/modules/vendas/filtros";
 
@@ -7,7 +8,9 @@ export const dynamic = "force-dynamic";
 
 type Params = { params: Promise<{ id: string }> };
 
-export const GET = handle(async (req: Request, { params }: Params) => {
+export const GET = handleAuth(
+  [UsuarioRole.OPERADOR],
+  async (req: Request, { params }: Params) => {
   const { id } = await params;
   const { searchParams } = new URL(req.url);
   const diasParam = Number(searchParams.get("dias") ?? "30");
@@ -78,4 +81,5 @@ export const GET = handle(async (req: Request, { params }: Params) => {
     percentualReembolso,
     porMotivo,
   });
-});
+},
+);

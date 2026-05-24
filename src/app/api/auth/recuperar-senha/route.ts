@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import crypto from "node:crypto";
 import { db } from "@/lib/db";
-import { enviarEmail } from "@/lib/email";
+import { enviarEmail, escapeHtml } from "@/lib/email";
 
 // Rate limit: máx 5 solicitações de recuperação por IP:email em 1 hora
 const RECOVERY_WINDOW_MS = 60 * 60_000;
@@ -91,12 +91,12 @@ export async function POST(req: Request) {
     html: `
       <div style="font-family: -apple-system, sans-serif; max-width: 480px; margin: 0 auto;">
         <h2 style="color: #0b1220;">Redefinir senha</h2>
-        <p>Olá ${user.nome},</p>
+        <p>Olá ${escapeHtml(user.nome)},</p>
         <p>Você solicitou redefinição de senha. Clique no botão abaixo para criar uma nova senha (link expira em 1 hora):</p>
         <p style="text-align: center; margin: 24px 0;">
-          <a href="${link}" style="display: inline-block; background: #4f46e5; color: white; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: 600;">Redefinir senha</a>
+          <a href="${escapeHtml(link)}" style="display: inline-block; background: #4f46e5; color: white; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: 600;">Redefinir senha</a>
         </p>
-        <p style="color: #6b7280; font-size: 13px;">Ou cole este link no navegador: <br><code style="font-size: 11px;">${link}</code></p>
+        <p style="color: #6b7280; font-size: 13px;">Ou cole este link no navegador: <br><code style="font-size: 11px;">${escapeHtml(link)}</code></p>
         <p style="color: #6b7280; font-size: 13px;">Se você não solicitou, ignore este email — sua senha continua a mesma.</p>
       </div>
     `,

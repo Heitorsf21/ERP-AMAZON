@@ -1,4 +1,5 @@
-import { handle, ok } from "@/lib/api";
+import { handleAuth, ok } from "@/lib/api";
+import { UsuarioRole } from "@/lib/auth";
 import {
   BOLSAS,
   BOLSA_META,
@@ -11,7 +12,7 @@ import {
 
 export const dynamic = "force-dynamic";
 
-export const GET = handle(async () => {
+export const GET = handleAuth([UsuarioRole.FINANCEIRO], async () => {
   const { percentuais, configurado } = await getPercentuais();
   return ok({
     percentuais,
@@ -26,7 +27,7 @@ export const GET = handle(async () => {
   });
 });
 
-export const POST = handle(async (req: Request) => {
+export const POST = handleAuth([UsuarioRole.FINANCEIRO], async (req: Request) => {
   const body = (await req.json()) as Partial<Percentuais> | undefined;
   if (!body || typeof body !== "object") {
     throw new Error("body inválido");

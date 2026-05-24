@@ -1,4 +1,5 @@
-import { handle, ok, erro } from "@/lib/api";
+import { handleAuth, ok, erro } from "@/lib/api";
+import { UsuarioRole } from "@/lib/auth";
 import {
   getConfigImpostoSimples,
   saveConfigImpostoSimples,
@@ -6,12 +7,12 @@ import {
 
 export const dynamic = "force-dynamic";
 
-export const GET = handle(async () => {
+export const GET = handleAuth([UsuarioRole.ADMIN], async () => {
   const config = await getConfigImpostoSimples();
   return ok(config);
 });
 
-export const PUT = handle(async (req: Request) => {
+export const PUT = handleAuth([UsuarioRole.ADMIN], async (req: Request) => {
   const body = (await req.json()) as {
     aliquotaBps?: unknown;
     ativo?: unknown;

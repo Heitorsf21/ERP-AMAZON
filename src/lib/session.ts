@@ -12,6 +12,10 @@ export type SessionPayload = {
   nome: string;
   role: string;
   exp: number;
+  // Versao de sessao do usuario no momento do signSession. getSession compara
+  // contra Usuario.sessionVersion atual; mismatch => sessao revogada.
+  // Opcional para graceful pass de cookies antigos pre-migration.
+  v?: number;
 };
 
 function getSecret(): string {
@@ -95,14 +99,36 @@ export async function verifySession(
   }
 }
 
+function shouldCookieBeSecure(): boolean {
+  // Override explicito via env (util para staging HTTPS sem NODE_ENV=production).
+  const override = process.env.COOKIE_SECURE?.toLowerCase();
+  if (override === "true") return true;
+  if (override === "false") return false;
+  return process.env.NODE_ENV === "production";
+}
+
 export function buildSessionCookieOptions(remember = false) {
   return {
     httpOnly: true,
     sameSite: "lax" as const,
-    secure: process.env.NODE_ENV === "production",
+    secure: shouldCookieBeSecure(),
     path: "/",
     maxAge: remember ? THIRTY_DAYS_SECONDS : SEVEN_DAYS_SECONDS,
     priority: "high" as const,
+  };
+}
+
+/**
+ * Opcoes de cookie para limpar a sessao (maxAge: 0). Garante mesmo path/
+ * secure/sameSite/httpOnly do set original.
+ */
+export function buildSessionClearCookieOptions() {
+  return {
+    httpOnly: true,
+    sameSite: "lax" as const,
+    secure: shouldCookieBeSecure(),
+    path: "/",
+    maxAge: 0,
   };
 }
 

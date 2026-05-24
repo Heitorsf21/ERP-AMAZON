@@ -3,6 +3,7 @@ import type { Prisma } from "@prisma/client";
 import { documentosFinanceirosService } from "@/modules/documentos-financeiros/service";
 import { db } from "@/lib/db";
 import { logger } from "@/lib/logger";
+import { requireRole, UsuarioRole } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -23,6 +24,7 @@ function parseDataFim(raw: string | null): Date | null {
 
 export async function GET(req: Request) {
   try {
+    await requireRole(UsuarioRole.FINANCEIRO);
     const url = new URL(req.url);
     const busca = url.searchParams.get("busca")?.trim() ?? "";
     const tipoRaw = url.searchParams.get("tipo");
@@ -107,6 +109,7 @@ export async function GET(req: Request) {
 
     return NextResponse.json(dossies);
   } catch (err) {
+    if (err instanceof Response) return err as NextResponse;
     logger.error({ err }, "falha ao listar documentos financeiros");
     return NextResponse.json(
       { error: "falha ao listar documentos financeiros" },
@@ -117,6 +120,7 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   try {
+    await requireRole(UsuarioRole.FINANCEIRO);
     const formData = await req.formData();
     const arquivo = formData.get("arquivo");
     const senhaPdfRaw = formData.get("senhaPdf");
@@ -136,6 +140,7 @@ export async function POST(req: Request) {
 
     return NextResponse.json(resultado, { status: resultado.duplicado ? 200 : 201 });
   } catch (e) {
+    if (e instanceof Response) return e as NextResponse;
     const msg = e instanceof Error ? e.message : "falha ao processar documento";
     return NextResponse.json({ error: msg }, { status: 400 });
   }

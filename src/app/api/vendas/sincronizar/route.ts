@@ -1,13 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
-import { exec } from "child_process";
-import { promisify } from "util";
-import path from "path";
-import fs from "fs";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+import path from "node:path";
+import fs from "node:fs";
+import { z } from "zod";
 import { processarBuffer } from "@/lib/fba-importer";
+import { requireRole, UsuarioRole } from "@/lib/auth";
+import { logger } from "@/lib/logger";
 
 export const dynamic = "force-dynamic";
 
-const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 
 const ARQUIVOS = {
   vendas: "reports_sales.xlsx",
@@ -17,14 +20,29 @@ const ARQUIVOS = {
 
 type Relatorio = keyof typeof ARQUIVOS;
 
+// Datas no formato YYYY-MM-DD (somente). Bloqueia qualquer metacaractere de shell.
+const dataIsoSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "data deve ser YYYY-MM-DD");
+
+const querySchema = z.object({
+  relatorio: z.enum(["vendas", "estoque", "produtos", "todos"]).default("vendas"),
+  de: dataIsoSchema.optional(),
+  ate: dataIsoSchema.optional(),
+});
+
 export async function POST(req: NextRequest): Promise<NextResponse> {
   try {
-    const { searchParams } = req.nextUrl;
-    const relatorio = (searchParams.get("relatorio") ?? "vendas") as
-      | Relatorio
-      | "todos";
-    const de = searchParams.get("de");
-    const ate = searchParams.get("ate");
+    await requireRole(UsuarioRole.ADMIN);
+
+    const parsed = querySchema.safeParse(
+      Object.fromEntries(req.nextUrl.searchParams),
+    );
+    if (!parsed.success) {
+      return NextResponse.json(
+        { erro: "PARAMS_INVALIDOS", detalhes: parsed.error.flatten() },
+        { status: 400 },
+      );
+    }
+    const { relatorio, de, ate } = parsed.data;
 
     const scriptDir = process.env.GS_SCRIPT_DIR;
     if (!scriptDir) {
@@ -44,36 +62,30 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       );
     }
 
-    // Monta argumentos do script
-    const args: string[] = [];
+    // execFile NÃO interpreta shell — args passados como array são seguros.
+    const args: string[] = [scriptPath];
     if (relatorio !== "todos") args.push("--relatorio", relatorio);
     if (de) args.push("--inicio", de);
     if (ate) args.push("--fim", ate);
-    // --espera 0: tenta download direto, checa Gmail imediatamente sem aguardar
     args.push("--espera", "0");
-
-    const cmd = `python "${scriptPath}" ${args.join(" ")}`;
 
     let scriptLog = "";
     try {
-      const { stdout, stderr } = await execAsync(cmd, {
+      const { stdout, stderr } = await execFileAsync("python", args, {
         cwd: scriptDir,
-        timeout: 120_000, // 2 min
-        env: { ...process.env },
+        timeout: 120_000,
+        // Não passa `env: { ...process.env }` — herda o env minimo do parent.
       });
       scriptLog = stdout + (stderr ? `\nSTDERR: ${stderr}` : "");
     } catch (err: unknown) {
       const e = err as { stdout?: string; stderr?: string; message?: string };
       scriptLog = (e.stdout ?? "") + "\n" + (e.stderr ?? "") + "\n" + (e.message ?? "");
-      console.warn("[sincronizar] script retornou erro:", scriptLog);
-      // Continua mesmo com erro — pode ter baixado arquivos parcialmente
+      logger.warn({ scriptLog: scriptLog.slice(0, 800) }, "[sincronizar] script retornou erro");
+      // Continua mesmo com erro — pode ter baixado arquivos parcialmente.
     }
 
-    // Identifica quais arquivos tentar importar
     const alvos: Relatorio[] =
-      relatorio === "todos"
-        ? (Object.keys(ARQUIVOS) as Relatorio[])
-        : [relatorio as Relatorio];
+      relatorio === "todos" ? (Object.keys(ARQUIVOS) as Relatorio[]) : [relatorio];
 
     const resultados: Record<string, unknown>[] = [];
     const erros: { relatorio: string; erro: string }[] = [];
@@ -103,7 +115,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       erros,
     });
   } catch (err) {
-    console.error("[vendas/sincronizar]", err);
+    if (err instanceof Response) return err as NextResponse;
+    logger.error({ err }, "[vendas/sincronizar] falha inesperada");
     return NextResponse.json({ erro: "Erro interno" }, { status: 500 });
   }
 }

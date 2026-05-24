@@ -1,22 +1,20 @@
 import type { NextRequest } from "next/server";
+import { db } from "@/lib/db";
+import { logger } from "@/lib/logger";
 
+// Janela de 15min. Limite de 8 falhas por (IP, email) antes de bloquear.
+// Persiste em Postgres (model LoginThrottle) para sobreviver restart do PM2
+// e funcionar com multiplas instancias futuras.
 const LOGIN_FAILURE_WINDOW_MS = 15 * 60_000;
-const LOGIN_FAILURE_MAX = 25;
+const LOGIN_FAILURE_MAX = 8;
 
-type LoginFailureBucket = {
-  count: number;
-  resetAt: number;
-};
-
-type LoginFailureResult = {
+export type LoginFailureResult = {
   limited: boolean;
   count: number;
   remaining: number;
   resetAt: number;
   retryAfterSeconds: number;
 };
-
-const loginFailureBuckets = new Map<string, LoginFailureBucket>();
 
 function getClientIp(headers: Headers): string {
   return (
@@ -31,50 +29,106 @@ export function getLoginFailureKey(headers: Headers, email: string): string {
   return `${getClientIp(headers)}:${normalizedEmail}`;
 }
 
-export function recordLoginFailureByKey(
-  key: string,
+/**
+ * Registra uma falha de login. Atomic upsert renova `resetAt` se a janela
+ * anterior expirou, mantem-na caso contrario, e incrementa count em todo
+ * cenario.
+ *
+ * Fail-open: se o DB estiver indisponivel, libera (mas loga). DB caido
+ * ja vai derrubar o login mesmo, entao bloquear duas vezes nao agrega.
+ */
+export async function recordLoginFailureByKey(
+  chave: string,
   now = Date.now(),
-): LoginFailureResult {
-  const bucket = loginFailureBuckets.get(key);
-  const activeBucket =
-    bucket && bucket.resetAt > now
-      ? bucket
-      : { count: 0, resetAt: now + LOGIN_FAILURE_WINDOW_MS };
+): Promise<LoginFailureResult> {
+  const nowDate = new Date(now);
+  const newResetAt = new Date(now + LOGIN_FAILURE_WINDOW_MS);
 
-  activeBucket.count += 1;
-  loginFailureBuckets.set(key, activeBucket);
+  try {
+    // 1. busca o registro atual (pode nao existir).
+    const atual = await db.loginThrottle.findUnique({ where: { chave } });
 
-  const retryAfterSeconds = Math.max(
-    1,
-    Math.ceil((activeBucket.resetAt - now) / 1000),
-  );
+    // 2. se nao existe OU janela expirou, comeca um novo bucket.
+    if (!atual || atual.resetAt.getTime() <= now) {
+      const criado = await db.loginThrottle.upsert({
+        where: { chave },
+        create: { chave, count: 1, resetAt: newResetAt },
+        update: { count: 1, resetAt: newResetAt },
+      });
+      return shape(criado.count, criado.resetAt.getTime(), now);
+    }
 
+    // 3. janela viva — incrementa atomicamente.
+    const atualizado = await db.loginThrottle.update({
+      where: { chave },
+      data: { count: { increment: 1 } },
+    });
+    return shape(atualizado.count, atualizado.resetAt.getTime(), now);
+  } catch (err) {
+    logger.warn({ err, chave }, "[rate-limit] DB indisponivel, fail-open");
+    return {
+      limited: false,
+      count: 0,
+      remaining: LOGIN_FAILURE_MAX,
+      resetAt: now + LOGIN_FAILURE_WINDOW_MS,
+      retryAfterSeconds: 0,
+    };
+  }
+}
+
+function shape(count: number, resetAtMs: number, now: number): LoginFailureResult {
+  const retryAfterSeconds = Math.max(1, Math.ceil((resetAtMs - now) / 1000));
   return {
-    limited: activeBucket.count > LOGIN_FAILURE_MAX,
-    count: activeBucket.count,
-    remaining: Math.max(0, LOGIN_FAILURE_MAX - activeBucket.count),
-    resetAt: activeBucket.resetAt,
+    limited: count > LOGIN_FAILURE_MAX,
+    count,
+    remaining: Math.max(0, LOGIN_FAILURE_MAX - count),
+    resetAt: resetAtMs,
     retryAfterSeconds,
   };
 }
 
-export function recordLoginFailure(
+export async function recordLoginFailure(
   req: Request | NextRequest,
   email: string,
-): LoginFailureResult {
+): Promise<LoginFailureResult> {
   return recordLoginFailureByKey(getLoginFailureKey(req.headers, email));
 }
 
-export function resetLoginFailuresByKey(key: string): void {
-  loginFailureBuckets.delete(key);
+export async function resetLoginFailuresByKey(chave: string): Promise<void> {
+  try {
+    await db.loginThrottle.delete({ where: { chave } }).catch(() => {
+      // Ja nao existe — ok.
+    });
+  } catch (err) {
+    logger.warn({ err, chave }, "[rate-limit] reset falhou");
+  }
 }
 
-export function resetLoginFailures(req: Request | NextRequest, email: string): void {
-  resetLoginFailuresByKey(getLoginFailureKey(req.headers, email));
+export async function resetLoginFailures(
+  req: Request | NextRequest,
+  email: string,
+): Promise<void> {
+  await resetLoginFailuresByKey(getLoginFailureKey(req.headers, email));
 }
 
-export function clearLoginFailureBucketsForTests(): void {
-  loginFailureBuckets.clear();
+/**
+ * Cleanup periodico de buckets expirados. Roda no worker (job dedicado)
+ * ou via cron — nao bloqueia o hot path do login.
+ */
+export async function cleanupExpiredLoginThrottle(
+  now = Date.now(),
+): Promise<number> {
+  const result = await db.loginThrottle.deleteMany({
+    where: { resetAt: { lt: new Date(now) } },
+  });
+  return result.count;
+}
+
+/**
+ * Apenas para testes — limpa todos os buckets.
+ */
+export async function clearLoginFailureBucketsForTests(): Promise<void> {
+  await db.loginThrottle.deleteMany();
 }
 
 export const LOGIN_FAILURE_LIMIT = {

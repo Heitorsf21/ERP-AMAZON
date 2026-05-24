@@ -2,6 +2,8 @@ import { NextRequest } from "next/server";
 import { fromZonedTime } from "date-fns-tz";
 import { db } from "@/lib/db";
 import { ok } from "@/lib/api";
+import { requireRole, UsuarioRole } from "@/lib/auth";
+import { logger } from "@/lib/logger";
 import { whereVendaAmazonContabilizavelEstrito } from "@/modules/vendas/filtros";
 import {
   valorBrutoDaVenda,
@@ -258,6 +260,13 @@ async function calcularDRE(de: Date, ate: Date) {
 }
 
 export async function GET(req: NextRequest) {
+  try {
+    await requireRole(UsuarioRole.FINANCEIRO);
+  } catch (e) {
+    if (e instanceof Response) return e;
+    logger.error({ err: e }, "[dre/resumo] auth falhou");
+    throw e;
+  }
   const { searchParams } = req.nextUrl;
 
   const modo = searchParams.get("modo"); // "mensal" para visão anual

@@ -1,4 +1,5 @@
-import { handle, ok, erro } from "@/lib/api";
+import { handleAuth, ok, erro } from "@/lib/api";
+import { UsuarioRole } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { whereVendaAmazonContabilizavelEstrito } from "@/modules/vendas/filtros";
 import { valorBrutoDaVenda } from "@/modules/vendas/valores";
@@ -7,7 +8,9 @@ export const dynamic = "force-dynamic";
 
 type Params = { params: Promise<{ id: string }> };
 
-export const GET = handle(async (_req: Request, { params }: Params) => {
+export const GET = handleAuth(
+  [UsuarioRole.FINANCEIRO],
+  async (_req: Request, { params }: Params) => {
   const { id } = await params;
 
   const conta = await db.contaReceber.findUnique({ where: { id } });
@@ -63,4 +66,5 @@ export const GET = handle(async (_req: Request, { params }: Params) => {
     valorRegistradoCentavos: conta.valor,
     divergenciaCentavos: conta.valor - liquidoCalculado,
   });
-});
+},
+);

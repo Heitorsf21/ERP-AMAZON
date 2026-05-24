@@ -42,6 +42,7 @@
     "prisma:studio:pg": "prisma studio --schema prisma/schema.postgresql.prisma",
     "db:seed": "tsx prisma/seed.ts",
     "migrate:sqlite-to-postgres": "tsx scripts/migrate-sqlite-to-postgres.ts",
+    "migrate:status": "tsx scripts/migration-status.ts",
     "admin:create": "tsx scripts/create-admin.ts"
   },
   "dependencies": {

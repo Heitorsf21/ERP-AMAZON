@@ -1,5 +1,6 @@
 import { z } from "zod";
-import { handle, ok, erro } from "@/lib/api";
+import { handleAuth, ok, erro } from "@/lib/api";
+import { UsuarioRole } from "@/lib/auth";
 import { db } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
@@ -10,7 +11,9 @@ type Params = { params: Promise<{ vendaId: string }> };
  * GET /api/vendas/[vendaId]/custos-eventuais
  * Lista os custos eventuais associados à venda, do mais recente para o mais antigo.
  */
-export const GET = handle(async (_req: Request, { params }: Params) => {
+export const GET = handleAuth(
+  [UsuarioRole.OPERADOR],
+  async (_req: Request, { params }: Params) => {
   const { vendaId } = await params;
 
   const venda = await db.vendaAmazon.findUnique({
@@ -25,7 +28,8 @@ export const GET = handle(async (_req: Request, { params }: Params) => {
   });
 
   return ok({ custos });
-});
+},
+);
 
 const criarSchema = z.object({
   descricao: z.string().trim().min(1, "descrição obrigatória").max(120),
@@ -39,7 +43,9 @@ const criarSchema = z.object({
  * NÃO altera VendaAmazon.taxasCentavos/fretesCentavos/liquidoMarketplaceCentavos —
  * o custo vive em registro separado e é somado em runtime pelo breakdown.
  */
-export const POST = handle(async (req: Request, { params }: Params) => {
+export const POST = handleAuth(
+  [UsuarioRole.OPERADOR],
+  async (req: Request, { params }: Params) => {
   const { vendaId } = await params;
   const body = criarSchema.parse(await req.json());
 
@@ -58,4 +64,5 @@ export const POST = handle(async (req: Request, { params }: Params) => {
   });
 
   return ok({ custo }, { status: 201 });
-});
+},
+);

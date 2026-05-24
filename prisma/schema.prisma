@@ -31,6 +31,10 @@ model Usuario {
   // 2FA opcional por email
   twoFactorEnabled Boolean   @default(false)
   twoFactorMethod  String? // "EMAIL"
+  // Incrementado a cada troca de senha ou "encerrar todas as sessoes".
+  // Tokens de sessao carregam esse `v` no payload; getSession compara
+  // contra o valor atual para revogar sessoes obsoletas.
+  sessionVersion   Int       @default(0)
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
 
@@ -56,6 +60,16 @@ model TokenRecuperacaoSenha {
   @@index([expiresAt])
 }
 
+model LoginThrottle {
+  id        String   @id @default(cuid())
+  chave     String   @unique
+  count     Int      @default(0)
+  resetAt   DateTime
+  updatedAt DateTime @updatedAt
+
+  @@index([resetAt])
+}
+
 model CodigoVerificacao2FA {
   id          String    @id @default(cuid())
   usuarioId   String
@@ -63,6 +77,7 @@ model CodigoVerificacao2FA {
   challengeId String    @unique
   expiresAt   DateTime
   usadoEm     DateTime?
+  tentativas  Int       @default(0)
   createdAt   DateTime  @default(now())
 
   usuario Usuario @relation(fields: [usuarioId], references: [id], onDelete: Cascade)

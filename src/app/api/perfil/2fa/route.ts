@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { getSession } from "@/lib/auth";
+import { requireSession } from "@/lib/auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -11,9 +11,12 @@ const schema = z.object({
 });
 
 export async function POST(req: Request) {
-  const session = await getSession();
-  if (!session) {
-    return NextResponse.json({ erro: "NAO_AUTENTICADO" }, { status: 401 });
+  let session;
+  try {
+    session = await requireSession();
+  } catch (e) {
+    if (e instanceof Response) return e;
+    throw e;
   }
 
   let body: unknown;

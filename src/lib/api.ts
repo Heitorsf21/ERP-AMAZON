@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { ZodError } from "zod";
 import { logger } from "./logger";
+import { requireRole, requireSession } from "./auth";
+import type { UsuarioRole as UsuarioRoleType } from "@/modules/shared/domain";
 
 export function ok<T>(data: T, init?: ResponseInit) {
   return NextResponse.json(data, init);
@@ -40,4 +42,40 @@ export function handle<Args extends unknown[]>(
       return erro(500, "erro inesperado");
     }
   };
+}
+
+/**
+ * Defense-in-depth para route handlers. Chama requireSession() (ou
+ * requireRole quando roles passados) ANTES do handler de negocio.
+ *
+ * Uso:
+ *   export const GET = handleAuth(async (req) => { ... });
+ *   export const POST = handleAuth([UsuarioRole.ADMIN], async (req) => { ... });
+ *
+ * Substitui o padrao `await requireSession(); ...` repetido em cada handler.
+ */
+export function handleAuth<Args extends unknown[]>(
+  fn: (...args: Args) => Promise<Response>,
+): (...args: Args) => Promise<Response>;
+export function handleAuth<Args extends unknown[]>(
+  roles: UsuarioRoleType[],
+  fn: (...args: Args) => Promise<Response>,
+): (...args: Args) => Promise<Response>;
+export function handleAuth<Args extends unknown[]>(
+  rolesOrFn: UsuarioRoleType[] | ((...args: Args) => Promise<Response>),
+  maybeFn?: (...args: Args) => Promise<Response>,
+) {
+  const roles = Array.isArray(rolesOrFn) ? rolesOrFn : null;
+  const fn = (Array.isArray(rolesOrFn) ? maybeFn : rolesOrFn) as (
+    ...args: Args
+  ) => Promise<Response>;
+
+  return handle(async (...args: Args): Promise<Response> => {
+    if (roles && roles.length > 0) {
+      await requireRole(...roles);
+    } else {
+      await requireSession();
+    }
+    return fn(...args);
+  });
 }

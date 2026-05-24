@@ -49,14 +49,14 @@ async function main() {
       return;
     }
 
-    const senhaHash = await bcrypt.hash(senha, 10);
+    const senhaHash = await bcrypt.hash(senha, 12);
     await db.usuario.update({
       where: { email },
       data: { senhaHash, ativo: true, twoFactorEnabled: false },
     });
     console.log(`\n✓ Senha do usuário "${email}" redefinida.`);
   } else {
-    const senhaHash = await bcrypt.hash(senha, 10);
+    const senhaHash = await bcrypt.hash(senha, 12);
     await db.usuario.create({
       data: { email, nome, senhaHash, role: "ADMIN", ativo: true },
     });

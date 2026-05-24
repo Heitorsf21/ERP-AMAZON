@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { handle, ok } from "@/lib/api";
+import { handleAuth, ok } from "@/lib/api";
 import { addDays } from "date-fns";
 
 export const dynamic = "force-dynamic";
@@ -37,7 +37,7 @@ export type GeniusResponse = {
   };
 };
 
-export const GET = handle(async () => {
+export const GET = handleAuth(async () => {
   const now = new Date();
   const trinta = addDays(now, -30);
   const sete = addDays(now, -7);

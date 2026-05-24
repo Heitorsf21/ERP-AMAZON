@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import { handle, ok } from "@/lib/api";
+import { requireRole, requireSession, UsuarioRole } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { TipoNotificacao } from "@/modules/shared/domain";
 
@@ -18,6 +19,7 @@ function defaultPreferencias(): Preferencias {
 }
 
 export const GET = handle(async () => {
+  await requireSession();
   const row = await db.configuracaoSistema.findUnique({ where: { chave: CHAVE } });
   if (!row) return ok({ preferencias: defaultPreferencias() });
 
@@ -32,6 +34,7 @@ export const GET = handle(async () => {
 });
 
 export const POST = handle(async (req: NextRequest) => {
+  await requireRole(UsuarioRole.ADMIN);
   const body = (await req.json()) as { preferencias?: Preferencias };
   const incoming = body?.preferencias ?? {};
 

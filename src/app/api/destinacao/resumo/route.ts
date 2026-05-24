@@ -1,10 +1,11 @@
-import { handle, ok } from "@/lib/api";
+import { handleAuth, ok } from "@/lib/api";
+import { UsuarioRole } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { getDistribuicaoCompleta } from "@/modules/destinacao/service";
 
 export const dynamic = "force-dynamic";
 
-export const GET = handle(async () => {
+export const GET = handleAuth([UsuarioRole.FINANCEIRO], async () => {
   const [entradas, saidas, contasAbertas, pedidosConfirmados, contasReceber] =
     await Promise.all([
       db.movimentacao.aggregate({

@@ -422,6 +422,13 @@ export function parseSqsNotificationBody(body: string): AmazonSqsNotification {
 }
 
 /**
+ * Allowlist defense-in-depth: SubscribeURL legitima da AWS sempre vem de
+ * sns.<region>.amazonaws.com. Bloqueia SSRF via payload SQS adulterado
+ * apontando para IMDS (169.254.169.254), hosts internos ou domínios externos.
+ */
+export const AWS_SNS_URL_RE = /^https:\/\/sns\.[a-z0-9-]+\.amazonaws\.com\//i;
+
+/**
  * Confirma uma subscription SNS pendente (fetch GET no SubscribeURL).
  * Marketing Stream entrega via SNS topics dedicados por dataset; a primeira
  * mensagem de cada subscription e um SubscriptionConfirmation que precisa
@@ -440,6 +447,13 @@ async function confirmSnsSubscription(
     null;
   if (!subscribeUrl) {
     return { confirmed: false, topicArn, error: "SubscribeURL ausente." };
+  }
+  if (!AWS_SNS_URL_RE.test(subscribeUrl)) {
+    return {
+      confirmed: false,
+      topicArn,
+      error: "SubscribeURL host invalido (fora do allowlist sns.<region>.amazonaws.com).",
+    };
   }
   const response = await fetch(subscribeUrl, { method: "GET" });
   if (!response.ok) {

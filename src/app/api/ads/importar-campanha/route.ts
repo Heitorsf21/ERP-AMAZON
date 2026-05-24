@@ -1,4 +1,5 @@
-import { handle, ok } from "@/lib/api";
+import { handleAuth, ok } from "@/lib/api";
+import { UsuarioRole } from "@/lib/auth";
 import { db } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
@@ -130,7 +131,7 @@ function parseAmazonAdsCsv(conteudo: string) {
   return registros;
 }
 
-export const POST = handle(async (req: Request) => {
+export const POST = handleAuth([UsuarioRole.ADMIN], async (req: Request) => {
   const form = await req.formData();
   const arquivo = form.get("arquivo") as File | null;
   const periodoInicio = form.get("periodoInicio") as string | null;

@@ -1,4 +1,4 @@
-import { handle, ok } from "@/lib/api";
+import { handleAuth, ok } from "@/lib/api";
 import { resolverPeriodoDeBusca, type IntervaloPeriodo } from "@/lib/periodo";
 import { dashboardEcommerceService } from "@/modules/dashboard-ecommerce/service";
 
@@ -14,7 +14,7 @@ function deltaPP(atual: number | null, anterior: number | null): number | null {
   return atual - anterior;
 }
 
-export const GET = handle(async (req: Request) => {
+export const GET = handleAuth(async (req: Request) => {
   const { searchParams } = new URL(req.url);
   const periodo = resolverPeriodoDeBusca(searchParams);
 

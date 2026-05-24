@@ -2,6 +2,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { requireRole, UsuarioRole } from "@/lib/auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -98,6 +99,13 @@ async function statsSqlite() {
 }
 
 export async function GET() {
+  try {
+    await requireRole(UsuarioRole.ADMIN);
+  } catch (e) {
+    if (e instanceof Response) return e;
+    throw e;
+  }
+
   let dbStats: { dbSizeBytes: number | null; tables: Array<{ table: string; rows: number; sizeBytes: number }> };
 
   try {

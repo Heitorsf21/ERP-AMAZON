@@ -8,6 +8,20 @@ type EnviarEmailInput = {
   text?: string;
 };
 
+/**
+ * Escapa metacaracteres HTML para uso seguro em interpolacao de templates de
+ * e-mail. Necessario porque user.nome / user.email podem conter "<" / ">" /
+ * aspas / '&' e sao renderizados direto no body do e-mail (HTML).
+ */
+export function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 let transporterCache: Transporter | null = null;
 let configChecked = false;
 let configValid = false;

@@ -119,7 +119,7 @@ async function seedUsuarioInicial() {
     return;
   }
 
-  const senhaHash = await bcrypt.hash(senha, 10);
+  const senhaHash = await bcrypt.hash(senha, 12);
   await db.usuario.create({
     data: { email, nome, senhaHash, role: "ADMIN" },
   });

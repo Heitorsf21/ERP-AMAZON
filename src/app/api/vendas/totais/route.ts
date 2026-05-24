@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
+import { requireRole, UsuarioRole } from "@/lib/auth";
+import { logger } from "@/lib/logger";
 import { PeriodoPreset, resolverPeriodo } from "@/lib/periodo";
 import {
   dataVendaPeriodoSP,
@@ -13,6 +15,7 @@ export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
   try {
+    await requireRole(UsuarioRole.OPERADOR);
     const { searchParams } = req.nextUrl;
     const preset = searchParams.get("preset");
     const de = searchParams.get("de");
@@ -95,7 +98,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       ultimaImportacao,
     });
   } catch (err) {
-    console.error("[GET /api/vendas/totais]", err);
+    if (err instanceof Response) return err as NextResponse;
+    logger.error({ err }, "[GET /api/vendas/totais] falha");
     return NextResponse.json({ erro: "Erro interno" }, { status: 500 });
   }
 }

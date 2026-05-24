@@ -1,11 +1,12 @@
-import { handle, ok } from "@/lib/api";
+import { handleAuth, ok } from "@/lib/api";
+import { UsuarioRole } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { whereVendaAmazonContabilizavelEstrito } from "@/modules/vendas/filtros";
 import { subDays, startOfWeek, format } from "date-fns";
 
 export const dynamic = "force-dynamic";
 
-export const GET = handle(async (req: Request) => {
+export const GET = handleAuth([UsuarioRole.OPERADOR], async (req: Request) => {
   const { searchParams } = new URL(req.url);
   const semanas = Math.min(parseInt(searchParams.get("semanas") ?? "8"), 16);
 

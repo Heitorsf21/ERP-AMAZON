@@ -1,10 +1,11 @@
-import { handle, ok } from "@/lib/api";
+import { handleAuth, ok } from "@/lib/api";
+import { UsuarioRole } from "@/lib/auth";
 import { getStatus, verificarConexao } from "@/lib/gmail";
 import { db } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
-export const GET = handle(async () => {
+export const GET = handleAuth([UsuarioRole.ADMIN], async () => {
   const base = await getStatus();
 
   let emailConta: string | undefined;
@@ -16,7 +17,6 @@ export const GET = handle(async () => {
     }
   }
 
-  // Last 10 sync results stored in ConfiguracaoSistema
   const historicoRow = await db.configuracaoSistema.findUnique({
     where: { chave: "gmail_historico_sync" },
   });

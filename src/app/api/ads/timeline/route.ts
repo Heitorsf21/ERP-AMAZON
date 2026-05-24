@@ -1,4 +1,5 @@
-import { handle, ok } from "@/lib/api";
+import { handleAuth, ok } from "@/lib/api";
+import { UsuarioRole } from "@/lib/auth";
 import { PeriodoPreset, resolverPeriodo } from "@/lib/periodo";
 import { getAdsTimeline } from "@/modules/amazon/ads-aggregation";
 
@@ -7,7 +8,7 @@ export const dynamic = "force-dynamic";
 // Granularidade aceita: day | week. Se houver dados em AmazonAdsMetricaDiaria
 // no periodo, agrupa pelo dia real. Caso contrario, cai no fallback legacy
 // (AdsCampanha agrupada pelo dia/semana de periodoInicio).
-export const GET = handle(async (req: Request) => {
+export const GET = handleAuth([UsuarioRole.ADMIN], async (req: Request) => {
   const { searchParams } = new URL(req.url);
   const de = searchParams.get("de");
   const ate = searchParams.get("ate");

@@ -1,11 +1,12 @@
 import { subDays } from "date-fns";
-import { handle, ok } from "@/lib/api";
+import { handleAuth, ok } from "@/lib/api";
+import { UsuarioRole } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { whereVendaAmazonContabilizavelEstrito } from "@/modules/vendas/filtros";
 
 export const dynamic = "force-dynamic";
 
-export const GET = handle(async () => {
+export const GET = handleAuth([UsuarioRole.OPERADOR], async () => {
   const desde = subDays(new Date(), 30);
 
   const [produtos, vendas] = await Promise.all([

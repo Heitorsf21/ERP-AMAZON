@@ -3,23 +3,20 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import {
-  ArrowLeft,
-  CheckCircle2,
-  Eye,
-  EyeOff,
-  Loader2,
-  Lock,
-} from "lucide-react";
+import { ArrowLeft, CheckCircle2, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { PasswordInput } from "@/components/ui/password-input";
+import {
+  PASSWORD_POLICY_MESSAGE,
+  PASSWORD_POLICY_MIN_LENGTH,
+  validatePasswordClient,
+} from "@/lib/password-policy";
 
 export function RedefinirSenhaForm({ token }: { token: string }) {
   const router = useRouter();
   const [novaSenha, setNovaSenha] = useState("");
   const [confirmar, setConfirmar] = useState("");
-  const [mostrar, setMostrar] = useState(false);
   const [enviando, setEnviando] = useState(false);
   const [sucesso, setSucesso] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
@@ -28,8 +25,9 @@ export function RedefinirSenhaForm({ token }: { token: string }) {
     e.preventDefault();
     setErro(null);
 
-    if (novaSenha.length < 8) {
-      setErro("Senha precisa ter ao menos 8 caracteres.");
+    const policyErr = validatePasswordClient(novaSenha);
+    if (policyErr) {
+      setErro(policyErr);
       return;
     }
     if (novaSenha !== confirmar) {
@@ -87,57 +85,29 @@ export function RedefinirSenhaForm({ token }: { token: string }) {
           <>
             <h1 className="text-2xl font-semibold tracking-tight">Nova senha</h1>
             <p className="mt-1.5 text-sm text-muted-foreground">
-              Mínimo de 8 caracteres. Use uma combinação forte.
+              {PASSWORD_POLICY_MESSAGE}.
             </p>
 
             <form onSubmit={onSubmit} className="mt-6 space-y-4" noValidate>
               <div className="space-y-1.5">
                 <Label htmlFor="nova">Nova senha</Label>
-                <div className="relative">
-                  <Lock className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                  <Input
-                    id="nova"
-                    type={mostrar ? "text" : "password"}
-                    autoComplete="new-password"
-                    className="pl-9 pr-10"
-                    value={novaSenha}
-                    onChange={(e) => setNovaSenha(e.target.value)}
-                    minLength={8}
-                    required
-                    disabled={enviando}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setMostrar((v) => !v)}
-                    tabIndex={-1}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-muted-foreground transition hover:text-foreground"
-                    aria-label={mostrar ? "Ocultar senha" : "Mostrar senha"}
-                  >
-                    {mostrar ? (
-                      <EyeOff className="h-4 w-4" />
-                    ) : (
-                      <Eye className="h-4 w-4" />
-                    )}
-                  </button>
-                </div>
+                <PasswordInput
+                  id="nova"
+                  value={novaSenha}
+                  onChange={setNovaSenha}
+                  disabled={enviando}
+                />
               </div>
 
               <div className="space-y-1.5">
                 <Label htmlFor="confirmar">Confirmar nova senha</Label>
-                <div className="relative">
-                  <Lock className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                  <Input
-                    id="confirmar"
-                    type={mostrar ? "text" : "password"}
-                    autoComplete="new-password"
-                    className="pl-9"
-                    value={confirmar}
-                    onChange={(e) => setConfirmar(e.target.value)}
-                    minLength={8}
-                    required
-                    disabled={enviando}
-                  />
-                </div>
+                <PasswordInput
+                  id="confirmar"
+                  value={confirmar}
+                  onChange={setConfirmar}
+                  disabled={enviando}
+                  showRequirements={false}
+                />
               </div>
 
               {erro && (
@@ -146,7 +116,11 @@ export function RedefinirSenhaForm({ token }: { token: string }) {
                 </div>
               )}
 
-              <Button type="submit" className="w-full" disabled={enviando}>
+              <Button
+                type="submit"
+                className="w-full"
+                disabled={enviando || novaSenha.length < PASSWORD_POLICY_MIN_LENGTH}
+              >
                 {enviando ? (
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />

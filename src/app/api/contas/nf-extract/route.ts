@@ -4,6 +4,7 @@ import { writeFile, mkdir } from "fs/promises";
 import path from "path";
 import { contasService } from "@/modules/contas-a-pagar/service";
 import { fileMatchesDeclaredMime } from "@/lib/file-validation";
+import { requireRole, UsuarioRole } from "@/lib/auth";
 
 // Tipos aceitos pelo endpoint.
 const MIME_ACEITOS = new Set([
@@ -34,6 +35,12 @@ Regras importantes:
 - Retorne SOMENTE o JSON válido, sem markdown, sem texto adicional, sem explicações.`;
 
 export async function POST(req: Request) {
+  try {
+    await requireRole(UsuarioRole.ADMIN, UsuarioRole.FINANCEIRO);
+  } catch (e) {
+    if (e instanceof Response) return e;
+    throw e;
+  }
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
     return NextResponse.json(

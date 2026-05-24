@@ -1,5 +1,6 @@
 import { z } from "zod";
-import { handle, ok } from "@/lib/api";
+import { handleAuth, ok } from "@/lib/api";
+import { UsuarioRole } from "@/lib/auth";
 import {
   PeriodoPreset,
   resolverPeriodo,
@@ -16,14 +17,14 @@ const criarAdsGastoManualSchema = z.object({
   valorCentavos: z.number().int().min(1),
 });
 
-export const GET = handle(async (req: Request) => {
+export const GET = handleAuth([UsuarioRole.ADMIN], async (req: Request) => {
   const { searchParams } = new URL(req.url);
   const periodo = resolverPeriodoDeBusca(searchParams);
   const gastos = await dashboardEcommerceService.listarAdsGastoManual(periodo);
   return ok(gastos);
 });
 
-export const POST = handle(async (req: Request) => {
+export const POST = handleAuth([UsuarioRole.ADMIN], async (req: Request) => {
   const body = criarAdsGastoManualSchema.parse(await req.json());
   const periodo = resolverPeriodo(
     PeriodoPreset.PERSONALIZADO,

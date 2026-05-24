@@ -3,6 +3,7 @@ import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { logger } from "@/lib/logger";
 import { resolverImagemProduto } from "@/lib/amazon-images";
+import { requireRole, UsuarioRole } from "@/lib/auth";
 import { PeriodoPreset, resolverPeriodo } from "@/lib/periodo";
 import { montarBreakdownVendas } from "@/modules/vendas/breakdown";
 import {
@@ -19,6 +20,7 @@ export const dynamic = "force-dynamic";
 export async function GET(req: NextRequest): Promise<NextResponse> {
   const inicio = Date.now();
   try {
+    await requireRole(UsuarioRole.OPERADOR);
     const { searchParams } = req.nextUrl;
     const preset = searchParams.get("preset");
     const de = searchParams.get("de");
@@ -160,6 +162,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       porPagina,
     });
   } catch (err) {
+    if (err instanceof Response) return err as NextResponse;
     logger.error({ err }, "api vendas list error");
     return NextResponse.json({ erro: "Erro interno" }, { status: 500 });
   }

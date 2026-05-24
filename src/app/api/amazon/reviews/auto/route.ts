@@ -1,10 +1,11 @@
-import { handle, ok } from "@/lib/api";
+import { handleAuth, ok } from "@/lib/api";
+import { UsuarioRole } from "@/lib/auth";
 import { enqueueAmazonSyncJob } from "@/modules/amazon/jobs";
 import { TipoAmazonSyncJob } from "@/modules/shared/domain";
 
 export const dynamic = "force-dynamic";
 
-export const POST = handle(async () => {
+export const POST = handleAuth([UsuarioRole.ADMIN], async () => {
   const discovery = await enqueueAmazonSyncJob(
     TipoAmazonSyncJob.REVIEWS_DISCOVERY,
     {},

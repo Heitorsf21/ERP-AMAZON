@@ -9,6 +9,7 @@ const mockDb = vi.hoisted(() => ({
   configuracaoSistema: { findMany: vi.fn() },
   amazonFeeEstimate: { findUnique: vi.fn() },
   vendaCustoEventual: { findMany: vi.fn() },
+  amazonAdsMetricaDiaria: { findMany: vi.fn() },
 }));
 
 vi.mock("@/lib/db", () => ({ db: mockDb }));
@@ -144,6 +145,7 @@ beforeEach(() => {
   mockDb.amazonFinanceTransaction.findMany.mockResolvedValue([]);
   mockDb.produtoCustoHistorico.findMany.mockResolvedValue([]);
   mockDb.vendaCustoEventual.findMany.mockResolvedValue([]);
+  mockDb.amazonAdsMetricaDiaria.findMany.mockResolvedValue([]);
 });
 
 describe("montarBreakdownVendas · settled (com Finance payload)", () => {

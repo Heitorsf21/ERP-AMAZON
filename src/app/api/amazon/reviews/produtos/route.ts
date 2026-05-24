@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
-import { handle, ok } from "@/lib/api";
+import { handleAuth, ok } from "@/lib/api";
+import { UsuarioRole } from "@/lib/auth";
 import {
   listReviewProductToggles,
   toggleProdutoReviews,
@@ -7,21 +8,24 @@ import {
 
 export const dynamic = "force-dynamic";
 
-export const GET = handle(async () => {
+export const GET = handleAuth(async () => {
   const produtos = await listReviewProductToggles();
   return ok(produtos);
 });
 
-export const PATCH = handle(async (req: NextRequest) => {
-  const body = (await req.json().catch(() => ({}))) as {
-    produtoId?: string;
-    ativo?: boolean;
-  };
+export const PATCH = handleAuth(
+  [UsuarioRole.OPERADOR],
+  async (req: NextRequest) => {
+    const body = (await req.json().catch(() => ({}))) as {
+      produtoId?: string;
+      ativo?: boolean;
+    };
 
-  if (!body.produtoId || typeof body.ativo !== "boolean") {
-    throw new Error("produtoId e ativo (boolean) são obrigatórios");
-  }
+    if (!body.produtoId || typeof body.ativo !== "boolean") {
+      throw new Error("produtoId e ativo (boolean) são obrigatórios");
+    }
 
-  const produto = await toggleProdutoReviews(body.produtoId, body.ativo);
-  return ok(produto);
-});
+    const produto = await toggleProdutoReviews(body.produtoId, body.ativo);
+    return ok(produto);
+  },
+);

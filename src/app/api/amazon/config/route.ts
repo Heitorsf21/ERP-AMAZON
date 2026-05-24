@@ -12,8 +12,10 @@ import {
 export const dynamic = "force-dynamic";
 
 export const GET = handle(async () => {
+  await requireRole(UsuarioRole.ADMIN);
   const config = await getAmazonConfig();
-  // Mascarar chaves secretas na resposta
+  // Mascarar chaves secretas na resposta. NUNCA expor sufixo dos segredos —
+  // valor mascarado fixo sem comprimento real.
   const safe: Record<string, string> = {};
   for (const key of AMAZON_CONFIG_KEYS) {
     const val = config[key] ?? "";
@@ -21,7 +23,7 @@ export const GET = handle(async () => {
       val &&
       (key.includes("secret") || key.includes("token"))
     ) {
-      safe[key] = val.length > 8 ? `${"*".repeat(val.length - 4)}${val.slice(-4)}` : "****";
+      safe[key] = "••••••••";
     } else {
       safe[key] = val;
     }

@@ -14,6 +14,7 @@ import path from "node:path";
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { fileMatchesDeclaredMime } from "@/lib/file-validation";
+import { requireRole, requireSession, UsuarioRole } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -29,6 +30,12 @@ const UPLOADS_ROOT = path.resolve(process.cwd(), "uploads", "produtos");
 type Params = { params: Promise<{ id: string }> };
 
 export async function POST(req: Request, { params }: Params) {
+  try {
+    await requireRole(UsuarioRole.ADMIN, UsuarioRole.OPERADOR);
+  } catch (e) {
+    if (e instanceof Response) return e;
+    throw e;
+  }
   const { id } = await params;
   const produto = await db.produto.findUnique({ where: { id } });
   if (!produto) {
@@ -77,6 +84,12 @@ export async function POST(req: Request, { params }: Params) {
 }
 
 export async function GET(_req: Request, { params }: Params) {
+  try {
+    await requireSession();
+  } catch (e) {
+    if (e instanceof Response) return e;
+    throw e;
+  }
   const { id } = await params;
   const produto = await db.produto.findUnique({
     where: { id },
@@ -123,6 +136,12 @@ export async function GET(_req: Request, { params }: Params) {
 }
 
 export async function DELETE(_req: Request, { params }: Params) {
+  try {
+    await requireRole(UsuarioRole.ADMIN, UsuarioRole.OPERADOR);
+  } catch (e) {
+    if (e instanceof Response) return e;
+    throw e;
+  }
   const { id } = await params;
   for (const e of Object.values(ALLOWED_MIMES)) {
     await fs.rm(path.join(UPLOADS_ROOT, `${id}.${e}`), { force: true });

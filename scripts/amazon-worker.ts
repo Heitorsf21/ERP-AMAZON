@@ -23,9 +23,36 @@ if (process.env.NODE_ENV !== "production" && !process.env.CONFIG_ENCRYPTION_KEY)
 }
 
 import { processAmazonSyncJobs } from "../src/modules/amazon/worker";
+import { cleanupExpiredLoginThrottle } from "../src/lib/auth-rate-limit";
 
 const once = process.argv.includes("--once");
 const intervalMs = Number(process.env.AMAZON_WORKER_INTERVAL_MS ?? 30_000);
+
+// Cleanup do LoginThrottle: deleta buckets expirados 1x/hora. Operação leve
+// (DELETE com índice em resetAt). Sem isso a tabela cresce devagar mas sem
+// limite teórico.
+const LOGIN_THROTTLE_CLEANUP_INTERVAL_MS = 60 * 60_000;
+let lastLoginThrottleCleanup = 0;
+
+async function maybeRunLoginThrottleCleanup() {
+  const now = Date.now();
+  if (now - lastLoginThrottleCleanup < LOGIN_THROTTLE_CLEANUP_INTERVAL_MS) return;
+  try {
+    const removed = await cleanupExpiredLoginThrottle();
+    lastLoginThrottleCleanup = now;
+    if (removed > 0) {
+      console.log(
+        JSON.stringify({
+          at: new Date().toISOString(),
+          task: "login_throttle_cleanup",
+          removed,
+        }),
+      );
+    }
+  } catch (err) {
+    console.error("[worker] login_throttle_cleanup falhou:", err);
+  }
+}
 
 async function main() {
   do {
@@ -38,6 +65,8 @@ async function main() {
     if (result.processed > 0) {
       console.log(JSON.stringify({ at: new Date().toISOString(), ...result }));
     }
+
+    await maybeRunLoginThrottleCleanup();
 
     if (!once) {
       await sleep(intervalMs);

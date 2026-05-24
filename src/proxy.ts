@@ -87,6 +87,33 @@ function isPublic(pathname: string): boolean {
   return PUBLIC_PREFIXES.some((p) => pathname.startsWith(p));
 }
 
+// CSP defaultando em Report-Only (nao bloqueia, so observa). Para promover
+// para enforce sem mudar codigo, setar CSP_ENFORCE=true no .env. Antes de
+// ativar, confirmar 0 violacoes em DevTools por 1-2 semanas. Diretrizes em
+// docs/csp.md.
+//
+// 'unsafe-inline'/'unsafe-eval' em script-src sao necessarios enquanto o
+// Next 16 + React 18 injetam hidratacao inline. Refinar para nonces e
+// trabalho separado.
+const CSP_DIRECTIVES = [
+  "default-src 'self'",
+  "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data: blob: https://m.media-amazon.com https://images-na.ssl-images-amazon.com",
+  "font-src 'self' data:",
+  "connect-src 'self'",
+  "frame-ancestors 'none'",
+  "form-action 'self'",
+  "base-uri 'self'",
+  "object-src 'none'",
+].join("; ");
+
+function cspHeaderName(): string {
+  return process.env.CSP_ENFORCE === "true"
+    ? "Content-Security-Policy"
+    : "Content-Security-Policy-Report-Only";
+}
+
 function withSecurityHeaders(res: NextResponse): NextResponse {
   const headers = res.headers;
   headers.set("X-Content-Type-Options", "nosniff");
@@ -98,6 +125,7 @@ function withSecurityHeaders(res: NextResponse): NextResponse {
   );
   headers.set("Cross-Origin-Opener-Policy", "same-origin");
   headers.set("X-DNS-Prefetch-Control", "off");
+  headers.set(cspHeaderName(), CSP_DIRECTIVES);
 
   if (process.env.NODE_ENV === "production") {
     headers.set(

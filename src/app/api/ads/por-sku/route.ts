@@ -1,4 +1,5 @@
-import { handle, ok } from "@/lib/api";
+import { handleAuth, ok } from "@/lib/api";
+import { UsuarioRole } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { PeriodoPreset, resolverPeriodo } from "@/lib/periodo";
 import {
@@ -9,7 +10,7 @@ import { whereVendaAmazonContabilizavelEstrito } from "@/modules/vendas/filtros"
 
 export const dynamic = "force-dynamic";
 
-export const GET = handle(async (req: Request) => {
+export const GET = handleAuth([UsuarioRole.ADMIN], async (req: Request) => {
   const { searchParams } = new URL(req.url);
   const de = searchParams.get("de");
   const ate = searchParams.get("ate");
