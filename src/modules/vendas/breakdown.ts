@@ -82,6 +82,7 @@ export type BreakdownVenda = {
   taxaFbaCentavos: number;
   taxaParcelamentoCentavos: number;
   closingFeeCentavos: number;
+  taxasAmazonNaoDetalhadasCentavos: number;
   promoRebatesCentavos: number;
   impostoCentavos: number;
   custoProdutoCentavos: number;
@@ -385,6 +386,7 @@ function montarUma(
   let taxaFbaCentavos = 0;
   let taxaParcelamentoCentavos = 0;
   let closingFeeCentavos = 0;
+  let taxasAmazonNaoDetalhadasCentavos = 0;
   let promoRebatesCentavos = 0;
   let freteRecebidoCentavos = 0;
   let fretePagoCentavos = 0;
@@ -397,16 +399,18 @@ function montarUma(
     taxaFbaCentavos = parsed.taxaFbaCentavos;
     taxaParcelamentoCentavos = parsed.taxaParcelamentoCentavos;
     closingFeeCentavos = parsed.closingFeeCentavos;
+    taxasAmazonNaoDetalhadasCentavos =
+      parsed.taxasAmazonNaoDetalhadasCentavos;
     promoRebatesCentavos = parsed.promoRebatesCentavos;
     freteRecebidoCentavos = parsed.freteRecebidoCentavos;
     fretePagoCentavos = parsed.fretePagoCentavos;
   } else if (isCancelado && taxasRealCentavos <= 0 && freteAgregadoCentavos <= 0) {
     origem = "no_data";
   } else if (taxasRealCentavos > 0) {
-    // Venda settled mas sem payload Finance disponível — exibe o agregado
-    // como comissão (não perde o valor) e zera os demais sub-componentes.
+    // Venda settled mas sem payload Finance disponivel: preserva o agregado
+    // sem inventar a divisao entre comissao/FBA/parcelamento.
     origem = "settled";
-    comissaoCentavos = taxasRealCentavos;
+    taxasAmazonNaoDetalhadasCentavos = taxasRealCentavos;
     fretePagoCentavos = freteAgregadoCentavos;
   } else if (totalItensCentavos > 0 && produto?.produtoId != null) {
     origem = "estimated";
@@ -461,6 +465,7 @@ function montarUma(
       - taxaFbaCentavos
       - taxaParcelamentoCentavos
       - closingFeeCentavos
+      - taxasAmazonNaoDetalhadasCentavos
       - promoRebatesCentavos
       - impostoCentavos
       - custoProdutoCentavos
@@ -492,6 +497,7 @@ function montarUma(
     taxaFbaCentavos,
     taxaParcelamentoCentavos,
     closingFeeCentavos,
+    taxasAmazonNaoDetalhadasCentavos,
     promoRebatesCentavos,
     impostoCentavos: origem === "no_data" ? 0 : impostoCentavos,
     custoProdutoCentavos: origem === "no_data" ? 0 : custoProdutoCentavos,
@@ -554,6 +560,7 @@ export function breakdownVazio(): BreakdownVenda {
     taxaFbaCentavos: 0,
     taxaParcelamentoCentavos: 0,
     closingFeeCentavos: 0,
+    taxasAmazonNaoDetalhadasCentavos: 0,
     promoRebatesCentavos: 0,
     impostoCentavos: 0,
     custoProdutoCentavos: 0,

@@ -201,7 +201,7 @@ describe("montarBreakdownVendas · settled (com Finance payload)", () => {
     expect(b.margemBps).toBe(2624);
   });
 
-  it("usa taxasCentavos agregado como comissão quando não há payload Finance", async () => {
+  it("usa taxasCentavos agregado como taxas nao detalhadas quando nao ha payload Finance", async () => {
     mockDb.produto.findMany.mockResolvedValue([
       {
         id: "prod-2",
@@ -226,9 +226,51 @@ describe("montarBreakdownVendas · settled (com Finance payload)", () => {
     const b = breakdownPorVenda.get(venda.id)!;
 
     expect(b.origem).toBe("settled");
-    expect(b.comissaoCentavos).toBe(1500);
+    expect(b.comissaoCentavos).toBe(0);
     expect(b.taxaFbaCentavos).toBe(0);
     expect(b.taxaParcelamentoCentavos).toBe(0);
+    expect(b.taxasAmazonNaoDetalhadasCentavos).toBe(1500);
+    // 7999 - 1500 - imposto(480) - custo(2000)
+    expect(b.lucroCentavos).toBe(4019);
+  });
+
+  it("mantem frete recebido como receita na conciliacao Amazon", async () => {
+    mockDb.produto.findMany.mockResolvedValue([
+      {
+        id: "prod-ship",
+        sku: SKU_OK,
+        asin: null,
+        amazonImagemUrl: null,
+        imagemUrl: null,
+        amazonCategoriaFee: null,
+        custoUnitario: 2000,
+      },
+    ]);
+    mockDb.amazonFinanceTransaction.findMany.mockResolvedValue([
+      {
+        amazonOrderId: ORDER_ID,
+        transactionType: "Shipment",
+        payload: shipmentPayload({
+          commission: -9.6,
+          fba: -5,
+          shippingCharge: 4.1,
+        }),
+      },
+    ]);
+
+    const venda = vendaBase({
+      taxasCentavos: 1460,
+      statusPedido: "Shipped",
+      statusFinanceiro: "LIQUIDADO",
+    });
+
+    const { breakdownPorVenda } = await montarBreakdownVendas([venda]);
+    const b = breakdownPorVenda.get(venda.id)!;
+
+    expect(b.freteRecebidoCentavos).toBe(410);
+    expect(b.fretePagoCentavos).toBe(0);
+    // 7999 + 410 - 960 - 500 - imposto(480) - custo(2000)
+    expect(b.lucroCentavos).toBe(4469);
   });
 });
 

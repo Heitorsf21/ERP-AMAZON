@@ -9,12 +9,16 @@ import {
 import { valorBrutoDaVenda } from "@/modules/vendas/valores";
 
 type Args = {
-  orderId: string;
+  orderId?: string;
   sku?: string;
   live: boolean;
+  scan: boolean;
+  de?: string;
+  ate?: string;
   diasAntes: number;
   diasDepois: number;
   maxPages: number;
+  limit: number;
 };
 
 type VendaTaxa = {
@@ -46,6 +50,17 @@ type FinanceItem = {
   shippingCentavos: number;
   netCentavos: number;
   feeBreakdowns: Array<{ type: string; amountCentavos: number }>;
+  comissaoCentavos: number;
+  fbaCentavos: number;
+  parcelamentoCentavos: number;
+  closingFeeCentavos: number;
+  taxasNaoDetalhadasCentavos: number;
+  freteRecebidoCentavos: number;
+  fretePagoCentavos: number;
+  freteLiquidoCentavos: number;
+  taxasAmazonTotalCentavos: number;
+  amazonFeesSemSubBreakdown: boolean;
+  fbaLikeNaoReconhecido: string[];
 };
 
 type FinanceTransactionRow = {
@@ -59,10 +74,14 @@ type FinanceTransactionRow = {
 
 function parseArgs(argv: string[]): Args {
   const orderIndex = argv.findIndex((arg) => arg === "--order");
-  const orderId = orderIndex >= 0 ? argv[orderIndex + 1]?.trim() : argv[0]?.trim();
-  if (!orderId) {
-    throw new Error("Informe o pedido: --order 701-...");
-  }
+  const orderId =
+    orderIndex >= 0
+      ? argv[orderIndex + 1]?.trim()
+      : argv[0] && !argv[0].startsWith("--")
+        ? argv[0].trim()
+        : undefined;
+  const scan = argv.includes("--scan");
+  if (!orderId && !scan) throw new Error("Informe o pedido: --order 701-... ou use --scan");
 
   const skuIndex = argv.findIndex((arg) => arg === "--sku");
   const sku = skuIndex >= 0 ? argv[skuIndex + 1]?.trim() : undefined;
@@ -71,10 +90,21 @@ function parseArgs(argv: string[]): Args {
     orderId,
     sku,
     live: argv.includes("--live"),
+    scan,
+    de: readStringArg(argv, "--de"),
+    ate: readStringArg(argv, "--ate"),
     diasAntes: readNumberArg(argv, "--dias-antes", 2),
     diasDepois: readNumberArg(argv, "--dias-depois", 14),
     maxPages: readNumberArg(argv, "--max-pages", 20),
+    limit: readNumberArg(argv, "--limit", 5000),
   };
+}
+
+function readStringArg(argv: string[], name: string): string | undefined {
+  const index = argv.findIndex((arg) => arg === name);
+  if (index < 0) return undefined;
+  const value = argv[index + 1]?.trim();
+  return value && !value.startsWith("--") ? value : undefined;
 }
 
 function readNumberArg(argv: string[], name: string, fallback: number): number {
@@ -218,6 +248,120 @@ function sumFeeFallback(value: unknown): number {
     );
   });
   return total;
+}
+
+type FeesClassificadas = Pick<
+  FinanceItem,
+  | "comissaoCentavos"
+  | "fbaCentavos"
+  | "parcelamentoCentavos"
+  | "closingFeeCentavos"
+  | "taxasNaoDetalhadasCentavos"
+  | "taxasAmazonTotalCentavos"
+  | "amazonFeesSemSubBreakdown"
+  | "fbaLikeNaoReconhecido"
+>;
+
+function classificarFeesFinanceiras(input: {
+  amazonFeesCentavos: number;
+  feeFallbackCentavos: number;
+  feeBreakdowns: Array<{ type: string; amountCentavos: number }>;
+}): FeesClassificadas {
+  const amazonFeesAbs = Math.abs(input.amazonFeesCentavos);
+  const fallbackAbs = Math.abs(input.feeFallbackCentavos);
+  const semSubBreakdown =
+    amazonFeesAbs > 0 && input.feeBreakdowns.length === 0;
+  const result: FeesClassificadas = {
+    comissaoCentavos: 0,
+    fbaCentavos: 0,
+    parcelamentoCentavos: 0,
+    closingFeeCentavos: 0,
+    taxasNaoDetalhadasCentavos: semSubBreakdown
+      ? amazonFeesAbs
+      : amazonFeesAbs <= 0 && fallbackAbs > 0
+        ? fallbackAbs
+        : 0,
+    taxasAmazonTotalCentavos: amazonFeesAbs || fallbackAbs,
+    amazonFeesSemSubBreakdown: semSubBreakdown,
+    fbaLikeNaoReconhecido: [],
+  };
+
+  if (semSubBreakdown || input.feeBreakdowns.length === 0) return result;
+
+  for (const fee of input.feeBreakdowns) {
+    const valor = Math.abs(fee.amountCentavos);
+    if (valor <= 0) continue;
+
+    if (matchesCommissionType(fee.type)) {
+      result.comissaoCentavos += valor;
+    } else if (matchesFbaType(fee.type)) {
+      result.fbaCentavos += valor;
+    } else if (matchesParcelamentoType(fee.type)) {
+      result.parcelamentoCentavos += valor;
+    } else if (matchesClosingFeeType(fee.type)) {
+      result.closingFeeCentavos += valor;
+    } else {
+      result.taxasNaoDetalhadasCentavos += valor;
+      if (looksLikeFbaType(fee.type)) {
+        result.fbaLikeNaoReconhecido.push(fee.type);
+      }
+    }
+  }
+
+  const somaClassificada =
+    result.comissaoCentavos +
+    result.fbaCentavos +
+    result.parcelamentoCentavos +
+    result.closingFeeCentavos +
+    result.taxasNaoDetalhadasCentavos;
+  result.taxasAmazonTotalCentavos = amazonFeesAbs || somaClassificada;
+  return result;
+}
+
+function normalizeFeeType(type: string): string {
+  return type.toLowerCase().replace(/[^a-z]/g, "");
+}
+
+function matchesCommissionType(type: string): boolean {
+  const t = type.toLowerCase();
+  return t === "commission" || t === "referralfee" || t === "referral fee";
+}
+
+function matchesFbaType(type: string): boolean {
+  const t = normalizeFeeType(type);
+  return (
+    t === "fbafulfillmentfee" ||
+    t === "fbafulfillmentfees" ||
+    t === "fbafee" ||
+    t === "fbafees" ||
+    t === "fulfillmentfee" ||
+    t === "fulfillmentfees" ||
+    t === "fbatransactionfee" ||
+    t === "fbaperunitfulfillmentfee" ||
+    t === "fbaperorderfulfillmentfee" ||
+    t === "fbamultitierperunitfee" ||
+    t.startsWith("fbafulfill") ||
+    (t.startsWith("fba") && (t.endsWith("fee") || t.endsWith("fees")))
+  );
+}
+
+function matchesParcelamentoType(type: string): boolean {
+  const t = normalizeFeeType(type);
+  return t === "amazonforallfee" || t === "installmentfee";
+}
+
+function matchesClosingFeeType(type: string): boolean {
+  const t = normalizeFeeType(type);
+  return (
+    t === "closingfee" ||
+    t === "variableclosingfee" ||
+    t === "fixedclosingfee"
+  );
+}
+
+function looksLikeFbaType(type: string): boolean {
+  const t = normalizeFeeType(type);
+  return t.includes("fba") || t.includes("fulfillment");
 }
 
 function getFinanceItems(payload: unknown): Record<string, unknown>[] {
@@ -379,6 +523,8 @@ function transactionRowFromLive(
 
 async function loadLiveTransactions(args: Args, vendas: VendaTaxa[]) {
   if (!args.live) return [];
+  if (!args.orderId) throw new Error("--live exige --order");
+  const orderId = args.orderId;
 
   const creds = await loadCredentials();
   if (!creds) throw new Error("Credenciais Amazon SP-API nao configuradas.");
@@ -404,8 +550,8 @@ async function loadLiveTransactions(args: Args, vendas: VendaTaxa[]) {
     { maxPages: args.maxPages },
   );
   const filtered = transactions.filter((transaction) => {
-    if (findOrderId(transaction) === args.orderId) return true;
-    return JSON.stringify(transaction).includes(args.orderId);
+    if (findOrderId(transaction) === orderId) return true;
+    return JSON.stringify(transaction).includes(orderId);
   });
 
   console.log(
@@ -495,6 +641,17 @@ function financeItemFromTransaction(
             ];
           })
       : [];
+    const fees = classificarFeesFinanceiras({
+      amazonFeesCentavos,
+      feeFallbackCentavos,
+      feeBreakdowns,
+    });
+    const freteRecebidoCentavos = Math.abs(
+      sumTopBreakdowns(item, ["ShippingCharge", "Shipping"]),
+    );
+    const fretePagoCentavos = Math.abs(
+      sumTopBreakdowns(item, ["ShippingChargeback"]),
+    );
 
     return [
       {
@@ -509,13 +666,13 @@ function financeItemFromTransaction(
         productChargesCentavos: topBreakdownAmount(item, "ProductCharges"),
         amazonFeesCentavos,
         feeFallbackCentavos,
-        shippingCentavos: sumTopBreakdowns(item, [
-          "ShippingChargeback",
-          "ShippingCharge",
-          "Shipping",
-        ]),
+        shippingCentavos: freteRecebidoCentavos - fretePagoCentavos,
         netCentavos: amountToCents(item),
         feeBreakdowns,
+        ...fees,
+        freteRecebidoCentavos,
+        fretePagoCentavos,
+        freteLiquidoCentavos: freteRecebidoCentavos - fretePagoCentavos,
       },
     ];
   });
@@ -540,11 +697,175 @@ function printVenda(venda: VendaTaxa) {
   );
 }
 
-async function main() {
-  const args = parseArgs(process.argv.slice(2));
+function resolverPeriodoScan(args: Args): { de: Date; ate: Date } {
+  const ate = args.ate ? new Date(`${args.ate}T23:59:59.999Z`) : new Date();
+  const de = args.de
+    ? new Date(`${args.de}T00:00:00.000Z`)
+    : new Date(ate.getTime() - 14 * 24 * 60 * 60 * 1000);
+  if (!Number.isFinite(de.getTime()) || !Number.isFinite(ate.getTime())) {
+    throw new Error("Periodo invalido. Use --de YYYY-MM-DD --ate YYYY-MM-DD.");
+  }
+  return { de, ate };
+}
+
+function chunk<T>(items: T[], size: number): T[][] {
+  const result: T[][] = [];
+  for (let i = 0; i < items.length; i += size) {
+    result.push(items.slice(i, i + size));
+  }
+  return result;
+}
+
+async function runScan(args: Args) {
+  const { de, ate } = resolverPeriodoScan(args);
   const vendas = await db.vendaAmazon.findMany({
     where: {
-      amazonOrderId: args.orderId,
+      dataVenda: { gte: de, lte: ate },
+      ...(args.sku ? { sku: args.sku } : {}),
+    },
+    orderBy: [{ dataVenda: "desc" }],
+    take: args.limit,
+    select: {
+      amazonOrderId: true,
+      sku: true,
+      quantidade: true,
+      precoUnitarioCentavos: true,
+      valorBrutoCentavos: true,
+      taxasCentavos: true,
+      fretesCentavos: true,
+      liquidoMarketplaceCentavos: true,
+      statusFinanceiro: true,
+      liquidacaoId: true,
+      dataVenda: true,
+    },
+  });
+
+  const orderIds = [...new Set(vendas.map((venda) => venda.amazonOrderId))];
+  const skusPorOrder = new Map<string, Set<string>>();
+  for (const venda of vendas) {
+    const set = skusPorOrder.get(venda.amazonOrderId) ?? new Set<string>();
+    set.add(venda.sku);
+    skusPorOrder.set(venda.amazonOrderId, set);
+  }
+
+  type ScanTxRow = FinanceTransactionRow & { amazonOrderId: string | null };
+  const txs: ScanTxRow[] = [];
+  for (const ids of chunk(orderIds, 500)) {
+    txs.push(
+      ...(await db.amazonFinanceTransaction.findMany({
+        where: { amazonOrderId: { in: ids } },
+        orderBy: [{ postedDate: "asc" }, { transactionId: "asc" }],
+        select: {
+          amazonOrderId: true,
+          transactionId: true,
+          postedDate: true,
+          transactionType: true,
+          transactionStatus: true,
+          totalAmountCentavos: true,
+          payload: true,
+        },
+      })),
+    );
+  }
+
+  const financeItems = txs.flatMap((tx) => {
+    const orderId = tx.amazonOrderId ?? findOrderId(readJson(tx.payload)) ?? "";
+    const skus = skusPorOrder.get(orderId);
+    const fallbackSku = skus && skus.size === 1 ? [...skus][0] : undefined;
+    return financeItemFromTransaction(
+      { ...tx, source: "stored" as const },
+      { orderId, fallbackSku },
+    );
+  });
+
+  const ordersComAmazonFeesSemSub = new Set<string>();
+  const ordersComFbaLikeNaoReconhecido = new Set<string>();
+  const ordersComFreteRecebidoLiquido = new Set<string>();
+  const gruposShipment = new Map<string, { total: number; statuses: Set<string> }>();
+
+  for (const item of financeItems) {
+    const orderId = findOrderId(readJson(
+      txs.find((tx) => tx.transactionId === item.transactionId)?.payload,
+    )) ?? txs.find((tx) => tx.transactionId === item.transactionId)?.amazonOrderId ?? "";
+    const orderSku = `${orderId}\u0000${item.sku}`;
+
+    if (item.amazonFeesSemSubBreakdown) ordersComAmazonFeesSemSub.add(orderSku);
+    if (item.fbaLikeNaoReconhecido.length > 0) {
+      ordersComFbaLikeNaoReconhecido.add(orderSku);
+    }
+    if (item.freteLiquidoCentavos > 0) ordersComFreteRecebidoLiquido.add(orderSku);
+
+    const tipo = normalizeKind(item.transactionType);
+    if (tipo.includes("shipment")) {
+      const grupo = gruposShipment.get(orderSku) ?? {
+        total: 0,
+        statuses: new Set<string>(),
+      };
+      grupo.total += 1;
+      grupo.statuses.add(item.transactionStatus ?? "(sem status)");
+      gruposShipment.set(orderSku, grupo);
+    }
+  }
+
+  const duplicidades = [...gruposShipment.entries()].filter(([, grupo]) => {
+    if (grupo.total <= 1) return false;
+    const statuses = [...grupo.statuses].map((s) => s.toUpperCase());
+    return (
+      statuses.some((s) => s.includes("DEFERRED")) &&
+      statuses.some((s) => s.includes("RELEASED"))
+    );
+  });
+
+  console.log("[amazon:taxas:audit --scan]");
+  console.log(`periodo=${de.toISOString()}..${ate.toISOString()} limit=${args.limit}`);
+  console.log(`vendas=${vendas.length} pedidos=${orderIds.length} transacoes=${txs.length} itensFinanceiros=${financeItems.length}`);
+  console.table([
+    {
+      indicador: "AmazonFees sem sub-breakdown",
+      pedidos_sku: ordersComAmazonFeesSemSub.size,
+    },
+    {
+      indicador: "FBA-like nao reconhecido",
+      pedidos_sku: ordersComFbaLikeNaoReconhecido.size,
+    },
+    {
+      indicador: "Frete recebido liquido",
+      pedidos_sku: ordersComFreteRecebidoLiquido.size,
+    },
+    {
+      indicador: "Possivel duplicidade DEFERRED/RELEASED",
+      pedidos_sku: duplicidades.length,
+    },
+  ]);
+
+  if (duplicidades.length > 0) {
+    console.log("\n=== Amostra duplicidades (ate 20) ===");
+    console.table(
+      duplicidades.slice(0, 20).map(([key, grupo]) => {
+        const [orderId, sku] = key.split("\u0000");
+        return {
+          orderId,
+          sku,
+          transacoes: grupo.total,
+          statuses: [...grupo.statuses].join(", "),
+        };
+      }),
+    );
+  }
+}
+
+async function main() {
+  const args = parseArgs(process.argv.slice(2));
+  if (args.scan) {
+    await runScan(args);
+    return;
+  }
+  if (!args.orderId) throw new Error("Informe o pedido: --order 701-...");
+  const orderId = args.orderId;
+
+  const vendas = await db.vendaAmazon.findMany({
+    where: {
+      amazonOrderId: orderId,
       ...(args.sku ? { sku: args.sku } : {}),
     },
     orderBy: [{ sku: "asc" }],
@@ -564,7 +885,7 @@ async function main() {
   });
 
   const [storedTransactions, liveTransactions] = await Promise.all([
-    loadStoredTransactions(args.orderId),
+    loadStoredTransactions(orderId),
     loadLiveTransactions(args, vendas),
   ]);
   const liveIds = new Set(liveTransactions.map((row) => row.transactionId));
@@ -580,13 +901,13 @@ async function main() {
   const financeItems = transactions
     .flatMap((transaction) =>
       financeItemFromTransaction(transaction, {
-        orderId: args.orderId,
+        orderId,
         fallbackSku,
       }),
     )
     .filter((item) => !args.sku || item.sku === args.sku);
 
-  console.log(`[amazon:taxas:audit] pedido=${args.orderId}`);
+  console.log(`[amazon:taxas:audit] pedido=${orderId}`);
   console.log(`vendas=${vendas.length} transacoes=${transactions.length}`);
   console.log("");
 
@@ -604,9 +925,6 @@ async function main() {
   }
 
   for (const item of financeItems) {
-    const taxaAmazon = Math.abs(
-      item.amazonFeesCentavos || item.feeFallbackCentavos,
-    );
     console.log(
       [
         `${item.source}:${item.transactionId} ${item.sku}${
@@ -616,11 +934,25 @@ async function main() {
         `tipo=${item.transactionType ?? "-"}`,
         `status=${item.transactionStatus ?? "-"}`,
         `brutoAmazon=${brl(item.productChargesCentavos)}`,
-        `taxasAmazon=${brl(taxaAmazon)}`,
-        `freteAmazon=${brl(Math.abs(item.shippingCentavos))}`,
+        `taxasAmazon=${brl(item.taxasAmazonTotalCentavos)}`,
+        `comissao=${brl(item.comissaoCentavos)}`,
+        `fba=${brl(item.fbaCentavos)}`,
+        `parcelamento=${brl(item.parcelamentoCentavos)}`,
+        `taxasNaoDetalhadas=${brl(item.taxasNaoDetalhadasCentavos)}`,
+        `freteRecebido=${brl(item.freteRecebidoCentavos)}`,
+        `fretePago=${brl(item.fretePagoCentavos)}`,
+        `freteLiquido=${brl(item.freteLiquidoCentavos)}`,
         `liquidoAmazon=${brl(item.netCentavos)}`,
       ].join(" | "),
     );
+    if (item.amazonFeesSemSubBreakdown) {
+      console.log("  ! AmazonFees sem sub-breakdown: taxa mantida como nao detalhada.");
+    }
+    if (item.fbaLikeNaoReconhecido.length > 0) {
+      console.log(
+        `  ! FBA-like nao reconhecido: ${[...new Set(item.fbaLikeNaoReconhecido)].join(", ")}`,
+      );
+    }
     for (const fee of item.feeBreakdowns) {
       console.log(`  - ${fee.type}: ${brl(fee.amountCentavos)}`);
     }
@@ -631,12 +963,11 @@ async function main() {
   for (const venda of vendas) {
     const itensSku = financeItems.filter((item) => item.sku === venda.sku);
     const taxasAmazon = itensSku.reduce(
-      (sum, item) =>
-        sum + Math.abs(item.amazonFeesCentavos || item.feeFallbackCentavos),
+      (sum, item) => sum + item.taxasAmazonTotalCentavos,
       0,
     );
-    const freteAmazon = itensSku.reduce(
-      (sum, item) => sum + Math.abs(item.shippingCentavos),
+    const freteLiquidoAmazon = itensSku.reduce(
+      (sum, item) => sum + item.freteLiquidoCentavos,
       0,
     );
     const liquidoAmazon = itensSku.reduce(
@@ -644,7 +975,7 @@ async function main() {
       0,
     );
     const diffTaxas = venda.taxasCentavos - taxasAmazon;
-    const diffFrete = venda.fretesCentavos - freteAmazon;
+    const diffFrete = venda.fretesCentavos - Math.abs(freteLiquidoAmazon);
     const diffLiquido =
       (venda.liquidoMarketplaceCentavos ?? 0) - liquidoAmazon;
     const okTaxas = diffTaxas === 0 ? "OK" : "DIVERGENTE";

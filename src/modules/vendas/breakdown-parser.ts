@@ -30,6 +30,8 @@ export type ParsedFinanceBreakdown = {
   taxaParcelamentoCentavos: number;
   /** Closing fee de mídia (Livros/DVD/Música). Sempre positivo. */
   closingFeeCentavos: number;
+  /** AmazonFees sem sub-breakdown classificavel. Sempre positivo. */
+  taxasAmazonNaoDetalhadasCentavos: number;
   /** Desconto de oferta dado pelo seller (PromoRebates). Sempre positivo. */
   promoRebatesCentavos: number;
   /** Valor de frete repassado pela Amazon ao seller (ShippingCharge). */
@@ -46,6 +48,7 @@ const EMPTY: ParsedFinanceBreakdown = {
   taxaFbaCentavos: 0,
   taxaParcelamentoCentavos: 0,
   closingFeeCentavos: 0,
+  taxasAmazonNaoDetalhadasCentavos: 0,
   promoRebatesCentavos: 0,
   freteRecebidoCentavos: 0,
   fretePagoCentavos: 0,
@@ -224,9 +227,8 @@ function extrairDoItem(item: Record<string, unknown>): ParsedFinanceBreakdown {
       case "AmazonFees": {
         const subs = readArray(bd.breakdowns).filter(isRecord);
         if (subs.length === 0) {
-          // Sem sub-breakdown — atribui todo o AmazonFees como comissão
-          // (heurística conservadora; preserva o total e evita NaN nas linhas).
-          result.comissaoCentavos += valor;
+          // Sem sub-breakdown: preserva o total sem inventar comissao/FBA.
+          result.taxasAmazonNaoDetalhadasCentavos += valor;
           break;
         }
         for (const sub of subs) {
@@ -242,8 +244,7 @@ function extrairDoItem(item: Record<string, unknown>): ParsedFinanceBreakdown {
           } else if (matchesClosingFee(subType)) {
             result.closingFeeCentavos += subValor;
           } else {
-            // Sub-fee desconhecido vai pra comissão (não perde o valor).
-            result.comissaoCentavos += subValor;
+            result.taxasAmazonNaoDetalhadasCentavos += subValor;
           }
         }
         break;
@@ -267,10 +268,17 @@ function matchesFba(type: string): boolean {
   const t = type.toLowerCase().replace(/[^a-z]/g, "");
   return (
     t === "fbafulfillmentfee" ||
+    t === "fbafulfillmentfees" ||
     t === "fbafee" ||
+    t === "fbafees" ||
     t === "fulfillmentfee" ||
+    t === "fulfillmentfees" ||
     t === "fbatransactionfee" ||
-    t.startsWith("fbafulfill")
+    t === "fbaperunitfulfillmentfee" ||
+    t === "fbaperorderfulfillmentfee" ||
+    t === "fbamultitierperunitfee" ||
+    t.startsWith("fbafulfill") ||
+    (t.startsWith("fba") && (t.endsWith("fee") || t.endsWith("fees")))
   );
 }
 
@@ -299,6 +307,9 @@ function somar(
     taxaParcelamentoCentavos:
       a.taxaParcelamentoCentavos + b.taxaParcelamentoCentavos,
     closingFeeCentavos: a.closingFeeCentavos + b.closingFeeCentavos,
+    taxasAmazonNaoDetalhadasCentavos:
+      a.taxasAmazonNaoDetalhadasCentavos +
+      b.taxasAmazonNaoDetalhadasCentavos,
     promoRebatesCentavos: a.promoRebatesCentavos + b.promoRebatesCentavos,
     freteRecebidoCentavos: a.freteRecebidoCentavos + b.freteRecebidoCentavos,
     fretePagoCentavos: a.fretePagoCentavos + b.fretePagoCentavos,

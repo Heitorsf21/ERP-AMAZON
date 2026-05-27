@@ -16,6 +16,7 @@ function shipmentTx(opts: {
   amazonFeesAggregate?: number;
   commission?: number;
   fbaFee?: number;
+  fbaFeeType?: string;
   parcelamento?: number;
   closingFee?: number;
   promoRebates?: number;
@@ -31,7 +32,7 @@ function shipmentTx(opts: {
   }
   if (opts.fbaFee != null) {
     subBreakdowns.push({
-      breakdownType: "FBAFulfillmentFee",
+      breakdownType: opts.fbaFeeType ?? "FBAFulfillmentFee",
       breakdownAmount: { currencyAmount: opts.fbaFee },
     });
   }
@@ -146,9 +147,30 @@ describe("breakdown-parser · extrairBreakdownDeTransacao", () => {
 
     const r = extrairBreakdownDeTransacao(payload, "SEM-SUB");
     expect(r.encontrado).toBe(true);
-    expect(r.comissaoCentavos).toBe(1234);
+    expect(r.comissaoCentavos).toBe(0);
+    expect(r.taxasAmazonNaoDetalhadasCentavos).toBe(1234);
     expect(r.taxaFbaCentavos).toBe(0);
     expect(r.taxaParcelamentoCentavos).toBe(0);
+  });
+
+  it("reconhece variantes reais de taxa FBA sem jogar em comissao", () => {
+    for (const fbaFeeType of [
+      "FBAPerUnitFulfillmentFee",
+      "FBAFees",
+      "FulfillmentFees",
+    ]) {
+      const tx = shipmentTx({
+        sku: fbaFeeType,
+        commission: -5.28,
+        fbaFee: -5,
+        fbaFeeType,
+      });
+      const r = extrairBreakdownDeTransacao(tx.payload, fbaFeeType);
+
+      expect(r.comissaoCentavos).toBe(528);
+      expect(r.taxaFbaCentavos).toBe(500);
+      expect(r.taxasAmazonNaoDetalhadasCentavos).toBe(0);
+    }
   });
 
   it("captura PromoRebates como custo positivo (desconto do seller)", () => {
@@ -187,7 +209,8 @@ describe("breakdown-parser · extrairBreakdownDeTransacao", () => {
     });
 
     const r = extrairBreakdownDeTransacao(payload, "DUP", "OII-2");
-    expect(r.comissaoCentavos).toBe(700);
+    expect(r.comissaoCentavos).toBe(0);
+    expect(r.taxasAmazonNaoDetalhadasCentavos).toBe(700);
   });
 
   it("trata payload em string aninhada (parseFinancePayload reuso)", () => {
@@ -203,7 +226,8 @@ describe("breakdown-parser · extrairBreakdownDeTransacao", () => {
     const wrapped = JSON.stringify({ payload: inner });
     const r = extrairBreakdownDeTransacao(wrapped, "WRAPPED");
     expect(r.encontrado).toBe(true);
-    expect(r.comissaoCentavos).toBe(400);
+    expect(r.comissaoCentavos).toBe(0);
+    expect(r.taxasAmazonNaoDetalhadasCentavos).toBe(400);
   });
 });
 

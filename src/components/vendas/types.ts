@@ -22,6 +22,7 @@ export type BreakdownVendaPayload = {
   taxaFbaCentavos: number;
   taxaParcelamentoCentavos: number;
   closingFeeCentavos: number;
+  taxasAmazonNaoDetalhadasCentavos: number;
   promoRebatesCentavos: number;
   impostoCentavos: number;
   custoProdutoCentavos: number;

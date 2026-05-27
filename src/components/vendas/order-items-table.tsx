@@ -40,6 +40,7 @@ export function OrderItemsTable({
       - breakdown.taxaFbaCentavos
       - breakdown.taxaParcelamentoCentavos
       - breakdown.closingFeeCentavos
+      - breakdown.taxasAmazonNaoDetalhadasCentavos
       - breakdown.promoRebatesCentavos
     : 0;
 

@@ -144,6 +144,15 @@ export function OrderCardBreakdown({
             variant="neg"
           />
         )}
+        {breakdown.taxasAmazonNaoDetalhadasCentavos > 0 && (
+          <Line
+            icon={FileText}
+            label="Taxas Amazon não detalhadas"
+            sub="AmazonFees sem sub-breakdown"
+            value={breakdown.taxasAmazonNaoDetalhadasCentavos}
+            variant="neg"
+          />
+        )}
         {breakdown.promoRebatesCentavos > 0 && (
           <Line
             icon={Percent}
