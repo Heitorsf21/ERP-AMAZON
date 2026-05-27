@@ -80,6 +80,7 @@ function shipmentPayload(opts: {
   closing?: number;
   shippingCharge?: number;
   shippingChargeback?: number;
+  shippingDiscount?: number;
 }): string {
   const subs: unknown[] = [];
   if (opts.commission != null) {
@@ -124,6 +125,18 @@ function shipmentPayload(opts: {
     top.push({
       breakdownType: "ShippingChargeback",
       breakdownAmount: { currencyAmount: opts.shippingChargeback },
+    });
+  }
+  if (opts.shippingDiscount != null) {
+    top.push({
+      breakdownType: "PromoRebates",
+      breakdownAmount: { currencyAmount: opts.shippingDiscount },
+      breakdowns: [
+        {
+          breakdownType: "ShippingDiscount",
+          breakdownAmount: { currencyAmount: opts.shippingDiscount },
+        },
+      ],
     });
   }
 
@@ -271,6 +284,49 @@ describe("montarBreakdownVendas · settled (com Finance payload)", () => {
     expect(b.fretePagoCentavos).toBe(0);
     // 7999 + 410 - 960 - 500 - imposto(480) - custo(2000)
     expect(b.lucroCentavos).toBe(4469);
+  });
+
+  it("classifica ShippingDiscount como desconto de frete sem alterar o lucro real", async () => {
+    mockDb.produto.findMany.mockResolvedValue([
+      {
+        id: "prod-ship-discount",
+        sku: SKU_OK,
+        asin: null,
+        amazonImagemUrl: null,
+        imagemUrl: null,
+        amazonCategoriaFee: null,
+        custoUnitario: 2000,
+      },
+    ]);
+    mockDb.amazonFinanceTransaction.findMany.mockResolvedValue([
+      {
+        amazonOrderId: ORDER_ID,
+        transactionType: "Shipment",
+        payload: shipmentPayload({
+          commission: -4,
+          fba: -5,
+          parcelamento: -1.2,
+          shippingCharge: 8.9,
+          shippingDiscount: -8.9,
+        }),
+      },
+    ]);
+
+    const venda = vendaBase({
+      taxasCentavos: 1020,
+      fretesCentavos: 890,
+      statusPedido: "Shipped",
+      statusFinanceiro: "LIQUIDADO",
+    });
+
+    const { breakdownPorVenda } = await montarBreakdownVendas([venda]);
+    const b = breakdownPorVenda.get(venda.id)!;
+
+    expect(b.freteRecebidoCentavos).toBe(890);
+    expect(b.descontoFreteCentavos).toBe(890);
+    expect(b.promoRebatesCentavos).toBe(0);
+    // Mesmo resultado de uma venda sem frete, pois ShippingDiscount anula Shipping.
+    expect(b.lucroCentavos).toBe(4499);
   });
 });
 

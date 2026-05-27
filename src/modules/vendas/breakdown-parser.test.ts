@@ -20,6 +20,7 @@ function shipmentTx(opts: {
   parcelamento?: number;
   closingFee?: number;
   promoRebates?: number;
+  shippingDiscount?: number;
   shippingCharge?: number;
   shippingChargeback?: number;
 }): { payload: string; transactionType: string | null } {
@@ -69,10 +70,22 @@ function shipmentTx(opts: {
       breakdowns: subBreakdowns,
     });
   }
-  if (opts.promoRebates != null) {
+  if (opts.promoRebates != null || opts.shippingDiscount != null) {
     topBreakdowns.push({
       breakdownType: "PromoRebates",
-      breakdownAmount: { currencyAmount: opts.promoRebates },
+      breakdownAmount: {
+        currencyAmount: opts.promoRebates ?? opts.shippingDiscount,
+      },
+      ...(opts.shippingDiscount != null
+        ? {
+            breakdowns: [
+              {
+                breakdownType: "ShippingDiscount",
+                breakdownAmount: { currencyAmount: opts.shippingDiscount },
+              },
+            ],
+          }
+        : {}),
     });
   }
   if (opts.shippingCharge != null) {
@@ -126,6 +139,7 @@ describe("breakdown-parser · extrairBreakdownDeTransacao", () => {
     expect(r.freteRecebidoCentavos).toBe(410);
     expect(r.fretePagoCentavos).toBe(410);
     expect(r.promoRebatesCentavos).toBe(0);
+    expect(r.descontoFreteCentavos).toBe(0);
   });
 
   it("preserva o agregado quando AmazonFees não traz sub-breakdowns", () => {
@@ -181,7 +195,24 @@ describe("breakdown-parser · extrairBreakdownDeTransacao", () => {
     });
     const r = extrairBreakdownDeTransacao(tx.payload, "MFS-PROMO");
     expect(r.promoRebatesCentavos).toBe(200);
+    expect(r.descontoFreteCentavos).toBe(0);
     expect(r.comissaoCentavos).toBe(100);
+  });
+
+  it("separa ShippingDiscount de PromoRebates como desconto de frete", () => {
+    const tx = shipmentTx({
+      sku: "MFS-FRETE",
+      shippingCharge: 8.9,
+      shippingDiscount: -8.9,
+      commission: -4,
+    });
+
+    const r = extrairBreakdownDeTransacao(tx.payload, "MFS-FRETE");
+
+    expect(r.freteRecebidoCentavos).toBe(890);
+    expect(r.descontoFreteCentavos).toBe(890);
+    expect(r.promoRebatesCentavos).toBe(0);
+    expect(r.comissaoCentavos).toBe(400);
   });
 
   it("retorna zeros e encontrado=false quando o SKU não bate em nenhum item", () => {

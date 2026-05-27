@@ -58,6 +58,9 @@ type FinanceItem = {
   freteRecebidoCentavos: number;
   fretePagoCentavos: number;
   freteLiquidoCentavos: number;
+  descontoFreteCentavos: number;
+  promoRebatesCentavos: number;
+  impactoFreteCentavos: number;
   taxasAmazonTotalCentavos: number;
   amazonFeesSemSubBreakdown: boolean;
   fbaLikeNaoReconhecido: string[];
@@ -364,6 +367,86 @@ function looksLikeFbaType(type: string): boolean {
   return t.includes("fba") || t.includes("fulfillment");
 }
 
+function matchesShippingDiscountType(type: string | null | undefined): boolean {
+  const t = normalizeFeeType(type ?? "");
+  return (
+    t === "shippingdiscount" ||
+    t === "shippingpromotiondiscount" ||
+    t === "shippingpromotionaldiscount"
+  );
+}
+
+function classificarPromoRebatesDoItem(item: unknown): {
+  promoRebatesCentavos: number;
+  descontoFreteCentavos: number;
+} {
+  if (!isRecord(item) || !Array.isArray(item.breakdowns)) {
+    return { promoRebatesCentavos: 0, descontoFreteCentavos: 0 };
+  }
+
+  let promoRebatesCentavos = 0;
+  let descontoFreteCentavos = 0;
+
+  for (const breakdown of item.breakdowns) {
+    if (!isRecord(breakdown)) continue;
+    const type = readString(breakdown, [
+      "breakdownType",
+      "type",
+      "chargeType",
+      "feeType",
+      "name",
+    ]);
+    if (type !== "PromoRebates" && type !== "PromoRebateAccrued") continue;
+
+    const total = Math.abs(
+      amountToCents(
+        breakdown.breakdownAmount ??
+          breakdown.amount ??
+          breakdown.Amount ??
+          breakdown.value ??
+          breakdown.Value,
+      ),
+    );
+    const nested = Array.isArray(breakdown.breakdowns)
+      ? breakdown.breakdowns.filter(isRecord)
+      : [];
+    if (nested.length === 0) {
+      promoRebatesCentavos += total;
+      continue;
+    }
+
+    let subtotal = 0;
+    for (const child of nested) {
+      const childType = readString(child, [
+        "breakdownType",
+        "type",
+        "chargeType",
+        "feeType",
+        "name",
+      ]);
+      const value = Math.abs(
+        amountToCents(
+          child.breakdownAmount ??
+            child.amount ??
+            child.Amount ??
+            child.value ??
+            child.Value,
+        ),
+      );
+      subtotal += value;
+      if (matchesShippingDiscountType(childType)) {
+        descontoFreteCentavos += value;
+      } else {
+        promoRebatesCentavos += value;
+      }
+    }
+
+    promoRebatesCentavos += Math.max(0, total - subtotal);
+  }
+
+  return { promoRebatesCentavos, descontoFreteCentavos };
+}
+
 function getFinanceItems(payload: unknown): Record<string, unknown>[] {
   if (!isRecord(payload)) return [];
 
@@ -652,6 +735,8 @@ function financeItemFromTransaction(
     const fretePagoCentavos = Math.abs(
       sumTopBreakdowns(item, ["ShippingChargeback"]),
     );
+    const promo = classificarPromoRebatesDoItem(item);
+    const freteLiquidoCentavos = freteRecebidoCentavos - fretePagoCentavos;
 
     return [
       {
@@ -666,13 +751,17 @@ function financeItemFromTransaction(
         productChargesCentavos: topBreakdownAmount(item, "ProductCharges"),
         amazonFeesCentavos,
         feeFallbackCentavos,
-        shippingCentavos: freteRecebidoCentavos - fretePagoCentavos,
+        shippingCentavos: freteLiquidoCentavos,
         netCentavos: amountToCents(item),
         feeBreakdowns,
         ...fees,
         freteRecebidoCentavos,
         fretePagoCentavos,
-        freteLiquidoCentavos: freteRecebidoCentavos - fretePagoCentavos,
+        freteLiquidoCentavos,
+        descontoFreteCentavos: promo.descontoFreteCentavos,
+        promoRebatesCentavos: promo.promoRebatesCentavos,
+        impactoFreteCentavos:
+          freteLiquidoCentavos - promo.descontoFreteCentavos,
       },
     ];
   });
@@ -780,7 +869,9 @@ async function runScan(args: Args) {
 
   const ordersComAmazonFeesSemSub = new Set<string>();
   const ordersComFbaLikeNaoReconhecido = new Set<string>();
-  const ordersComFreteRecebidoLiquido = new Set<string>();
+  const ordersComFreteRecebido = new Set<string>();
+  const ordersComDescontoFrete = new Set<string>();
+  const ordersComImpactoFretePositivo = new Set<string>();
   const gruposShipment = new Map<string, { total: number; statuses: Set<string> }>();
 
   for (const item of financeItems) {
@@ -793,7 +884,11 @@ async function runScan(args: Args) {
     if (item.fbaLikeNaoReconhecido.length > 0) {
       ordersComFbaLikeNaoReconhecido.add(orderSku);
     }
-    if (item.freteLiquidoCentavos > 0) ordersComFreteRecebidoLiquido.add(orderSku);
+    if (item.freteRecebidoCentavos > 0) ordersComFreteRecebido.add(orderSku);
+    if (item.descontoFreteCentavos > 0) ordersComDescontoFrete.add(orderSku);
+    if (item.impactoFreteCentavos > 0) {
+      ordersComImpactoFretePositivo.add(orderSku);
+    }
 
     const tipo = normalizeKind(item.transactionType);
     if (tipo.includes("shipment")) {
@@ -829,8 +924,16 @@ async function runScan(args: Args) {
       pedidos_sku: ordersComFbaLikeNaoReconhecido.size,
     },
     {
-      indicador: "Frete recebido liquido",
-      pedidos_sku: ordersComFreteRecebidoLiquido.size,
+      indicador: "Frete recebido",
+      pedidos_sku: ordersComFreteRecebido.size,
+    },
+    {
+      indicador: "Desconto de frete",
+      pedidos_sku: ordersComDescontoFrete.size,
+    },
+    {
+      indicador: "Frete com impacto positivo no lucro",
+      pedidos_sku: ordersComImpactoFretePositivo.size,
     },
     {
       indicador: "Possivel duplicidade DEFERRED/RELEASED",
@@ -941,7 +1044,10 @@ async function main() {
         `taxasNaoDetalhadas=${brl(item.taxasNaoDetalhadasCentavos)}`,
         `freteRecebido=${brl(item.freteRecebidoCentavos)}`,
         `fretePago=${brl(item.fretePagoCentavos)}`,
+        `descontoFrete=${brl(item.descontoFreteCentavos)}`,
+        `descontoOferta=${brl(item.promoRebatesCentavos)}`,
         `freteLiquido=${brl(item.freteLiquidoCentavos)}`,
+        `impactoFrete=${brl(item.impactoFreteCentavos)}`,
         `liquidoAmazon=${brl(item.netCentavos)}`,
       ].join(" | "),
     );

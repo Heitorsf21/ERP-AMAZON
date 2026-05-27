@@ -41,6 +41,7 @@ import type { BreakdownVendaPayload, CustoEventualPayload } from "./types";
  *   - Taxa FBA (−)
  *   - Taxa parcelamento (−) — só visível para vendas settled
  *   - Closing fee (−) — só quando > 0
+ *   - Desconto de frete (PromoRebates > ShippingDiscount, −) — só quando > 0
  *   - Desconto de oferta (PromoRebates, −) — só quando > 0
  *   - Imposto (−)
  *   - Custo dos produtos (−)
@@ -113,6 +114,15 @@ export function OrderCardBreakdown({
             label="Valor pago frete"
             sub="descontado pela plataforma"
             value={breakdown.fretePagoCentavos}
+            variant="neg"
+          />
+        )}
+        {breakdown.descontoFreteCentavos > 0 && (
+          <Line
+            icon={Truck}
+            label="Desconto de frete"
+            sub="promoção aplicada no frete"
+            value={breakdown.descontoFreteCentavos}
             variant="neg"
           />
         )}

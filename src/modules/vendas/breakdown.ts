@@ -84,6 +84,7 @@ export type BreakdownVenda = {
   closingFeeCentavos: number;
   taxasAmazonNaoDetalhadasCentavos: number;
   promoRebatesCentavos: number;
+  descontoFreteCentavos: number;
   impostoCentavos: number;
   custoProdutoCentavos: number;
   custoExtraCentavos: number;
@@ -388,6 +389,7 @@ function montarUma(
   let closingFeeCentavos = 0;
   let taxasAmazonNaoDetalhadasCentavos = 0;
   let promoRebatesCentavos = 0;
+  let descontoFreteCentavos = 0;
   let freteRecebidoCentavos = 0;
   let fretePagoCentavos = 0;
   let categoriaSlug: string | null = null;
@@ -402,6 +404,7 @@ function montarUma(
     taxasAmazonNaoDetalhadasCentavos =
       parsed.taxasAmazonNaoDetalhadasCentavos;
     promoRebatesCentavos = parsed.promoRebatesCentavos;
+    descontoFreteCentavos = parsed.descontoFreteCentavos;
     freteRecebidoCentavos = parsed.freteRecebidoCentavos;
     fretePagoCentavos = parsed.fretePagoCentavos;
   } else if (isCancelado && taxasRealCentavos <= 0 && freteAgregadoCentavos <= 0) {
@@ -467,6 +470,7 @@ function montarUma(
       - closingFeeCentavos
       - taxasAmazonNaoDetalhadasCentavos
       - promoRebatesCentavos
+      - descontoFreteCentavos
       - impostoCentavos
       - custoProdutoCentavos
       - custoExtraCentavos;
@@ -499,6 +503,7 @@ function montarUma(
     closingFeeCentavos,
     taxasAmazonNaoDetalhadasCentavos,
     promoRebatesCentavos,
+    descontoFreteCentavos,
     impostoCentavos: origem === "no_data" ? 0 : impostoCentavos,
     custoProdutoCentavos: origem === "no_data" ? 0 : custoProdutoCentavos,
     custoExtraCentavos,
@@ -562,6 +567,7 @@ export function breakdownVazio(): BreakdownVenda {
     closingFeeCentavos: 0,
     taxasAmazonNaoDetalhadasCentavos: 0,
     promoRebatesCentavos: 0,
+    descontoFreteCentavos: 0,
     impostoCentavos: 0,
     custoProdutoCentavos: 0,
     custoExtraCentavos: 0,

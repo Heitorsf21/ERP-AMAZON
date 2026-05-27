@@ -42,6 +42,7 @@ export function OrderItemsTable({
       - breakdown.closingFeeCentavos
       - breakdown.taxasAmazonNaoDetalhadasCentavos
       - breakdown.promoRebatesCentavos
+      - breakdown.descontoFreteCentavos
     : 0;
 
   const precoUnitario = venda.precoUnitarioCentavos > 0

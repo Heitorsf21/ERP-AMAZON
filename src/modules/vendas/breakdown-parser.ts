@@ -32,8 +32,10 @@ export type ParsedFinanceBreakdown = {
   closingFeeCentavos: number;
   /** AmazonFees sem sub-breakdown classificavel. Sempre positivo. */
   taxasAmazonNaoDetalhadasCentavos: number;
-  /** Desconto de oferta dado pelo seller (PromoRebates). Sempre positivo. */
+  /** Desconto de oferta/produto dado pelo seller (PromoRebates). Sempre positivo. */
   promoRebatesCentavos: number;
+  /** Desconto promocional aplicado especificamente sobre o frete. Sempre positivo. */
+  descontoFreteCentavos: number;
   /** Valor de frete repassado pela Amazon ao seller (ShippingCharge). */
   freteRecebidoCentavos: number;
   /** Valor de frete descontado pela Amazon (ShippingChargeback). */
@@ -50,6 +52,7 @@ const EMPTY: ParsedFinanceBreakdown = {
   closingFeeCentavos: 0,
   taxasAmazonNaoDetalhadasCentavos: 0,
   promoRebatesCentavos: 0,
+  descontoFreteCentavos: 0,
   freteRecebidoCentavos: 0,
   fretePagoCentavos: 0,
   encontrado: false,
@@ -214,9 +217,12 @@ function extrairDoItem(item: Record<string, unknown>): ParsedFinanceBreakdown {
         result.productChargesCentavos += valor;
         break;
       case "PromoRebates":
-      case "PromoRebateAccrued":
-        result.promoRebatesCentavos += valor;
+      case "PromoRebateAccrued": {
+        const promo = classificarPromoRebates(bd, valor);
+        result.promoRebatesCentavos += promo.descontoOfertaCentavos;
+        result.descontoFreteCentavos += promo.descontoFreteCentavos;
         break;
+      }
       case "ShippingCharge":
       case "Shipping":
         result.freteRecebidoCentavos += valor;
@@ -259,6 +265,41 @@ function extrairDoItem(item: Record<string, unknown>): ParsedFinanceBreakdown {
   return result;
 }
 
+function classificarPromoRebates(
+  breakdown: Record<string, unknown>,
+  valorTotalCentavos: number,
+): { descontoOfertaCentavos: number; descontoFreteCentavos: number } {
+  const subs = readArray(breakdown.breakdowns).filter(isRecord);
+  if (subs.length === 0) {
+    return {
+      descontoOfertaCentavos: valorTotalCentavos,
+      descontoFreteCentavos: 0,
+    };
+  }
+
+  let descontoOfertaCentavos = 0;
+  let descontoFreteCentavos = 0;
+  let somaSubsCentavos = 0;
+
+  for (const sub of subs) {
+    const subType = readString(sub.breakdownType);
+    if (!subType) continue;
+    const subValor = Math.abs(parseAmountCentavos(sub.breakdownAmount));
+    somaSubsCentavos += subValor;
+
+    if (matchesDescontoFrete(subType)) {
+      descontoFreteCentavos += subValor;
+    } else {
+      descontoOfertaCentavos += subValor;
+    }
+  }
+
+  const restoNaoDetalhado = Math.max(0, valorTotalCentavos - somaSubsCentavos);
+  descontoOfertaCentavos += restoNaoDetalhado;
+
+  return { descontoOfertaCentavos, descontoFreteCentavos };
+}
+
 function matchesCommission(type: string): boolean {
   const t = type.toLowerCase();
   return t === "commission" || t === "referralfee" || t === "referral fee";
@@ -296,6 +337,15 @@ function matchesClosingFee(type: string): boolean {
   );
 }
 
+function matchesDescontoFrete(type: string): boolean {
+  const t = type.toLowerCase().replace(/[^a-z]/g, "");
+  return (
+    t === "shippingdiscount" ||
+    t === "shippingpromotiondiscount" ||
+    t === "shippingpromotionaldiscount"
+  );
+}
+
 function somar(
   a: ParsedFinanceBreakdown,
   b: ParsedFinanceBreakdown,
@@ -311,6 +361,8 @@ function somar(
       a.taxasAmazonNaoDetalhadasCentavos +
       b.taxasAmazonNaoDetalhadasCentavos,
     promoRebatesCentavos: a.promoRebatesCentavos + b.promoRebatesCentavos,
+    descontoFreteCentavos:
+      a.descontoFreteCentavos + b.descontoFreteCentavos,
     freteRecebidoCentavos: a.freteRecebidoCentavos + b.freteRecebidoCentavos,
     fretePagoCentavos: a.fretePagoCentavos + b.fretePagoCentavos,
     encontrado: a.encontrado || b.encontrado,
