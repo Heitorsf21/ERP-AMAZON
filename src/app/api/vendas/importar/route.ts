@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { processarBuffer } from "@/lib/fba-importer";
 import { requireRole, UsuarioRole } from "@/lib/auth";
 import { logger } from "@/lib/logger";
+import {
+  ArquivoImportacaoInvalidoError,
+  validarArquivoXlsxUpload,
+} from "@/lib/upload-security";
 
 export const dynamic = "force-dynamic";
 
@@ -14,13 +18,17 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     if (!arquivo)
       return NextResponse.json({ erro: "Arquivo não enviado" }, { status: 400 });
 
+    const nomeArquivo = validarArquivoXlsxUpload(arquivo);
     const arrayBuf = await arquivo.arrayBuffer();
     const buffer = Buffer.from(new Uint8Array(arrayBuf));
 
-    const resultado = await processarBuffer(buffer, arquivo.name);
+    const resultado = await processarBuffer(buffer, nomeArquivo);
     return NextResponse.json(resultado);
   } catch (err) {
     if (err instanceof Response) return err as NextResponse;
+    if (err instanceof ArquivoImportacaoInvalidoError) {
+      return NextResponse.json({ erro: err.message }, { status: 400 });
+    }
     const msg = err instanceof Error ? err.message : "Erro interno";
     if (
       msg.includes("não reconhecido") ||

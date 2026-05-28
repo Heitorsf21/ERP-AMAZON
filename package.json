@@ -46,7 +46,6 @@
     "admin:create": "tsx scripts/create-admin.ts"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.90.0",
     "@aws-sdk/client-sqs": "^3.1038.0",
     "@hookform/resolvers": "^3.9.0",
     "@libpdf/core": "^0.3.4",

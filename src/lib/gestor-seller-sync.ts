@@ -5,6 +5,7 @@ import fs from "fs";
 import ExcelJS from "exceljs";
 import { db } from "@/lib/db";
 import { importarVendas } from "@/lib/fba-importer";
+import { validarBufferXlsx } from "@/lib/upload-security";
 
 const execAsync = promisify(exec);
 
@@ -95,6 +96,8 @@ async function importarProductsReport(
   metricasImportadas: number;
   loteMetricaId: string;
 }> {
+  validarBufferXlsx(buffer, nomeArquivo);
+
   const wb = new ExcelJS.Workbook();
   await wb.xlsx.load(buffer as unknown as Parameters<typeof wb.xlsx.load>[0]);
 
@@ -235,6 +238,8 @@ async function sincronizarEstoqueGS(
   buffer: Buffer,
   nomeArquivo: string,
 ): Promise<{ estoquesSincronizados: number; skusNaoEncontrados: string[] }> {
+  validarBufferXlsx(buffer, nomeArquivo);
+
   const wb = new ExcelJS.Workbook();
   await wb.xlsx.load(buffer as unknown as Parameters<typeof wb.xlsx.load>[0]);
 
@@ -414,6 +419,7 @@ export async function sincronizarGestorSeller(): Promise<ResultadoSyncGS> {
     try {
       const wb = new ExcelJS.Workbook();
       const buffer = fs.readFileSync(vendasPath);
+      validarBufferXlsx(buffer, ARQUIVO_VENDAS);
       await wb.xlsx.load(
         buffer as unknown as Parameters<typeof wb.xlsx.load>[0],
       );

@@ -6,6 +6,7 @@ const MUTATING_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 const RATE_LIMIT_WINDOW_MS = 15 * 60_000;
 const RATE_LIMIT_MAX = 300;
 const AUTH_RATE_LIMIT_MAX = 10;
+const XLSX_IMPORT_BODY_MAX_BYTES = 12 * 1024 * 1024;
 const rateLimitBuckets = new Map<string, { count: number; resetAt: number }>();
 
 // Rotas públicas (não exigem sessão).
@@ -35,6 +36,10 @@ const AUTH_RATE_LIMIT_PATHS = new Set([
   "/api/auth/2fa/verificar",
   "/api/auth/recuperar-senha",
   "/api/auth/redefinir-senha",
+]);
+
+const BODY_SIZE_LIMITS = new Map<string, number>([
+  ["/api/vendas/importar", XLSX_IMPORT_BODY_MAX_BYTES],
 ]);
 
 const ADMIN_PATH_PREFIXES = [
@@ -87,31 +92,41 @@ function isPublic(pathname: string): boolean {
   return PUBLIC_PREFIXES.some((p) => pathname.startsWith(p));
 }
 
-// CSP defaultando em Report-Only (nao bloqueia, so observa). Para promover
-// para enforce sem mudar codigo, setar CSP_ENFORCE=true no .env. Antes de
-// ativar, confirmar 0 violacoes em DevTools por 1-2 semanas. Diretrizes em
-// docs/csp.md.
-//
-// 'unsafe-inline'/'unsafe-eval' em script-src sao necessarios enquanto o
-// Next 16 + React 18 injetam hidratacao inline. Refinar para nonces e
-// trabalho separado.
-const CSP_DIRECTIVES = [
-  "default-src 'self'",
-  "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
-  "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data: blob: https://m.media-amazon.com https://images-na.ssl-images-amazon.com",
-  "font-src 'self' data:",
-  "connect-src 'self'",
-  "frame-ancestors 'none'",
-  "form-action 'self'",
-  "base-uri 'self'",
-  "object-src 'none'",
-].join("; ");
+// Em producao, CSP deve bloquear por padrao. Em dev fica em Report-Only para
+// nao atrapalhar HMR. `script-src-attr 'none'` corta XSS via handlers inline
+// sem quebrar os scripts inline que o Next injeta para hidratacao.
+function cspDirectives(): string {
+  const scriptSrc =
+    process.env.NODE_ENV === "production"
+      ? "script-src 'self' 'unsafe-inline'"
+      : "script-src 'self' 'unsafe-inline' 'unsafe-eval'";
+
+  return [
+    "default-src 'self'",
+    scriptSrc,
+    "script-src-attr 'none'",
+    "style-src 'self' 'unsafe-inline'",
+    "style-src-attr 'unsafe-inline'",
+    "img-src 'self' data: blob: https://m.media-amazon.com https://images-na.ssl-images-amazon.com",
+    "font-src 'self' data:",
+    "connect-src 'self'",
+    "frame-ancestors 'none'",
+    "form-action 'self'",
+    "base-uri 'self'",
+    "object-src 'none'",
+  ].join("; ");
+}
 
 function cspHeaderName(): string {
-  return process.env.CSP_ENFORCE === "true"
-    ? "Content-Security-Policy"
-    : "Content-Security-Policy-Report-Only";
+  if (process.env.CSP_REPORT_ONLY === "true") {
+    return "Content-Security-Policy-Report-Only";
+  }
+
+  if (process.env.NODE_ENV === "production" || process.env.CSP_ENFORCE === "true") {
+    return "Content-Security-Policy";
+  }
+
+  return "Content-Security-Policy-Report-Only";
 }
 
 function withSecurityHeaders(res: NextResponse): NextResponse {
@@ -125,7 +140,7 @@ function withSecurityHeaders(res: NextResponse): NextResponse {
   );
   headers.set("Cross-Origin-Opener-Policy", "same-origin");
   headers.set("X-DNS-Prefetch-Control", "off");
-  headers.set(cspHeaderName(), CSP_DIRECTIVES);
+  headers.set(cspHeaderName(), cspDirectives());
 
   if (process.env.NODE_ENV === "production") {
     headers.set(
@@ -182,6 +197,14 @@ function isSameOriginMutation(req: NextRequest): boolean {
   return originUrl.host === requestHost;
 }
 
+function exceedsBodySizeLimit(req: NextRequest, pathname: string): boolean {
+  const limit = BODY_SIZE_LIMITS.get(pathname);
+  if (!limit) return false;
+
+  const contentLength = Number(req.headers.get("content-length") ?? 0);
+  return Number.isFinite(contentLength) && contentLength > limit;
+}
+
 function matchesPrefix(pathname: string, prefixes: string[]): boolean {
   return prefixes.some((p) => pathname === p || pathname.startsWith(`${p}/`));
 }
@@ -214,6 +237,12 @@ export async function proxy(req: NextRequest) {
   if (pathname.startsWith("/api/") && isRateLimited(req, pathname)) {
     return withSecurityHeaders(
       NextResponse.json({ erro: "MUITAS_REQUISICOES" }, { status: 429 }),
+    );
+  }
+
+  if (exceedsBodySizeLimit(req, pathname)) {
+    return withSecurityHeaders(
+      NextResponse.json({ erro: "ARQUIVO_MUITO_GRANDE" }, { status: 413 }),
     );
   }
 

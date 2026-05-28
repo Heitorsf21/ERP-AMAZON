@@ -1,5 +1,6 @@
 import ExcelJS from "exceljs";
 import { db } from "@/lib/db";
+import { validarBufferXlsx } from "@/lib/upload-security";
 
 // ── Tipos de retorno ──────────────────────────────────────────────────────────
 
@@ -235,6 +236,8 @@ export async function processarBuffer(
   buffer: Buffer,
   nomeArquivo: string,
 ): Promise<ResultadoVendas | ResultadoEstoque> {
+  validarBufferXlsx(buffer, nomeArquivo);
+
   const wb = new ExcelJS.Workbook();
   await wb.xlsx.load(buffer as unknown as Parameters<typeof wb.xlsx.load>[0]);
 
