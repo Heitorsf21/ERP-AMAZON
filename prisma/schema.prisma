@@ -310,6 +310,7 @@ model Produto {
   variacaoComoFilho  ProdutoVariacao?             @relation("ProdutoVariacaoFilho")
   custoHistorico     ProdutoCustoHistorico[]
   feeEstimate        AmazonFeeEstimate?
+  whatsappEstoqueExcluido WhatsAppEstoqueProdutoExcluido?
 
   @@index([sku])
   @@index([asin])
@@ -699,6 +700,40 @@ model ConfiguracaoSistema {
   valor     String
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+// SKUs desativados manualmente do resumo diario de estoque via WhatsApp.
+// Produtos aqui continuam elegiveis (ativos + venda 30d) mas sao ocultados
+// da mensagem. A tabela de gestao na UI ainda os exibe para reativacao.
+model WhatsAppEstoqueProdutoExcluido {
+  produtoId String   @id
+  sku       String
+  criadoEm  DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  produto Produto @relation(fields: [produtoId], references: [id], onDelete: Cascade)
+
+  @@index([sku])
+}
+
+// Historico/status de cada disparo do resumo de estoque (DIARIO ou TESTE).
+// status: SUCESSO | ERRO | SKIPPED. totaisJson guarda a contagem por faixa.
+model WhatsAppEstoqueEnvio {
+  id              String    @id @default(cuid())
+  tipo            String
+  status          String
+  destino         String
+  partes          Int       @default(1)
+  totaisJson      String?
+  mensagemPreview String?
+  erro            String?
+  iniciadoEm      DateTime  @default(now())
+  concluidoEm     DateTime?
+  createdAt       DateTime  @default(now())
+
+  @@index([tipo])
+  @@index([status])
+  @@index([iniciadoEm])
 }
 
 // ── Vendas FBA ───────────────────────────────────────────────────────────────

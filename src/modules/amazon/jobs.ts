@@ -1,5 +1,9 @@
+import { format } from "date-fns";
+import { toZonedTime } from "date-fns-tz";
 import { db } from "@/lib/db";
+import { TIMEZONE } from "@/lib/date";
 import { getReviewAutomationConfig } from "@/modules/amazon/service";
+import { getWhatsappEstoqueScheduleConfig } from "@/modules/whatsapp-estoque/config";
 import {
   StatusAmazonSyncJob,
   TipoAmazonSyncJob,
@@ -67,12 +71,34 @@ async function isFinancesBackfillComplete(): Promise<boolean> {
   return cursor >= syncCoverageStart;
 }
 
+// Data local (America/Sao_Paulo) em yyyy-MM-dd — usada como dedupe diario.
+function dataLocalSP(now: Date): string {
+  return format(toZonedTime(now, TIMEZONE), "yyyy-MM-dd");
+}
+
+// Gate do resumo diario de estoque: pula enquanto estiver desativado ou o
+// horario local atual ainda nao alcancou o horario configurado. Comparacao
+// lexicografica de "HH:mm" funciona pois ambos sao zero-padded.
+async function isWhatsappEstoqueResumoSkip(): Promise<boolean> {
+  try {
+    const { ativo, horario } = await getWhatsappEstoqueScheduleConfig();
+    if (!ativo) return true;
+    const agoraLocal = format(toZonedTime(new Date(), TIMEZONE), "HH:mm");
+    return agoraLocal < horario;
+  } catch {
+    return true;
+  }
+}
+
 const SCHEDULES: Array<{
   tipo: TipoAmazonSyncJobType;
   intervalMs: number;
   priority: number;
   payload?: Record<string, unknown>;
   gate?: () => Promise<boolean>;
+  // Quando presente, substitui o dedupeKey baseado em slot por uma chave
+  // customizada (ex: dedupe por data local em vez de janela fixa).
+  dedupeKeyOverride?: (now: Date) => string;
 }> = [
   {
     tipo: TipoAmazonSyncJob.ORDERS_SYNC,
@@ -218,6 +244,17 @@ const SCHEDULES: Array<{
     tipo: TipoAmazonSyncJob.AMAZON_FBA_PROMO_EXPIRY_CHECK,
     intervalMs: 24 * 60 * 60_000,
     priority: 5,
+  },
+  // Resumo diario de estoque via WhatsApp. O scheduler por intervalo nao garante
+  // 10:00 local, entao usamos um gate por horario local + dedupe por data local
+  // (so um envio por dia). intervalMs curto so para reavaliar o gate com frequencia.
+  {
+    tipo: TipoAmazonSyncJob.WHATSAPP_ESTOQUE_RESUMO,
+    intervalMs: 5 * 60_000,
+    priority: 5,
+    gate: isWhatsappEstoqueResumoSkip,
+    dedupeKeyOverride: (now) =>
+      `${TipoAmazonSyncJob.WHATSAPP_ESTOQUE_RESUMO}:${dataLocalSP(now)}`,
   },
 ];
 
@@ -390,8 +427,9 @@ export async function ensureRecurringAmazonJobs(now = new Date()) {
       if (skip) continue;
     }
 
-    const slot = Math.floor(now.getTime() / schedule.intervalMs);
-    const dedupeKey = `${schedule.tipo}:${slot}`;
+    const dedupeKey = schedule.dedupeKeyOverride
+      ? schedule.dedupeKeyOverride(now)
+      : `${schedule.tipo}:${Math.floor(now.getTime() / schedule.intervalMs)}`;
     const job = await enqueueAmazonSyncJob(
       schedule.tipo,
       schedule.payload ?? {},

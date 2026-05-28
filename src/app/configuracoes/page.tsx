@@ -14,6 +14,7 @@ import { DriveSection } from "@/components/configuracoes/drive-section";
 import { NotificacoesSection } from "@/components/configuracoes/notificacoes-section";
 import { SistemaSection } from "@/components/configuracoes/sistema-section";
 import { ImpostoSimplesSection } from "@/components/configuracoes/imposto-simples-section";
+import { WhatsappEstoqueSection } from "@/components/configuracoes/whatsapp-estoque-section";
 
 export default function ConfiguracoesPage() {
   return (
@@ -71,6 +72,7 @@ export default function ConfiguracoesPage() {
             <GmailSection />
           </Suspense>
           <DriveSection />
+          <WhatsappEstoqueSection />
         </TabsContent>
 
         {/* ---- Notificacoes ---- */}

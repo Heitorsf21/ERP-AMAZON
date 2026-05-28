@@ -191,6 +191,8 @@ export const TipoAmazonSyncJob = {
   AMAZON_FEE_ESTIMATE_SYNC: "AMAZON_FEE_ESTIMATE_SYNC",
   // Verifica expiração da promo FBA (R$5/R$0) e dispara Notificacao quando vence
   AMAZON_FBA_PROMO_EXPIRY_CHECK: "AMAZON_FBA_PROMO_EXPIRY_CHECK",
+  // Resumo diario de estoque via WhatsApp (WAHA) — gate por data local 10:00
+  WHATSAPP_ESTOQUE_RESUMO: "WHATSAPP_ESTOQUE_RESUMO",
 } as const;
 export type TipoAmazonSyncJob =
   (typeof TipoAmazonSyncJob)[keyof typeof TipoAmazonSyncJob];

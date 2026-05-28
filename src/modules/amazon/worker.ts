@@ -43,6 +43,7 @@ import {
 } from "@/modules/amazon/ads-handlers";
 import { getAmazonAdsCredentials } from "@/modules/amazon/ads-service";
 import { runMarketingStreamIngest } from "@/modules/amazon/marketing-stream-handlers";
+import { runWhatsappEstoqueResumo } from "@/modules/whatsapp-estoque/jobs";
 import { StatusAmazonSyncJob, TipoAmazonSyncJob } from "@/modules/shared/domain";
 
 const HEARTBEAT_KEY = "worker_heartbeat_at";
@@ -215,7 +216,8 @@ async function processJob(
     !isAdsJob &&
     tipo !== TipoAmazonSyncJob.REVIEWS_DISCOVERY &&
     tipo !== TipoAmazonSyncJob.REVIEWS_SEND &&
-    tipo !== TipoAmazonSyncJob.AMAZON_ADS_STREAM_INGEST;
+    tipo !== TipoAmazonSyncJob.AMAZON_ADS_STREAM_INGEST &&
+    tipo !== TipoAmazonSyncJob.WHATSAPP_ESTOQUE_RESUMO;
 
   let creds: Awaited<ReturnType<typeof getAmazonConfig>> | null = null;
   if (needCreds) {
@@ -314,6 +316,8 @@ async function processJob(
       return runAmazonFeeEstimateSync(sp!);
     case TipoAmazonSyncJob.AMAZON_FBA_PROMO_EXPIRY_CHECK:
       return runAmazonFbaPromoExpiryCheck();
+    case TipoAmazonSyncJob.WHATSAPP_ESTOQUE_RESUMO:
+      return runWhatsappEstoqueResumo({ tipo: "DIARIO" });
     default:
       throw new Error(`Tipo de job Amazon desconhecido: ${tipo}`);
   }
