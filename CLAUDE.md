@@ -15,6 +15,7 @@ Marca visual = **Atlas Seller** (rebrand do "ERP Amazon"). Logo MundoFS em `publ
 - Amazon: AmazonSyncLog · AmazonSyncJob · AmazonApiQuota · AmazonReviewSolicitation · AmazonSettlementReport · BuyBoxSnapshot · VendaAmazon · VendaCustoEventual · AmazonReembolso · LoteImportacaoFBA · VendaFBA · LoteMetricaGS · ProdutoMetricaGestorSeller · AmazonAdsMetricaDiaria · AmazonSkuTrafficDaily · AmazonOrderRaw · AmazonFeeEstimate · AmazonFinanceTransaction
 - Custo histórico: ProdutoCustoHistorico (vigências por data)
 - Ads: AdsGastoManual · AdsCampanha
+- WhatsApp Estoque: WhatsAppEstoqueEnvio (histórico de envios) · WhatsAppEstoqueProdutoExcluido (produtos fora do resumo)
 
 ## Regras de negócio
 
@@ -70,6 +71,16 @@ Foi removido em 2c349dc. Sistema opera 100% standalone com VendaAmazon + Produto
 ### Buybox
 `runBuyboxCheck` lê `amazon_seller_id` (Seller Central → Settings → Merchant Token). Set via `npx tsx scripts/sync-seller-id.ts --set <ID>`. Sem ID, fallback heurístico (50¢ tolerância).
 
+### Resumo diário de estoque (WhatsApp via WAHA)
+Módulo isolado `src/modules/whatsapp-estoque/` (`service.ts` cálculo · `message.ts` formatação · `waha-client.ts` HTTP · `jobs.ts` orquestração · `config.ts` · `schemas.ts`). Envia 1 resumo/dia de cobertura de estoque às **10:00** (`America/Sao_Paulo`).
+- **Cobertura** = `estoqueAtual / mediaDia`, `mediaDia = vendas 30d / 30` (vendas via `whereVendaAmazonContabilizavelEstrito()` + `groupBy sku`). Lookup de produto por `sku` (batch).
+- **Faixas** (`FaixaEstoque`, por dias de cobertura com floor): CRITICO <16 · ATENCAO 16–30 · ESTAVEL 31–59 · SEGURO ≥60. Ordena globalmente por menor cobertura; agrupa por faixa.
+- **Exclui**: produtos sem venda nos últimos 30d + excluídos manualmente (`WhatsAppEstoqueProdutoExcluido`). **NÃO** usa `Produto.estoqueMinimo`.
+- **Mensagem**: cabeçalho com data/hora local + seções por faixa; quebra em partes numeradas (`Parte i/n`) quando excede o limite do WhatsApp.
+- **Config** em `ConfiguracaoSistema` (chaves `whatsapp_estoque_*`): `ativo`, `horario`, `destinatario`, `waha_url`, `waha_session` (default `default`), `waha_api_key` (cifrada AES-256-GCM; `isSecretConfigKey` por sufixo `_key`). API key mascarada na UI (`********`) — save preserva quando o valor contém `*`. UI em `/configuracoes` → Integrações (`whatsapp-estoque-section.tsx`): switch, campos, "Enviar teste agora", status do último envio, exclusão/reativação de produtos.
+- **Envio** (`runWhatsappEstoqueResumo`): NUNCA lança; registra `WhatsAppEstoqueEnvio` (ENVIANDO→SUCESSO/ERRO/SKIPPED). Falha no envio `DIARIO` → Notificação `CONFIG_REVIEW` (dedupe por dia). Tipo `TESTE` (botão da UI) não notifica. Endpoints sob `/api/configuracoes/whatsapp-estoque/*` (ADMIN), incluindo `enviar-teste` e gestão de produtos excluídos.
+- **WAHA**: `waha-client.ts` faz `POST {url}/api/sendText` com header `X-Api-Key`; `normalizarChatId` (número cru → `@c.us`, preserva `@g.us`/`@c.us`), `mascararDestino` (últimos 4 dígitos). Container do WAHA em `deploy/waha-whatsapp-estoque.md`.
+
 ## Worker daemon
 - Local: `npm run dev` sobe Next + worker em paralelo (`scripts/dev.mjs`). `dev:web` sem worker. `amazon:worker[:once]` avulso.
 - Prod: PM2 (`deploy/ecosystem.config.js`) — 3 processes: `erp-web` · `erp-worker` · `erp-sqs-consumer`.
@@ -92,6 +103,7 @@ Foi removido em 2c349dc. Sistema opera 100% standalone com VendaAmazon + Produto
 | LISTING_PRICE_SYNC | 30min | cache `Produto.amazonPrecoListagemCentavos` (fallback Pending sem ItemPrice) |
 | AMAZON_FEE_ESTIMATE_SYNC | 1h | batch 5 SKUs com delay 3s. Gate `isProductFeesQuotaSaturated` pula quando cooldown >5min. |
 | AMAZON_FBA_PROMO_EXPIRY_CHECK | 24h | dispara Notificação CONFIG_REVIEW quando promo FBA expirar |
+| WHATSAPP_ESTOQUE_RESUMO | 5min | gate `isWhatsappEstoqueResumoSkip` (pula se `!ativo` ou hora local < `horario`); `dedupeKeyOverride` por data SP → 1 envio/dia mesmo após SUCESSO |
 
 ### SP-API & rate limit
 LWA OAuth2 (refresh_token → access_token, header `x-amz-access-token`). Sem AWS SigV4. Defaults em `src/lib/amazon-rate-limit.ts`; `adoptObservedRateLimit()` calibra via `x-amzn-RateLimit-Limit`. Cooldown em `AmazonApiQuota.nextAllowedAt`. 429 → `markAmazonOperationRateLimited()` respeita `retry-after`; lança `AmazonQuotaCooldownError` (retry).
@@ -141,6 +153,7 @@ Sem redesign radical — incrementais. Protótipo HTML antes de mudanças visuai
 - Host SSH: alias `erp-vps` → `srv1611537.hstgr.cloud:2222`, user `mundofs`, key `~/.ssh/id_ed25519_mundofs_vps`.
 - Path app: `/opt/erp-amazon` (owner `erp`). Stack: Postgres 16 self-hosted + Nginx (443→3000) + PM2 + cron + Let's Encrypt. Domínio `erp.mundofs.cloud`.
 - **N8N rodando em paralelo**: container Docker em `127.0.0.1:5678`. Codex/n8n-observer modifica `src/lib/amazon-sp-api.ts`, `amazon-ads-api.ts`, `amazon-sqs.ts` direto na VPS — **sempre stashar tracked files ANTES do pull** (passar paths explícitos no stash). Pasta `backups/` criada como root pode bloquear stash full — usar `git stash push -- <arquivos>` específicos.
+- **WAHA (WhatsApp do resumo de estoque)**: container Docker `waha` em **`127.0.0.1:3002`** (a porta 3001 do exemplo do doc está ocupada pelo `viability-app`), engine `WEBJS`, volume `/opt/waha/sessions`, `--restart unless-stopped`. Docker exige `sudo` (usuário `mundofs` fora do grupo docker). A `WAHA_API_KEY` do container = config `whatsapp_estoque_waha_api_key` no ERP. Sessão `default` pareada por código (`POST /api/{session}/auth/request-code`) ou QR. Operação detalhada em `deploy/waha-whatsapp-estoque.md` (atenção: o doc cita 3001; a instância real subiu em 3002).
 - **Sequência de deploy** (rodar como `mundofs`, com `sudo -u erp`):
   ```bash
   cd /opt/erp-amazon && \
