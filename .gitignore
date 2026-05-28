@@ -41,3 +41,4 @@ reports_sales*.xlsx
 BusinessReport*.csv
 tmp/
 design-previews/claude-design-input/
+.superpowers/
