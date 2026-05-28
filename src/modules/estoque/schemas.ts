@@ -5,6 +5,7 @@ import {
   StatusReposicao,
 } from "@/modules/shared/domain";
 import { findCommissionRule } from "@/modules/produtos/commission-table";
+import { estoqueFiltroOperacionalValues } from "./filtros";
 
 const amazonCategoriaFeeSchema = z.preprocess(
   (v) => (v === "" ? null : v),
@@ -62,6 +63,15 @@ export const filtrosProdutoSchema = z.object({
     .transform((v) => v === "true")
     .optional(),
   // "true" = só com custo > 0; "false" = só sem custo (descontinuados); omitido = todos.
+  estoque: z.enum(estoqueFiltroOperacionalValues).optional(),
+  semCusto: z
+    .enum(["true", "false"])
+    .transform((v) => v === "true")
+    .optional(),
+  semSyncAmazon: z
+    .enum(["true", "false"])
+    .transform((v) => v === "true")
+    .optional(),
   temCusto: z
     .enum(["true", "false"])
     .transform((v) => v === "true")

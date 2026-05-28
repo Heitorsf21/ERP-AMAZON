@@ -1,4 +1,4 @@
-import { estoqueRepository } from "./repository";
+import { estoqueRepository, filtrarProdutosDerivados } from "./repository";
 import {
   criarProdutoSchema,
   atualizarProdutoSchema,
@@ -8,7 +8,6 @@ import {
   type CriarProdutoInput,
   type AtualizarProdutoInput,
   type CriarMovimentacaoEstoqueInput,
-  type FiltrosProdutoInput,
   type ImportarProdutosInput,
 } from "./schemas";
 import {
@@ -44,7 +43,9 @@ export const estoqueService = {
   async listarProdutos(filtrosRaw: unknown) {
     const filtros = filtrosProdutoSchema.parse(filtrosRaw);
     const produtos = await estoqueRepository.listarProdutos(filtros);
-    const enriquecidos = produtos.map(enriquecerProduto);
+    const custos = await estoqueRepository.resolverCustosVigentes(produtos);
+    const filtrados = filtrarProdutosDerivados(produtos, custos, filtros);
+    const enriquecidos = filtrados.map(enriquecerProduto);
 
     // Ordenar: REPOR primeiro, depois ATENCAO, depois OK
     const ordem: Record<StatusReposicao, number> = {
@@ -57,12 +58,6 @@ export const estoqueService = {
         ordem[a.statusReposicao] - ordem[b.statusReposicao] ||
         a.nome.localeCompare(b.nome),
     );
-
-    if (filtros.statusReposicao) {
-      return enriquecidos.filter(
-        (p) => p.statusReposicao === filtros.statusReposicao,
-      );
-    }
 
     return enriquecidos;
   },
@@ -165,8 +160,9 @@ export const estoqueService = {
     return resultados;
   },
 
-  async totais() {
-    return estoqueRepository.totais();
+  async totais(filtrosRaw: unknown = {}) {
+    const filtros = filtrosProdutoSchema.parse(filtrosRaw);
+    return estoqueRepository.totais(filtros);
   },
 
   listarMovimentacoes(produtoId: string) {

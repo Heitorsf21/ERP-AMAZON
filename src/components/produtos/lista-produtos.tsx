@@ -1,6 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import {
+  useEffect,
+  useMemo,
+  useState,
+  type ComponentType,
+  type Dispatch,
+  type SetStateAction,
+} from "react";
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from "@tanstack/react-query";
 import {
   AlertTriangle,
@@ -67,6 +74,12 @@ import { formatBRL } from "@/lib/money";
 import { resolverImagemProduto } from "@/lib/amazon-images";
 import { cn } from "@/lib/utils";
 import type { StatusReposicao } from "@/modules/shared/domain";
+import {
+  DEFAULT_PRODUTO_FILTROS,
+  EstoqueFiltroOperacional,
+  produtoFiltrosToSearchParams,
+  type ProdutoFiltrosQuery,
+} from "@/modules/estoque/filtros";
 
 type Produto = {
   id: string;
@@ -154,8 +167,6 @@ type ListingDiffResponse = {
   };
   diffs: ListingDiffField[];
 };
-
-type FiltroStatus = StatusReposicao | "TODOS";
 
 function exportarCSV(produtos: Produto[], velocidades: Map<string, VelocidadeProduto>) {
   const linhas = [
@@ -363,8 +374,6 @@ function AsinCell({ asin }: { asin: string | null }) {
   );
 }
 
-type FiltroAtivo = "ATIVOS" | "INATIVOS" | "TODOS";
-type FiltroCusto = "COM_CUSTO" | "SEM_CUSTO" | "TODOS";
 
 function SortableHeader({
   label,
@@ -418,20 +427,20 @@ type SortKey =
 
 type SortState = { key: SortKey; dir: "asc" | "desc" } | null;
 
-export function ListaProdutos() {
+type ListaProdutosProps = {
+  filtros: ProdutoFiltrosQuery;
+  filtrosConsulta: ProdutoFiltrosQuery;
+  onFiltrosChange: Dispatch<SetStateAction<ProdutoFiltrosQuery>>;
+};
+
+export function ListaProdutos({
+  filtros,
+  filtrosConsulta,
+  onFiltrosChange,
+}: ListaProdutosProps) {
   const qc = useQueryClient();
-  const [busca, setBusca] = useState("");
-  const [buscaDebounced, setBuscaDebounced] = useState("");
-  const [filtroStatus, setFiltroStatus] = useState<FiltroStatus>("TODOS");
-  const [filtroAtivo, setFiltroAtivo] = useState<FiltroAtivo>("ATIVOS");
-  // Default "COM_CUSTO" oculta SKUs descontinuados sem custo unitário (limpa o visual).
-  const [filtroCusto, setFiltroCusto] = useState<FiltroCusto>("COM_CUSTO");
   const [sort, setSort] = useState<SortState>(null);
 
-  useEffect(() => {
-    const id = setTimeout(() => setBuscaDebounced(busca), 250);
-    return () => clearTimeout(id);
-  }, [busca]);
 
   const [dialogProduto, setDialogProduto] = useState<{
     aberto: boolean;
@@ -448,20 +457,9 @@ export function ListaProdutos() {
   }>({ aberto: false, produtoId: null });
   const [listingDiff, setListingDiff] = useState<ListingDiffResponse | null>(null);
 
-  const params = new URLSearchParams();
-  if (buscaDebounced) params.set("busca", buscaDebounced);
-  if (filtroStatus !== "TODOS") params.set("statusReposicao", filtroStatus);
-  // Filtro Ativo/Inativo/Todos — controla parametro `ativo` enviado ao backend.
-  if (filtroAtivo === "ATIVOS") params.set("ativo", "true");
-  else if (filtroAtivo === "INATIVOS") params.set("ativo", "false");
-  // (filtroAtivo === "TODOS" => não envia, backend devolve todos)
-  // Filtro Custo: oculta os SKUs descontinuados sem custo por padrão.
-  if (filtroCusto === "COM_CUSTO") params.set("temCusto", "true");
-  else if (filtroCusto === "SEM_CUSTO") params.set("temCusto", "false");
-  const qs = params.toString();
-
+  const qs = produtoFiltrosToSearchParams(filtrosConsulta).toString();
   const { data: produtos = [], isLoading } = useQuery<Produto[]>({
-    queryKey: ["estoque-produtos", buscaDebounced, filtroStatus, filtroAtivo, filtroCusto],
+    queryKey: ["estoque-produtos", qs],
     queryFn: () =>
       fetchJSON<Produto[]>(`/api/estoque/produtos${qs ? `?${qs}` : ""}`),
     placeholderData: keepPreviousData,
@@ -546,7 +544,9 @@ export function ListaProdutos() {
     });
   };
 
-  const semCusto = produtos.filter((p) => !p.custoUnitario).length;
+  const semCusto = filtrosConsulta.semCusto
+    ? produtos.length
+    : produtos.filter((p) => !p.custoUnitario).length;
 
   // Chip de contagem
   const contadores = useMemo(() => {
@@ -659,12 +659,40 @@ export function ListaProdutos() {
       toast.error((err as Error).message ?? "Erro ao enfileirar sincronização"),
   });
 
-  const filtrosStatus: { label: string; value: FiltroStatus }[] = [
-    { label: "Todos", value: "TODOS" },
-    { label: "Repor", value: "REPOR" },
-    { label: "Atenção", value: "ATENCAO" },
-    { label: "OK", value: "OK" },
-  ];
+  const busca = filtros.busca ?? "";
+  const filtrosForaPadrao =
+    busca !== "" ||
+    filtros.ativo !== DEFAULT_PRODUTO_FILTROS.ativo ||
+    filtros.estoque !== DEFAULT_PRODUTO_FILTROS.estoque ||
+    !!filtros.semCusto ||
+    !!filtros.semSyncAmazon;
+
+  const setBusca = (valor: string) => {
+    onFiltrosChange((prev) => ({ ...prev, busca: valor }));
+  };
+
+  const toggleEstoque = (valor: EstoqueFiltroOperacional) => {
+    onFiltrosChange((prev) => ({
+      ...prev,
+      estoque: prev.estoque === valor ? undefined : valor,
+    }));
+  };
+
+  const toggleFlag = (campo: "semCusto" | "semSyncAmazon") => {
+    onFiltrosChange((prev) => ({ ...prev, [campo]: !prev[campo] }));
+  };
+
+  const toggleInativos = () => {
+    onFiltrosChange((prev) => ({
+      ...prev,
+      ativo: prev.ativo === false ? true : false,
+    }));
+  };
+
+  const limparFiltros = () => {
+    onFiltrosChange({ ...DEFAULT_PRODUTO_FILTROS, busca: "" });
+  };
+
 
   return (
     <TooltipProvider delayDuration={400}>
@@ -722,13 +750,13 @@ export function ListaProdutos() {
           </div>
 
           {/* Filtros */}
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex items-center gap-2">
-              <div className="relative">
+          <div className="flex flex-col gap-3 rounded-lg border bg-card/50 p-3 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex min-w-0 flex-1 items-center gap-2">
+              <div className="relative min-w-[14rem] flex-1 lg:max-w-sm">
                 <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
                 <Input
-                  placeholder="Buscar por SKU, nome ou ASIN…"
-                  className="pl-8 w-72"
+                  placeholder="Buscar por SKU, nome ou ASIN..."
+                  className="h-9 pl-8"
                   value={busca}
                   onChange={(e) => setBusca(e.target.value)}
                 />
@@ -744,56 +772,50 @@ export function ListaProdutos() {
                 <Download className="h-4 w-4" />
               </Button>
             </div>
-            <div className="flex gap-1 rounded-lg border bg-muted/30 p-1">
-              {filtrosStatus.map((f) => (
-                <button
-                  key={f.value}
+
+            <div className="flex flex-wrap items-center gap-1.5">
+              <FiltroOperacionalChip
+                active={filtros.estoque === EstoqueFiltroOperacional.COM_ESTOQUE}
+                icon={PackageSearch}
+                label="Com estoque"
+                onClick={() => toggleEstoque(EstoqueFiltroOperacional.COM_ESTOQUE)}
+              />
+              <FiltroOperacionalChip
+                active={filtros.estoque === EstoqueFiltroOperacional.SEM_ESTOQUE}
+                icon={XCircle}
+                label="Sem estoque"
+                onClick={() => toggleEstoque(EstoqueFiltroOperacional.SEM_ESTOQUE)}
+              />
+              <FiltroOperacionalChip
+                active={!!filtros.semCusto}
+                icon={AlertTriangle}
+                label="Sem custo"
+                onClick={() => toggleFlag("semCusto")}
+              />
+              <FiltroOperacionalChip
+                active={!!filtros.semSyncAmazon}
+                icon={RefreshCw}
+                label="Sem sync Amazon"
+                onClick={() => toggleFlag("semSyncAmazon")}
+              />
+              <FiltroOperacionalChip
+                active={filtros.ativo === false}
+                icon={PowerOff}
+                label="Inativos"
+                onClick={toggleInativos}
+              />
+              {filtrosForaPadrao && (
+                <Button
                   type="button"
-                  onClick={() => setFiltroStatus(f.value)}
-                  className={`rounded-md px-3 py-1.5 text-sm font-medium transition ${
-                    filtroStatus === f.value
-                      ? "bg-background text-foreground shadow-sm"
-                      : "text-muted-foreground hover:text-foreground"
-                  }`}
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 gap-1.5 px-2 text-xs"
+                  onClick={limparFiltros}
                 >
-                  {f.label}
-                </button>
-              ))}
-            </div>
-            <div className="flex gap-1 rounded-lg border bg-muted/30 p-1">
-              {(["ATIVOS", "INATIVOS", "TODOS"] as const).map((v) => (
-                <button
-                  key={v}
-                  type="button"
-                  onClick={() => setFiltroAtivo(v)}
-                  className={`rounded-md px-3 py-1.5 text-sm font-medium transition ${
-                    filtroAtivo === v
-                      ? "bg-background text-foreground shadow-sm"
-                      : "text-muted-foreground hover:text-foreground"
-                  }`}
-                >
-                  {v === "ATIVOS" ? "Ativos" : v === "INATIVOS" ? "Inativos" : "Todos"}
-                </button>
-              ))}
-            </div>
-            <div
-              className="flex gap-1 rounded-lg border bg-muted/30 p-1"
-              title="Oculta SKUs sem custo unitário cadastrado (descontinuados)"
-            >
-              {(["COM_CUSTO", "SEM_CUSTO", "TODOS"] as const).map((v) => (
-                <button
-                  key={v}
-                  type="button"
-                  onClick={() => setFiltroCusto(v)}
-                  className={`rounded-md px-3 py-1.5 text-sm font-medium transition ${
-                    filtroCusto === v
-                      ? "bg-background text-foreground shadow-sm"
-                      : "text-muted-foreground hover:text-foreground"
-                  }`}
-                >
-                  {v === "COM_CUSTO" ? "Com custo" : v === "SEM_CUSTO" ? "Sem custo" : "Todos"}
-                </button>
-              ))}
+                  <XCircle className="h-3.5 w-3.5" />
+                  Limpar
+                </Button>
+              )}
             </div>
           </div>
 
@@ -804,7 +826,7 @@ export function ListaProdutos() {
                 <DataTableSkeleton rows={6} columns={14} />
               </div>
             ) : produtos.length === 0 ? (
-              <EmptyState busca={busca} filtroStatus={filtroStatus} />
+              <EmptyState busca={busca} filtros={filtrosConsulta} />
             ) : (
               <div className="max-h-[calc(100vh-22rem)] overflow-auto">
                 <Table>
@@ -1197,16 +1219,50 @@ function formatListingValue(
   return String(value);
 }
 
+function FiltroOperacionalChip({
+  active,
+  icon: Icon,
+  label,
+  onClick,
+}: {
+  active: boolean;
+  icon: ComponentType<{ className?: string }>;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      aria-pressed={active}
+      onClick={onClick}
+      className={cn(
+        "inline-flex h-8 items-center gap-1.5 rounded-md border px-2.5 text-xs font-medium transition",
+        active
+          ? "border-primary/30 bg-primary/10 text-primary shadow-sm"
+          : "border-transparent bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground",
+      )}
+    >
+      <Icon className="h-3.5 w-3.5 shrink-0" />
+      {label}
+    </button>
+  );
+}
+
 // ── Empty state amigavel ─────────────────────────────────────────────────────
 
 function EmptyState({
   busca,
-  filtroStatus,
+  filtros,
 }: {
   busca: string;
-  filtroStatus: FiltroStatus;
+  filtros: ProdutoFiltrosQuery;
 }) {
-  const filtrado = busca || filtroStatus !== "TODOS";
+  const filtrado =
+    busca ||
+    filtros.estoque !== DEFAULT_PRODUTO_FILTROS.estoque ||
+    filtros.ativo !== DEFAULT_PRODUTO_FILTROS.ativo ||
+    filtros.semCusto ||
+    filtros.semSyncAmazon;
   return (
     <div className="flex flex-col items-center justify-center px-6 py-20 text-center text-muted-foreground">
       <PackageSearch className="mb-4 h-12 w-12 opacity-30" />
@@ -1215,9 +1271,9 @@ function EmptyState({
       </p>
       <p className="mt-1 max-w-sm text-sm">
         {busca
-          ? `Sem resultados para “${busca}”. Tente buscar por SKU, nome ou ASIN.`
-          : filtroStatus !== "TODOS"
-            ? "Nenhum produto com esse status. Limpe o filtro ou crie um novo produto."
+          ? `Sem resultados para "${busca}". Tente buscar por SKU, nome ou ASIN.`
+          : filtrado
+            ? "Nenhum produto nessa visão. Ajuste os filtros operacionais ou limpe a busca."
             : "Comece criando seu primeiro produto com um SKU no formato MFS-XXXX."}
       </p>
       {filtrado && (
