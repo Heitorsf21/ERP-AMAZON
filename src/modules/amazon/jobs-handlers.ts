@@ -63,7 +63,7 @@ const SETTLEMENT_TYPES = [
 ];
 
 export async function syncSettlementReports(creds: SPAPICredentials) {
-  const reports = await getSettlementReports(creds, 5);
+  const reports = await getSettlementReports(creds, 1);
 
   let baixados = 0;
   let novos = 0;
@@ -129,6 +129,7 @@ export async function syncSettlementReports(creds: SPAPICredentials) {
         });
       }
       novos++;
+      break;
     } catch (err) {
       console.warn("settlement-sync erro:", err);
       erros++;
@@ -773,7 +774,7 @@ export async function runFinancesBackfill(creds: SPAPICredentials) {
 const SETTLEMENT_BACKFILL_CURSOR_KEY = "amazon_settlement_backfill_cursor";
 const SETTLEMENT_BACKFILL_WINDOW_DAYS = 60;
 const SETTLEMENT_BACKFILL_END_OFFSET_DAYS = 2;
-const SETTLEMENT_BACKFILL_MAX_PAGES_PER_WINDOW = 5;
+const SETTLEMENT_BACKFILL_MAX_PAGES_PER_WINDOW = 1;
 
 export async function runSettlementBackfill(creds: SPAPICredentials) {
   const now = new Date();
@@ -867,6 +868,7 @@ export async function runSettlementBackfill(creds: SPAPICredentials) {
         },
       });
       novos++;
+      break;
     } catch (err) {
       console.warn("settlement-backfill erro:", err);
       erros++;

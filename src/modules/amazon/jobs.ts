@@ -26,9 +26,15 @@ const OPEN_JOB_STATUSES = [
 const SQS_PRIMARY =
   process.env.AMAZON_SQS_PRIMARY === "true" && !!process.env.AMAZON_SQS_QUEUE_URL;
 
-// Intervalos otimizados ao máximo permitido pela SP-API.
-// ORDERS aceita 1/60s — 2min usa ~2.5% da quota.
-// INVENTORY aceita 2 rps — 5min é folgado para FBA.
+function encodeJobJson(value: Record<string, unknown>) {
+  const databaseUrl = process.env.DATABASE_URL ?? "";
+  return databaseUrl.startsWith("postgres") ? value : JSON.stringify(value);
+}
+
+// Intervalos otimizados para respeitar quota real observada da SP-API.
+// ORDERS usa passagens separadas (created e lastUpdated) para nao fazer
+// duas ORDERS_SEARCH dentro do mesmo minuto.
+// INVENTORY fica mais conservador quando SQS e a fonte primaria.
 // FINANCES aceita 0.5 rps — 30min preserva quota e é frequente.
 // Gate de AMAZON_FEE_ESTIMATE_SYNC: pula execução quando PRODUCT_FEES_ESTIMATE
 // está em cooldown profundo (>5min). Evita enfileirar jobs vazios quando a
@@ -44,6 +50,28 @@ async function isProductFeesQuotaSaturated(): Promise<boolean> {
     if (!cooldownAte) return false;
     const ms = cooldownAte.getTime() - Date.now();
     return ms > 5 * 60_000;
+  } catch {
+    return false;
+  }
+}
+
+async function isReportsApiBusy(): Promise<boolean> {
+  try {
+    const { getAmazonOperationCooldown, AmazonSpApiOperation } = await import(
+      "@/lib/amazon-rate-limit"
+    );
+    const operations = [
+      AmazonSpApiOperation.REPORTS_GET,
+      AmazonSpApiOperation.REPORTS_GET_BY_ID,
+      AmazonSpApiOperation.REPORTS_GET_DOCUMENT,
+      AmazonSpApiOperation.REPORTS_CREATE,
+    ];
+    const now = Date.now();
+    for (const operation of operations) {
+      const cooldownAte = await getAmazonOperationCooldown(operation);
+      if (cooldownAte && cooldownAte.getTime() > now + 5_000) return true;
+    }
+    return false;
   } catch {
     return false;
   }
@@ -96,6 +124,7 @@ const SCHEDULES: Array<{
   priority: number;
   payload?: Record<string, unknown>;
   gate?: () => Promise<boolean>;
+  runAfterOffsetMs?: number;
   // Quando presente, substitui o dedupeKey baseado em slot por uma chave
   // customizada (ex: dedupe por data local em vez de janela fixa).
   dedupeKeyOverride?: (now: Date) => string;
@@ -104,11 +133,27 @@ const SCHEDULES: Array<{
     tipo: TipoAmazonSyncJob.ORDERS_SYNC,
     intervalMs: SQS_PRIMARY ? 15 * 60_000 : 2 * 60_000,
     priority: 30,
-    payload: { diasAtras: 3, maxPages: 1 },
+    payload: { diasAtras: 3, maxPages: 1, dateFilter: "created" },
+  },
+  {
+    tipo: TipoAmazonSyncJob.ORDERS_SYNC,
+    intervalMs: SQS_PRIMARY ? 15 * 60_000 : 5 * 60_000,
+    priority: 25,
+    payload: {
+      dateFilter: "lastUpdated",
+      windowHoras: 6,
+      maxPages: 1,
+      cursorKey: "amazon_orders_last_updated_cursor",
+    },
+    runAfterOffsetMs: 70_000,
+    dedupeKeyOverride: (now) =>
+      `${TipoAmazonSyncJob.ORDERS_SYNC}:lastUpdated:${Math.floor(
+        now.getTime() / (SQS_PRIMARY ? 15 * 60_000 : 5 * 60_000),
+      )}`,
   },
   {
     tipo: TipoAmazonSyncJob.INVENTORY_SYNC,
-    intervalMs: 2 * 60_000,
+    intervalMs: SQS_PRIMARY ? 15 * 60_000 : 2 * 60_000,
     priority: 20,
   },
   {
@@ -137,6 +182,7 @@ const SCHEDULES: Array<{
     tipo: TipoAmazonSyncJob.SETTLEMENT_REPORT_SYNC,
     intervalMs: 6 * 60 * 60_000,
     priority: 25,
+    gate: isReportsApiBusy,
   },
   {
     // Backfill de pedidos via Reports API. Cada execução cria/processa UMA janela
@@ -145,6 +191,7 @@ const SCHEDULES: Array<{
     tipo: TipoAmazonSyncJob.REPORTS_BACKFILL,
     intervalMs: 30 * 60_000,
     priority: 5,
+    gate: isReportsApiBusy,
   },
   {
     tipo: TipoAmazonSyncJob.BUYBOX_CHECK,
@@ -165,12 +212,13 @@ const SCHEDULES: Array<{
     tipo: TipoAmazonSyncJob.FINANCES_BACKFILL,
     intervalMs: 30 * 60_000,
     priority: 5,
-    gate: isFinancesBackfillComplete,
+    gate: async () => (await isFinancesBackfillComplete()) || (await isReportsApiBusy()),
   },
   {
     tipo: TipoAmazonSyncJob.SETTLEMENT_BACKFILL,
     intervalMs: 24 * 60 * 60_000,
     priority: 5,
+    gate: isReportsApiBusy,
   },
   {
     // Snapshot diário de inventário FBA. Histórico não volta pela API,
@@ -185,23 +233,27 @@ const SCHEDULES: Array<{
     intervalMs: 12 * 60 * 60_000,
     priority: 12,
     payload: { diasAtras: 90 },
+    gate: isReportsApiBusy,
   },
   {
     tipo: TipoAmazonSyncJob.RETURNS_SYNC,
     intervalMs: 6 * 60 * 60_000,
     priority: 11,
     payload: { diasAtras: 90 },
+    gate: isReportsApiBusy,
   },
   {
     tipo: TipoAmazonSyncJob.FBA_STORAGE_SYNC,
     intervalMs: 24 * 60 * 60_000,
     priority: 6,
+    gate: isReportsApiBusy,
   },
   {
     tipo: TipoAmazonSyncJob.TRAFFIC_SYNC,
     intervalMs: 24 * 60 * 60_000,
     priority: 6,
     payload: { diasAtras: 30 },
+    gate: isReportsApiBusy,
   },
   // Sprint 5.5: Amazon Advertising (Sponsored Products).
   // Lifecycle progressivo: cada execucao ou cria um report novo ou avanca o
@@ -283,7 +335,7 @@ export async function enqueueAmazonSyncJob(
       tipo,
       status: StatusAmazonSyncJob.QUEUED,
       priority: options.priority ?? 0,
-      payload: JSON.stringify(payload),
+      payload: encodeJobJson(payload) as never,
       runAfter: options.runAfter ?? new Date(),
       maxAttempts: options.maxAttempts ?? 5,
       dedupeKey,
@@ -349,7 +401,7 @@ export async function completeAmazonSyncJob(
     where: { id: jobId },
     data: {
       status: StatusAmazonSyncJob.SUCCESS,
-      result: JSON.stringify(result),
+      result: encodeJobJson(result) as never,
       error: null,
       finishedAt: new Date(),
       lockedAt: null,
@@ -430,6 +482,9 @@ export async function ensureRecurringAmazonJobs(now = new Date()) {
     const dedupeKey = schedule.dedupeKeyOverride
       ? schedule.dedupeKeyOverride(now)
       : `${schedule.tipo}:${Math.floor(now.getTime() / schedule.intervalMs)}`;
+    const runAfter = schedule.runAfterOffsetMs
+      ? new Date(now.getTime() + schedule.runAfterOffsetMs)
+      : undefined;
     const job = await enqueueAmazonSyncJob(
       schedule.tipo,
       schedule.payload ?? {},
@@ -437,6 +492,7 @@ export async function ensureRecurringAmazonJobs(now = new Date()) {
         dedupeKey,
         dedupeAnyStatus: true,
         priority: schedule.priority,
+        runAfter,
       },
     );
     created.push(job);
@@ -445,7 +501,7 @@ export async function ensureRecurringAmazonJobs(now = new Date()) {
   return created;
 }
 
-// SQLite guarda payload como JSON stringificado. (Em Postgres usaremos Json/jsonb.)
+// Payloads antigos podem estar como string JSON; novos registros usam Json/jsonb real.
 export function parseJobPayload<T extends Record<string, unknown>>(
   payload: unknown,
 ): T {

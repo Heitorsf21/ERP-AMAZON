@@ -407,7 +407,7 @@ export interface SPReportDocument {
 
 export async function getSettlementReports(
   creds: SPAPICredentials,
-  maxPages = 3,
+  maxPages = 1,
   options: { createdSince?: Date; createdUntil?: Date } = {},
 ): Promise<SPReport[]> {
   type ReportsListResponse = {
@@ -608,6 +608,7 @@ export async function getCatalogItem(
     if ("item" in result && result.item) return result.item;
     return result as SPCatalogItem;
   } catch (e) {
+    if (isAmazonSpApiQuotaError(e)) throw e;
     // Loga o motivo real (auth, ASIN invalido, rate limit etc.) sem quebrar o caller.
     const msg = e instanceof Error ? e.message : String(e);
     console.warn(`[getCatalogItem] ASIN ${asin} falhou: ${msg.slice(0, 200)}`);
@@ -1143,6 +1144,17 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function isQuotaPayload(value: unknown) {
   const text = stringify(value).toLowerCase();
   return text.includes("quotaexceeded") || text.includes("quota exceeded");
+}
+
+export function isAmazonSpApiQuotaError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  const lower = message.toLowerCase();
+  return (
+    lower.includes("quota") ||
+    lower.includes("cooldown") ||
+    lower.includes("rate limit") ||
+    lower.includes("429")
+  );
 }
 
 function stringify(value: unknown) {

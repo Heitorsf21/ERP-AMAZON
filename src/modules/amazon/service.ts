@@ -18,6 +18,7 @@ import {
   getCatalogItem,
   getProductOffers,
   getSettlementReports,
+  isAmazonSpApiQuotaError,
   getReportDocument,
   type SPFinanceTransaction,
   type SPAPICredentials,
@@ -303,7 +304,15 @@ export async function testConnection(): Promise<{ ok: boolean; mensagem: string 
 
 export async function syncOrders(
   diasAtras = 3,
-  options: { maxPages?: number; since?: Date; orderIds?: string[] } = {},
+  options: {
+    maxPages?: number;
+    since?: Date;
+    orderIds?: string[];
+    windowHoras?: number;
+    dateFilter?: "created" | "lastUpdated";
+    cursorKey?: string;
+    overlapMinutes?: number;
+  } = {},
 ): Promise<SyncOrdersResult> {
   const orderIds = normalizeOrderIds(options.orderIds);
   if (orderIds.length > 0) {
@@ -315,42 +324,23 @@ export async function syncOrders(
     });
   }
 
-  // Passagem 1 — createdAfter: descobre TODOS os pedidos (incluindo Pending)
-  // criados no período, independente de quando foram atualizados.
-  const createdSince = options.since ?? subDays(new Date(), diasAtras);
-  const r1 = await syncOrdersInternal({
+  // Cada job consome uma janela de data. A passagem complementar de status
+  // atualizado roda em outro job para respeitar a quota baixa de ORDERS_SEARCH.
+  const dateFilter = options.dateFilter ?? "created";
+  const startDate =
+    options.since ??
+    (dateFilter === "lastUpdated"
+      ? subHours(new Date(), options.windowHoras ?? 6)
+      : subDays(new Date(), diasAtras));
+
+  return syncOrdersInternal({
     diasAtras,
-    startDate: createdSince,
+    startDate,
     maxPages: options.maxPages ?? 1,
-    dateFilter: "created",
+    dateFilter,
+    cursorKey: options.cursorKey,
+    overlapMinutes: options.overlapMinutes,
   });
-
-  // Passagem 2 — lastUpdatedAfter: captura mudanças de status em pedidos
-  // mais antigos (ex: pedido de 5 dias atrás que acabou de ser enviado).
-  // Usa janela fixa de 6h para não duplicar o custo de rate limit.
-  // Se já estourou o rate limit na passagem 1, pula a 2.
-  if (r1.rateLimited) return r1;
-
-  const updatedSince = subHours(new Date(), 6);
-  const r2 = await syncOrdersInternal({
-    diasAtras,
-    startDate: updatedSince,
-    maxPages: 1,
-    dateFilter: "lastUpdated",
-  }).catch(() => null);
-
-  if (!r2) return r1;
-
-  return {
-    lidas: r1.lidas + r2.lidas,
-    pedidosBrutos: r1.pedidosBrutos + r2.pedidosBrutos,
-    criadas: r1.criadas + r2.criadas,
-    atualizadas: r1.atualizadas + r2.atualizadas,
-    ignoradas: r1.ignoradas + r2.ignoradas,
-    pedidos: [...r1.pedidos, ...r2.pedidos],
-    rateLimited: r2.rateLimited,
-    mensagem: r2.rateLimited ? r2.mensagem : r1.mensagem,
-  };
 }
 
 export async function syncBackfillOrders(): Promise<
@@ -3577,6 +3567,7 @@ export async function syncCatalog(produtoIds?: string[]): Promise<SyncCatalogRes
       }
       atualizados++;
     } catch (e) {
+      if (isAmazonSpApiQuotaError(e)) throw e;
       erros.push(`${produto.asin}: ${e instanceof Error ? e.message : String(e)}`);
     }
   }

@@ -318,10 +318,15 @@ export async function dispatchNotification(
       return [job.id];
     }
     case "FBA_INVENTORY_AVAILABILITY_CHANGES": {
+      const dedupeSlot = Math.floor(Date.now() / (5 * 60_000));
       const job = await enqueueAmazonSyncJob(
         TipoAmazonSyncJob.INVENTORY_SYNC,
         basePayload,
-        { dedupeKey: `sqs:${tipo}:${notificationId}`, priority: 35 },
+        {
+          dedupeKey: `sqs:${tipo}:${dedupeSlot}`,
+          dedupeAnyStatus: true,
+          priority: 35,
+        },
       );
       return [job.id];
     }

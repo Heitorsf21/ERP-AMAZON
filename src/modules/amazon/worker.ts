@@ -62,6 +62,10 @@ type SyncPayload = {
   diasAtras?: number;
   maxPages?: number;
   windowDias?: number;
+  windowHoras?: number;
+  dateFilter?: "created" | "lastUpdated";
+  cursorKey?: string;
+  overlapMinutes?: number;
   notificationId?: string;
   eventTime?: string;
   // Marketing Stream ingest (AMAZON_ADS_STREAM_INGEST)
@@ -247,6 +251,10 @@ async function processJob(
         maxPages: payload.maxPages ?? 1,
         orderIds: payload.orderIds,
         since: payload.windowDias ? subDays(new Date(), payload.windowDias) : undefined,
+        windowHoras: payload.windowHoras,
+        dateFilter: payload.dateFilter,
+        cursorKey: payload.cursorKey,
+        overlapMinutes: payload.overlapMinutes,
       });
     case TipoAmazonSyncJob.FINANCES_SYNC:
       return syncFinances(payload.diasAtras ?? 14, {
