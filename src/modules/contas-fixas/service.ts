@@ -8,6 +8,7 @@ import { contasFixasRepository } from "./repository";
 import {
   competenciaDeData,
   competenciaEDiaDeDataIso,
+  ocorrenciaDeveVirPaga,
   planejarOcorrencias,
   totalOcorrenciasCentavos,
   vencimentoDaCompetencia,
@@ -225,21 +226,32 @@ export const contasFixasService = {
         ])
       : [null, null];
 
+    // Meses ANTERIORES ao atual nascem PAGOS (com saída de caixa); mês atual e
+    // futuros nascem ABERTOS.
+    const competenciaAtual = competenciaDeData(new Date());
+
     let criadas = 0;
+    let pagas = 0;
     for (const occ of planejadas) {
       const ref = mapaRef.get(occ.contaFixaId);
       if (!ref) continue;
+      const dados = {
+        fornecedorId: ref.fornecedorId ?? fornecedorPadrao!.id,
+        categoriaId: ref.categoriaId ?? categoriaPadrao!.id,
+        descricao: ref.descricao,
+        valor: occ.valorCentavos,
+        vencimento: occ.vencimento,
+        contaFixaId: occ.contaFixaId,
+        competencia: occ.competencia,
+        observacoes: ref.observacoes,
+      };
       try {
-        await contasFixasRepository.criarOcorrencia({
-          fornecedorId: ref.fornecedorId ?? fornecedorPadrao!.id,
-          categoriaId: ref.categoriaId ?? categoriaPadrao!.id,
-          descricao: ref.descricao,
-          valor: occ.valorCentavos,
-          vencimento: occ.vencimento,
-          contaFixaId: occ.contaFixaId,
-          competencia: occ.competencia,
-          observacoes: ref.observacoes,
-        });
+        if (ocorrenciaDeveVirPaga(occ.competencia, competenciaAtual)) {
+          await contasFixasRepository.criarOcorrenciaPaga(dados);
+          pagas += 1;
+        } else {
+          await contasFixasRepository.criarOcorrencia(dados);
+        }
         criadas += 1;
       } catch (err) {
         // P2002 (unique) = corrida com outra geração concorrente: ignora.
@@ -251,7 +263,7 @@ export const contasFixasService = {
         );
       }
     }
-    return { criadas };
+    return { criadas, pagas };
   },
 
   /**

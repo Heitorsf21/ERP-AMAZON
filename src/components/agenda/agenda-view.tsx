@@ -4,6 +4,7 @@ import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Check,
+  CheckCircle2,
   ChevronLeft,
   ChevronRight,
   CircleDot,
@@ -17,6 +18,15 @@ import {
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/ui/page-header";
 import { Badge } from "@/components/ui/badge";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import { formatBRL } from "@/lib/money";
 import { fetchJSON } from "@/lib/fetcher";
@@ -111,6 +121,8 @@ export function AgendaView() {
   const [tarefaEdit, setTarefaEdit] = React.useState<TarefaEditavel | null>(null);
   const [prazoInicial, setPrazoInicial] = React.useState<string | null>(null);
   const [gestaoContas, setGestaoContas] = React.useState(false);
+  const [pagarItem, setPagarItem] = React.useState<AgendaItem | null>(null);
+  const [pagoEm, setPagoEm] = React.useState<string>(hoje);
 
   const ultimoDia = diasNoMes(ano, mes);
   const de = `${ano}-${pad2(mes)}-01`;
@@ -184,6 +196,19 @@ export function AgendaView() {
     mutationFn: (id: string) =>
       fetchJSON(`/api/tarefas/${id}`, { method: "DELETE" }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["agenda"] }),
+  });
+  const pagar = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: string }) =>
+      fetchJSON(`/api/contas/${id}/pagar`, {
+        method: "POST",
+        body: JSON.stringify({ pagoEm: data }),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["agenda"] });
+      qc.invalidateQueries({ queryKey: ["contas"] });
+      qc.invalidateQueries({ queryKey: ["saldo"] });
+      setPagarItem(null);
+    },
   });
 
   // Grade do calendário: blanks iniciais + dias do mês.
@@ -357,6 +382,10 @@ export function AgendaView() {
                     setNovaTarefa(true);
                   }}
                   onExcluir={() => excluir.mutate(item.id)}
+                  onPagar={() => {
+                    setPagoEm(hoje);
+                    setPagarItem(item);
+                  }}
                 />
               ))}
             </div>
@@ -398,6 +427,61 @@ export function AgendaView() {
         prazoInicial={prazoInicial}
       />
       <DialogContasFixas aberto={gestaoContas} onOpenChange={setGestaoContas} />
+
+      <Dialog
+        open={!!pagarItem}
+        onOpenChange={(v) => {
+          if (!v) setPagarItem(null);
+        }}
+      >
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Confirmar pagamento</DialogTitle>
+          </DialogHeader>
+          {pagarItem && (
+            <div className="space-y-4">
+              <div className="space-y-1 rounded-md border bg-muted/30 p-3 text-sm">
+                <div className="font-medium">{pagarItem.titulo}</div>
+                {pagarItem.valorCentavos != null && (
+                  <div className="font-mono text-base font-semibold">
+                    {formatBRL(pagarItem.valorCentavos)}
+                  </div>
+                )}
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="agenda-pagoEm">Data do pagamento</Label>
+                <Input
+                  id="agenda-pagoEm"
+                  type="date"
+                  value={pagoEm}
+                  onChange={(e) => setPagoEm(e.target.value)}
+                />
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Uma saída de caixa será gerada automaticamente com essa data.
+              </p>
+              {pagar.isError && (
+                <p className="text-sm text-destructive">
+                  {(pagar.error as Error).message}
+                </p>
+              )}
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPagarItem(null)}>
+              Cancelar
+            </Button>
+            <Button
+              disabled={pagar.isPending}
+              onClick={() => {
+                if (pagarItem) pagar.mutate({ id: pagarItem.id, data: pagoEm });
+              }}
+            >
+              {pagar.isPending ? "Registrando…" : "Confirmar pagamento"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -433,12 +517,14 @@ function ItemAgenda({
   onReabrir,
   onEditar,
   onExcluir,
+  onPagar,
 }: {
   item: AgendaItem;
   onConcluir: () => void;
   onReabrir: () => void;
   onEditar: () => void;
   onExcluir: () => void;
+  onPagar?: () => void;
 }) {
   const ehTarefa = item.tipo === "TAREFA";
   const concluida = item.statusAgenda === "CONCLUIDA";
@@ -529,6 +615,20 @@ function ItemAgenda({
             <Trash2 className="h-3.5 w-3.5" />
           </Button>
         </div>
+      )}
+
+      {!ehTarefa && !concluida && onPagar && (
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="h-7 w-7 shrink-0 text-emerald-600 hover:bg-emerald-50 hover:text-emerald-700 dark:hover:bg-emerald-950"
+          onClick={onPagar}
+          aria-label="Marcar como paga"
+          title="Marcar como paga"
+        >
+          <CheckCircle2 className="h-4 w-4" />
+        </Button>
       )}
     </div>
   );

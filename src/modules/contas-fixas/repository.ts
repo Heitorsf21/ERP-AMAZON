@@ -1,5 +1,9 @@
 import { db } from "@/lib/db";
-import { StatusConta } from "@/modules/shared/domain";
+import {
+  OrigemMovimentacao,
+  StatusConta,
+  TipoMovimentacao,
+} from "@/modules/shared/domain";
 
 const incluirRelacoes = {
   categoria: { select: { id: true, nome: true } },
@@ -229,6 +233,56 @@ export const contasFixasRepository = {
         competencia: data.competencia,
         observacoes: data.observacoes ?? undefined,
       },
+    });
+  },
+
+  /**
+   * Cria uma ocorrência JÁ PAGA + a saída de caixa correspondente, de forma
+   * atômica (mesma transação de `marcarComoPaga`). Usada para meses passados:
+   * `pagoEm` = `dataCaixa` = `dataCompetencia` = vencimento da competência.
+   */
+  criarOcorrenciaPaga(data: {
+    fornecedorId: string;
+    categoriaId: string;
+    descricao: string;
+    valor: number;
+    vencimento: Date;
+    contaFixaId: string;
+    competencia: string;
+    observacoes?: string | null;
+  }) {
+    return db.$transaction(async (tx) => {
+      const conta = await tx.contaPagar.create({
+        data: {
+          fornecedorId: data.fornecedorId,
+          categoriaId: data.categoriaId,
+          descricao: data.descricao,
+          valor: data.valor,
+          vencimento: data.vencimento,
+          status: StatusConta.PAGA,
+          pagoEm: data.vencimento,
+          recorrencia: "NENHUMA",
+          contaFixaId: data.contaFixaId,
+          competencia: data.competencia,
+          observacoes: data.observacoes ?? undefined,
+        },
+      });
+      const mov = await tx.movimentacao.create({
+        data: {
+          tipo: TipoMovimentacao.SAIDA,
+          valor: data.valor,
+          dataCaixa: data.vencimento,
+          dataCompetencia: data.vencimento,
+          descricao: `Conta fixa — ${data.descricao}`,
+          categoriaId: data.categoriaId,
+          origem: OrigemMovimentacao.CONTA_PAGA,
+          referenciaId: conta.id,
+        },
+      });
+      return tx.contaPagar.update({
+        where: { id: conta.id },
+        data: { movimentacaoId: mov.id },
+      });
     });
   },
 };

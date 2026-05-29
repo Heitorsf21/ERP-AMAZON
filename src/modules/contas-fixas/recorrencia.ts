@@ -148,6 +148,20 @@ export function planejarOcorrencias(
   return out;
 }
 
+/**
+ * Uma ocorrência "passada" (competência anterior ao mês atual) deve ser
+ * materializada já PAGA — o usuário usa o serviço desde sempre, então meses
+ * anteriores já foram quitados. O mês atual permanece em aberto para
+ * confirmação manual. Compara competências "YYYY-MM" lexicograficamente
+ * (equivale à ordem cronológica).
+ */
+export function ocorrenciaDeveVirPaga(
+  competencia: string,
+  competenciaAtual: string,
+): boolean {
+  return competencia < competenciaAtual;
+}
+
 /** Soma o valor (centavos) de uma lista de ocorrências planejadas. */
 export function totalOcorrenciasCentavos(
   ocorrencias: OcorrenciaPlanejada[],

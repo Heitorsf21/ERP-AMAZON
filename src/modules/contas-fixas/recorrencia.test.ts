@@ -4,6 +4,7 @@ import {
   competenciaEDiaDeDataIso,
   competenciasNoIntervalo,
   diaVencimentoEfetivo,
+  ocorrenciaDeveVirPaga,
   planejarOcorrencias,
   totalOcorrenciasCentavos,
   ultimoDiaDoMes,
@@ -128,6 +129,17 @@ describe("planejarOcorrencias", () => {
       MAR,
     );
     expect(fora).toHaveLength(0);
+  });
+});
+
+describe("ocorrenciaDeveVirPaga", () => {
+  it("competências anteriores ao mês atual vêm pagas", () => {
+    expect(ocorrenciaDeveVirPaga("2025-08", "2026-05")).toBe(true);
+    expect(ocorrenciaDeveVirPaga("2026-04", "2026-05")).toBe(true);
+  });
+  it("mês atual e futuros NÃO vêm pagos", () => {
+    expect(ocorrenciaDeveVirPaga("2026-05", "2026-05")).toBe(false);
+    expect(ocorrenciaDeveVirPaga("2026-06", "2026-05")).toBe(false);
   });
 });
 

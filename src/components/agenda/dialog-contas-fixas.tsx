@@ -2,7 +2,8 @@
 
 import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Pencil, Plus, Repeat, Trash2, Wallet } from "lucide-react";
+import { History, Pencil, Plus, Repeat, Trash2, Wallet } from "lucide-react";
+import { toast } from "sonner";
 import {
   Dialog,
   DialogContent,
@@ -54,6 +55,15 @@ function pad2(n: number): string {
   return String(n).padStart(2, "0");
 }
 
+function hojeISO(): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Sao_Paulo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+}
+
 export function DialogContasFixas({
   aberto,
   onOpenChange,
@@ -64,6 +74,7 @@ export function DialogContasFixas({
   const qc = useQueryClient();
   const [form, setForm] = React.useState({ ...VAZIO });
   const [erro, setErro] = React.useState<string | null>(null);
+  const [backfillDe, setBackfillDe] = React.useState("2025-08-25");
 
   const { data: contas = [], isLoading } = useQuery<ContaFixa[]>({
     queryKey: ["contas-fixas", "todas"],
@@ -146,6 +157,25 @@ export function DialogContasFixas({
       invalidarTudo();
       setForm((f) => ({ ...f, ...(f.id ? VAZIO : {}) }));
     },
+  });
+
+  const gerarHistorico = useMutation({
+    mutationFn: () =>
+      fetchJSON<{ criadas: number; pagas: number }>(
+        "/api/contas-fixas/ocorrencias",
+        {
+          method: "POST",
+          body: JSON.stringify({ de: backfillDe, ate: hojeISO() }),
+        },
+      ),
+    onSuccess: (r) => {
+      invalidarTudo();
+      toast.success(
+        `Histórico gerado: ${r.criadas} parcela(s), ${r.pagas} marcada(s) como paga(s).`,
+      );
+    },
+    onError: (e) =>
+      toast.error(e instanceof Error ? e.message : "falha ao gerar histórico"),
   });
 
   function editar(conta: ContaFixa) {
@@ -473,6 +503,43 @@ export function DialogContasFixas({
               As contas fixas geram ocorrências automáticas em Contas a Pagar e
               aparecem na Agenda no dia do vencimento.
             </p>
+          </div>
+        </div>
+
+        {/* Backfill: gera as parcelas retroativas (meses passados já pagos). */}
+        <div className="space-y-2 rounded-md border bg-muted/20 p-3">
+          <div className="flex items-center gap-2 text-sm font-medium">
+            <History className="h-4 w-4 text-muted-foreground" />
+            Gerar histórico de parcelas
+          </div>
+          <p className="text-[11px] text-muted-foreground">
+            Cria as parcelas de cada conta fixa ativa a partir da data abaixo.
+            Meses anteriores ao atual já entram como <strong>pagos</strong> (com
+            saída de caixa na data do vencimento); o mês atual fica em aberto.
+            É idempotente — pode rodar mais de uma vez sem duplicar.
+          </p>
+          <div className="flex flex-wrap items-end gap-2">
+            <div className="space-y-1">
+              <Label htmlFor="cf-backfill" className="text-xs">
+                A partir de
+              </Label>
+              <Input
+                id="cf-backfill"
+                type="date"
+                value={backfillDe}
+                onChange={(e) => setBackfillDe(e.target.value)}
+                className="h-9 w-[170px]"
+              />
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={gerarHistorico.isPending || !backfillDe}
+              onClick={() => gerarHistorico.mutate()}
+            >
+              <History className="mr-2 h-4 w-4" />
+              {gerarHistorico.isPending ? "Gerando…" : "Gerar histórico"}
+            </Button>
           </div>
         </div>
       </DialogContent>
