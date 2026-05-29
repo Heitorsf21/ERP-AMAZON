@@ -353,6 +353,7 @@ model ContaReceber {
 
 model Produto {
   id                          String    @id @default(cuid())
+  empresaId                   String?
   sku                         String    @unique
   asin                        String?
   nome                        String
@@ -418,6 +419,7 @@ model Produto {
 // Estimativa de taxas Amazon (comissão + FBA). Ver doc em schema.prisma.
 model AmazonFeeEstimate {
   produtoId              String   @id
+  empresaId              String?
   comissaoBps            Int
   fbaCentavos            Int
   ticketAvaliadoCentavos Int
@@ -433,6 +435,7 @@ model AmazonFeeEstimate {
 // Vigências de custo unitário ao longo do tempo. Ver doc em schema.prisma.
 model ProdutoCustoHistorico {
   id             String    @id @default(cuid())
+  empresaId      String?
   produtoId      String
   custoCentavos  Int
   vigenciaInicio DateTime
@@ -450,6 +453,7 @@ model ProdutoCustoHistorico {
 
 model VendaAmazon {
   id                         String    @id @default(cuid())
+  empresaId                  String?
   amazonOrderId              String
   orderItemId                String?
   sku                        String
@@ -497,6 +501,7 @@ model VendaAmazon {
 // são gravados apenas pela Finance API).
 model VendaCustoEventual {
   id            String   @id @default(cuid())
+  empresaId     String?
   vendaAmazonId String
   descricao     String
   valorCentavos Int
@@ -510,6 +515,7 @@ model VendaCustoEventual {
 
 model AmazonOrderRaw {
   id                 String    @id @default(cuid())
+  empresaId          String?
   amazonOrderId      String    @unique
   statusPedido       String    @default("UNKNOWN")
   createdTime        DateTime?
@@ -531,6 +537,7 @@ model AmazonOrderRaw {
 
 model ProdutoVariacao {
   id             String   @id @default(cuid())
+  empresaId      String?
   produtoPaiId   String
   produtoFilhoId String?  @unique
   skuPai         String
@@ -552,6 +559,7 @@ model ProdutoVariacao {
 
 model AmazonReembolso {
   id                        String   @id @default(cuid())
+  empresaId                 String?
   amazonOrderId             String
   orderItemId               String?
   sku                       String
@@ -583,6 +591,7 @@ model AmazonReembolso {
 
 model AdsGastoManual {
   id            String   @id @default(cuid())
+  empresaId     String?
   periodoInicio DateTime
   periodoFim    DateTime
   produtoId     String?
@@ -597,6 +606,7 @@ model AdsGastoManual {
 
 model MovimentacaoEstoque {
   id               String   @id @default(cuid())
+  empresaId        String?
   produtoId        String
   // ENTRADA | SAIDA
   tipo             String
@@ -622,6 +632,7 @@ model MovimentacaoEstoque {
 
 model PedidoCompra {
   id              String             @id @default(cuid())
+  empresaId       String?
   numero          String?
   fornecedorId    String?
   fornecedor      Fornecedor?        @relation(fields: [fornecedorId], references: [id], onDelete: Restrict)
@@ -645,6 +656,7 @@ model PedidoCompra {
 
 model ItemPedidoCompra {
   id            String       @id @default(cuid())
+  empresaId     String?
   pedidoId      String
   pedido        PedidoCompra @relation(fields: [pedidoId], references: [id], onDelete: Cascade)
   produtoId     String
@@ -662,6 +674,7 @@ model ItemPedidoCompra {
 
 model AmazonSyncLog {
   id        String   @id @default(cuid())
+  empresaId String?
   tipo      String
   // PROCESSANDO | SUCESSO | ERRO
   status    String
@@ -677,6 +690,7 @@ model AmazonSyncLog {
 
 model AmazonSyncJob {
   id          String    @id @default(cuid())
+  empresaId   String?
   tipo        String
   // QUEUED | RUNNING | SUCCESS | FAILED | CANCELLED
   status      String    @default("QUEUED")
@@ -704,6 +718,7 @@ model AmazonSyncJob {
 
 model AmazonNotification {
   id               String    @id @default(cuid())
+  empresaId        String?
   notificationId   String    @unique
   notificationType String
   eventTime        DateTime?
@@ -725,6 +740,7 @@ model AmazonNotification {
 
 model AmazonApiQuota {
   id                 String    @id @default(cuid())
+  empresaId          String?
   operation          String    @unique
   nextAllowedAt      DateTime?
   rateLimitPerSecond Float?
@@ -741,6 +757,7 @@ model AmazonApiQuota {
 
 model AmazonReviewSolicitation {
   id                  String    @id @default(cuid())
+  empresaId           String?
   amazonOrderId       String    @unique
   marketplaceId       String
   status              String    @default("PENDENTE")
@@ -789,6 +806,7 @@ model ConfiguracaoSistema {
 // da mensagem. A tabela de gestao na UI ainda os exibe para reativacao.
 model WhatsAppEstoqueProdutoExcluido {
   produtoId String   @id
+  empresaId String?
   sku       String
   criadoEm  DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -802,6 +820,7 @@ model WhatsAppEstoqueProdutoExcluido {
 // status: SUCESSO | ERRO | SKIPPED. totaisJson guarda a contagem por faixa.
 model WhatsAppEstoqueEnvio {
   id              String    @id @default(cuid())
+  empresaId       String?
   tipo            String
   status          String
   destino         String
@@ -822,6 +841,7 @@ model WhatsAppEstoqueEnvio {
 
 model LoteImportacaoFBA {
   id                  String    @id @default(cuid())
+  empresaId           String?
   nomeArquivo         String
   // VENDAS | ESTOQUE
   tipo                String
@@ -839,6 +859,7 @@ model LoteImportacaoFBA {
 
 model VendaFBA {
   id                    String   @id @default(cuid())
+  empresaId             String?
   numeroPedido          String
   marketplace           String?
   status                String
@@ -866,6 +887,7 @@ model VendaFBA {
 
 model LoteMetricaGS {
   id          String   @id @default(cuid())
+  empresaId   String?
   nomeArquivo String
   createdAt   DateTime @default(now())
 
@@ -876,6 +898,7 @@ model LoteMetricaGS {
 
 model ProdutoMetricaGestorSeller {
   id                     String   @id @default(cuid())
+  empresaId              String?
   loteId                 String
   produtoId              String?
   sku                    String
@@ -903,6 +926,7 @@ model ProdutoMetricaGestorSeller {
 
 model ImportacaoLote {
   id          String   @id @default(cuid())
+  empresaId   String?
   nomeArquivo String
   formato     String
   totalLinhas Int
@@ -913,6 +937,7 @@ model ImportacaoLote {
 
 model AdsCampanha {
   id                       String   @id @default(cuid())
+  empresaId                String?
   periodoInicio            DateTime
   periodoFim               DateTime
   nomeCampanha             String
@@ -936,6 +961,7 @@ model AdsCampanha {
 
 model Notificacao {
   id        String   @id @default(cuid())
+  empresaId String?
   // ESTOQUE_CRITICO | BUYBOX_PERDIDO | BUYBOX_RECUPERADO | REEMBOLSO_ALTO | REIMBURSEMENT_FBA_RECEBIDO | ACOS_ALTO |
   // LIQUIDACAO_ATRASADA | CUSTO_AUSENTE | JOB_FALHANDO | QUOTA_BLOQUEADA | SETTLEMENT_NOVO |
   // RECEBIMENTO_RECONCILIADO | WORKER_REINICIADO
@@ -956,6 +982,7 @@ model Notificacao {
 // ── Agenda: tarefas (empresa/pessoal) ───────────────────────────────────────
 model Tarefa {
   id            String    @id @default(cuid())
+  empresaId     String?
   titulo        String
   descricao     String?
   prazo         DateTime?
@@ -979,6 +1006,7 @@ model Tarefa {
 
 model AuditLog {
   id           String   @id @default(cuid())
+  empresaId    String?
   usuarioId    String?
   usuarioEmail String?
   acao         String
@@ -1002,6 +1030,7 @@ model AuditLog {
 
 model FbmPickingBatch {
   id             String   @id @default(cuid())
+  empresaId      String?
   codigo         String   @unique
   status         String   @default("ABERTO")
   etiquetaUrl    String?
@@ -1019,6 +1048,7 @@ model FbmPickingBatch {
 
 model FbmPickingItem {
   id            String    @id @default(cuid())
+  empresaId     String?
   batchId       String
   vendaAmazonId String?
   amazonOrderId String
@@ -1044,6 +1074,7 @@ model FbmPickingItem {
 
 model AmazonSettlementReport {
   id                  String    @id @default(cuid())
+  empresaId           String?
   reportId            String    @unique
   reportDocumentId    String?
   settlementId        String?   @unique
@@ -1065,6 +1096,7 @@ model AmazonSettlementReport {
 // Permite gráficos de "% do tempo com buybox últimos N dias".
 model BuyBoxSnapshot {
   id            String   @id @default(cuid())
+  empresaId     String?
   produtoId     String?
   sku           String
   asin          String?
@@ -1090,6 +1122,7 @@ model BuyBoxSnapshot {
 // por transactionId @unique.
 model AmazonFinanceTransaction {
   id                  String    @id @default(cuid())
+  empresaId           String?
   transactionId       String    @unique
   transactionType     String?
   transactionStatus   String?
@@ -1115,6 +1148,7 @@ model AmazonFinanceTransaction {
 // dataSnapshot é truncado a 00:00 UTC do dia para garantir 1 row/SKU/dia idempotente.
 model InventorySnapshot {
   id                     String   @id @default(cuid())
+  empresaId              String?
   produtoId              String?
   sku                    String
   asin                   String?
@@ -1138,6 +1172,7 @@ model InventorySnapshot {
 // perdido/danificado). Diferente de AmazonReembolso, que e refund de pedido.
 model AmazonReimbursement {
   id                        String    @id @default(cuid())
+  empresaId                 String?
   naturalKey                String    @unique
   reportId                  String?
   reimbursementId           String?
@@ -1174,6 +1209,7 @@ model AmazonReimbursement {
 
 model AmazonReturn {
   id                    String    @id @default(cuid())
+  empresaId             String?
   naturalKey            String    @unique
   reportId              String?
   tipoReport            String
@@ -1208,6 +1244,7 @@ model AmazonReturn {
 
 model AmazonStorageFee {
   id                            String    @id @default(cuid())
+  empresaId                     String?
   naturalKey                    String    @unique
   reportId                      String?
   asin                          String?
@@ -1237,6 +1274,7 @@ model AmazonStorageFee {
 
 model AmazonSkuTrafficDaily {
   id                     String   @id @default(cuid())
+  empresaId              String?
   sku                    String
   data                   DateTime
   parentAsin             String?
@@ -1266,6 +1304,7 @@ model AmazonSkuTrafficDaily {
 
 model AmazonAdsCampanha {
   id             String   @id @default(cuid())
+  empresaId      String?
   campaignId     String   @unique
   profileId      String
   nome           String
@@ -1285,6 +1324,7 @@ model AmazonAdsCampanha {
 
 model AmazonAdsMetricaDiaria {
   id             String   @id @default(cuid())
+  empresaId      String?
   data           DateTime
   campaignId     String
   adGroupId      String?
@@ -1319,6 +1359,7 @@ model AmazonAdsMetricaDiaria {
 // (resolvido por SKU no handler).
 model AmazonAdsMetricaHoraria {
   id             String   @id @default(cuid())
+  empresaId      String?
   horaInicio     DateTime
   dataset        String
   profileId      String
