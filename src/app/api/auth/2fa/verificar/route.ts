@@ -3,6 +3,7 @@ import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { auditLog } from "@/lib/audit";
+import { originViolationResponse } from "@/lib/origin-check";
 import {
   SESSION_COOKIE_NAME,
   buildSessionCookieOptions,
@@ -27,6 +28,9 @@ const schema = z.object({
 });
 
 export async function POST(req: Request) {
+  const origemBloqueada = originViolationResponse(req);
+  if (origemBloqueada) return origemBloqueada;
+
   let body: unknown;
   try {
     body = await req.json();

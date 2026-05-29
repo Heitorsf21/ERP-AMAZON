@@ -12,6 +12,7 @@ import {
 } from "@/lib/session";
 import { enviarEmail, escapeHtml } from "@/lib/email";
 import { recordLoginFailure, resetLoginFailures } from "@/lib/auth-rate-limit";
+import { originViolationResponse } from "@/lib/origin-check";
 import { TipoAuditLog } from "@/modules/shared/domain";
 
 export const runtime = "nodejs";
@@ -24,6 +25,9 @@ const schema = z.object({
 });
 
 export async function POST(req: Request) {
+  const origemBloqueada = originViolationResponse(req);
+  if (origemBloqueada) return origemBloqueada;
+
   let body: unknown;
   try {
     body = await req.json();

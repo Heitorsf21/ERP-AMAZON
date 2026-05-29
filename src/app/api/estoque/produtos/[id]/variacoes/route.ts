@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { handle, ok, erro } from "@/lib/api";
+import { handle, handleAuth, ok, erro } from "@/lib/api";
 import { auditLog } from "@/lib/audit";
 import { requireRole, UsuarioRole } from "@/lib/auth";
 import { db } from "@/lib/db";
@@ -17,7 +17,7 @@ const criarVariacaoSchema = z.object({
 
 export const dynamic = "force-dynamic";
 
-export const GET = handle(async (_req: Request, { params }: Params) => {
+export const GET = handleAuth(async (_req: Request, { params }: Params) => {
   const { id } = await params;
   const variacoes = await db.produtoVariacao.findMany({
     where: { produtoPaiId: id },

@@ -3,28 +3,14 @@ import { z } from "zod";
 import crypto from "node:crypto";
 import { db } from "@/lib/db";
 import { enviarEmail, escapeHtml } from "@/lib/email";
+import { consumeRateLimit, getClientIp } from "@/lib/auth-rate-limit";
+import { originViolationResponse } from "@/lib/origin-check";
 
-// Rate limit: máx 5 solicitações de recuperação por IP:email em 1 hora
+// Rate limit: máx 5 solicitações de recuperação por IP:email em 1 hora.
+// Persiste em Postgres (model LoginThrottle, chave namespaced "recovery:")
+// para sobreviver a restart do PM2 e funcionar com múltiplas instâncias.
 const RECOVERY_WINDOW_MS = 60 * 60_000;
 const RECOVERY_MAX = 5;
-const recoveryBuckets = new Map<string, { count: number; resetAt: number }>();
-
-function checkRecoveryRateLimit(req: Request, email: string): boolean {
-  const ip =
-    req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
-    req.headers.get("x-real-ip") ||
-    "unknown";
-  const key = `${ip}:${email}`;
-  const now = Date.now();
-  const bucket = recoveryBuckets.get(key);
-  const active =
-    bucket && bucket.resetAt > now
-      ? bucket
-      : { count: 0, resetAt: now + RECOVERY_WINDOW_MS };
-  active.count += 1;
-  recoveryBuckets.set(key, active);
-  return active.count > RECOVERY_MAX;
-}
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -38,6 +24,9 @@ function sha256(s: string): string {
 }
 
 export async function POST(req: Request) {
+  const origemBloqueada = originViolationResponse(req);
+  if (origemBloqueada) return origemBloqueada;
+
   let body: unknown;
   try {
     body = await req.json();
@@ -52,7 +41,13 @@ export async function POST(req: Request) {
 
   const email = parsed.data.email.toLowerCase().trim();
 
-  if (checkRecoveryRateLimit(req, email)) {
+  const ip = getClientIp(req.headers);
+  const rl = await consumeRateLimit(
+    `recovery:${ip}:${email}`,
+    RECOVERY_WINDOW_MS,
+    RECOVERY_MAX,
+  );
+  if (rl.limited) {
     // Retorna 200 para não vazar informação, mas não envia email
     return NextResponse.json({ ok: true });
   }

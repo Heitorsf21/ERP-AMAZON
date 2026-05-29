@@ -3,6 +3,7 @@ import bcrypt from "bcryptjs";
 import { z } from "zod";
 import crypto from "node:crypto";
 import { db } from "@/lib/db";
+import { originViolationResponse } from "@/lib/origin-check";
 import { strongPasswordSchema } from "@/lib/password-policy";
 
 export const runtime = "nodejs";
@@ -18,6 +19,9 @@ function sha256(s: string): string {
 }
 
 export async function POST(req: Request) {
+  const origemBloqueada = originViolationResponse(req);
+  if (origemBloqueada) return origemBloqueada;
+
   let body: unknown;
   try {
     body = await req.json();

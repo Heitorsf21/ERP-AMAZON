@@ -1,4 +1,4 @@
-import { handle, ok, erro } from "@/lib/api";
+import { handle, handleAuth, ok, erro } from "@/lib/api";
 import { auditLog } from "@/lib/audit";
 import { requireRole, UsuarioRole } from "@/lib/auth";
 import { estoqueService } from "@/modules/estoque/service";
@@ -6,7 +6,7 @@ import { TipoAuditLog } from "@/modules/shared/domain";
 
 type Params = { params: Promise<{ id: string }> };
 
-export const GET = handle(async (_req: Request, { params }: Params) => {
+export const GET = handleAuth(async (_req: Request, { params }: Params) => {
   const { id } = await params;
   const produto = await estoqueService.buscarProduto(id);
   if (!produto) return erro(404, "produto não encontrado");

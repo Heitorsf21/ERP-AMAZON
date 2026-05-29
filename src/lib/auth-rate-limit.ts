@@ -16,7 +16,7 @@ export type LoginFailureResult = {
   retryAfterSeconds: number;
 };
 
-function getClientIp(headers: Headers): string {
+export function getClientIp(headers: Headers): string {
   return (
     headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
     headers.get("x-real-ip") ||
@@ -129,6 +129,71 @@ export async function cleanupExpiredLoginThrottle(
  */
 export async function clearLoginFailureBucketsForTests(): Promise<void> {
   await db.loginThrottle.deleteMany();
+}
+
+export type RateLimitResult = {
+  limited: boolean;
+  count: number;
+  resetAt: number;
+  retryAfterSeconds: number;
+};
+
+/**
+ * Rate-limit generico persistente. Reusa o model LoginThrottle como store
+ * chave/count/resetAt — a `chave` DEVE ser namespaced pelo chamador
+ * (ex: "recovery:<ip>:<email>") para nao colidir com o throttle de login.
+ *
+ * Incrementa atomicamente; reinicia o bucket quando a janela expira.
+ * Fail-open: DB indisponivel libera (e loga) — mesmo racional do login.
+ */
+export async function consumeRateLimit(
+  chave: string,
+  windowMs: number,
+  max: number,
+  now = Date.now(),
+): Promise<RateLimitResult> {
+  const newResetAt = new Date(now + windowMs);
+
+  try {
+    const atual = await db.loginThrottle.findUnique({ where: { chave } });
+
+    if (!atual || atual.resetAt.getTime() <= now) {
+      const criado = await db.loginThrottle.upsert({
+        where: { chave },
+        create: { chave, count: 1, resetAt: newResetAt },
+        update: { count: 1, resetAt: newResetAt },
+      });
+      return shapeRateLimit(criado.count, criado.resetAt.getTime(), max, now);
+    }
+
+    const atualizado = await db.loginThrottle.update({
+      where: { chave },
+      data: { count: { increment: 1 } },
+    });
+    return shapeRateLimit(atualizado.count, atualizado.resetAt.getTime(), max, now);
+  } catch (err) {
+    logger.warn({ err, chave }, "[rate-limit] DB indisponivel, fail-open");
+    return {
+      limited: false,
+      count: 0,
+      resetAt: now + windowMs,
+      retryAfterSeconds: 0,
+    };
+  }
+}
+
+function shapeRateLimit(
+  count: number,
+  resetAtMs: number,
+  max: number,
+  now: number,
+): RateLimitResult {
+  return {
+    limited: count > max,
+    count,
+    resetAt: resetAtMs,
+    retryAfterSeconds: Math.max(1, Math.ceil((resetAtMs - now) / 1000)),
+  };
 }
 
 export const LOGIN_FAILURE_LIMIT = {

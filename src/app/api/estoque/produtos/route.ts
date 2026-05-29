@@ -1,4 +1,4 @@
-import { handle, ok } from "@/lib/api";
+import { handle, handleAuth, ok } from "@/lib/api";
 import { auditLog } from "@/lib/audit";
 import { requireRole, UsuarioRole } from "@/lib/auth";
 import { estoqueService } from "@/modules/estoque/service";
@@ -6,7 +6,7 @@ import { TipoAuditLog } from "@/modules/shared/domain";
 
 export const dynamic = "force-dynamic";
 
-export const GET = handle(async (req: Request) => {
+export const GET = handleAuth(async (req: Request) => {
   const { searchParams } = new URL(req.url);
   const produtos = await estoqueService.listarProdutos({
     busca: searchParams.get("busca") ?? undefined,
