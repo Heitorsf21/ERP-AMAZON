@@ -146,6 +146,7 @@ model CodigoVerificacao2FA {
 
 model Categoria {
   id        String   @id @default(cuid())
+  empresaId String?
   nome      String   @unique
   // RECEITA | DESPESA | AMBAS
   tipo      String
@@ -160,6 +161,7 @@ model Categoria {
 
 model Fornecedor {
   id          String   @id @default(cuid())
+  empresaId   String?
   nome        String   @unique
   documento   String?
   contato     String?
@@ -174,6 +176,7 @@ model Fornecedor {
 
 model Movimentacao {
   id              String    @id @default(cuid())
+  empresaId       String?
   // ENTRADA | SAIDA
   tipo            String
   valor           Int
@@ -201,6 +204,7 @@ model Movimentacao {
 
 model ContaPagar {
   id             String    @id @default(cuid())
+  empresaId      String?
   fornecedorId   String
   categoriaId    String
   descricao      String
@@ -243,6 +247,7 @@ model ContaPagar {
 // ── Agenda: contas fixas (recorrentes/não recorrentes) ──────────────────────
 model ContaFixa {
   id               String    @id @default(cuid())
+  empresaId        String?
   descricao        String
   valor            Int // centavos
   diaVencimento    Int // 1..31 — clampa ao último dia quando o mês não tem o dia
@@ -267,6 +272,7 @@ model ContaFixa {
 
 model DossieFinanceiro {
   id                  String    @id @default(cuid())
+  empresaId           String?
   fornecedorNome      String?
   fornecedorDocumento String?
   descricao           String?
@@ -288,6 +294,7 @@ model DossieFinanceiro {
 
 model DocumentoFinanceiro {
   id                  String    @id @default(cuid())
+  empresaId           String?
   dossieId            String
   tipo                String
   nomeArquivo         String
@@ -318,6 +325,7 @@ model DocumentoFinanceiro {
 
 model ContaReceber {
   id              String    @id @default(cuid())
+  empresaId       String?
   descricao       String
   valor           Int
   dataPrevisao    DateTime?
