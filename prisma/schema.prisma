@@ -16,6 +16,60 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// ── Multiempresa (multi-tenant) ─────────────────────────────────────────────
+// Fundação do isolamento por empresa. `empresaId` será propagado aos modelos
+// "owned" em blocos posteriores; aqui ficam os modelos base + o vínculo do
+// Usuario. O SUPERADMIN da plataforma vive em PlataformaUsuario (fora do escopo
+// tenant) para não poluir queries tenant-scoped nem o RLS.
+
+model Empresa {
+  id        String   @id @default(cuid())
+  nome      String
+  // Identificador curto usado no login/seletor de empresa (ex: "mundofs").
+  slug      String   @unique
+  ativa     Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  usuarios       Usuario[]
+  amazonAccounts AmazonAccount[]
+
+  @@index([ativa])
+}
+
+model AmazonAccount {
+  id            String   @id @default(cuid())
+  empresaId     String
+  nome          String
+  marketplaceId String?
+  sellerId      String?
+  endpoint      String?
+  ativa         Boolean  @default(true)
+  // PENDENTE | ATIVA | ERRO — gate do worker (só itera contas ATIVA com credenciais).
+  status        String   @default("PENDENTE")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  empresa Empresa @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+
+  @@index([empresaId])
+  @@index([ativa])
+}
+
+model PlataformaUsuario {
+  id             String    @id @default(cuid())
+  email          String    @unique
+  senhaHash      String
+  nome           String
+  ativo          Boolean   @default(true)
+  ultimoAcesso   DateTime?
+  sessionVersion Int       @default(0)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([ativo])
+}
+
 // ── Autenticação ────────────────────────────────────────────────────────────
 
 model Usuario {
@@ -35,9 +89,13 @@ model Usuario {
   // Tokens de sessao carregam esse `v` no payload; getSession compara
   // contra o valor atual para revogar sessoes obsoletas.
   sessionVersion   Int       @default(0)
+  // Multi-tenant: nullable nesta fase (backfill + NOT NULL em bloco posterior,
+  // após pg_dump + staging). O SUPERADMIN não usa Usuario (ver PlataformaUsuario).
+  empresaId        String?
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
 
+  empresa           Empresa?                @relation(fields: [empresaId], references: [id])
   tokensRecuperacao TokenRecuperacaoSenha[]
   codigos2fa        CodigoVerificacao2FA[]
   auditLogs         AuditLog[]
@@ -45,6 +103,7 @@ model Usuario {
 
   @@index([email])
   @@index([ativo])
+  @@index([empresaId])
 }
 
 model TokenRecuperacaoSenha {
