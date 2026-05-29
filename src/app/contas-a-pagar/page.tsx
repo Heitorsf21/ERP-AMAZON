@@ -9,11 +9,13 @@ import {
   FileText,
   FileUp,
   Plus,
+  Wallet,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/ui/page-header";
 import { KpiCard } from "@/components/ui/kpi-card";
 import { ListaContas } from "@/components/contas/lista-contas";
+import { DialogContasFixas } from "@/components/agenda/dialog-contas-fixas";
 import {
   DialogNovaConta,
   type PrefillNovaConta,
@@ -41,6 +43,7 @@ function pluralConta(qtd: number) {
 export default function ContasAPagarPage() {
   const [modalNova, setModalNova] = React.useState(false);
   const [modalDocumento, setModalDocumento] = React.useState(false);
+  const [modalContasFixas, setModalContasFixas] = React.useState(false);
   const [prefillConta, setPrefillConta] = React.useState<PrefillNovaConta | undefined>();
 
   const { data: totais } = useQuery<TotaisMes>({
@@ -60,6 +63,10 @@ export default function ContasAPagarPage() {
             setModalNova(true);
           }}
         />
+        <Button variant="outline" onClick={() => setModalContasFixas(true)}>
+          <Wallet className="mr-2 h-4 w-4" />
+          Contas fixas
+        </Button>
         <Button variant="outline" onClick={() => setModalDocumento(true)}>
           <FileUp className="mr-2 h-4 w-4" />
           Receber documento
@@ -109,6 +116,10 @@ export default function ContasAPagarPage() {
 
       <ListaContas />
 
+      <DialogContasFixas
+        aberto={modalContasFixas}
+        onOpenChange={setModalContasFixas}
+      />
       <DialogReceberDocumento
         aberto={modalDocumento}
         onOpenChange={setModalDocumento}

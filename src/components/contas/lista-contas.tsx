@@ -37,6 +37,7 @@ type Conta = {
   vencimento: string;
   status: string;
   recorrencia: string;
+  contaFixaId: string | null;
   nfNome: string | null;
   fornecedor: { id: string; nome: string };
   categoria: { id: string; nome: string };
@@ -273,6 +274,11 @@ export function ListaContas() {
                     {c.recorrencia === "MENSAL" && (
                       <span className="rounded bg-muted px-1 py-0.5 text-[10px] uppercase tracking-wide">
                         mensal
+                      </span>
+                    )}
+                    {c.contaFixaId && (
+                      <span className="rounded bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300 px-1 py-0.5 text-[10px] uppercase tracking-wide">
+                        fixa
                       </span>
                     )}
                     {c.nfNome && (

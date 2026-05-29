@@ -38,6 +38,7 @@ model Usuario {
   tokensRecuperacao TokenRecuperacaoSenha[]
   codigos2fa        CodigoVerificacao2FA[]
   auditLogs         AuditLog[]
+  tarefas           Tarefa[]
 
   @@index([email])
   @@index([ativo])
@@ -95,6 +96,7 @@ model Categoria {
 
   movimentacoes Movimentacao[]
   contas        ContaPagar[]
+  contasFixas   ContaFixa[]
 }
 
 model Fornecedor {
@@ -106,8 +108,9 @@ model Fornecedor {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  contas  ContaPagar[]
-  pedidos PedidoCompra[]
+  contas      ContaPagar[]
+  pedidos     PedidoCompra[]
+  contasFixas ContaFixa[]
 }
 
 model Movimentacao {
@@ -152,6 +155,9 @@ model ContaPagar {
   pagoEm         DateTime?
   movimentacaoId String?   @unique
   observacoes    String?
+  // Ocorrência gerada a partir de uma ContaFixa — idempotência via @@unique([contaFixaId, competencia]).
+  contaFixaId    String?
+  competencia    String? // "YYYY-MM" — preenchido apenas em ocorrências de conta fixa
   deletedAt      DateTime?
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
@@ -166,10 +172,38 @@ model ContaPagar {
   movimentacao     Movimentacao?     @relation("ContaPagaMovimentacao", fields: [movimentacaoId], references: [id], onDelete: SetNull)
   dossieFinanceiro DossieFinanceiro?
   pedidoCompra     PedidoCompra?     @relation("PedidoContaPagar")
+  contaFixa        ContaFixa?        @relation("ContaFixaOcorrencias", fields: [contaFixaId], references: [id], onDelete: SetNull)
 
+  @@unique([contaFixaId, competencia])
   @@index([status])
   @@index([vencimento])
   @@index([fornecedorId])
+  @@index([contaFixaId])
+}
+
+// ── Agenda: contas fixas (recorrentes/não recorrentes) ──────────────────────
+model ContaFixa {
+  id               String    @id @default(cuid())
+  descricao        String
+  valor            Int // centavos
+  diaVencimento    Int // 1..31 — clampa ao último dia quando o mês não tem o dia
+  recorrente       Boolean   @default(true)
+  // "YYYY-MM" — competência da ocorrência única (só quando recorrente = false)
+  competenciaUnica String?
+  ativa            Boolean   @default(true)
+  categoriaId      String?
+  fornecedorId     String?
+  observacoes      String?
+  deletedAt        DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  categoria   Categoria?   @relation(fields: [categoriaId], references: [id], onDelete: SetNull)
+  fornecedor  Fornecedor?  @relation(fields: [fornecedorId], references: [id], onDelete: SetNull)
+  ocorrencias ContaPagar[] @relation("ContaFixaOcorrencias")
+
+  @@index([ativa])
+  @@index([diaVencimento])
 }
 
 model DossieFinanceiro {
@@ -289,22 +323,22 @@ model Produto {
   createdAt                   DateTime  @default(now())
   updatedAt                   DateTime  @updatedAt
 
-  movimentacoes      MovimentacaoEstoque[]
-  itensPedido        ItemPedidoCompra[]
-  metricas           ProdutoMetricaGestorSeller[]
-  adsGastosManuais   AdsGastoManual[]
-  reembolsosAmazon   AmazonReembolso[]
-  buyboxSnapshots    BuyBoxSnapshot[]
-  inventorySnapshots InventorySnapshot[]
-  reimbursementsFba  AmazonReimbursement[]
-  returnsAmazon      AmazonReturn[]
-  skuTrafficDaily    AmazonSkuTrafficDaily[]
-  adsMetricasDiarias AmazonAdsMetricaDiaria[]
-  adsMetricasHorarias AmazonAdsMetricaHoraria[]
-  variacoesPai       ProdutoVariacao[]            @relation("ProdutoVariacaoPai")
-  variacaoComoFilho  ProdutoVariacao?             @relation("ProdutoVariacaoFilho")
-  custoHistorico     ProdutoCustoHistorico[]
-  feeEstimate        AmazonFeeEstimate?
+  movimentacoes           MovimentacaoEstoque[]
+  itensPedido             ItemPedidoCompra[]
+  metricas                ProdutoMetricaGestorSeller[]
+  adsGastosManuais        AdsGastoManual[]
+  reembolsosAmazon        AmazonReembolso[]
+  buyboxSnapshots         BuyBoxSnapshot[]
+  inventorySnapshots      InventorySnapshot[]
+  reimbursementsFba       AmazonReimbursement[]
+  returnsAmazon           AmazonReturn[]
+  skuTrafficDaily         AmazonSkuTrafficDaily[]
+  adsMetricasDiarias      AmazonAdsMetricaDiaria[]
+  adsMetricasHorarias     AmazonAdsMetricaHoraria[]
+  variacoesPai            ProdutoVariacao[]               @relation("ProdutoVariacaoPai")
+  variacaoComoFilho       ProdutoVariacao?                @relation("ProdutoVariacaoFilho")
+  custoHistorico          ProdutoCustoHistorico[]
+  feeEstimate             AmazonFeeEstimate?
   whatsappEstoqueExcluido WhatsAppEstoqueProdutoExcluido?
 
   @@index([sku])
@@ -376,7 +410,7 @@ model VendaAmazon {
   criadoEm                   DateTime  @default(now())
   atualizadoEm               DateTime  @updatedAt
 
-  custosEventuais            VendaCustoEventual[]
+  custosEventuais VendaCustoEventual[]
 
   @@unique([amazonOrderId, sku])
   @@index([orderItemId])
@@ -402,7 +436,7 @@ model VendaCustoEventual {
   criadoEm      DateTime @default(now())
   criadoPor     String?
 
-  venda         VendaAmazon @relation(fields: [vendaAmazonId], references: [id], onDelete: Cascade)
+  venda VendaAmazon @relation(fields: [vendaAmazonId], references: [id], onDelete: Cascade)
 
   @@index([vendaAmazonId])
 }
@@ -850,6 +884,30 @@ model Notificacao {
   @@index([lida])
   @@index([tipo])
   @@index([criadaEm])
+}
+
+// ── Agenda: tarefas (empresa/pessoal) ───────────────────────────────────────
+model Tarefa {
+  id            String    @id @default(cuid())
+  titulo        String
+  descricao     String?
+  prazo         DateTime?
+  // ABERTA | CONCLUIDA | CANCELADA
+  status        String    @default("ABERTA")
+  // EMPRESA | PESSOAL
+  visibilidade  String    @default("EMPRESA")
+  responsavelId String?
+  concluidaEm   DateTime?
+  deletedAt     DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  responsavel Usuario? @relation(fields: [responsavelId], references: [id], onDelete: SetNull)
+
+  @@index([status])
+  @@index([prazo])
+  @@index([visibilidade])
+  @@index([responsavelId])
 }
 
 model AuditLog {

@@ -30,6 +30,8 @@ import {
   findCommissionRule,
   formatCommissionRule,
 } from "@/modules/produtos/commission-table";
+import { contasFixasService } from "@/modules/contas-fixas/service";
+import { calcularMpaPosContasFixas } from "@/modules/contas-fixas/recorrencia";
 
 type VendaDashboard = {
   amazonOrderId: string;
@@ -227,14 +229,21 @@ export const dashboardEcommerceService = {
   },
 
   async obterKpis(periodo: IntervaloPeriodo) {
-    const [vendasRaw, vendasReembolsadas, ads, traffic, cfgImpostoSimples] =
-      await Promise.all([
-        buscarVendas(periodo),
-        buscarVendasReembolsadasGestorSeller(periodo),
-        fetchAdsGasto(periodo),
-        buscarTraffic(periodo),
-        getConfigImpostoSimples(),
-      ]);
+    const [
+      vendasRaw,
+      vendasReembolsadas,
+      ads,
+      traffic,
+      cfgImpostoSimples,
+      contasFixas,
+    ] = await Promise.all([
+      buscarVendas(periodo),
+      buscarVendasReembolsadasGestorSeller(periodo),
+      fetchAdsGasto(periodo),
+      buscarTraffic(periodo),
+      getConfigImpostoSimples(),
+      contasFixasService.totalDoPeriodo(periodo),
+    ]);
     const vendas = await enriquecerComEstimativas(vendasRaw);
     const agregado = agregarVendas(vendas);
     const agregadoReembolsados = agregarVendas(vendasReembolsadas);
@@ -270,6 +279,14 @@ export const dashboardEcommerceService = {
       tacosPercentual: percentual(ads.totalCentavos, agregado.faturamentoCentavos),
       lucroPosAdsCentavos,
       mpaPercentual: percentual(lucroPosAdsCentavos, agregado.faturamentoCentavos),
+      // Indicador complementar de planejamento: MPA descontando as contas fixas
+      // (ativas) com vencimento no período. Não altera o MPA acima.
+      contasFixasCentavos: contasFixas.totalCentavos,
+      mpaPosContasFixasPercentual: calcularMpaPosContasFixas({
+        lucroPosAdsCentavos,
+        contasFixasCentavos: contasFixas.totalCentavos,
+        faturamentoCentavos: agregado.faturamentoCentavos,
+      }),
       roiPosAdsPercentual: percentual(
         lucroPosAdsCentavos,
         agregado.custoTotalCentavos,

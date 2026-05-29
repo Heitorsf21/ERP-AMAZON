@@ -77,6 +77,29 @@ export const OrigemContaReceber = {
 export type OrigemContaReceber =
   (typeof OrigemContaReceber)[keyof typeof OrigemContaReceber];
 
+// ── Agenda: tarefas ─────────────────────────────────────────────────
+export const StatusTarefa = {
+  ABERTA: "ABERTA",
+  CONCLUIDA: "CONCLUIDA",
+  CANCELADA: "CANCELADA",
+} as const;
+export type StatusTarefa = (typeof StatusTarefa)[keyof typeof StatusTarefa];
+
+export const VisibilidadeTarefa = {
+  EMPRESA: "EMPRESA",
+  PESSOAL: "PESSOAL",
+} as const;
+export type VisibilidadeTarefa =
+  (typeof VisibilidadeTarefa)[keyof typeof VisibilidadeTarefa];
+
+// Tipo de item exibido na Agenda (tarefa ou ocorrência de conta fixa).
+export const TipoItemAgenda = {
+  TAREFA: "TAREFA",
+  CONTA_FIXA: "CONTA_FIXA",
+} as const;
+export type TipoItemAgenda =
+  (typeof TipoItemAgenda)[keyof typeof TipoItemAgenda];
+
 // Roles de usuário. O campo segue como String no Prisma para manter
 // compatibilidade SQLite/Postgres sem enum nativo.
 export const UsuarioRole = {

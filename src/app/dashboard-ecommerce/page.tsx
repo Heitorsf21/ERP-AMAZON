@@ -118,6 +118,8 @@ type Kpis = {
   tacosPercentual: number | null;
   lucroPosAdsCentavos: number | null;
   mpaPercentual: number | null;
+  contasFixasCentavos: number;
+  mpaPosContasFixasPercentual: number | null;
   roiPosAdsPercentual: number | null;
   trafficSessions: number;
   trafficPageViews: number;
@@ -667,6 +669,32 @@ function DashboardEcommerceContent() {
           value: formatBRL(kpis?.impostoSimplesCentavos ?? 0),
         },
         { label: "Aliquota", value: aliquotaLabel },
+      ],
+    },
+    {
+      // Indicador complementar de planejamento: MPA descontando as contas
+      // fixas (ativas) com vencimento no período. Não substitui o MPA acima.
+      titulo: "MPA pos fixas",
+      valor: loadingKpis
+        ? "..."
+        : formatPercent(kpis?.mpaPosContasFixasPercentual),
+      icon: Sigma,
+      categoria: "ads",
+      size: "compact",
+      detalhe:
+        kpis?.mpaPosContasFixasPercentual == null
+          ? "aguardando custos"
+          : `fixas ${formatBRL(kpis?.contasFixasCentavos ?? 0)}`,
+      tooltip: [
+        { label: "MPA (atual)", value: formatPercent(kpis?.mpaPercentual) },
+        {
+          label: "Contas fixas no periodo",
+          value: formatBRL(kpis?.contasFixasCentavos ?? 0),
+        },
+        {
+          label: "MPA pos contas fixas",
+          value: formatPercent(kpis?.mpaPosContasFixasPercentual),
+        },
       ],
     },
     {

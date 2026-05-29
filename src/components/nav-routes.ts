@@ -22,6 +22,7 @@ import {
   Activity,
   Truck,
   Sparkles,
+  CalendarClock,
 } from "lucide-react";
 import type { Route } from "next";
 
@@ -54,6 +55,21 @@ export const NAV_GROUPS: NavGroup[] = [
     label: "Financeiro",
     icon: Banknote,
     items: [
+      {
+        href: "/agenda" as Route,
+        label: "Agenda",
+        icon: CalendarClock,
+        keywords: [
+          "tarefas",
+          "calendario",
+          "compromissos",
+          "contas fixas",
+          "pessoal",
+          "empresa",
+          "lembrete",
+          "todo",
+        ],
+      },
       {
         href: "/financeiro/dashboard" as Route,
         label: "Dashboard Financeiro",

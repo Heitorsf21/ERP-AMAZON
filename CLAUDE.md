@@ -16,6 +16,7 @@ Marca visual = **Atlas Seller** (rebrand do "ERP Amazon"). Logo MundoFS em `publ
 - Custo histórico: ProdutoCustoHistorico (vigências por data)
 - Ads: AdsGastoManual · AdsCampanha
 - WhatsApp Estoque: WhatsAppEstoqueEnvio (histórico de envios) · WhatsAppEstoqueProdutoExcluido (produtos fora do resumo)
+- Agenda: Tarefa (empresa/pessoal, responsável único) · ContaFixa (recorrente/não recorrente). Ocorrências de conta fixa vivem em `ContaPagar` (`contaFixaId` + `competencia` "YYYY-MM", com `@@unique([contaFixaId, competencia])`).
 
 ## Regras de negócio
 
@@ -23,7 +24,13 @@ Marca visual = **Atlas Seller** (rebrand do "ERP Amazon"). Logo MundoFS em `publ
 SHA256 único (reenvio = DUPLICADO). PDF protegido: `@libpdf/core` → texto → IA. Sem senha: `input_file`. Imagem: `input_image`. Match boleto/NF: CNPJ, valor, vencimento, nº doc, linha digitável, chave. Tolerância R$5 ou 0,2% (o maior). Boleto após NF → valor/vencimento do boleto priorizam. Doc já pago via banco → conta PAGA com vencimento = `Movimentacao.dataCaixa`.
 
 ### Contas a pagar
-Abas: Abertas · Vencidas · Pagas · Todas. Filtros: Hoje · Ontem · 7d · 30d · Vitalício. Em Abertas/Todas "7d/30d" = próximos; em Vencidas/Pagas = passados.
+Abas: Abertas · Vencidas · Pagas · Todas. Filtros: Hoje · Ontem · 7d · 30d · Vitalício. Em Abertas/Todas "7d/30d" = próximos; em Vencidas/Pagas = passados. Botão "Contas fixas" abre `<DialogContasFixas>` (gestão); ocorrências de conta fixa aparecem na lista com selo "fixa".
+
+### Agenda (`/agenda` — tarefas + contas fixas)
+Área central de organização. Módulos: `src/modules/tarefas/` (CRUD + visibilidade), `src/modules/contas-fixas/` (recorrência pura + ocorrências idempotentes), `src/modules/agenda/` (agregação por período). UI: `src/components/agenda/` (`agenda-view` calendário do mês + lista do dia + backlog "sem prazo" + chips de filtro; `dialog-tarefa`; `dialog-contas-fixas`). Item na sidebar (grupo Financeiro).
+- **Tarefas**: título, descrição, prazo (opcional → backlog), status ABERTA/CONCLUIDA/CANCELADA, visibilidade EMPRESA/PESSOAL, responsável único. **Segurança (anti-IDOR)**: PESSOAL só é visível/editável pelo dono — aplicado no SERVER (`whereTarefasVisiveis`/`podeVerTarefa` em `tarefas/visibilidade.ts`, e `buscarVisivel` no repo). Criar/editar PESSOAL força `responsavelId = session.uid`. Endpoints `/api/tarefas` (POST), `/api/tarefas/[id]` (PATCH/DELETE), `/api/tarefas/[id]/concluir` (POST) — `requireSession`. Lookup nunca revela existência de tarefa alheia (404).
+- **Contas fixas**: descrição, valor (centavos), `diaVencimento` (1..31, clampa ao último dia do mês — ex: 31 em fev → 28/29), recorrente/não, categoria/fornecedor opcionais, ativa. Recorrência pura em `contas-fixas/recorrencia.ts` (`planejarOcorrencias`, `vencimentoDaCompetencia` ao meio-dia UTC). `garantirOcorrencias({de,ate})` materializa em `ContaPagar` de forma **idempotente** (set de existentes + `@@unique`), **clampando o intervalo a 400 dias** (anti-DoS, pois roda em GET da agenda). Não recorrente → 1 ocorrência na competência escolhida (`ContaFixa.competenciaUnica`; UI usa date picker de data completa, fallback = mês de criação para registros antigos). Categoria/fornecedor ausentes usam sentinela "Contas Fixas". Editar com `sincronizarFuturas: true` propaga valor/vencimento/descrição às ocorrências **futuras em aberto** (`sincronizarOcorrenciasFuturas`: atualiza competências ainda planejadas, soft-delete + zera `competencia` nas que saíram do plano; **nunca toca em PAGA**). Endpoints `/api/contas-fixas` (GET/POST), `/api/contas-fixas/[id]` (PATCH/DELETE=desativar), `/api/contas-fixas/ocorrencias` (POST) — `requireRole(ADMIN, FINANCEIRO)`.
+- **`/api/agenda`** (`requireSession`): agrega tarefas visíveis + ocorrências do período em `AgendaItem[]` com `statusAgenda` derivado (ABERTA/VENCIDA/CONCLUIDA/CANCELADA). Filtros: tipos (TAREFA_EMPRESA/PESSOAL/MINHAS, CONTA_FIXA) + status (CSV).
 
 ### Contas a receber (Amazon)
 CSV Unified Transaction: 9 linhas cabeçalho + nomes + 24 campos. Status Liberado (transferido) | Diferido (PENDENTE por liquidação). Reimport parcial: `Math.max(existente, novo)`. Ciclo ~14d (`dataPrevisao = data última + 14d`). Job `SETTLEMENT_REPORT_SYNC` (6h) baixa CSV via Reports API. `reconciliarRecebimentosAmazon()` cruza ENTRADA Nubank + "Amazon" ↔ ContaReceber PENDENTE (R$5 ou 0,5%, ±3d) a cada loop do worker.
@@ -145,6 +152,7 @@ export async function POST(_req: Request, { params }: Params) {
 
 ## Dashboard E-commerce (`/dashboard-ecommerce`)
 Layout 8 KPIs primários + "Ver mais 8" secundários (toggle). Bordas laterais coloridas por categoria: **receita=verde** (Faturamento, Líq.Marketplace) · **operação=azul** (Lucro, Margem, Vendas, Unidades, Ticket, ROI) · **ads=âmbar** · **tráfego=violeta**. Chart "Resumo de receitas" = 3 áreas empilhadas (Faturamento violeta + Líq.Marketplace azul + Lucro emerald). Top 15 com `ProductThumb` 40px + `MarginBadge`. Filtro de período no header (inline). Service `obterTopProdutos` expõe `imagemUrl/amazonImagemUrl/asin`; `obterTimeline` inclui `liquidoMarketplaceCentavos`.
+- **MPA pós contas fixas** (card compacto, ícone Σ `Sigma`, categoria ads): indicador complementar de planejamento = `(lucroPosAds − contasFixasDoPeríodo) / faturamento`. NÃO altera o MPA atual. Helper puro `calcularMpaPosContasFixas` em `contas-fixas/recorrencia.ts`; `obterKpis` soma as contas fixas ativas do período via `contasFixasService.totalDoPeriodo` (cálculo por definição, **sem escrever** no banco).
 
 ## Preferências do usuário
 Sem redesign radical — incrementais. Protótipo HTML antes de mudanças visuais grandes (ver `mockups/`). Botões/modais > blocos fixos. Fluxo sem duplicidade. Alertas APENAS no sino.
