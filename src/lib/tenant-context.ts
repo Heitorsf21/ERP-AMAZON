@@ -51,3 +51,14 @@ export function getTenantContext(): TenantContext | undefined {
 export function getEmpresaId(): string | null {
   return storage.getStore()?.empresaId ?? null;
 }
+
+/**
+ * Popula o contexto de tenant para o RESTANTE da execução assíncrona corrente,
+ * sem envolver um callback (ao contrário de runWithTenant). Usado em getSession
+ * (auth.ts) para cobrir as rotas que chamam requireSession/requireRole direto,
+ * sem passar por handleAuth. Cada request roda em escopo async isolado, então o
+ * contexto não vaza entre requisições.
+ */
+export function enterWithTenant(ctx: TenantContext): void {
+  storage.enterWith(ctx);
+}

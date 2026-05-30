@@ -8,6 +8,7 @@ import {
 import { UsuarioRole, type UsuarioRole as UsuarioRoleType } from "@/modules/shared/domain";
 import { db } from "./db";
 import {
+  enterWithTenant,
   runWithTenant,
   type TenantContext,
   type TenantSource,
@@ -35,6 +36,17 @@ export async function getSession(): Promise<SessionPayload | null> {
   });
   if (!user || !user.ativo) return null;
   if (payload.v != null && payload.v !== user.sessionVersion) return null;
+
+  // Popula o contexto de tenant para o restante da requisição — cobre as rotas
+  // que chamam requireSession/requireRole direto (sem passar por handleAuth).
+  // enterWith escopa ao contexto async corrente; cada request é isolado, então
+  // não vaza. Inócuo com TENANT_ISOLATION=off. (A query de Usuario acima é
+  // GLOBAL — não depende de contexto, por isso pode rodar antes de estabelecê-lo.)
+  enterWithTenant({
+    empresaId: payload.empresaId ?? null,
+    isSuperAdmin: false,
+    source: "web",
+  });
 
   return payload;
 }
