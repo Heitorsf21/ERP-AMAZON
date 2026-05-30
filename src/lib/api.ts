@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { ZodError } from "zod";
 import { logger } from "./logger";
-import { requireRole, requireSession } from "./auth";
+import { requireRole, requireSession, withTenantContextFromSession } from "./auth";
 import type { UsuarioRole as UsuarioRoleType } from "@/modules/shared/domain";
 
 export function ok<T>(data: T, init?: ResponseInit) {
@@ -71,11 +71,13 @@ export function handleAuth<Args extends unknown[]>(
   ) => Promise<Response>;
 
   return handle(async (...args: Args): Promise<Response> => {
-    if (roles && roles.length > 0) {
-      await requireRole(...roles);
-    } else {
-      await requireSession();
-    }
-    return fn(...args);
+    const session =
+      roles && roles.length > 0
+        ? await requireRole(...roles)
+        : await requireSession();
+    // Popula o AsyncLocalStorage de tenant para a extensao de isolamento (db.ts).
+    // Em TENANT_ISOLATION=off e inocuo; em enforce escopa as queries da rota a
+    // empresa da sessao. Cobre todas as rotas que usam handleAuth.
+    return withTenantContextFromSession(session, () => fn(...args));
   });
 }

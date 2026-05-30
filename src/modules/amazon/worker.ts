@@ -1,6 +1,7 @@
 import { isAmazonQuotaCooldownError } from "@/lib/amazon-rate-limit";
 import { pollSqsNotifications } from "@/lib/amazon-sqs";
 import { db } from "@/lib/db";
+import { runWithTenant } from "@/lib/tenant-context";
 import { notificarJobFalhando } from "@/lib/notificacoes";
 import {
   completeAmazonSyncJob,
@@ -75,7 +76,19 @@ type SyncPayload = {
   dedupeKey?: string;
 };
 
+// Empresa do worker (single-tenant por ora). A extensao de isolamento (db.ts)
+// usa este contexto quando TENANT_ISOLATION=enforce; em "off" e inocuo. Vira
+// per-AmazonAccount quando o worker iterar contas.
+const WORKER_EMPRESA_ID = process.env.WORKER_EMPRESA_ID || "mundofs";
+
 export async function processAmazonSyncJobs(options: WorkerOptions = {}) {
+  return runWithTenant(
+    { empresaId: WORKER_EMPRESA_ID, isSuperAdmin: false, source: "worker" },
+    () => processAmazonSyncJobsInner(options),
+  );
+}
+
+async function processAmazonSyncJobsInner(options: WorkerOptions = {}) {
   const workerId = options.workerId ?? `worker-${process.pid}-${Date.now()}`;
   const limit = options.limit ?? 10;
   const results: Array<Record<string, unknown>> = [];

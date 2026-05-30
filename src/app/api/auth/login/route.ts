@@ -132,6 +132,7 @@ export async function POST(req: Request) {
     role: user.role,
     exp: buildSessionExpiry(lembrar),
     v: user.sessionVersion,
+    empresaId: user.empresaId ?? undefined,
   });
 
   await auditLog({
