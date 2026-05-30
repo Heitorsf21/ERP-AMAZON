@@ -7,6 +7,11 @@ import {
 } from "./session";
 import { UsuarioRole, type UsuarioRole as UsuarioRoleType } from "@/modules/shared/domain";
 import { db } from "./db";
+import {
+  runWithTenant,
+  type TenantContext,
+  type TenantSource,
+} from "./tenant-context";
 
 /**
  * Le e valida a sessao a partir do cookie. Alem do HMAC + exp (em verifySession),
@@ -56,6 +61,42 @@ export async function requireRole(
     status: 403,
     headers: { "content-type": "application/json" },
   });
+}
+
+/**
+ * Igual a requireSession, mas semanticamente marca a intencao de operar dentro
+ * de um escopo de tenant. NAO altera requireSession (que permanece intacto) nem
+ * popula o AsyncLocalStorage por si so — apenas devolve a sessao. Use em
+ * conjunto com withTenantContextFromSession para amarrar o contexto.
+ *
+ * Enquanto TENANT_ISOLATION estiver desligado, isto e funcionalmente igual a
+ * chamar requireSession diretamente.
+ */
+export async function requireTenantSession(): Promise<SessionPayload> {
+  return requireSession();
+}
+
+/**
+ * Roda `fn` dentro do AsyncLocalStorage de tenant usando o empresaId da sessao.
+ * Sessoes sem empresaId (cookies antigos / fluxo single-tenant) resultam em
+ * empresaId=null no contexto — fail-closed sera aplicado pela extensao do
+ * Prisma APENAS quando TENANT_ISOLATION="enforce".
+ *
+ * Esta funcao NAO e chamada por nenhuma rota ainda — fica disponivel para a
+ * fase de adocao. Sem chama-la, nenhum contexto e populado e a extensao opera
+ * em no-op (modo off) ou fail-closed (modo enforce).
+ */
+export function withTenantContextFromSession<T>(
+  session: SessionPayload,
+  fn: () => T,
+  source: TenantSource = "web",
+): T {
+  const ctx: TenantContext = {
+    empresaId: session.empresaId ?? null,
+    isSuperAdmin: false,
+    source,
+  };
+  return runWithTenant(ctx, fn);
 }
 
 /**

@@ -16,6 +16,12 @@ export type SessionPayload = {
   // contra Usuario.sessionVersion atual; mismatch => sessao revogada.
   // Opcional para graceful pass de cookies antigos pre-migration.
   v?: number;
+  // Multi-tenant: empresa ativa do usuario no momento do login. OPCIONAL e
+  // RETROCOMPATIVEL — cookies antigos sem este campo continuam validos. Quando
+  // presente, alimenta o AsyncLocalStorage de tenant via
+  // withTenantContextFromSession (ver auth.ts). Nada o consome enquanto a flag
+  // TENANT_ISOLATION estiver desligada.
+  empresaId?: string;
 };
 
 function getSecret(): string {

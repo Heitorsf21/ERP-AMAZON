@@ -1,9 +1,17 @@
 import type { Prisma, PrismaClient } from "@prisma/client";
-import { db } from "@/lib/db";
+import {
+  db,
+  type ExtendedPrismaClient,
+  type ExtendedTransactionClient,
+} from "@/lib/db";
 import { TipoMovimentacao } from "@/modules/shared/domain";
 import type { FiltrosMovimentacao } from "./schemas";
 
-type PrismaTx = PrismaClient | Prisma.TransactionClient;
+type PrismaTx =
+  | PrismaClient
+  | ExtendedPrismaClient
+  | Prisma.TransactionClient
+  | ExtendedTransactionClient;
 
 function construirWhere(
   filtros: FiltrosMovimentacao,

@@ -1,5 +1,9 @@
 import type { Prisma, PrismaClient } from "@prisma/client";
-import { db } from "@/lib/db";
+import {
+  db,
+  type ExtendedPrismaClient,
+  type ExtendedTransactionClient,
+} from "@/lib/db";
 import { agora, fimDoDiaSP, inicioDoDiaSP, somarDias } from "@/lib/date";
 import {
   FormatoImportacao,
@@ -21,7 +25,11 @@ type MetadadosImportacao = {
   formato: FormatoImportacao;
 };
 
-type PrismaTx = PrismaClient | Prisma.TransactionClient;
+type PrismaTx =
+  | PrismaClient
+  | ExtendedPrismaClient
+  | Prisma.TransactionClient
+  | ExtendedTransactionClient;
 
 export const financeiroService = {
   async listar(filtros: unknown = {}) {
