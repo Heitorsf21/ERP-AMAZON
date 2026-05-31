@@ -100,7 +100,8 @@ type Snapshot = {
 };
 
 type MutationResult = {
-  status?: "PENDING_REPORTS";
+  status?: "PENDING_REPORTS" | "COOLDOWN";
+  retryAt?: string;
   total?: number;
   applied?: number;
   failed?: number;
@@ -158,6 +159,10 @@ export default function AdsOptimizerPage() {
       if (data.status === "PENDING_REPORTS") {
         toast.warning(
           "Relatorios solicitados na Amazon. Aguarde alguns minutos e rode novamente para baixar as metricas.",
+        );
+      } else if (data.status === "COOLDOWN") {
+        toast.warning(
+          `Amazon em cooldown. Tente novamente apos ${data.retryAt ? formatDateTime(data.retryAt) : "alguns minutos"}.`,
         );
       } else {
         toast.success(`${data.totalRecomendacoes ?? 0} recomendacao(oes) gerada(s)`);

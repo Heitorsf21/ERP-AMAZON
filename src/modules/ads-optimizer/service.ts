@@ -1,5 +1,6 @@
 import { addDays, startOfDay } from "date-fns";
 import { db } from "@/lib/db";
+import { isAmazonQuotaCooldownError } from "@/lib/amazon-rate-limit";
 import {
   createSpSearchTermReport,
   createSpTargetingReport,
@@ -86,18 +87,30 @@ export const adsOptimizerService = {
     const creds = await requireAdsCredentials();
     const profileId = requireProfileId(creds);
     await syncEditableAdsEntities(creds);
-    const reports = await syncOptimizerReports(creds);
+    const reports = await syncOptimizerReportsWithCooldown(creds);
+    if ("status" in reports && reports.status === "COOLDOWN") {
+      return {
+        status: "COOLDOWN",
+        profileId,
+        retryAt: reports.retryAt,
+        operation: reports.operation,
+        totalEntidades: 0,
+        totalRecomendacoes: 0,
+      };
+    }
+    const completedOrPendingReports =
+      reports as Awaited<ReturnType<typeof syncOptimizerReports>>;
     const metricCounts = await countOptimizerMetrics(profileId);
 
     if (
-      !reportsReady(reports) &&
+      !reportsReady(completedOrPendingReports) &&
       metricCounts.targeting === 0 &&
       metricCounts.searchTerms === 0
     ) {
       return {
         status: "PENDING_REPORTS",
         profileId,
-        reports,
+        reports: completedOrPendingReports,
         metricCounts,
         totalEntidades: 0,
         totalRecomendacoes: 0,
@@ -615,6 +628,21 @@ async function syncOptimizerReports(creds: AdsAPICredentials) {
     }),
   ]);
   return { targeting, searchTerms };
+}
+
+async function syncOptimizerReportsWithCooldown(creds: AdsAPICredentials) {
+  try {
+    return await syncOptimizerReports(creds);
+  } catch (error) {
+    if (isAmazonQuotaCooldownError(error)) {
+      return {
+        status: "COOLDOWN" as const,
+        operation: error.operation,
+        retryAt: error.nextAllowedAt.toISOString(),
+      };
+    }
+    throw error;
+  }
 }
 
 async function countOptimizerMetrics(profileId: string) {

@@ -54,6 +54,7 @@ const mocks = vi.hoisted(() => {
       getAdsReport: vi.fn(),
     },
     getAmazonAdsCredentials: vi.fn(),
+    isAmazonQuotaCooldownError: vi.fn(),
   };
 });
 
@@ -62,6 +63,9 @@ vi.mock("@/modules/amazon/ads-service", () => ({
   getAmazonAdsCredentials: mocks.getAmazonAdsCredentials,
 }));
 vi.mock("@/lib/amazon-ads-api", () => mocks.api);
+vi.mock("@/lib/amazon-rate-limit", () => ({
+  isAmazonQuotaCooldownError: mocks.isAmazonQuotaCooldownError,
+}));
 
 import { adsOptimizerService } from "./service";
 
@@ -91,6 +95,7 @@ function approvedKeywordRecommendation() {
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.getAmazonAdsCredentials.mockResolvedValue(mocks.creds);
+  mocks.isAmazonQuotaCooldownError.mockReturnValue(false);
 
   mocks.api.listSponsoredProductsAdGroups.mockResolvedValue({ adGroups: [] });
   mocks.api.listSponsoredProductsCampaigns.mockResolvedValue({ campaigns: [] });
@@ -135,6 +140,27 @@ describe("adsOptimizerService.runOptimization", () => {
       totalEntidades: 0,
       totalRecomendacoes: 0,
       metricCounts: { targeting: 0, searchTerms: 0 },
+    });
+  });
+
+  it("returns cooldown status instead of creating a failed run", async () => {
+    const error = {
+      operation: "ADS_REPORTS_DOWNLOAD",
+      nextAllowedAt: new Date("2026-05-31T23:27:40.000Z"),
+    };
+    mocks.api.getAdsReport.mockRejectedValue(error);
+    mocks.isAmazonQuotaCooldownError.mockImplementation((value) => value === error);
+    mocks.db.amazonAdsOptimizerState.findFirst.mockResolvedValue({
+      valor: "pending-report-id",
+    });
+
+    const result = await adsOptimizerService.runOptimization(session);
+
+    expect(mocks.db.adsOptimizationRun.create).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      status: "COOLDOWN",
+      operation: "ADS_REPORTS_DOWNLOAD",
+      retryAt: "2026-05-31T23:27:40.000Z",
     });
   });
 });
