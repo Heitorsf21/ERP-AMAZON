@@ -93,6 +93,18 @@ const TENANT_MODELS = new Set<string>([
   "AmazonAdsCampanha",
   "AmazonAdsMetricaDiaria",
   "AmazonAdsMetricaHoraria",
+  "AmazonAdsOptimizerState",
+  "AmazonAdsAdGroup",
+  "AmazonAdsProductAd",
+  "AmazonAdsKeyword",
+  "AmazonAdsTarget",
+  "AmazonAdsNegativeKeyword",
+  "AmazonAdsNegativeTarget",
+  "AmazonAdsTargetingMetricDaily",
+  "AmazonAdsSearchTermMetricDaily",
+  "AdsOptimizationRun",
+  "AdsOptimizationRecommendation",
+  "AdsOptimizationExecutionLog",
 ]);
 
 /**

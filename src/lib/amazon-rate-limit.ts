@@ -21,6 +21,16 @@ export const AmazonSpApiOperation = {
   ADS_REPORTS_DOWNLOAD: "ADS_REPORTS_DOWNLOAD",
   ADS_PROFILES_GET: "ADS_PROFILES_GET",
   ADS_CAMPAIGNS_LIST: "ADS_CAMPAIGNS_LIST",
+  ADS_AD_GROUPS_LIST: "ADS_AD_GROUPS_LIST",
+  ADS_PRODUCT_ADS_LIST: "ADS_PRODUCT_ADS_LIST",
+  ADS_KEYWORDS_LIST: "ADS_KEYWORDS_LIST",
+  ADS_KEYWORDS_MUTATE: "ADS_KEYWORDS_MUTATE",
+  ADS_TARGETS_LIST: "ADS_TARGETS_LIST",
+  ADS_TARGETS_MUTATE: "ADS_TARGETS_MUTATE",
+  ADS_NEGATIVE_KEYWORDS_LIST: "ADS_NEGATIVE_KEYWORDS_LIST",
+  ADS_NEGATIVE_KEYWORDS_MUTATE: "ADS_NEGATIVE_KEYWORDS_MUTATE",
+  ADS_NEGATIVE_TARGETS_LIST: "ADS_NEGATIVE_TARGETS_LIST",
+  ADS_NEGATIVE_TARGETS_MUTATE: "ADS_NEGATIVE_TARGETS_MUTATE",
   ADS_STREAM_SUBSCRIPTIONS_LIST: "ADS_STREAM_SUBSCRIPTIONS_LIST",
   ADS_STREAM_SUBSCRIPTIONS_PUT: "ADS_STREAM_SUBSCRIPTIONS_PUT",
 } as const;
@@ -136,6 +146,46 @@ const OPERATION_LIMITS: Record<AmazonSpApiOperation, OperationLimit> = {
   [AmazonSpApiOperation.ADS_CAMPAIGNS_LIST]: {
     rateLimitPerSecond: 5,
     burst: 10,
+  },
+  [AmazonSpApiOperation.ADS_AD_GROUPS_LIST]: {
+    rateLimitPerSecond: 5,
+    burst: 10,
+  },
+  [AmazonSpApiOperation.ADS_PRODUCT_ADS_LIST]: {
+    rateLimitPerSecond: 5,
+    burst: 10,
+  },
+  [AmazonSpApiOperation.ADS_KEYWORDS_LIST]: {
+    rateLimitPerSecond: 5,
+    burst: 10,
+  },
+  [AmazonSpApiOperation.ADS_KEYWORDS_MUTATE]: {
+    rateLimitPerSecond: 1,
+    burst: 5,
+  },
+  [AmazonSpApiOperation.ADS_TARGETS_LIST]: {
+    rateLimitPerSecond: 5,
+    burst: 10,
+  },
+  [AmazonSpApiOperation.ADS_TARGETS_MUTATE]: {
+    rateLimitPerSecond: 1,
+    burst: 5,
+  },
+  [AmazonSpApiOperation.ADS_NEGATIVE_KEYWORDS_LIST]: {
+    rateLimitPerSecond: 5,
+    burst: 10,
+  },
+  [AmazonSpApiOperation.ADS_NEGATIVE_KEYWORDS_MUTATE]: {
+    rateLimitPerSecond: 1,
+    burst: 5,
+  },
+  [AmazonSpApiOperation.ADS_NEGATIVE_TARGETS_LIST]: {
+    rateLimitPerSecond: 5,
+    burst: 10,
+  },
+  [AmazonSpApiOperation.ADS_NEGATIVE_TARGETS_MUTATE]: {
+    rateLimitPerSecond: 1,
+    burst: 5,
   },
   // GET /streams/subscriptions — listagem de subscriptions Marketing Stream (admin).
   [AmazonSpApiOperation.ADS_STREAM_SUBSCRIPTIONS_LIST]: {

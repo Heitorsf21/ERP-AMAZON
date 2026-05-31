@@ -1400,3 +1400,331 @@ model AmazonAdsMetricaHoraria {
   @@index([campaignId, horaInicio])
   @@index([produtoId])
 }
+
+// ── Ads Optimizer: entidades editáveis + métricas granulares ───────────────
+// Mantém a camada de otimização desacoplada dos agregados atuais de dashboard.
+// Todos os modelos têm empresaId para o isolamento multiempresa.
+
+model AmazonAdsOptimizerState {
+  id           String   @id @default(cuid())
+  empresaId    String?
+  profileId    String
+  tipo         String
+  chave        String
+  valor        String?
+  payloadJson  String?
+  criadoEm     DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+
+  @@unique([empresaId, profileId, tipo, chave])
+  @@index([profileId, tipo])
+}
+
+model AmazonAdsAdGroup {
+  id                 String   @id @default(cuid())
+  empresaId          String?
+  profileId          String
+  campaignId         String
+  adGroupId          String
+  nome               String?
+  estado             String?
+  defaultBidCentavos Int?
+  servingStatus      String?
+  ultimaSync         DateTime
+  payloadJson        String
+  criadoEm           DateTime @default(now())
+  atualizadoEm       DateTime @updatedAt
+
+  @@unique([empresaId, profileId, adGroupId])
+  @@index([profileId, campaignId])
+  @@index([estado])
+}
+
+model AmazonAdsProductAd {
+  id            String   @id @default(cuid())
+  empresaId     String?
+  profileId     String
+  campaignId    String
+  adGroupId     String
+  adId          String
+  sku           String?
+  asin          String?
+  estado        String?
+  servingStatus String?
+  ultimaSync    DateTime
+  payloadJson   String
+  criadoEm      DateTime @default(now())
+  atualizadoEm  DateTime @updatedAt
+
+  @@unique([empresaId, profileId, adId])
+  @@index([profileId, campaignId])
+  @@index([sku])
+  @@index([asin])
+}
+
+model AmazonAdsKeyword {
+  id            String   @id @default(cuid())
+  empresaId     String?
+  profileId     String
+  campaignId    String
+  adGroupId     String
+  keywordId     String
+  keywordText   String
+  matchType     String?
+  estado        String?
+  bidCentavos   Int?
+  servingStatus String?
+  campaignName  String?
+  adGroupName   String?
+  ultimaSync    DateTime
+  payloadJson   String
+  criadoEm      DateTime @default(now())
+  atualizadoEm  DateTime @updatedAt
+
+  @@unique([empresaId, profileId, keywordId])
+  @@index([profileId, campaignId])
+  @@index([adGroupId])
+  @@index([keywordText])
+  @@index([estado])
+}
+
+model AmazonAdsTarget {
+  id             String   @id @default(cuid())
+  empresaId      String?
+  profileId      String
+  campaignId     String
+  adGroupId      String
+  targetId       String
+  expressionType String?
+  expressionText String
+  targetType     String?
+  estado         String?
+  bidCentavos    Int?
+  servingStatus  String?
+  campaignName   String?
+  adGroupName    String?
+  ultimaSync     DateTime
+  payloadJson    String
+  criadoEm       DateTime @default(now())
+  atualizadoEm   DateTime @updatedAt
+
+  @@unique([empresaId, profileId, targetId])
+  @@index([profileId, campaignId])
+  @@index([adGroupId])
+  @@index([expressionText])
+  @@index([estado])
+}
+
+model AmazonAdsNegativeKeyword {
+  id                String   @id @default(cuid())
+  empresaId         String?
+  profileId         String
+  campaignId        String
+  adGroupId         String?
+  negativeKeywordId String
+  keywordText       String
+  matchType         String?
+  estado            String?
+  ultimaSync        DateTime
+  payloadJson       String
+  criadoEm          DateTime @default(now())
+  atualizadoEm      DateTime @updatedAt
+
+  @@unique([empresaId, profileId, negativeKeywordId])
+  @@index([profileId, campaignId])
+  @@index([adGroupId])
+  @@index([keywordText])
+}
+
+model AmazonAdsNegativeTarget {
+  id               String   @id @default(cuid())
+  empresaId        String?
+  profileId        String
+  campaignId       String
+  adGroupId        String?
+  negativeTargetId String
+  expressionType   String?
+  expressionText   String
+  targetType       String?
+  estado           String?
+  ultimaSync       DateTime
+  payloadJson      String
+  criadoEm         DateTime @default(now())
+  atualizadoEm     DateTime @updatedAt
+
+  @@unique([empresaId, profileId, negativeTargetId])
+  @@index([profileId, campaignId])
+  @@index([adGroupId])
+  @@index([expressionText])
+}
+
+model AmazonAdsTargetingMetricDaily {
+  id             String   @id @default(cuid())
+  empresaId      String?
+  naturalKey     String
+  profileId      String
+  data           DateTime
+  campaignId     String
+  campaignName   String?
+  adGroupId      String?
+  adGroupName    String?
+  entityType     String
+  entityId       String
+  keywordId      String?
+  targetId       String?
+  keywordText    String?
+  targetingText  String?
+  matchType      String?
+  sku            String?
+  asin           String?
+  impressoes     Int      @default(0)
+  cliques        Int      @default(0)
+  gastoCentavos  Int      @default(0)
+  vendasCentavos Int      @default(0)
+  unidades       Int      @default(0)
+  pedidos        Int      @default(0)
+  acos           Float?
+  payloadJson    String
+  criadoEm       DateTime @default(now())
+  atualizadoEm   DateTime @updatedAt
+
+  @@unique([empresaId, naturalKey])
+  @@index([profileId, data])
+  @@index([campaignId, data])
+  @@index([entityType, entityId])
+  @@index([sku, data])
+}
+
+model AmazonAdsSearchTermMetricDaily {
+  id             String   @id @default(cuid())
+  empresaId      String?
+  naturalKey     String
+  profileId      String
+  data           DateTime
+  campaignId     String
+  campaignName   String?
+  adGroupId      String?
+  adGroupName    String?
+  entityType     String
+  entityId       String
+  keywordId      String?
+  targetId       String?
+  searchTerm     String
+  keywordText    String?
+  targetingText  String?
+  matchType      String?
+  sku            String?
+  asin           String?
+  impressoes     Int      @default(0)
+  cliques        Int      @default(0)
+  gastoCentavos  Int      @default(0)
+  vendasCentavos Int      @default(0)
+  unidades       Int      @default(0)
+  pedidos        Int      @default(0)
+  acos           Float?
+  payloadJson    String
+  criadoEm       DateTime @default(now())
+  atualizadoEm   DateTime @updatedAt
+
+  @@unique([empresaId, naturalKey])
+  @@index([profileId, data])
+  @@index([campaignId, data])
+  @@index([entityType, entityId])
+  @@index([searchTerm])
+  @@index([sku, data])
+}
+
+model AdsOptimizationRun {
+  id                 String    @id @default(cuid())
+  empresaId          String?
+  profileId          String
+  status             String    @default("RUNNING")
+  iniciadoPorId      String?
+  iniciadoPorEmail   String?
+  iniciadoEm         DateTime  @default(now())
+  finalizadoEm       DateTime?
+  totalEntidades     Int       @default(0)
+  totalRecomendacoes Int       @default(0)
+  erro               String?
+  payloadJson        String?
+
+  recomendacoes AdsOptimizationRecommendation[]
+
+  @@index([profileId])
+  @@index([status])
+  @@index([iniciadoEm])
+}
+
+model AdsOptimizationRecommendation {
+  id                  String   @id @default(cuid())
+  empresaId           String?
+  runId               String?
+  profileId           String
+  status              String   @default("PROPOSED")
+  entityType          String
+  entityId            String
+  campaignId          String
+  campaignName        String?
+  adGroupId           String?
+  adGroupName         String?
+  keywordId           String?
+  targetId            String?
+  searchTerm          String?
+  sku                 String?
+  asin                String?
+  actionType          String
+  severity            String
+  ruleId              String
+  motivo              String
+  risco               String?
+  confianca           Int      @default(0)
+  currentBidCentavos  Int?
+  proposedBidCentavos Int?
+  beforeState         String?
+  proposedState       String?
+  metrics7dJson       String
+  metrics30dJson      String
+  metricsLifetimeJson String
+  evidenceJson        String
+  amazonPayloadJson   String?
+  aprovadoPorId       String?
+  aprovadoPorEmail    String?
+  aprovadoEm          DateTime?
+  rejeitadoPorId      String?
+  rejeitadoPorEmail   String?
+  rejeitadoEm         DateTime?
+  executadoEm         DateTime?
+  staleReason         String?
+  errorMessage        String?
+  criadoEm            DateTime @default(now())
+  atualizadoEm        DateTime @updatedAt
+
+  run AdsOptimizationRun? @relation(fields: [runId], references: [id], onDelete: SetNull)
+  execucoes AdsOptimizationExecutionLog[]
+
+  @@index([profileId, status])
+  @@index([actionType])
+  @@index([severity])
+  @@index([campaignId])
+  @@index([entityType, entityId])
+  @@index([criadoEm])
+}
+
+model AdsOptimizationExecutionLog {
+  id                 String   @id @default(cuid())
+  empresaId          String?
+  recommendationId   String
+  status             String
+  requestJson        String?
+  responseJson       String?
+  errorMessage       String?
+  executadoPorId     String?
+  executadoPorEmail  String?
+  executadoEm        DateTime @default(now())
+
+  recommendation AdsOptimizationRecommendation @relation(fields: [recommendationId], references: [id], onDelete: Cascade)
+
+  @@index([recommendationId])
+  @@index([status])
+  @@index([executadoEm])
+}

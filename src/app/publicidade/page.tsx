@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import {
   BarChart3,
@@ -173,6 +174,13 @@ export default function PublicidadePage() {
           />
         </div>
         <div className="ml-auto flex flex-wrap gap-2">
+          <Button
+            asChild
+            variant="outline"
+            size="sm"
+          >
+            <Link href="/publicidade/otimizador">Otimizador Ads</Link>
+          </Button>
           <Button
             variant="outline"
             size="sm"

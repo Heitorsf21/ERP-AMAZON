@@ -91,12 +91,82 @@ export interface SpAdvertisedProductRow {
   [key: string]: unknown;
 }
 
+export type AdsReportRow = Record<string, unknown>;
+
 export interface AdsCampaign {
   campaignId: string | number;
   name: string;
   state?: string;
   targetingType?: string;
   budget?: { budget?: number; budgetType?: string };
+  [key: string]: unknown;
+}
+
+export interface AdsAdGroup {
+  campaignId?: string | number;
+  adGroupId?: string | number;
+  name?: string;
+  state?: string;
+  defaultBid?: number;
+  servingStatus?: string;
+  [key: string]: unknown;
+}
+
+export interface AdsProductAd {
+  campaignId?: string | number;
+  adGroupId?: string | number;
+  adId?: string | number;
+  sku?: string;
+  asin?: string;
+  state?: string;
+  servingStatus?: string;
+  [key: string]: unknown;
+}
+
+export interface AdsKeyword {
+  campaignId?: string | number;
+  adGroupId?: string | number;
+  keywordId?: string | number;
+  keywordText?: string;
+  matchType?: string;
+  state?: string;
+  bid?: number;
+  servingStatus?: string;
+  [key: string]: unknown;
+}
+
+export interface AdsTarget {
+  campaignId?: string | number;
+  adGroupId?: string | number;
+  targetId?: string | number;
+  expression?: unknown;
+  resolvedExpression?: unknown;
+  expressionType?: string;
+  state?: string;
+  bid?: number;
+  servingStatus?: string;
+  [key: string]: unknown;
+}
+
+export interface AdsNegativeKeyword {
+  campaignId?: string | number;
+  adGroupId?: string | number;
+  keywordId?: string | number;
+  negativeKeywordId?: string | number;
+  keywordText?: string;
+  matchType?: string;
+  state?: string;
+  [key: string]: unknown;
+}
+
+export interface AdsNegativeTarget {
+  campaignId?: string | number;
+  adGroupId?: string | number;
+  targetId?: string | number;
+  negativeTargetId?: string | number;
+  expression?: unknown;
+  expressionType?: string;
+  state?: string;
   [key: string]: unknown;
 }
 
@@ -256,18 +326,49 @@ export interface CreateSpReportInput {
   name?: string;
 }
 
-export async function createSpAdvertisedProductReport(
+export interface CreateSponsoredProductsReportInput extends CreateSpReportInput {
+  reportTypeId: "spAdvertisedProduct" | "spTargeting" | "spSearchTerm";
+  groupBy: string[];
+  columns: string[];
+}
+
+export async function createSponsoredProductsReport(
   creds: AdsAPICredentials,
-  input: CreateSpReportInput,
+  input: CreateSponsoredProductsReportInput,
 ): Promise<AdsReportRef> {
   const body = {
-    name: input.name ?? `erp-amazon-sp-ads-${input.startDate}-${input.endDate}`,
+    name:
+      input.name ??
+      `erp-amazon-${input.reportTypeId}-${input.startDate}-${input.endDate}`,
     startDate: input.startDate,
     endDate: input.endDate,
     configuration: {
       adProduct: "SPONSORED_PRODUCTS",
-      groupBy: ["advertiser"],
-      columns: [
+      groupBy: input.groupBy,
+      columns: input.columns,
+      reportTypeId: input.reportTypeId,
+      timeUnit: "DAILY",
+      format: "GZIP_JSON",
+    },
+  };
+
+  return adsApiRequest<AdsReportRef>(creds, "/reporting/reports", {
+    method: "POST",
+    body,
+    operation: AmazonSpApiOperation.ADS_REPORTS_CREATE,
+    contentType: "application/vnd.createasyncreportrequest.v3+json",
+  });
+}
+
+export async function createSpAdvertisedProductReport(
+  creds: AdsAPICredentials,
+  input: CreateSpReportInput,
+): Promise<AdsReportRef> {
+  return createSponsoredProductsReport(creds, {
+    ...input,
+    reportTypeId: "spAdvertisedProduct",
+    groupBy: ["advertiser"],
+    columns: [
         "date",
         "campaignId",
         "campaignName",
@@ -283,17 +384,79 @@ export async function createSpAdvertisedProductReport(
         "purchases7d",
         "acosClicks7d",
       ],
-      reportTypeId: "spAdvertisedProduct",
-      timeUnit: "DAILY",
-      format: "GZIP_JSON",
-    },
-  };
+  });
+}
 
-  return adsApiRequest<AdsReportRef>(creds, "/reporting/reports", {
-    method: "POST",
-    body,
-    operation: AmazonSpApiOperation.ADS_REPORTS_CREATE,
-    contentType: "application/vnd.createasyncreportrequest.v3+json",
+export async function createSpTargetingReport(
+  creds: AdsAPICredentials,
+  input: CreateSpReportInput,
+): Promise<AdsReportRef> {
+  return createSponsoredProductsReport(creds, {
+    ...input,
+    reportTypeId: "spTargeting",
+    groupBy: ["targeting"],
+    columns: [
+      "date",
+      "campaignId",
+      "campaignName",
+      "adGroupId",
+      "adGroupName",
+      "keywordId",
+      "keyword",
+      "keywordType",
+      "targetId",
+      "targeting",
+      "targetingText",
+      "targetingExpression",
+      "targetingType",
+      "matchType",
+      "advertisedSku",
+      "advertisedAsin",
+      "impressions",
+      "clicks",
+      "cost",
+      "sales7d",
+      "unitsSoldClicks7d",
+      "purchases7d",
+      "acosClicks7d",
+    ],
+  });
+}
+
+export async function createSpSearchTermReport(
+  creds: AdsAPICredentials,
+  input: CreateSpReportInput,
+): Promise<AdsReportRef> {
+  return createSponsoredProductsReport(creds, {
+    ...input,
+    reportTypeId: "spSearchTerm",
+    groupBy: ["searchTerm"],
+    columns: [
+      "date",
+      "campaignId",
+      "campaignName",
+      "adGroupId",
+      "adGroupName",
+      "keywordId",
+      "keyword",
+      "keywordType",
+      "targetId",
+      "targeting",
+      "targetingText",
+      "targetingExpression",
+      "targetingType",
+      "matchType",
+      "searchTerm",
+      "advertisedSku",
+      "advertisedAsin",
+      "impressions",
+      "clicks",
+      "cost",
+      "sales7d",
+      "unitsSoldClicks7d",
+      "purchases7d",
+      "acosClicks7d",
+    ],
   });
 }
 
@@ -311,9 +474,9 @@ export async function getAdsReport(
   );
 }
 
-export async function downloadAdsReport(
+export async function downloadAdsReportRows<T extends AdsReportRow = AdsReportRow>(
   url: string,
-): Promise<SpAdvertisedProductRow[]> {
+): Promise<T[]> {
   // S3 pre-assinada — sem auth header. Reservamos slot mesmo assim para nao
   // estourar rate interno do worker em corridas concorrentes.
   await reserveAmazonOperationSlot(AmazonSpApiOperation.ADS_REPORTS_DOWNLOAD);
@@ -335,11 +498,17 @@ export async function downloadAdsReport(
   if (!text) return [];
 
   const parsed = JSON.parse(text);
-  if (Array.isArray(parsed)) return parsed as SpAdvertisedProductRow[];
+  if (Array.isArray(parsed)) return parsed as T[];
   if (isRecord(parsed) && Array.isArray(parsed.data)) {
-    return parsed.data as SpAdvertisedProductRow[];
+    return parsed.data as T[];
   }
   return [];
+}
+
+export async function downloadAdsReport(
+  url: string,
+): Promise<SpAdvertisedProductRow[]> {
+  return downloadAdsReportRows<SpAdvertisedProductRow>(url);
 }
 
 // ── Marketing Stream subscriptions ─────────────────────────────────────────
@@ -451,6 +620,206 @@ export async function listSponsoredProductsCampaigns(
     campaigns: payload.campaigns ?? [],
     nextToken: payload.nextToken,
   };
+}
+
+async function listPaginatedAdsResource<T>(
+  creds: AdsAPICredentials,
+  pathname: string,
+  key: string,
+  operation: AmazonSpApiOperationType,
+  contentType: string,
+  options: { nextToken?: string; maxResults?: number; filters?: Record<string, unknown> } = {},
+): Promise<{ items: T[]; nextToken?: string }> {
+  const body: Record<string, unknown> = { ...(options.filters ?? {}) };
+  if (options.maxResults) body.maxResults = options.maxResults;
+  if (options.nextToken) body.nextToken = options.nextToken;
+
+  const payload = await adsApiRequest<Record<string, unknown>>(creds, pathname, {
+    method: "POST",
+    body,
+    operation,
+    contentType,
+    accept: contentType,
+  });
+
+  const items = Array.isArray(payload[key]) ? (payload[key] as T[]) : [];
+  const nextToken =
+    typeof payload.nextToken === "string" ? payload.nextToken : undefined;
+  return { items, nextToken };
+}
+
+export async function listSponsoredProductsAdGroups(
+  creds: AdsAPICredentials,
+  options: { nextToken?: string; maxResults?: number } = {},
+): Promise<{ adGroups: AdsAdGroup[]; nextToken?: string }> {
+  const result = await listPaginatedAdsResource<AdsAdGroup>(
+    creds,
+    "/sp/adGroups/list",
+    "adGroups",
+    AmazonSpApiOperation.ADS_AD_GROUPS_LIST,
+    "application/vnd.spadgroup.v3+json",
+    options,
+  );
+  return { adGroups: result.items, nextToken: result.nextToken };
+}
+
+export async function listSponsoredProductsProductAds(
+  creds: AdsAPICredentials,
+  options: { nextToken?: string; maxResults?: number } = {},
+): Promise<{ productAds: AdsProductAd[]; nextToken?: string }> {
+  const result = await listPaginatedAdsResource<AdsProductAd>(
+    creds,
+    "/sp/productAds/list",
+    "productAds",
+    AmazonSpApiOperation.ADS_PRODUCT_ADS_LIST,
+    "application/vnd.spproductad.v3+json",
+    options,
+  );
+  return { productAds: result.items, nextToken: result.nextToken };
+}
+
+export async function listSponsoredProductsKeywords(
+  creds: AdsAPICredentials,
+  options: { nextToken?: string; maxResults?: number } = {},
+): Promise<{ keywords: AdsKeyword[]; nextToken?: string }> {
+  const result = await listPaginatedAdsResource<AdsKeyword>(
+    creds,
+    "/sp/keywords/list",
+    "keywords",
+    AmazonSpApiOperation.ADS_KEYWORDS_LIST,
+    "application/vnd.spkeyword.v3+json",
+    options,
+  );
+  return { keywords: result.items, nextToken: result.nextToken };
+}
+
+export async function updateSponsoredProductsKeywords(
+  creds: AdsAPICredentials,
+  keywords: Array<{ keywordId: string; state?: string; bid?: number }>,
+): Promise<unknown> {
+  return adsApiRequest(creds, "/sp/keywords", {
+    method: "PUT",
+    body: { keywords },
+    operation: AmazonSpApiOperation.ADS_KEYWORDS_MUTATE,
+    contentType: "application/vnd.spkeyword.v3+json",
+    accept: "application/vnd.spkeyword.v3+json",
+  });
+}
+
+export async function createSponsoredProductsKeywords(
+  creds: AdsAPICredentials,
+  keywords: Array<{
+    campaignId: string;
+    adGroupId: string;
+    keywordText: string;
+    matchType: string;
+    state: string;
+    bid?: number;
+  }>,
+): Promise<unknown> {
+  return adsApiRequest(creds, "/sp/keywords", {
+    method: "POST",
+    body: { keywords },
+    operation: AmazonSpApiOperation.ADS_KEYWORDS_MUTATE,
+    contentType: "application/vnd.spkeyword.v3+json",
+    accept: "application/vnd.spkeyword.v3+json",
+  });
+}
+
+export async function listSponsoredProductsTargets(
+  creds: AdsAPICredentials,
+  options: { nextToken?: string; maxResults?: number } = {},
+): Promise<{ targets: AdsTarget[]; nextToken?: string }> {
+  const result = await listPaginatedAdsResource<AdsTarget>(
+    creds,
+    "/sp/targets/list",
+    "targetingClauses",
+    AmazonSpApiOperation.ADS_TARGETS_LIST,
+    "application/vnd.sptargeting.v3+json",
+    options,
+  );
+  return { targets: result.items, nextToken: result.nextToken };
+}
+
+export async function updateSponsoredProductsTargets(
+  creds: AdsAPICredentials,
+  targetingClauses: Array<{ targetId: string; state?: string; bid?: number }>,
+): Promise<unknown> {
+  return adsApiRequest(creds, "/sp/targets", {
+    method: "PUT",
+    body: { targetingClauses },
+    operation: AmazonSpApiOperation.ADS_TARGETS_MUTATE,
+    contentType: "application/vnd.sptargeting.v3+json",
+    accept: "application/vnd.sptargeting.v3+json",
+  });
+}
+
+export async function listSponsoredProductsNegativeKeywords(
+  creds: AdsAPICredentials,
+  options: { nextToken?: string; maxResults?: number } = {},
+): Promise<{ negativeKeywords: AdsNegativeKeyword[]; nextToken?: string }> {
+  const result = await listPaginatedAdsResource<AdsNegativeKeyword>(
+    creds,
+    "/sp/negativeKeywords/list",
+    "negativeKeywords",
+    AmazonSpApiOperation.ADS_NEGATIVE_KEYWORDS_LIST,
+    "application/vnd.spnegativekeyword.v3+json",
+    options,
+  );
+  return { negativeKeywords: result.items, nextToken: result.nextToken };
+}
+
+export async function createSponsoredProductsNegativeKeywords(
+  creds: AdsAPICredentials,
+  negativeKeywords: Array<{
+    campaignId: string;
+    adGroupId?: string;
+    keywordText: string;
+    matchType: string;
+    state: string;
+  }>,
+): Promise<unknown> {
+  return adsApiRequest(creds, "/sp/negativeKeywords", {
+    method: "POST",
+    body: { negativeKeywords },
+    operation: AmazonSpApiOperation.ADS_NEGATIVE_KEYWORDS_MUTATE,
+    contentType: "application/vnd.spnegativekeyword.v3+json",
+    accept: "application/vnd.spnegativekeyword.v3+json",
+  });
+}
+
+export async function listSponsoredProductsNegativeTargets(
+  creds: AdsAPICredentials,
+  options: { nextToken?: string; maxResults?: number } = {},
+): Promise<{ negativeTargets: AdsNegativeTarget[]; nextToken?: string }> {
+  const result = await listPaginatedAdsResource<AdsNegativeTarget>(
+    creds,
+    "/sp/negativeTargets/list",
+    "negativeTargetingClauses",
+    AmazonSpApiOperation.ADS_NEGATIVE_TARGETS_LIST,
+    "application/vnd.spnegativetargeting.v3+json",
+    options,
+  );
+  return { negativeTargets: result.items, nextToken: result.nextToken };
+}
+
+export async function createSponsoredProductsNegativeTargets(
+  creds: AdsAPICredentials,
+  negativeTargetingClauses: Array<{
+    campaignId: string;
+    adGroupId?: string;
+    expression: Array<{ type: string; value: string }>;
+    expressionType: string;
+    state: string;
+  }>,
+): Promise<unknown> {
+  return adsApiRequest(creds, "/sp/negativeTargets", {
+    method: "POST",
+    body: { negativeTargetingClauses },
+    operation: AmazonSpApiOperation.ADS_NEGATIVE_TARGETS_MUTATE,
+    contentType: "application/vnd.spnegativetargeting.v3+json",
+    accept: "application/vnd.spnegativetargeting.v3+json",
+  });
 }
 
 // ── Helpers internos ───────────────────────────────────────────────────────
