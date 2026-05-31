@@ -51,6 +51,8 @@ type Recommendation = {
   entityId: string;
   label: string;
   campaignName: string | null;
+  portfolioId: string | null;
+  portfolioName: string | null;
   adGroupName: string | null;
   keywordId: string | null;
   targetId: string | null;
@@ -98,6 +100,7 @@ type Snapshot = {
 };
 
 type MutationResult = {
+  status?: "PENDING_REPORTS";
   total?: number;
   applied?: number;
   failed?: number;
@@ -152,7 +155,13 @@ export default function AdsOptimizerPage() {
     mutationFn: () =>
       fetchJSON<MutationResult>("/api/ads/optimizer/run", { method: "POST" }),
     onSuccess: (data) => {
-      toast.success(`${data.totalRecomendacoes ?? 0} recomendacao(oes) gerada(s)`);
+      if (data.status === "PENDING_REPORTS") {
+        toast.warning(
+          "Relatorios solicitados na Amazon. Aguarde alguns minutos e rode novamente para baixar as metricas.",
+        );
+      } else {
+        toast.success(`${data.totalRecomendacoes ?? 0} recomendacao(oes) gerada(s)`);
+      }
       invalidate();
     },
     onError: (error: Error) => toast.error(error.message),
@@ -206,6 +215,7 @@ export default function AdsOptimizerPage() {
     if (!needle) return true;
     return [
       rec.campaignName,
+      rec.portfolioName,
       rec.adGroupName,
       rec.label,
       rec.searchTerm,
@@ -428,6 +438,7 @@ function RecommendationCard({
               </h2>
               <p className="text-sm text-muted-foreground">
                 {rec.campaignName ?? "Campanha sem nome"}
+                {rec.portfolioName ? ` · Portfolio ${rec.portfolioName}` : ""}
                 {rec.adGroupName ? ` · ${rec.adGroupName}` : ""}
                 {rec.sku ? ` · SKU ${rec.sku}` : ""}
               </p>

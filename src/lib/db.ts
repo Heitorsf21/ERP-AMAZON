@@ -94,6 +94,8 @@ const TENANT_MODELS = new Set<string>([
   "AmazonAdsMetricaDiaria",
   "AmazonAdsMetricaHoraria",
   "AmazonAdsOptimizerState",
+  "AmazonAdsPortfolio",
+  "AmazonAdsCampaignEntity",
   "AmazonAdsAdGroup",
   "AmazonAdsProductAd",
   "AmazonAdsKeyword",

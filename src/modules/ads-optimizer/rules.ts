@@ -76,7 +76,10 @@ export function evaluateAdsOptimizerRules(
   if (input.entityType === "SEARCH_TERM") {
     if (m30.cliques >= ZERO_SALES_CLICKS_THRESHOLD && m30.pedidos === 0) {
       recs.push({
-        actionType: input.targetId ? "ADD_NEGATIVE_TARGET" : "ADD_NEGATIVE_KEYWORD",
+        actionType:
+          input.targetId || isLikelyAsin(input.searchTerm ?? input.label)
+            ? "ADD_NEGATIVE_TARGET"
+            : "ADD_NEGATIVE_KEYWORD",
         severity: "CRITICAL",
         ruleId: "SEARCH_TERM_25_CLICKS_ZERO_SALES",
         motivo: `${input.label} teve ${m30.cliques} cliques em 30 dias sem vendas. Negativar evita continuar comprando tráfego sem conversão.`,
@@ -229,4 +232,8 @@ function isBroadOrAuto(matchType: string | null) {
     normalized.includes("PHRASE") ||
     normalized.includes("AUTO")
   );
+}
+
+function isLikelyAsin(value: string) {
+  return /^B[A-Z0-9]{9}$/i.test(value.trim());
 }

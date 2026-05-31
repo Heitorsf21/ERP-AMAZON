@@ -26,6 +26,8 @@ describe("Ads optimizer tenant isolation", () => {
   it("registers optimizer models as tenant scoped", async () => {
     const { TENANT_MODEL_NAMES } = await import("@/lib/db");
 
+    expect(TENANT_MODEL_NAMES.has("AmazonAdsPortfolio")).toBe(true);
+    expect(TENANT_MODEL_NAMES.has("AmazonAdsCampaignEntity")).toBe(true);
     expect(TENANT_MODEL_NAMES.has("AmazonAdsKeyword")).toBe(true);
     expect(TENANT_MODEL_NAMES.has("AmazonAdsTarget")).toBe(true);
     expect(TENANT_MODEL_NAMES.has("AmazonAdsTargetingMetricDaily")).toBe(true);

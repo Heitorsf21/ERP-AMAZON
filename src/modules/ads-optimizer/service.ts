@@ -8,6 +8,8 @@ import {
   createSponsoredProductsNegativeTargets,
   downloadAdsReportRows,
   getAdsReport,
+  listAdsPortfolios,
+  listSponsoredProductsCampaigns,
   listSponsoredProductsAdGroups,
   listSponsoredProductsKeywords,
   listSponsoredProductsNegativeKeywords,
@@ -47,6 +49,8 @@ type OptimizerEntity = {
   label: string;
   campaignId: string;
   campaignName: string | null;
+  portfolioId: string | null;
+  portfolioName: string | null;
   adGroupId: string | null;
   adGroupName: string | null;
   keywordId: string | null;
@@ -80,10 +84,26 @@ export const adsOptimizerService = {
 
   async runOptimization(session: SessionPayload) {
     const creds = await requireAdsCredentials();
-    await syncEditableAdsEntities(creds);
-    await syncOptimizerReports(creds);
-
     const profileId = requireProfileId(creds);
+    await syncEditableAdsEntities(creds);
+    const reports = await syncOptimizerReports(creds);
+    const metricCounts = await countOptimizerMetrics(profileId);
+
+    if (
+      !reportsReady(reports) &&
+      metricCounts.targeting === 0 &&
+      metricCounts.searchTerms === 0
+    ) {
+      return {
+        status: "PENDING_REPORTS",
+        profileId,
+        reports,
+        metricCounts,
+        totalEntidades: 0,
+        totalRecomendacoes: 0,
+      };
+    }
+
     const run = await db.adsOptimizationRun.create({
       data: {
         profileId,
@@ -130,6 +150,8 @@ export const adsOptimizerService = {
               entityId: item.entity.entityId,
               campaignId: item.entity.campaignId,
               campaignName: item.entity.campaignName,
+              portfolioId: item.entity.portfolioId,
+              portfolioName: item.entity.portfolioName,
               adGroupId: item.entity.adGroupId,
               adGroupName: item.entity.adGroupName,
               keywordId: item.entity.keywordId,
@@ -211,6 +233,8 @@ export const adsOptimizerService = {
         label: evidence.label ?? rec.searchTerm ?? rec.entityId,
         campaignId: rec.campaignId,
         campaignName: rec.campaignName,
+        portfolioId: rec.portfolioId,
+        portfolioName: rec.portfolioName,
         adGroupId: rec.adGroupId,
         adGroupName: rec.adGroupName,
         keywordId: rec.keywordId,
@@ -336,8 +360,23 @@ function requireProfileId(creds: AdsAPICredentials) {
 async function syncEditableAdsEntities(creds: AdsAPICredentials) {
   const profileId = requireProfileId(creds);
   const now = new Date();
-  const [adGroups, productAds, keywords, targets, negativeKeywords, negativeTargets] =
+  const [
+    portfolios,
+    campaigns,
+    adGroups,
+    productAds,
+    keywords,
+    targets,
+    negativeKeywords,
+    negativeTargets,
+  ] =
     await Promise.all([
+      collectPages((nextToken) =>
+        listAdsPortfolios(creds, { nextToken, maxResults: 100 }),
+      "portfolios"),
+      collectPages((nextToken) =>
+        listSponsoredProductsCampaigns(creds, { nextToken, maxResults: 100 }),
+      "campaigns"),
       collectPages((nextToken) =>
         listSponsoredProductsAdGroups(creds, { nextToken, maxResults: 100 }),
       "adGroups"),
@@ -358,13 +397,66 @@ async function syncEditableAdsEntities(creds: AdsAPICredentials) {
       "negativeTargets"),
     ]);
 
+  const portfolioById = new Map<string, { id: string; nome: string | null }>();
+  for (const row of portfolios) {
+    const portfolioId = idString(row.portfolioId);
+    if (!portfolioId) continue;
+    const nome = stringOrNull(row.name) ?? portfolioId;
+    portfolioById.set(portfolioId, { id: portfolioId, nome });
+    await upsertFirst("amazonAdsPortfolio", { profileId, portfolioId }, {
+      profileId,
+      portfolioId,
+      nome,
+      estado: stringOrNull(row.state),
+      budgetCentavos: moneyToCentavos((row.budget as JsonRecord | undefined)?.amount ?? (row.budget as JsonRecord | undefined)?.budget),
+      budgetPolicy: stringOrNull((row.budget as JsonRecord | undefined)?.policy),
+      currencyCode: stringOrNull((row.budget as JsonRecord | undefined)?.currencyCode),
+      inBudget: typeof row.inBudget === "boolean" ? row.inBudget : null,
+      ultimaSync: now,
+      payloadJson: json(row),
+    });
+  }
+
+  const campaignById = new Map<string, { nome: string; portfolioId: string | null; portfolioName: string | null }>();
+  for (const row of campaigns) {
+    const campaignId = idString(row.campaignId);
+    if (!campaignId) continue;
+    const portfolioId = idString(row.portfolioId);
+    const portfolioName = portfolioId ? portfolioById.get(portfolioId)?.nome ?? null : null;
+    const nome = stringOrNull(row.name) ?? campaignId;
+    campaignById.set(campaignId, { nome, portfolioId, portfolioName });
+    await upsertFirst("amazonAdsCampaignEntity", { profileId, campaignId }, {
+      profileId,
+      campaignId,
+      portfolioId,
+      nome,
+      estado: stringOrNull(row.state),
+      targetingType: stringOrNull(row.targetingType),
+      budgetCentavos: moneyToCentavos((row.budget as JsonRecord | undefined)?.budget),
+      budgetType: stringOrNull((row.budget as JsonRecord | undefined)?.budgetType),
+      startDate: parseIsoDate(row.startDate),
+      endDate: parseIsoDate(row.endDate),
+      servingStatus: stringOrNull(row.servingStatus),
+      ultimaSync: now,
+      payloadJson: json(row),
+    });
+  }
+
+  const adGroupById = new Map<string, { nome: string | null; campaignId: string; portfolioId: string | null }>();
   for (const row of adGroups) {
     const adGroupId = idString(row.adGroupId);
     const campaignId = idString(row.campaignId);
     if (!adGroupId || !campaignId) continue;
+    const campaign = campaignById.get(campaignId);
+    adGroupById.set(adGroupId, {
+      nome: stringOrNull(row.name),
+      campaignId,
+      portfolioId: campaign?.portfolioId ?? null,
+    });
     await upsertFirst("amazonAdsAdGroup", { profileId, adGroupId }, {
       profileId,
       campaignId,
+      portfolioId: campaign?.portfolioId ?? null,
       adGroupId,
       nome: stringOrNull(row.name),
       estado: stringOrNull(row.state),
@@ -380,9 +472,11 @@ async function syncEditableAdsEntities(creds: AdsAPICredentials) {
     const campaignId = idString(row.campaignId);
     const adGroupId = idString(row.adGroupId);
     if (!adId || !campaignId || !adGroupId) continue;
+    const campaign = campaignById.get(campaignId);
     await upsertFirst("amazonAdsProductAd", { profileId, adId }, {
       profileId,
       campaignId,
+      portfolioId: campaign?.portfolioId ?? null,
       adGroupId,
       adId,
       sku: stringOrNull(row.sku),
@@ -399,9 +493,12 @@ async function syncEditableAdsEntities(creds: AdsAPICredentials) {
     const campaignId = idString(row.campaignId);
     const adGroupId = idString(row.adGroupId);
     if (!keywordId || !campaignId || !adGroupId || !row.keywordText) continue;
+    const campaign = campaignById.get(campaignId);
+    const adGroup = adGroupById.get(adGroupId);
     await upsertFirst("amazonAdsKeyword", { profileId, keywordId }, {
       profileId,
       campaignId,
+      portfolioId: campaign?.portfolioId ?? null,
       adGroupId,
       keywordId,
       keywordText: row.keywordText,
@@ -409,6 +506,8 @@ async function syncEditableAdsEntities(creds: AdsAPICredentials) {
       estado: stringOrNull(row.state),
       bidCentavos: moneyToCentavos(row.bid),
       servingStatus: stringOrNull(row.servingStatus),
+      campaignName: campaign?.nome ?? null,
+      adGroupName: adGroup?.nome ?? null,
       ultimaSync: now,
       payloadJson: json(row),
     });
@@ -419,9 +518,12 @@ async function syncEditableAdsEntities(creds: AdsAPICredentials) {
     const campaignId = idString(row.campaignId);
     const adGroupId = idString(row.adGroupId);
     if (!targetId || !campaignId || !adGroupId) continue;
+    const campaign = campaignById.get(campaignId);
+    const adGroup = adGroupById.get(adGroupId);
     await upsertFirst("amazonAdsTarget", { profileId, targetId }, {
       profileId,
       campaignId,
+      portfolioId: campaign?.portfolioId ?? null,
       adGroupId,
       targetId,
       expressionType: stringOrNull(row.expressionType),
@@ -430,6 +532,8 @@ async function syncEditableAdsEntities(creds: AdsAPICredentials) {
       estado: stringOrNull(row.state),
       bidCentavos: moneyToCentavos(row.bid),
       servingStatus: stringOrNull(row.servingStatus),
+      campaignName: campaign?.nome ?? null,
+      adGroupName: adGroup?.nome ?? null,
       ultimaSync: now,
       payloadJson: json(row),
     });
@@ -439,9 +543,11 @@ async function syncEditableAdsEntities(creds: AdsAPICredentials) {
     const negativeKeywordId = idString(row.negativeKeywordId ?? row.keywordId);
     const campaignId = idString(row.campaignId);
     if (!negativeKeywordId || !campaignId || !row.keywordText) continue;
+    const campaign = campaignById.get(campaignId);
     await upsertFirst("amazonAdsNegativeKeyword", { profileId, negativeKeywordId }, {
       profileId,
       campaignId,
+      portfolioId: campaign?.portfolioId ?? null,
       adGroupId: idString(row.adGroupId),
       negativeKeywordId,
       keywordText: row.keywordText,
@@ -456,9 +562,11 @@ async function syncEditableAdsEntities(creds: AdsAPICredentials) {
     const negativeTargetId = idString(row.negativeTargetId ?? row.targetId);
     const campaignId = idString(row.campaignId);
     if (!negativeTargetId || !campaignId) continue;
+    const campaign = campaignById.get(campaignId);
     await upsertFirst("amazonAdsNegativeTarget", { profileId, negativeTargetId }, {
       profileId,
       campaignId,
+      portfolioId: campaign?.portfolioId ?? null,
       adGroupId: idString(row.adGroupId),
       negativeTargetId,
       expressionType: stringOrNull(row.expressionType),
@@ -471,6 +579,8 @@ async function syncEditableAdsEntities(creds: AdsAPICredentials) {
   }
 
   return {
+    portfolios: portfolios.length,
+    campaigns: campaigns.length,
     adGroups: adGroups.length,
     productAds: productAds.length,
     keywords: keywords.length,
@@ -505,6 +615,18 @@ async function syncOptimizerReports(creds: AdsAPICredentials) {
     }),
   ]);
   return { targeting, searchTerms };
+}
+
+async function countOptimizerMetrics(profileId: string) {
+  const [targeting, searchTerms] = await Promise.all([
+    db.amazonAdsTargetingMetricDaily.count({ where: { profileId } }),
+    db.amazonAdsSearchTermMetricDaily.count({ where: { profileId } }),
+  ]);
+  return { targeting, searchTerms };
+}
+
+function reportsReady(reports: Awaited<ReturnType<typeof syncOptimizerReports>>) {
+  return reports.targeting.status === "DONE" || reports.searchTerms.status === "DONE";
 }
 
 async function syncReportLifecycle(args: {
@@ -583,6 +705,7 @@ function metricData(profileId: string, row: AdsOptimizerMetricRow) {
     naturalKey: row.naturalKey,
     data: row.data,
     campaignId: row.campaignId,
+    portfolioId: row.portfolioId,
     campaignName: row.campaignName,
     adGroupId: row.adGroupId,
     adGroupName: row.adGroupName,
@@ -613,12 +736,14 @@ async function buildOptimizationSnapshot(profileId: string) {
   const prev7End = addDays(last7Start, -1);
   const last30Start = addDays(today, -30);
 
-  const [keywords, targets, targetingRows, searchRows] = await Promise.all([
+  const [keywords, targets, targetingRows, searchRows, portfolios] = await Promise.all([
     db.amazonAdsKeyword.findMany({ where: { profileId } }),
     db.amazonAdsTarget.findMany({ where: { profileId } }),
     db.amazonAdsTargetingMetricDaily.findMany({ where: { profileId } }),
     db.amazonAdsSearchTermMetricDaily.findMany({ where: { profileId } }),
+    db.amazonAdsPortfolio.findMany({ where: { profileId } }),
   ]);
+  const portfolioNameById = new Map(portfolios.map((p) => [p.portfolioId, p.nome]));
 
   const entities: OptimizerEntity[] = [
     ...keywords.map((k) => ({
@@ -627,6 +752,8 @@ async function buildOptimizationSnapshot(profileId: string) {
       label: k.keywordText,
       campaignId: k.campaignId,
       campaignName: k.campaignName,
+      portfolioId: k.portfolioId,
+      portfolioName: k.portfolioId ? portfolioNameById.get(k.portfolioId) ?? null : null,
       adGroupId: k.adGroupId,
       adGroupName: k.adGroupName,
       keywordId: k.keywordId,
@@ -644,6 +771,8 @@ async function buildOptimizationSnapshot(profileId: string) {
       label: t.expressionText,
       campaignId: t.campaignId,
       campaignName: t.campaignName,
+      portfolioId: t.portfolioId,
+      portfolioName: t.portfolioId ? portfolioNameById.get(t.portfolioId) ?? null : null,
       adGroupId: t.adGroupId,
       adGroupName: t.adGroupName,
       keywordId: null,
@@ -675,6 +804,7 @@ async function buildOptimizationSnapshot(profileId: string) {
 function buildSearchTermEntities(
   rows: Array<{
     campaignId: string;
+    portfolioId: string | null;
     campaignName: string | null;
     adGroupId: string | null;
     adGroupName: string | null;
@@ -702,6 +832,8 @@ function buildSearchTermEntities(
       entityId,
       label: row.searchTerm,
       campaignId: row.campaignId,
+      portfolioId: row.portfolioId ?? parent?.portfolioId ?? null,
+      portfolioName: parent?.portfolioName ?? null,
       campaignName: row.campaignName ?? parent?.campaignName ?? null,
       adGroupId: row.adGroupId,
       adGroupName: row.adGroupName ?? parent?.adGroupName ?? null,
@@ -1010,6 +1142,8 @@ async function collectPages<T>(
 async function upsertFirst(
   model: keyof Pick<
     typeof db,
+    | "amazonAdsPortfolio"
+    | "amazonAdsCampaignEntity"
     | "amazonAdsAdGroup"
     | "amazonAdsProductAd"
     | "amazonAdsKeyword"
@@ -1083,6 +1217,13 @@ function idString(value: unknown): string | null {
 
 function stringOrNull(value: unknown): string | null {
   return idString(value);
+}
+
+function parseIsoDate(value: unknown): Date | null {
+  const text = idString(value);
+  if (!text) return null;
+  const parsed = Date.parse(text);
+  return Number.isFinite(parsed) ? new Date(parsed) : null;
 }
 
 function moneyToCentavos(value: unknown): number | null {

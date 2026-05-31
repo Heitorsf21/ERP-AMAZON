@@ -5,6 +5,7 @@ export type AdsOptimizerMetricRow = {
   naturalKey: string;
   data: Date;
   campaignId: string;
+  portfolioId: string | null;
   campaignName: string | null;
   adGroupId: string | null;
   adGroupName: string | null;
@@ -96,6 +97,7 @@ function parseBaseRow(row: AdsReportRow): AdsOptimizerMetricRow | null {
     naturalKey: "",
     data,
     campaignId,
+    portfolioId: firstString(row, ["portfolioId"]),
     campaignName: firstString(row, ["campaignName"]),
     adGroupId: firstString(row, ["adGroupId"]),
     adGroupName: firstString(row, ["adGroupName"]),
@@ -125,6 +127,7 @@ function naturalKeyParts(row: AdsOptimizerMetricRow) {
   return {
     data: row.data.toISOString(),
     campaignId: row.campaignId,
+    portfolioId: row.portfolioId,
     adGroupId: row.adGroupId,
     entityType: row.entityType,
     entityId: row.entityId,

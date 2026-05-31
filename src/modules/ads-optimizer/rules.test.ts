@@ -168,6 +168,28 @@ describe("evaluateAdsOptimizerRules", () => {
     expect(result).toEqual([]);
   });
 
+  it("suggests a negative target for ASIN search terms with 25 clicks and zero sales", () => {
+    const result = evaluateAdsOptimizerRules(
+      input({
+        entityType: "SEARCH_TERM",
+        entityId: "SEARCH_TERM:camp-1:B0ABC12345",
+        label: "B0ABC12345",
+        keywordId: null,
+        targetId: null,
+        searchTerm: "B0ABC12345",
+        metrics30d: metrics({
+          cliques: 25,
+          gastoCentavos: 2500,
+          vendasCentavos: 0,
+          pedidos: 0,
+          unidades: 0,
+        }),
+      }),
+    );
+
+    expect(result[0]?.actionType).toBe("ADD_NEGATIVE_TARGET");
+  });
+
   it("does not recommend actions for stale inactive entities", () => {
     const result = evaluateAdsOptimizerRules(
       input({

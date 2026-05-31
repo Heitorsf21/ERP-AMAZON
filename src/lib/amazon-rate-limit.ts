@@ -20,6 +20,7 @@ export const AmazonSpApiOperation = {
   ADS_REPORTS_GET: "ADS_REPORTS_GET",
   ADS_REPORTS_DOWNLOAD: "ADS_REPORTS_DOWNLOAD",
   ADS_PROFILES_GET: "ADS_PROFILES_GET",
+  ADS_PORTFOLIOS_LIST: "ADS_PORTFOLIOS_LIST",
   ADS_CAMPAIGNS_LIST: "ADS_CAMPAIGNS_LIST",
   ADS_AD_GROUPS_LIST: "ADS_AD_GROUPS_LIST",
   ADS_PRODUCT_ADS_LIST: "ADS_PRODUCT_ADS_LIST",
@@ -144,6 +145,10 @@ const OPERATION_LIMITS: Record<AmazonSpApiOperation, OperationLimit> = {
   },
   // POST /sp/campaigns/list (paginacao para upsert de AmazonAdsCampanha).
   [AmazonSpApiOperation.ADS_CAMPAIGNS_LIST]: {
+    rateLimitPerSecond: 5,
+    burst: 10,
+  },
+  [AmazonSpApiOperation.ADS_PORTFOLIOS_LIST]: {
     rateLimitPerSecond: 5,
     burst: 10,
   },

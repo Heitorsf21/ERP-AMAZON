@@ -98,7 +98,25 @@ export interface AdsCampaign {
   name: string;
   state?: string;
   targetingType?: string;
+  portfolioId?: string | number;
+  startDate?: string;
+  endDate?: string;
+  servingStatus?: string;
   budget?: { budget?: number; budgetType?: string };
+  [key: string]: unknown;
+}
+
+export interface AdsPortfolio {
+  portfolioId?: string | number;
+  name?: string;
+  state?: string;
+  inBudget?: boolean;
+  budget?: {
+    amount?: number;
+    budget?: number;
+    policy?: string;
+    currencyCode?: string;
+  };
   [key: string]: unknown;
 }
 
@@ -399,6 +417,7 @@ export async function createSpTargetingReport(
       "date",
       "campaignId",
       "campaignName",
+      "portfolioId",
       "adGroupId",
       "adGroupName",
       "keywordId",
@@ -429,6 +448,7 @@ export async function createSpSearchTermReport(
       "date",
       "campaignId",
       "campaignName",
+      "portfolioId",
       "adGroupId",
       "adGroupName",
       "keywordId",
@@ -606,6 +626,31 @@ export async function listSponsoredProductsCampaigns(
 
   return {
     campaigns: payload.campaigns ?? [],
+    nextToken: payload.nextToken,
+  };
+}
+
+export async function listAdsPortfolios(
+  creds: AdsAPICredentials,
+  options: { nextToken?: string; maxResults?: number } = {},
+): Promise<{ portfolios: AdsPortfolio[]; nextToken?: string }> {
+  const body: Record<string, unknown> = {};
+  if (options.maxResults) body.maxResults = options.maxResults;
+  if (options.nextToken) body.nextToken = options.nextToken;
+
+  const payload = await adsApiRequest<{
+    portfolios?: AdsPortfolio[];
+    nextToken?: string;
+  }>(creds, "/portfolios/list", {
+    method: "POST",
+    body,
+    operation: AmazonSpApiOperation.ADS_PORTFOLIOS_LIST,
+    contentType: "application/vnd.portfolio.v3+json",
+    accept: "application/vnd.portfolio.v3+json",
+  });
+
+  return {
+    portfolios: payload.portfolios ?? [],
     nextToken: payload.nextToken,
   };
 }

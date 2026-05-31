@@ -1420,11 +1420,58 @@ model AmazonAdsOptimizerState {
   @@index([profileId, tipo])
 }
 
+model AmazonAdsPortfolio {
+  id             String   @id @default(cuid())
+  empresaId      String?
+  profileId      String
+  portfolioId    String
+  nome           String
+  estado         String?
+  budgetCentavos Int?
+  budgetPolicy   String?
+  currencyCode   String?
+  inBudget       Boolean?
+  ultimaSync     DateTime
+  payloadJson    String
+  criadoEm       DateTime @default(now())
+  atualizadoEm   DateTime @updatedAt
+
+  @@unique([empresaId, profileId, portfolioId])
+  @@index([profileId, estado])
+  @@index([nome])
+}
+
+model AmazonAdsCampaignEntity {
+  id             String   @id @default(cuid())
+  empresaId      String?
+  profileId      String
+  campaignId     String
+  portfolioId    String?
+  nome           String
+  estado         String?
+  targetingType  String?
+  budgetCentavos Int?
+  budgetType     String?
+  startDate      DateTime?
+  endDate        DateTime?
+  servingStatus  String?
+  ultimaSync     DateTime
+  payloadJson    String
+  criadoEm       DateTime @default(now())
+  atualizadoEm   DateTime @updatedAt
+
+  @@unique([empresaId, profileId, campaignId])
+  @@index([profileId, portfolioId])
+  @@index([profileId, estado])
+  @@index([nome])
+}
+
 model AmazonAdsAdGroup {
   id                 String   @id @default(cuid())
   empresaId          String?
   profileId          String
   campaignId         String
+  portfolioId        String?
   adGroupId          String
   nome               String?
   estado             String?
@@ -1445,6 +1492,7 @@ model AmazonAdsProductAd {
   empresaId     String?
   profileId     String
   campaignId    String
+  portfolioId   String?
   adGroupId     String
   adId          String
   sku           String?
@@ -1467,6 +1515,7 @@ model AmazonAdsKeyword {
   empresaId     String?
   profileId     String
   campaignId    String
+  portfolioId   String?
   adGroupId     String
   keywordId     String
   keywordText   String
@@ -1493,6 +1542,7 @@ model AmazonAdsTarget {
   empresaId      String?
   profileId      String
   campaignId     String
+  portfolioId    String?
   adGroupId      String
   targetId       String
   expressionType String?
@@ -1520,6 +1570,7 @@ model AmazonAdsNegativeKeyword {
   empresaId         String?
   profileId         String
   campaignId        String
+  portfolioId       String?
   adGroupId         String?
   negativeKeywordId String
   keywordText       String
@@ -1541,6 +1592,7 @@ model AmazonAdsNegativeTarget {
   empresaId        String?
   profileId        String
   campaignId       String
+  portfolioId      String?
   adGroupId        String?
   negativeTargetId String
   expressionType   String?
@@ -1565,6 +1617,7 @@ model AmazonAdsTargetingMetricDaily {
   profileId      String
   data           DateTime
   campaignId     String
+  portfolioId    String?
   campaignName   String?
   adGroupId      String?
   adGroupName    String?
@@ -1602,6 +1655,7 @@ model AmazonAdsSearchTermMetricDaily {
   profileId      String
   data           DateTime
   campaignId     String
+  portfolioId    String?
   campaignName   String?
   adGroupId      String?
   adGroupName    String?
@@ -1665,6 +1719,8 @@ model AdsOptimizationRecommendation {
   entityId            String
   campaignId          String
   campaignName        String?
+  portfolioId         String?
+  portfolioName       String?
   adGroupId           String?
   adGroupName         String?
   keywordId           String?

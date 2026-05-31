@@ -9,6 +9,7 @@ describe("sp optimizer report parsers", () => {
         date: "2026-05-30",
         campaignId: "camp-1",
         campaignName: "Campanha manual",
+        portfolioId: "portfolio-1",
         adGroupId: "ag-1",
         adGroupName: "Grupo 1",
         keywordId: "kw-1",
@@ -29,6 +30,7 @@ describe("sp optimizer report parsers", () => {
     expect(parsed).toHaveLength(1);
     expect(parsed[0]).toMatchObject({
       campaignId: "camp-1",
+      portfolioId: "portfolio-1",
       adGroupId: "ag-1",
       entityType: "KEYWORD",
       entityId: "kw-1",

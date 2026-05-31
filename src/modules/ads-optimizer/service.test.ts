@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => {
   const delegate = () => ({
+    count: vi.fn(),
     findFirst: vi.fn(),
     findMany: vi.fn(),
     create: vi.fn(),
@@ -20,6 +21,8 @@ const mocks = vi.hoisted(() => {
     db: {
       adsOptimizationRecommendation: delegate(),
       adsOptimizationExecutionLog: delegate(),
+      amazonAdsPortfolio: delegate(),
+      amazonAdsCampaignEntity: delegate(),
       amazonAdsKeyword: delegate(),
       amazonAdsTarget: delegate(),
       amazonAdsAdGroup: delegate(),
@@ -33,6 +36,8 @@ const mocks = vi.hoisted(() => {
     },
     api: {
       listSponsoredProductsAdGroups: vi.fn(),
+      listSponsoredProductsCampaigns: vi.fn(),
+      listAdsPortfolios: vi.fn(),
       listSponsoredProductsProductAds: vi.fn(),
       listSponsoredProductsKeywords: vi.fn(),
       listSponsoredProductsTargets: vi.fn(),
@@ -88,6 +93,8 @@ beforeEach(() => {
   mocks.getAmazonAdsCredentials.mockResolvedValue(mocks.creds);
 
   mocks.api.listSponsoredProductsAdGroups.mockResolvedValue({ adGroups: [] });
+  mocks.api.listSponsoredProductsCampaigns.mockResolvedValue({ campaigns: [] });
+  mocks.api.listAdsPortfolios.mockResolvedValue({ portfolios: [] });
   mocks.api.listSponsoredProductsProductAds.mockResolvedValue({ productAds: [] });
   mocks.api.listSponsoredProductsKeywords.mockResolvedValue({ keywords: [] });
   mocks.api.listSponsoredProductsTargets.mockResolvedValue({ targets: [] });
@@ -108,6 +115,27 @@ beforeEach(() => {
     keywordId: "kw-1",
     estado: "enabled",
     bidCentavos: 100,
+  });
+  mocks.db.amazonAdsTargetingMetricDaily.count.mockResolvedValue(0);
+  mocks.db.amazonAdsSearchTermMetricDaily.count.mockResolvedValue(0);
+});
+
+describe("adsOptimizerService.runOptimization", () => {
+  it("does not create a misleading zero-recommendation run while initial reports are pending", async () => {
+    mocks.db.amazonAdsOptimizerState.findFirst.mockResolvedValue(null);
+    mocks.db.amazonAdsOptimizerState.create.mockResolvedValue({});
+    mocks.api.createSpTargetingReport.mockResolvedValue({ reportId: "target-report" });
+    mocks.api.createSpSearchTermReport.mockResolvedValue({ reportId: "search-report" });
+
+    const result = await adsOptimizerService.runOptimization(session);
+
+    expect(mocks.db.adsOptimizationRun.create).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      status: "PENDING_REPORTS",
+      totalEntidades: 0,
+      totalRecomendacoes: 0,
+      metricCounts: { targeting: 0, searchTerms: 0 },
+    });
   });
 });
 
