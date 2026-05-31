@@ -304,7 +304,13 @@ export async function adsApiRequest<T = unknown>(
       );
     }
 
-    if ((response.status === 429 || response.status === 503) && attempt < 3) {
+    if (
+      (response.status === 429 ||
+        response.status === 500 ||
+        response.status === 502 ||
+        response.status === 503) &&
+      attempt < 3
+    ) {
       const retryAfterHeader = response.headers.get("retry-after");
       const retryAfter = retryAfterHeader ? Number(retryAfterHeader) : NaN;
       const baseDelayMs =
