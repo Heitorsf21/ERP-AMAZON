@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { timingSafeEqual } from "node:crypto";
 import { db } from "@/lib/db";
 import { getSession } from "@/lib/auth";
+import { runWithTenant } from "@/lib/tenant-context";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -48,33 +49,42 @@ export async function GET(request: Request) {
     );
   }
 
-  const [heartbeatRow, quotas, queueCounts, lastLogs] = await Promise.all([
-    db.configuracaoSistema.findUnique({ where: { chave: HEARTBEAT_KEY } }),
-    db.amazonApiQuota.findMany({
-      orderBy: { operation: "asc" },
-      select: {
-        operation: true,
-        nextAllowedAt: true,
-        rateLimitPerSecond: true,
-        observedRps: true,
-        lastStatus: true,
-      },
-    }),
-    db.amazonSyncJob.groupBy({
-      by: ["status"],
-      _count: { _all: true },
-    }),
-    db.amazonSyncLog.findMany({
-      orderBy: { createdAt: "desc" },
-      take: 30,
-      select: {
-        tipo: true,
-        status: true,
-        registros: true,
-        createdAt: true,
-      },
-    }),
-  ]);
+  // Health é visão de OPERAÇÃO (plataforma): agrega quota/fila/logs de TODAS as
+  // empresas. Roda em contexto superadmin para que a extensão de isolamento não
+  // exija/filtre empresaId (caso contrário, com TENANT_ISOLATION=enforce e sem
+  // sessão — chamada por token interno —, estas leituras de modelos tenant
+  // lançariam fail-closed). configuracaoSistema é GLOBAL; o resto é tenant.
+  const [heartbeatRow, quotas, queueCounts, lastLogs] = await runWithTenant(
+    { empresaId: null, isSuperAdmin: true, source: "system" },
+    () =>
+      Promise.all([
+        db.configuracaoSistema.findUnique({ where: { chave: HEARTBEAT_KEY } }),
+        db.amazonApiQuota.findMany({
+          orderBy: { operation: "asc" },
+          select: {
+            operation: true,
+            nextAllowedAt: true,
+            rateLimitPerSecond: true,
+            observedRps: true,
+            lastStatus: true,
+          },
+        }),
+        db.amazonSyncJob.groupBy({
+          by: ["status"],
+          _count: { _all: true },
+        }),
+        db.amazonSyncLog.findMany({
+          orderBy: { createdAt: "desc" },
+          take: 30,
+          select: {
+            tipo: true,
+            status: true,
+            registros: true,
+            createdAt: true,
+          },
+        }),
+      ]),
+  );
 
   const lastByTipo = new Map<string, SyncSnapshot>();
   for (const log of lastLogs) {

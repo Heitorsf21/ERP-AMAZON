@@ -62,3 +62,21 @@ export function getEmpresaId(): string | null {
 export function enterWithTenant(ctx: TenantContext): void {
   storage.enterWith(ctx);
 }
+
+/**
+ * Contexto de tenant padrão para execuções de BACKGROUND (worker daemon, consumer
+ * SQS, crons HTTP). Single-tenant por ora: empresa de `WORKER_EMPRESA_ID` (default
+ * "mundofs"). Centraliza o default para que todos os pontos de entrada sem sessão
+ * de usuário rodem sob o mesmo escopo. Vira per-AmazonAccount (resolvido por
+ * conta/sellerId) quando o worker iterar contas. Inócuo com TENANT_ISOLATION=off.
+ */
+export function runWithWorkerTenant<T>(fn: () => T): T {
+  return runWithTenant(
+    {
+      empresaId: process.env.WORKER_EMPRESA_ID || "mundofs",
+      isSuperAdmin: false,
+      source: "worker",
+    },
+    fn,
+  );
+}

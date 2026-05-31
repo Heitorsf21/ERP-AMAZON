@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { getEmpresaId } from "@/lib/tenant-context";
 import type { SessionPayload } from "@/lib/session";
 
 type AuditInput = {
@@ -18,6 +19,10 @@ export async function auditLog(input: AuditInput): Promise<void> {
   try {
     await db.auditLog.create({
       data: {
+        // AuditLog é GLOBAL (não auto-filtrado): carimbamos a empresa do
+        // contexto quando existe (pós-login). Em fluxos pré-contexto (login,
+        // 2FA, recuperação) fica null — esperado.
+        empresaId: getEmpresaId() ?? undefined,
         usuarioId: input.session?.uid ?? null,
         usuarioEmail: input.session?.email ?? null,
         acao: input.acao,

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { handle, ok } from "@/lib/api";
+import { runWithWorkerTenant } from "@/lib/tenant-context";
 import { enqueueAmazonSyncJob } from "@/modules/amazon/jobs";
 import { processAmazonSyncJobs } from "@/modules/amazon/worker";
 import { TipoAmazonSyncJob } from "@/modules/shared/domain";
@@ -31,26 +32,30 @@ export const GET = handle(async (req: NextRequest) => {
 });
 
 async function enqueueReviewJobs() {
-  const discovery = await enqueueAmazonSyncJob(
-    TipoAmazonSyncJob.REVIEWS_DISCOVERY,
-    {},
-    {
-      priority: 50,
-      dedupeKey: `cron:${TipoAmazonSyncJob.REVIEWS_DISCOVERY}:${Math.floor(Date.now() / (24 * 60 * 60_000))}`,
-      dedupeAnyStatus: true,
-    },
-  );
-  const send = await enqueueAmazonSyncJob(
-    TipoAmazonSyncJob.REVIEWS_SEND,
-    {},
-    {
-      priority: 49,
-      dedupeKey: `cron:${TipoAmazonSyncJob.REVIEWS_SEND}:${Math.floor(Date.now() / (60 * 60_000))}`,
-      dedupeAnyStatus: true,
-    },
-  );
-  const worker = await processAmazonSyncJobs({ limit: 2, schedule: false });
-  return { queued: true, jobs: [discovery, send], worker };
+  // enqueueAmazonSyncJob escreve AmazonSyncJob (modelo tenant) — precisa de
+  // contexto de empresa quando TENANT_ISOLATION=enforce.
+  return runWithWorkerTenant(async () => {
+    const discovery = await enqueueAmazonSyncJob(
+      TipoAmazonSyncJob.REVIEWS_DISCOVERY,
+      {},
+      {
+        priority: 50,
+        dedupeKey: `cron:${TipoAmazonSyncJob.REVIEWS_DISCOVERY}:${Math.floor(Date.now() / (24 * 60 * 60_000))}`,
+        dedupeAnyStatus: true,
+      },
+    );
+    const send = await enqueueAmazonSyncJob(
+      TipoAmazonSyncJob.REVIEWS_SEND,
+      {},
+      {
+        priority: 49,
+        dedupeKey: `cron:${TipoAmazonSyncJob.REVIEWS_SEND}:${Math.floor(Date.now() / (60 * 60_000))}`,
+        dedupeAnyStatus: true,
+      },
+    );
+    const worker = await processAmazonSyncJobs({ limit: 2, schedule: false });
+    return { queued: true, jobs: [discovery, send], worker };
+  });
 }
 
 function verifyCronRequest(req: NextRequest): { ok: boolean; motivo?: string } {

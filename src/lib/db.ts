@@ -79,7 +79,6 @@ const TENANT_MODELS = new Set<string>([
   "AdsCampanha",
   "Notificacao",
   "Tarefa",
-  "AuditLog",
   "FbmPickingBatch",
   "FbmPickingItem",
   "AmazonSettlementReport",
@@ -115,6 +114,14 @@ const GLOBAL_MODELS = new Set<string>([
   "LoginThrottle",
   "CodigoVerificacao2FA",
   "ConfiguracaoSistema",
+  // AuditLog é GLOBAL de propósito: é gravado em fluxos PRÉ-contexto (login,
+  // 2FA, recuperação de senha) onde ainda não há empresa resolvida. Auto-filtrar
+  // por empresaId faria o fail-closed abortar essas gravações de auditoria —
+  // justamente os eventos mais importantes de registrar. O helper auditLog()
+  // carimba empresaId quando há contexto (getEmpresaId), para leitura escopada
+  // futura. Hoje AuditLog é WRITE-ONLY (nenhum findMany na base), então não há
+  // risco de vazamento entre tenants por leitura via extensão.
+  "AuditLog",
 ]);
 
 // Exportadas para inspeção/teste. Não usar em código de produção fora daqui.
@@ -186,6 +193,42 @@ function injectCreateEmpresaId(
     const r = { ...(data as Record<string, unknown>) };
     if (!("empresaId" in r)) r.empresaId = empresaId;
     next.data = r;
+  }
+  return next;
+}
+
+/**
+ * Injeta `empresaId` em upsert.
+ *  - `create`: preenche empresaId quando ausente (linha nova nasce no tenant).
+ *  - `update`: NUNCA permite trocar a empresa de uma linha existente — se o
+ *    caller tentar setar `empresaId`, removemos para o valor do banco prevalecer.
+ *  - `where`: deixado INALTERADO. O `where` de upsert é um seletor de índice
+ *    ÚNICO; com uniques simples (estado atual, tenant único) a linha casada é
+ *    sempre a do tenant. Quando os uniques virarem compostos (com empresaId), o
+ *    próprio call site passará empresaId no `where` — e este helper continua
+ *    correto (não sobrescreve where). LIMITAÇÃO documentada da transição:
+ *    enquanto o unique de NEGÓCIO (ex: Produto.sku) for simples, um 2º tenant
+ *    poderia casar a linha de outro no upsert. Por isso os uniques de negócio
+ *    DEVEM virar compostos antes de onboard de empresa externa (Fase 1c).
+ */
+function injectUpsertEmpresaId(
+  args: Record<string, unknown> | undefined,
+  empresaId: string,
+): Record<string, unknown> {
+  const next: Record<string, unknown> = { ...(args ?? {}) };
+  const create = next.create;
+  if (create && typeof create === "object" && !Array.isArray(create)) {
+    const c = { ...(create as Record<string, unknown>) };
+    if (!("empresaId" in c)) c.empresaId = empresaId;
+    next.create = c;
+  }
+  const update = next.update;
+  if (update && typeof update === "object" && !Array.isArray(update)) {
+    if ("empresaId" in (update as Record<string, unknown>)) {
+      const u = { ...(update as Record<string, unknown>) };
+      delete u.empresaId;
+      next.update = u;
+    }
   }
   return next;
 }
@@ -286,9 +329,11 @@ export async function applyTenantIsolation({
     );
   }
 
-  // upsert e operações sem regra explícita: deixa passar inalterado. (upsert
-  // mistura where unique + create/update; um isolamento robusto exigiria
-  // tratamento dedicado — fora do escopo desta fase desligada.)
+  if (operation === "upsert") {
+    return query(injectUpsertEmpresaId(args as Record<string, unknown>, empresaId));
+  }
+
+  // Operações sem regra explícita: deixa passar inalterado.
   return query(args);
 }
 

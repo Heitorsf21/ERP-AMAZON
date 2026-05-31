@@ -303,17 +303,86 @@ describe("applyTenantIsolation — modo ENFORCE", () => {
     });
   });
 
-  it("upsert e operações desconhecidas passam inalteradas", async () => {
+  describe("upsert — injeta empresaId no create, protege o update, preserva o where", () => {
+    it("injeta empresaId em create quando ausente e remove empresaId do update", async () => {
+      const { query, seen } = makeQuery();
+      await runWithTenant(ctx("emp_1"), () =>
+        applyTenantIsolation({
+          model: "Produto",
+          operation: "upsert",
+          args: {
+            where: { sku: "ABC" },
+            create: { sku: "ABC", nome: "P" },
+            update: { nome: "P2", empresaId: "emp_HACK" },
+          },
+          query,
+        }),
+      );
+      expect(seen[0]).toEqual({
+        // where preservado (seletor de unique; com unique simples a linha casada
+        // é a do tenant — uniques compostos cobrem multi-tenant na Fase 1c).
+        where: { sku: "ABC" },
+        create: { sku: "ABC", nome: "P", empresaId: "emp_1" },
+        // empresaId removido do update (não permite trocar a empresa da linha).
+        update: { nome: "P2" },
+      });
+    });
+
+    it("não sobrescreve empresaId já presente no create", async () => {
+      const { query, seen } = makeQuery();
+      await runWithTenant(ctx("emp_1"), () =>
+        applyTenantIsolation({
+          model: "Produto",
+          operation: "upsert",
+          args: {
+            where: { sku: "ABC" },
+            create: { sku: "ABC", empresaId: "emp_FIXA" },
+            update: {},
+          },
+          query,
+        }),
+      );
+      expect(seen[0]).toEqual({
+        where: { sku: "ABC" },
+        create: { sku: "ABC", empresaId: "emp_FIXA" },
+        update: {},
+      });
+    });
+
+    it("FAIL-CLOSED: upsert em modelo tenant sem contexto lança erro", async () => {
+      const { query } = makeQuery();
+      await expect(
+        applyTenantIsolation({
+          model: "Produto",
+          operation: "upsert",
+          args: { where: { sku: "ABC" }, create: { sku: "ABC" }, update: {} },
+          query,
+        }),
+      ).rejects.toThrow(/Contexto de empresa ausente/);
+      expect(query).not.toHaveBeenCalled();
+    });
+
+    it("modo OFF: upsert passa inalterado (mesma referência)", async () => {
+      setMode("off");
+      const { query, seen } = makeQuery();
+      const args = { where: { sku: "ABC" }, create: { sku: "ABC" }, update: {} };
+      await runWithTenant(ctx("emp_1"), () =>
+        applyTenantIsolation({ model: "Produto", operation: "upsert", args, query }),
+      );
+      expect(seen[0]).toBe(args);
+    });
+  });
+
+  it("AuditLog é GLOBAL (não filtrado, não fail-closed sem contexto)", async () => {
     const { query, seen } = makeQuery();
-    const args = { where: { id: "1" }, create: {}, update: {} };
-    await runWithTenant(ctx("emp_1"), () =>
-      applyTenantIsolation({
-        model: "Produto",
-        operation: "upsert",
-        args,
-        query,
-      }),
-    );
+    const args = { data: { acao: "LOGIN", entidade: "Usuario" } };
+    // Sem contexto (fluxo de login) — não deve lançar nem injetar empresaId.
+    await applyTenantIsolation({
+      model: "AuditLog",
+      operation: "create",
+      args,
+      query,
+    });
     expect(seen[0]).toBe(args);
   });
 });
