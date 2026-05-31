@@ -135,6 +135,24 @@ function tenantMode(): TenantMode {
   return raw === "enforce" ? "enforce" : "off";
 }
 
+// Log deduplicado (1x por model.operation por processo) quando o fallback de
+// empresa é usado — serve para mapear quais caminhos ainda não estabelecem
+// contexto de tenant explícito (a serem envolvidos em runWithTenant).
+const fallbackLogged = new Set<string>();
+function logTenantFallbackOnce(
+  model: string,
+  operation: string,
+  source: string | undefined,
+) {
+  const key = `${model}.${operation}`;
+  if (fallbackLogged.has(key)) return;
+  fallbackLogged.add(key);
+  logger.warn(
+    { model, operation, source: source ?? "none" },
+    "tenant-isolation: contexto ausente — usando TENANT_FALLBACK_EMPRESA (modo single-tenant; envolver esta rota em runWithTenant antes do 2o tenant)",
+  );
+}
+
 // Operações que filtram/leem linhas existentes — injetamos where.empresaId.
 const FILTERED_OPERATIONS = new Set<string>([
   "findMany",
@@ -283,17 +301,30 @@ export async function applyTenantIsolation({
     return query(args);
   }
 
-  const empresaId = ctx?.empresaId ?? null;
+  let empresaId = ctx?.empresaId ?? null;
 
-  // FAIL-CLOSED: modelo tenant, sem empresaId concreto e sem superadmin.
-  // NUNCA emitir `where: { empresaId: undefined }` (vazaria todos os tenants).
-  // Aborta com erro claro.
+  // Sem empresaId concreto e sem superadmin. NUNCA emitir
+  // `where: { empresaId: undefined }` (vazaria todos os tenants).
   if (!empresaId) {
-    throw new Error(
-      `[tenant-isolation] Contexto de empresa ausente para operação tenant ` +
-        `"${model}.${operation}". Configure runWithTenant({ empresaId }) antes ` +
-        `da query (ou marque o contexto como isSuperAdmin para acesso amplo).`,
-    );
+    // MODO SINGLE-TENANT (interim): se TENANT_FALLBACK_EMPRESA estiver definido,
+    // usamos essa empresa como padrão quando o contexto não foi estabelecido.
+    // Necessário porque várias rotas usam requireRole/requireSession direto e o
+    // `enterWith` do getSession NÃO propaga o store após o await (só runWithTenant
+    // propaga). SEGURO ENQUANTO EXISTIR UMA ÚNICA EMPRESA. Antes do 2º tenant este
+    // fallback DEVE ser removido e todas as rotas envolvidas em runWithTenant —
+    // o log abaixo (deduplicado) revela quais caminhos ainda dependem dele.
+    const fallback = process.env.TENANT_FALLBACK_EMPRESA?.trim();
+    if (fallback) {
+      logTenantFallbackOnce(model, operation, ctx?.source);
+      empresaId = fallback;
+    } else {
+      // FAIL-CLOSED (default — sem fallback configurado).
+      throw new Error(
+        `[tenant-isolation] Contexto de empresa ausente para operação tenant ` +
+          `"${model}.${operation}". Configure runWithTenant({ empresaId }) antes ` +
+          `da query (ou marque o contexto como isSuperAdmin para acesso amplo).`,
+      );
+    }
   }
 
   // findUnique / findUniqueOrThrow: o Prisma só aceita campos do índice único

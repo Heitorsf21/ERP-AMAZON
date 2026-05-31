@@ -17,6 +17,7 @@ function setMode(mode: "off" | "enforce" | undefined) {
 
 afterEach(() => {
   setMode(ORIGINAL as "off" | "enforce" | undefined);
+  delete process.env.TENANT_FALLBACK_EMPRESA;
   vi.restoreAllMocks();
 });
 
@@ -189,6 +190,31 @@ describe("applyTenantIsolation — modo ENFORCE", () => {
       }),
     ).rejects.toThrow(/tenant-isolation.*Contexto de empresa ausente/i);
     expect(query).not.toHaveBeenCalled();
+  });
+
+  it("FALLBACK single-tenant: sem contexto + TENANT_FALLBACK_EMPRESA injeta a empresa padrão", async () => {
+    process.env.TENANT_FALLBACK_EMPRESA = "mundofs";
+    const { query, seen } = makeQuery();
+    // Sem runWithTenant (simula rota cujo contexto não propagou).
+    await applyTenantIsolation({
+      model: "VendaAmazon",
+      operation: "findMany",
+      args: { where: { status: "OK" } },
+      query,
+    });
+    expect(seen[0]).toEqual({ where: { status: "OK", empresaId: "mundofs" } });
+  });
+
+  it("FALLBACK também injeta empresaId no create sem contexto", async () => {
+    process.env.TENANT_FALLBACK_EMPRESA = "mundofs";
+    const { query, seen } = makeQuery();
+    await applyTenantIsolation({
+      model: "Produto",
+      operation: "create",
+      args: { data: { sku: "X" } },
+      query,
+    });
+    expect(seen[0]).toEqual({ data: { sku: "X", empresaId: "mundofs" } });
   });
 
   it("FAIL-CLOSED: contexto sem empresaId e sem superadmin lança erro", async () => {
