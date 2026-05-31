@@ -735,7 +735,7 @@ export async function listSponsoredProductsTargets(
     "/sp/targets/list",
     "targetingClauses",
     AmazonSpApiOperation.ADS_TARGETS_LIST,
-    "application/vnd.sptargeting.v3+json",
+    "application/vnd.sptargetingClause.v3+json",
     options,
   );
   return { targets: result.items, nextToken: result.nextToken };
@@ -749,8 +749,8 @@ export async function updateSponsoredProductsTargets(
     method: "PUT",
     body: { targetingClauses },
     operation: AmazonSpApiOperation.ADS_TARGETS_MUTATE,
-    contentType: "application/vnd.sptargeting.v3+json",
-    accept: "application/vnd.sptargeting.v3+json",
+    contentType: "application/vnd.sptargetingClause.v3+json",
+    accept: "application/vnd.sptargetingClause.v3+json",
   });
 }
 
@@ -797,7 +797,7 @@ export async function listSponsoredProductsNegativeTargets(
     "/sp/negativeTargets/list",
     "negativeTargetingClauses",
     AmazonSpApiOperation.ADS_NEGATIVE_TARGETS_LIST,
-    "application/vnd.spnegativetargeting.v3+json",
+    "application/vnd.spnegativeTargetingClause.v3+json",
     options,
   );
   return { negativeTargets: result.items, nextToken: result.nextToken };
@@ -817,8 +817,8 @@ export async function createSponsoredProductsNegativeTargets(
     method: "POST",
     body: { negativeTargetingClauses },
     operation: AmazonSpApiOperation.ADS_NEGATIVE_TARGETS_MUTATE,
-    contentType: "application/vnd.spnegativetargeting.v3+json",
-    accept: "application/vnd.spnegativetargeting.v3+json",
+    contentType: "application/vnd.spnegativeTargetingClause.v3+json",
+    accept: "application/vnd.spnegativeTargetingClause.v3+json",
   });
 }
 
