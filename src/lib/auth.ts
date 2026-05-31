@@ -37,6 +37,18 @@ export async function getSession(): Promise<SessionPayload | null> {
   if (!user || !user.ativo) return null;
   if (payload.v != null && payload.v !== user.sessionVersion) return null;
 
+  // Guard de transição multi-tenant: com TENANT_ISOLATION=enforce, uma sessão
+  // SEM empresaId não é válida (cookie emitido antes do multi-tenant). Tratamos
+  // como não autenticada → força re-login, que reemite o cookie já com empresaId.
+  // Auto-curável: evita fail-closed em massa de cookies antigos ao virar o enforce.
+  // Inócuo em modo off (a condição nunca dispara porque não checamos a flag lá).
+  if (
+    process.env.TENANT_ISOLATION?.toLowerCase() === "enforce" &&
+    !payload.empresaId
+  ) {
+    return null;
+  }
+
   // Popula o contexto de tenant para o restante da requisição — cobre as rotas
   // que chamam requireSession/requireRole direto (sem passar por handleAuth).
   // enterWith escopa ao contexto async corrente; cada request é isolado, então
