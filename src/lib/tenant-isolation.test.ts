@@ -5,7 +5,16 @@
 // que não conecta ao banco enquanto nenhuma query real roda. Como exercitamos
 // apenas o callback `query` mockado, nenhuma conexão é aberta.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+// Mock da recuperação de tenant via cookie (db.ts a chama quando não há contexto
+// ALS). Default: null (sem cookie) — preserva o comportamento dos testes de
+// fail-closed/fallback. Casos específicos sobrescrevem com mockResolvedValueOnce.
+vi.mock("./tenant-request", () => ({
+  resolveEmpresaIdFromRequestCookie: vi.fn(async () => null),
+}));
+
 import { applyTenantIsolation } from "./db";
+import { resolveEmpresaIdFromRequestCookie } from "./tenant-request";
 import { runWithTenant, type TenantContext } from "./tenant-context";
 
 const ORIGINAL = process.env.TENANT_ISOLATION;
@@ -190,6 +199,33 @@ describe("applyTenantIsolation — modo ENFORCE", () => {
       }),
     ).rejects.toThrow(/tenant-isolation.*Contexto de empresa ausente/i);
     expect(query).not.toHaveBeenCalled();
+  });
+
+  it("recupera empresaId do COOKIE da requisição quando não há contexto ALS (rota web requireRole direto)", async () => {
+    // Simula rota que NÃO envolveu runWithTenant; a extensão recupera o tenant
+    // do cookie de sessão. Tem prioridade sobre o env fallback.
+    vi.mocked(resolveEmpresaIdFromRequestCookie).mockResolvedValueOnce("emp_cookie");
+    const { query, seen } = makeQuery();
+    await applyTenantIsolation({
+      model: "VendaAmazon",
+      operation: "findMany",
+      args: { where: { status: "OK" } },
+      query,
+    });
+    expect(seen[0]).toEqual({ where: { status: "OK", empresaId: "emp_cookie" } });
+  });
+
+  it("cookie tem prioridade sobre o env fallback", async () => {
+    process.env.TENANT_FALLBACK_EMPRESA = "mundofs";
+    vi.mocked(resolveEmpresaIdFromRequestCookie).mockResolvedValueOnce("emp_cookie");
+    const { query, seen } = makeQuery();
+    await applyTenantIsolation({
+      model: "Produto",
+      operation: "findMany",
+      args: {},
+      query,
+    });
+    expect(seen[0]).toEqual({ where: { empresaId: "emp_cookie" } });
   });
 
   it("FALLBACK single-tenant: sem contexto + TENANT_FALLBACK_EMPRESA injeta a empresa padrão", async () => {

@@ -1,5 +1,6 @@
 import { PrismaClient } from "@prisma/client";
 import { getTenantContext } from "./tenant-context";
+import { resolveEmpresaIdFromRequestCookie } from "./tenant-request";
 import { logger } from "./logger";
 
 const globalForPrisma = globalThis as unknown as {
@@ -150,6 +151,17 @@ function logTenantFallbackOnce(
   logger.warn(
     { model, operation, source: source ?? "none" },
     "tenant-isolation: contexto ausente — usando TENANT_FALLBACK_EMPRESA (modo single-tenant; envolver esta rota em runWithTenant antes do 2o tenant)",
+  );
+}
+
+// Confirmação (1x por processo) de que a recuperação de tenant via cookie está
+// funcionando para rotas web sem runWithTenant.
+let cookieTenantLogged = false;
+function logCookieTenantOnce() {
+  if (cookieTenantLogged) return;
+  cookieTenantLogged = true;
+  logger.info(
+    "tenant-isolation: empresaId recuperado do cookie da requisição (rota web sem runWithTenant) — escopo aplicado",
   );
 }
 
@@ -306,24 +318,30 @@ export async function applyTenantIsolation({
   // Sem empresaId concreto e sem superadmin. NUNCA emitir
   // `where: { empresaId: undefined }` (vazaria todos os tenants).
   if (!empresaId) {
-    // MODO SINGLE-TENANT (interim): se TENANT_FALLBACK_EMPRESA estiver definido,
-    // usamos essa empresa como padrão quando o contexto não foi estabelecido.
-    // Necessário porque várias rotas usam requireRole/requireSession direto e o
-    // `enterWith` do getSession NÃO propaga o store após o await (só runWithTenant
-    // propaga). SEGURO ENQUANTO EXISTIR UMA ÚNICA EMPRESA. Antes do 2º tenant este
-    // fallback DEVE ser removido e todas as rotas envolvidas em runWithTenant —
-    // o log abaixo (deduplicado) revela quais caminhos ainda dependem dele.
-    const fallback = process.env.TENANT_FALLBACK_EMPRESA?.trim();
-    if (fallback) {
-      logTenantFallbackOnce(model, operation, ctx?.source);
-      empresaId = fallback;
+    // FONTE SECUNDÁRIA (rotas web): rotas que usam requireRole/requireSession
+    // direto não propagam o contexto via ALS (enterWith não sobrevive ao await).
+    // Recuperamos o tenant do cookie de sessão assinado da requisição corrente —
+    // multi-tenant CORRETO (cada request usa o empresaId do seu cookie) e seguro
+    // (o corpo da rota valida o usuário via requireRole ANTES de qualquer query).
+    const fromCookie = await resolveEmpresaIdFromRequestCookie();
+    if (fromCookie) {
+      logCookieTenantOnce();
+      empresaId = fromCookie;
     } else {
-      // FAIL-CLOSED (default — sem fallback configurado).
-      throw new Error(
-        `[tenant-isolation] Contexto de empresa ausente para operação tenant ` +
-          `"${model}.${operation}". Configure runWithTenant({ empresaId }) antes ` +
-          `da query (ou marque o contexto como isSuperAdmin para acesso amplo).`,
-      );
+      // FALLBACK SINGLE-TENANT (interim, opcional): TENANT_FALLBACK_EMPRESA cobre
+      // caminhos sem contexto ALS E sem cookie (raro). SEGURO só com uma empresa.
+      const fallback = process.env.TENANT_FALLBACK_EMPRESA?.trim();
+      if (fallback) {
+        logTenantFallbackOnce(model, operation, ctx?.source);
+        empresaId = fallback;
+      } else {
+        // FAIL-CLOSED (default — sem cookie e sem fallback configurado).
+        throw new Error(
+          `[tenant-isolation] Contexto de empresa ausente para operação tenant ` +
+            `"${model}.${operation}". Configure runWithTenant({ empresaId }) antes ` +
+            `da query (ou marque o contexto como isSuperAdmin para acesso amplo).`,
+        );
+      }
     }
   }
 
