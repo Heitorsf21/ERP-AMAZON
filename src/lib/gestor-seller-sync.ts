@@ -144,7 +144,7 @@ async function importarProductsReport(
 
     // Upsert produto no catálogo ERP
     let produtoId: string | null = null;
-    const existente = await db.produto.findUnique({ where: { sku } });
+    const existente = await db.produto.findFirst({ where: { sku } });
 
     if (existente) {
       await db.produto.update({
@@ -266,7 +266,7 @@ async function sincronizarEstoqueGS(
 
     const disponiveis = Number(v[3] ?? 0);
 
-    let produto = await db.produto.findUnique({ where: { sku: skuExterno } });
+    let produto = await db.produto.findFirst({ where: { sku: skuExterno } });
 
     // Cria produto básico quando existe no FBA mas não no catálogo ERP
     if (!produto) {

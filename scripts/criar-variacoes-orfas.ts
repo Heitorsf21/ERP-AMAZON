@@ -56,7 +56,7 @@ async function main() {
 
     // 1ª tentativa: SKU pai exato (MFS-0022+P -> MFS-0022+ ou MFS-0022)
     for (const candidato of candidatosPai) {
-      const p = await db.produto.findUnique({
+      const p = await db.produto.findFirst({
         where: { sku: candidato },
         select: { id: true, sku: true, nome: true, custoUnitario: true, asin: true },
       });

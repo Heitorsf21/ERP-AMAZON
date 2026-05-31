@@ -4,6 +4,11 @@ import { TipoCategoria } from "../src/modules/shared/domain";
 
 const db = new PrismaClient();
 
+// Empresa-tenant do seed (multi-tenant: uniques agora são compostos com empresaId).
+// seed.ts usa PrismaClient cru (sem a extensão de isolamento), então preenchemos
+// empresaId explicitamente.
+const SEED_EMPRESA_ID = "mundofs";
+
 // Conjunto mínimo para destravar o F1: categorias padrão + 1 fornecedor exemplo.
 // Cada categoria vira âncora de movimentações e contas. Percentuais da
 // "destinação do recebido" (F6) virão depois em ConfiguracaoSistema.
@@ -43,16 +48,16 @@ async function main() {
   console.log("→ seed: categorias padrão");
   for (const cat of CATEGORIAS_PADRAO) {
     await db.categoria.upsert({
-      where: { nome: cat.nome },
+      where: { empresaId_nome: { empresaId: SEED_EMPRESA_ID, nome: cat.nome } },
       update: { tipo: cat.tipo, cor: cat.cor },
-      create: cat,
+      create: { ...cat, empresaId: SEED_EMPRESA_ID },
     });
   }
 
   for (const r of RENOMEACOES) {
-    const antiga = await db.categoria.findUnique({ where: { nome: r.antigo } });
+    const antiga = await db.categoria.findFirst({ where: { nome: r.antigo } });
     if (!antiga) continue;
-    const nova = await db.categoria.findUnique({ where: { nome: r.novo } });
+    const nova = await db.categoria.findFirst({ where: { nome: r.novo } });
 
     if (!nova) {
       await db.categoria.update({
@@ -85,10 +90,11 @@ async function main() {
 
   console.log("→ seed: fornecedor exemplo");
   await db.fornecedor.upsert({
-    where: { nome: "Fornecedor Exemplo" },
+    where: { empresaId_nome: { empresaId: SEED_EMPRESA_ID, nome: "Fornecedor Exemplo" } },
     update: {},
     create: {
       nome: "Fornecedor Exemplo",
+      empresaId: SEED_EMPRESA_ID,
       observacoes:
         "Registro de exemplo criado pelo seed. Pode ser apagado quando a base real for cadastrada.",
     },

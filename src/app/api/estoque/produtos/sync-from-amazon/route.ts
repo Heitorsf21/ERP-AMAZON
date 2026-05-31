@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { requireRole, UsuarioRole } from "@/lib/auth";
+import { currentEmpresaIdOrDefault } from "@/lib/tenant-context";
 
 export const dynamic = "force-dynamic";
 
@@ -27,7 +28,9 @@ export async function POST(req: Request) {
   for (const venda of novos) {
     try {
       await db.produto.upsert({
-        where: { sku: venda.sku },
+        where: {
+          empresaId_sku: { empresaId: currentEmpresaIdOrDefault(), sku: venda.sku },
+        },
         create: {
           sku: venda.sku,
           nome: venda.titulo || venda.sku,

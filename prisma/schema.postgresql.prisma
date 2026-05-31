@@ -147,7 +147,7 @@ model CodigoVerificacao2FA {
 model Categoria {
   id        String   @id @default(cuid())
   empresaId String?
-  nome      String   @unique
+  nome      String
   // RECEITA | DESPESA | AMBAS
   tipo      String
   cor       String?
@@ -157,12 +157,14 @@ model Categoria {
   movimentacoes Movimentacao[]
   contas        ContaPagar[]
   contasFixas   ContaFixa[]
+
+  @@unique([empresaId, nome])
 }
 
 model Fornecedor {
   id          String   @id @default(cuid())
   empresaId   String?
-  nome        String   @unique
+  nome        String
   documento   String?
   contato     String?
   observacoes String?
@@ -172,6 +174,8 @@ model Fornecedor {
   contas      ContaPagar[]
   pedidos     PedidoCompra[]
   contasFixas ContaFixa[]
+
+  @@unique([empresaId, nome])
 }
 
 model Movimentacao {
@@ -300,7 +304,7 @@ model DocumentoFinanceiro {
   nomeArquivo         String
   caminhoArquivo      String
   mimeType            String
-  sha256              String    @unique
+  sha256              String
   textoExtraido       String?
   fornecedorNome      String?
   fornecedorDocumento String?
@@ -317,6 +321,7 @@ model DocumentoFinanceiro {
 
   dossie DossieFinanceiro @relation(fields: [dossieId], references: [id], onDelete: Cascade)
 
+  @@unique([empresaId, sha256])
   @@index([dossieId])
   @@index([tipo])
   @@index([fornecedorDocumento])
@@ -354,7 +359,7 @@ model ContaReceber {
 model Produto {
   id                          String    @id @default(cuid())
   empresaId                   String?
-  sku                         String    @unique
+  sku                         String
   asin                        String?
   nome                        String
   descricao                   String?
@@ -409,6 +414,7 @@ model Produto {
   feeEstimate             AmazonFeeEstimate?
   whatsappEstoqueExcluido WhatsAppEstoqueProdutoExcluido?
 
+  @@unique([empresaId, sku])
   @@index([sku])
   @@index([asin])
   @@index([ativo])
@@ -970,10 +976,11 @@ model Notificacao {
   descricao String
   lida      Boolean  @default(false)
   linkRef   String?
-  dedupeKey String?  @unique
+  dedupeKey String?
   criadaEm  DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  @@unique([empresaId, dedupeKey])
   @@index([lida])
   @@index([tipo])
   @@index([criadaEm])

@@ -178,7 +178,7 @@ export async function sincronizarEstoque(
   const naoEncontrados: string[] = [];
 
   for (const item of itens) {
-    const produto = await db.produto.findUnique({ where: { sku: item.sku } });
+    const produto = await db.produto.findFirst({ where: { sku: item.sku } });
 
     if (!produto) {
       naoEncontrados.push(item.sku);

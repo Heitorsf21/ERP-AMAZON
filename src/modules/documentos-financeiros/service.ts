@@ -1019,7 +1019,7 @@ export const documentosFinanceirosService = {
     }
     const hash = sha256(buffer);
 
-    const documentoDuplicado = await db.documentoFinanceiro.findUnique({
+    const documentoDuplicado = await db.documentoFinanceiro.findFirst({
       where: { sha256: hash },
       include: { dossie: { include: { documentos: true, contaPagar: true } } },
     });

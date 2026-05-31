@@ -434,7 +434,7 @@ export async function syncInventory(): Promise<{
     const summaries = await getInventorySummaries(creds);
 
     for (const item of summaries) {
-      const produto = await db.produto.findUnique({
+      const produto = await db.produto.findFirst({
         where: { sku: item.sellerSku },
       });
 
@@ -694,19 +694,11 @@ async function syncOrdersInternal(
         }
       }
       try {
-        const criado = await db.produto.upsert({
+        // findFirst + create (em vez de upsert por sku): o unique de Produto
+        // agora é composto [empresaId, sku]. findFirst é auto-escopado pela
+        // extensão; create injeta empresaId. Corrida concorrente cai no catch.
+        let criado = await db.produto.findFirst({
           where: { sku },
-          create: {
-            sku,
-            nome: titulo || sku,
-            asin,
-            ativo: true,
-            custoUnitario: null,
-            estoqueAtual: 0,
-            estoqueMinimo: 0,
-            unidade: "un",
-          },
-          update: {},
           select: {
             sku: true,
             asin: true,
@@ -714,9 +706,29 @@ async function syncOrdersInternal(
             amazonPrecoListagemCentavos: true,
           },
         });
+        if (!criado) {
+          criado = await db.produto.create({
+            data: {
+              sku,
+              nome: titulo || sku,
+              asin,
+              ativo: true,
+              custoUnitario: null,
+              estoqueAtual: 0,
+              estoqueMinimo: 0,
+              unidade: "un",
+            },
+            select: {
+              sku: true,
+              asin: true,
+              custoUnitario: true,
+              amazonPrecoListagemCentavos: true,
+            },
+          });
+        }
         produtosPorSku.set(sku, criado);
       } catch {
-        const existente = await db.produto.findUnique({
+        const existente = await db.produto.findFirst({
           where: { sku },
           select: {
             sku: true,
@@ -1357,7 +1369,9 @@ async function refreshListingPricesForOrderFallback(
     try {
       const listing = await getListingsItem(creds, sellerId, sku);
       const preco = extractAmazonListingEffectivePriceCentavos(listing);
-      await db.produto.update({
+      // updateMany (não update por sku): unique agora é composto [empresaId, sku];
+      // a extensão injeta empresaId no where. Retorno (count) não é usado aqui.
+      await db.produto.updateMany({
         where: { sku },
         data: {
           amazonPrecoListagemCentavos: preco,

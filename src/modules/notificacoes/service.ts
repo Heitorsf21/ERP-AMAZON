@@ -178,7 +178,7 @@ export const notificacaoService = {
     // Inserir apenas as que não têm dedupeKey já registrada
     let criadas = 0;
     for (const n of candidatas) {
-      const existe = await db.notificacao.findUnique({
+      const existe = await db.notificacao.findFirst({
         where: { dedupeKey: n.dedupeKey },
       });
       if (!existe) {

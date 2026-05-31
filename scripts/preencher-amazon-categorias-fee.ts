@@ -217,7 +217,7 @@ async function main() {
   }
 
   for (const item of planned) {
-    await db.produto.update({
+    await db.produto.updateMany({
       where: { sku: item.sku },
       data: {
         amazonCategoriaFee: item.amazonCategoriaFee,

@@ -80,3 +80,15 @@ export function runWithWorkerTenant<T>(fn: () => T): T {
     fn,
   );
 }
+
+/**
+ * empresaId do contexto corrente, com fallback para a empresa de background
+ * (WORKER_EMPRESA_ID, default "mundofs"). Usado APENAS na composição de `where`
+ * de uniques compostos `@@unique([empresaId, ...])` em upserts — onde o Prisma
+ * exige o valor do empresaId no seletor. Em enforce o contexto sempre existe
+ * (todos os pontos de entrada o estabelecem), então o fallback só atua em
+ * dev/off (single-tenant). NUNCA usar para autorizar leitura — use getEmpresaId.
+ */
+export function currentEmpresaIdOrDefault(): string {
+  return getEmpresaId() ?? (process.env.WORKER_EMPRESA_ID || "mundofs");
+}

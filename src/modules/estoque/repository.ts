@@ -252,7 +252,7 @@ export const estoqueRepository = {
   },
 
   async buscarPorSku(sku: string) {
-    return db.produto.findUnique({ where: { sku } });
+    return db.produto.findFirst({ where: { sku } });
   },
 
   async criar(data: CriarProdutoInput) {

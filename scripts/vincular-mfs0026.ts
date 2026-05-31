@@ -13,7 +13,7 @@ import {
 async function main() {
   if (!process.env.DATABASE_URL) throw new Error("DATABASE_URL nao configurado");
 
-  const pai = await db.produto.findUnique({
+  const pai = await db.produto.findFirst({
     where: { sku: "MFS-0003" },
     select: { id: true, nome: true, asin: true, custoUnitario: true },
   });
@@ -32,7 +32,7 @@ async function main() {
     );
   }
 
-  const existente = await db.produto.findUnique({ where: { sku: "MFS-0026" } });
+  const existente = await db.produto.findFirst({ where: { sku: "MFS-0026" } });
   let produto026Id: string;
   if (existente) {
     console.log(`\nMFS-0026 já existe (id=${existente.id}), apenas replicando vigências.`);

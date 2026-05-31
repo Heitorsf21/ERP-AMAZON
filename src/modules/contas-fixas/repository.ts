@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { currentEmpresaIdOrDefault } from "@/lib/tenant-context";
 import {
   OrigemMovimentacao,
   StatusConta,
@@ -195,7 +196,9 @@ export const contasFixasRepository = {
   /** Categoria sentinela usada quando a conta fixa não define categoria. */
   categoriaPadrao() {
     return db.categoria.upsert({
-      where: { nome: "Contas Fixas" },
+      where: {
+        empresaId_nome: { empresaId: currentEmpresaIdOrDefault(), nome: "Contas Fixas" },
+      },
       create: { nome: "Contas Fixas", tipo: "DESPESA" },
       update: {},
     });
@@ -204,7 +207,9 @@ export const contasFixasRepository = {
   /** Fornecedor sentinela usado quando a conta fixa não define fornecedor. */
   fornecedorPadrao() {
     return db.fornecedor.upsert({
-      where: { nome: "Contas Fixas" },
+      where: {
+        empresaId_nome: { empresaId: currentEmpresaIdOrDefault(), nome: "Contas Fixas" },
+      },
       create: { nome: "Contas Fixas" },
       update: {},
     });

@@ -8,6 +8,7 @@
  *  - linkRef opcional (rota interna para o usuário clicar)
  */
 import { db } from "@/lib/db";
+import { currentEmpresaIdOrDefault } from "@/lib/tenant-context";
 import { TipoNotificacao } from "@/modules/shared/domain";
 
 type EmitirOptions = {
@@ -36,7 +37,12 @@ export async function emitirNotificacao(opts: EmitirOptions) {
   }
 
   return db.notificacao.upsert({
-    where: { dedupeKey: opts.dedupeKey },
+    where: {
+      empresaId_dedupeKey: {
+        empresaId: currentEmpresaIdOrDefault(),
+        dedupeKey: opts.dedupeKey,
+      },
+    },
     create: {
       tipo: opts.tipo,
       titulo: opts.titulo,

@@ -170,7 +170,7 @@ export async function materializarReembolsosAmazon(
     const existente = await db.amazonReembolso.findFirst({
       where: { referenciaExterna: { in: referencias } },
     });
-    const produto = await db.produto.findUnique({
+    const produto = await db.produto.findFirst({
       where: { sku: refund.sku },
       select: { id: true, asin: true },
     });
