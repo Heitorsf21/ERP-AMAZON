@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { PrismaClient } from "@prisma/client";
-import { semearEmpresa, CATEGORIAS_PADRAO } from "./seed-empresa";
+import { semearEmpresa, CATEGORIAS_PADRAO, SENTINELA_CONTAS_FIXAS } from "./seed-empresa";
 
 const prisma = new PrismaClient();
 const EMP = "test-seed-emp";
@@ -37,5 +37,11 @@ describe("semearEmpresa", () => {
     await semearEmpresa(prisma, EMP);
     const cats = await prisma.categoria.count({ where: { empresaId: EMP } });
     expect(cats).toBe(CATEGORIAS_PADRAO.length + 1);
+    const forn = await prisma.fornecedor.count({ where: { empresaId: EMP } });
+    expect(forn).toBe(1); // só a sentinela "Contas Fixas"
+  });
+
+  it("pina o valor da sentinela (contrato com contas-fixas)", () => {
+    expect(SENTINELA_CONTAS_FIXAS).toBe("Contas Fixas");
   });
 });

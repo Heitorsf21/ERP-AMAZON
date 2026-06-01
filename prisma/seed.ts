@@ -21,9 +21,13 @@ async function main() {
   await semearEmpresa(db, SEED_EMPRESA_ID);
 
   for (const r of RENOMEACOES) {
-    const antiga = await db.categoria.findFirst({ where: { nome: r.antigo } });
+    const antiga = await db.categoria.findFirst({
+      where: { nome: r.antigo, empresaId: SEED_EMPRESA_ID },
+    });
     if (!antiga) continue;
-    const nova = await db.categoria.findFirst({ where: { nome: r.novo } });
+    const nova = await db.categoria.findFirst({
+      where: { nome: r.novo, empresaId: SEED_EMPRESA_ID },
+    });
 
     if (!nova) {
       await db.categoria.update({
