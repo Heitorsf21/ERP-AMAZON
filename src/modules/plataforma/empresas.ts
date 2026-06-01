@@ -86,3 +86,22 @@ export async function desativarEmpresa(empresaId: string) {
 export async function reativarEmpresa(empresaId: string) {
   return db.empresa.update({ where: { id: empresaId }, data: { ativa: true } });
 }
+
+export async function reenviarConvite(empresaId: string): Promise<{
+  ok: boolean; rawToken?: string; admin?: { nome: string; email: string }; empresaNome?: string; slug?: string;
+}> {
+  const empresa = await db.empresa.findUnique({ where: { id: empresaId }, select: { nome: true, slug: true } });
+  if (!empresa) return { ok: false };
+  // admin = usuario ADMIN mais antigo da empresa que ainda nao usou o convite
+  const admin = await db.usuario.findFirst({
+    where: { empresaId, role: "ADMIN" }, orderBy: { createdAt: "asc" },
+    select: { id: true, nome: true, email: true },
+  });
+  if (!admin) return { ok: false };
+  const { rawToken, tokenHash } = gerarTokenConvite();
+  await db.$transaction([
+    db.conviteUsuario.updateMany({ where: { usuarioId: admin.id, usadoEm: null }, data: { usadoEm: new Date() } }),
+    db.conviteUsuario.create({ data: { usuarioId: admin.id, tokenHash, expiresAt: expiracaoConvite() } }),
+  ]);
+  return { ok: true, rawToken, admin: { nome: admin.nome, email: admin.email }, empresaNome: empresa.nome, slug: empresa.slug };
+}
