@@ -7,6 +7,7 @@ import {
   CheckCircle2,
   Filter,
   History,
+  Package,
   Play,
   RefreshCw,
   ShieldCheck,
@@ -53,6 +54,7 @@ type Recommendation = {
   entityId: string;
   label: string;
   campaignName: string | null;
+  campaignTargetingType: string | null;
   portfolioId: string | null;
   portfolioName: string | null;
   adGroupName: string | null;
@@ -69,6 +71,7 @@ type Recommendation = {
   confianca: number;
   currentBidCentavos: number | null;
   proposedBidCentavos: number | null;
+  approvedBidCentavos: number | null;
   beforeState: string | null;
   proposedState: string | null;
   metrics7d: OptimizerMetrics;
@@ -107,9 +110,24 @@ type MutationResult = {
   retryAt?: string;
   total?: number;
   applied?: number;
+  dryRun?: number;
   failed?: number;
   stale?: number;
   totalRecomendacoes?: number;
+};
+
+type ApprovalInput = {
+  bidCentavos?: number | null;
+};
+
+type SkuGroup = {
+  key: string;
+  sku: string | null;
+  asin: string | null;
+  recommendations: Recommendation[];
+  totals30d: OptimizerMetrics;
+  criticalCount: number;
+  approvedCount: number;
 };
 
 type ReportWindow = {
@@ -207,6 +225,8 @@ export default function AdsOptimizerPage() {
   const [actionFilter, setActionFilter] = React.useState("ALL");
   const [severityFilter, setSeverityFilter] = React.useState("ALL");
   const [ruleFilter, setRuleFilter] = React.useState("ALL");
+  const [campaignTypeFilter, setCampaignTypeFilter] = React.useState("ALL");
+  const [entityTypeFilter, setEntityTypeFilter] = React.useState("ALL");
   const [search, setSearch] = React.useState("");
 
   const query = useQuery<Snapshot>({
@@ -276,18 +296,23 @@ export default function AdsOptimizerPage() {
         method: "POST",
       }),
     onSuccess: (data) => {
-      toast.success(
-        `${data.applied ?? 0} aplicada(s), ${data.stale ?? 0} obsoleta(s), ${data.failed ?? 0} falha(s)`,
-      );
+      if ((data.dryRun ?? 0) > 0) {
+        toast.success(`${data.dryRun} simulacao(oes), nenhuma alteracao enviada para Amazon`);
+      } else {
+        toast.success(
+          `${data.applied ?? 0} aplicada(s), ${data.stale ?? 0} obsoleta(s), ${data.failed ?? 0} falha(s)`,
+        );
+      }
       invalidate();
     },
     onError: (error: Error) => toast.error(error.message),
   });
 
   const approveMutation = useMutation({
-    mutationFn: (id: string) =>
+    mutationFn: ({ id, input }: { id: string; input: ApprovalInput }) =>
       fetchJSON(`/api/ads/optimizer/recommendations/${id}/approve`, {
         method: "POST",
+        body: JSON.stringify(input),
       }),
     onSuccess: () => {
       toast.success("Recomendacao aprovada");
@@ -318,6 +343,10 @@ export default function AdsOptimizerPage() {
     if (actionFilter !== "ALL" && rec.actionType !== actionFilter) return false;
     if (severityFilter !== "ALL" && rec.severity !== severityFilter) return false;
     if (ruleFilter !== "ALL" && rec.ruleId !== ruleFilter) return false;
+    if (campaignTypeFilter !== "ALL" && rec.campaignTargetingType !== campaignTypeFilter) {
+      return false;
+    }
+    if (entityTypeFilter !== "ALL" && rec.entityType !== entityTypeFilter) return false;
     const needle = search.trim().toLowerCase();
     if (!needle) return true;
     return [
@@ -337,6 +366,10 @@ export default function AdsOptimizerPage() {
 
   const actionOptions = unique(recommendations.map((rec) => rec.actionType));
   const ruleOptions = unique(recommendations.map((rec) => rec.ruleId));
+  const campaignTypeOptions = unique(
+    recommendations.map((rec) => rec.campaignTargetingType).filter(Boolean) as string[],
+  );
+  const skuGroups = React.useMemo(() => groupBySku(filtered), [filtered]);
   const isBusy =
     runMutation.isPending ||
     backfillMutation.isPending ||
@@ -393,7 +426,7 @@ export default function AdsOptimizerPage() {
       </div>
 
       <Card>
-        <CardContent className="grid gap-3 pt-6 md:grid-cols-5">
+        <CardContent className="grid gap-3 pt-6 md:grid-cols-6">
           <div className="md:col-span-2">
             <div className="mb-1 flex items-center gap-1 text-xs font-medium text-muted-foreground">
               <Filter className="h-3.5 w-3.5" />
@@ -413,6 +446,18 @@ export default function AdsOptimizerPage() {
               </option>
             ))}
           </FilterSelect>
+          <FilterSelect
+            label="Tipo campanha"
+            value={campaignTypeFilter}
+            onChange={setCampaignTypeFilter}
+          >
+            <option value="ALL">Todos</option>
+            {campaignTypeOptions.map((value) => (
+              <option key={value} value={value}>
+                {campaignTypeLabel(value)}
+              </option>
+            ))}
+          </FilterSelect>
           <FilterSelect label="Acao" value={actionFilter} onChange={setActionFilter}>
             <option value="ALL">Todas</option>
             {actionOptions.map((value) => (
@@ -420,6 +465,12 @@ export default function AdsOptimizerPage() {
                 {ACTION_LABEL[value] ?? value}
               </option>
             ))}
+          </FilterSelect>
+          <FilterSelect label="Entidade" value={entityTypeFilter} onChange={setEntityTypeFilter}>
+            <option value="ALL">Todas</option>
+            <option value="KEYWORD">Keywords</option>
+            <option value="TARGET">Targets</option>
+            <option value="SEARCH_TERM">Search terms</option>
           </FilterSelect>
           <FilterSelect
             label="Severidade"
@@ -433,7 +484,7 @@ export default function AdsOptimizerPage() {
               </option>
             ))}
           </FilterSelect>
-          <div className="md:col-span-5">
+          <div className="md:col-span-2">
             <FilterSelect label="Regra" value={ruleFilter} onChange={setRuleFilter}>
               <option value="ALL">Todas as regras</option>
               {ruleOptions.map((value) => (
@@ -455,15 +506,15 @@ export default function AdsOptimizerPage() {
       ) : filtered.length === 0 ? (
         <EmptyState hasData={recommendations.length > 0} />
       ) : (
-        <div className="grid gap-3">
-          {filtered.map((rec) => (
-            <RecommendationCard
-              key={rec.id}
-              rec={rec}
+        <div className="grid gap-4">
+          {skuGroups.map((group) => (
+            <SkuGroupCard
+              key={group.key}
+              group={group}
               historyLabel={historyLabel}
               busy={isBusy}
-              onApprove={() => approveMutation.mutate(rec.id)}
-              onReject={() => rejectMutation.mutate(rec.id)}
+              onApprove={(id, input) => approveMutation.mutate({ id, input })}
+              onReject={(id) => rejectMutation.mutate(id)}
             />
           ))}
         </div>
@@ -663,6 +714,73 @@ function FilterSelect({
   );
 }
 
+function SkuGroupCard({
+  group,
+  historyLabel,
+  busy,
+  onApprove,
+  onReject,
+}: {
+  group: SkuGroup;
+  historyLabel: string;
+  busy: boolean;
+  onApprove: (id: string, input: ApprovalInput) => void;
+  onReject: (id: string) => void;
+}) {
+  return (
+    <Card className="overflow-hidden">
+      <CardContent className="space-y-4 pt-5">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge variant="outline" className="bg-slate-50">
+                <Package className="mr-1 h-3.5 w-3.5" />
+                SKU
+              </Badge>
+              {group.criticalCount > 0 && (
+                <Badge className="border-transparent bg-red-600 text-white">
+                  {group.criticalCount} critica(s)
+                </Badge>
+              )}
+              {group.approvedCount > 0 && (
+                <Badge className="border-transparent bg-blue-600 text-white">
+                  {group.approvedCount} aprovada(s)
+                </Badge>
+              )}
+            </div>
+            <h2 className="mt-2 break-words text-lg font-semibold">
+              {group.sku ?? "SKU nao identificado"}
+            </h2>
+            <p className="text-sm text-muted-foreground">
+              {group.asin ? `ASIN ${group.asin} · ` : ""}
+              {group.recommendations.length} recomendacao(oes) encontradas neste SKU
+            </p>
+          </div>
+          <div className="grid grid-cols-2 gap-3 rounded-md border bg-muted/25 p-3 text-sm sm:grid-cols-4">
+            <Fact label="Gasto 30d" value={formatBRL(group.totals30d.gastoCentavos)} />
+            <Fact label="Vendas 30d" value={formatBRL(group.totals30d.vendasCentavos)} />
+            <Fact label="Pedidos" value={String(group.totals30d.pedidos)} />
+            <Fact label="ACOS" value={formatPct(group.totals30d.acos)} />
+          </div>
+        </div>
+
+        <div className="grid gap-3">
+          {group.recommendations.map((rec) => (
+            <RecommendationCard
+              key={rec.id}
+              rec={rec}
+              historyLabel={historyLabel}
+              busy={busy}
+              onApprove={(input) => onApprove(rec.id, input)}
+              onReject={() => onReject(rec.id)}
+            />
+          ))}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 function RecommendationCard({
   rec,
   historyLabel,
@@ -673,13 +791,13 @@ function RecommendationCard({
   rec: Recommendation;
   historyLabel: string;
   busy: boolean;
-  onApprove: () => void;
+  onApprove: (input: ApprovalInput) => void;
   onReject: () => void;
 }) {
   const canReview = rec.status === "PROPOSED" || rec.status === "APPROVED";
   return (
-    <Card className={cn("overflow-hidden border-l-4", severityBorderClass(rec.severity))}>
-      <CardContent className="space-y-4 pt-5">
+    <div className={cn("rounded-md border border-l-4 bg-background p-4", severityBorderClass(rec.severity))}>
+      <div className="space-y-4">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
           <div className="min-w-0 space-y-2">
             <div className="flex flex-wrap items-center gap-2">
@@ -690,6 +808,9 @@ function RecommendationCard({
               <span className="text-sm font-semibold">
                 {ACTION_LABEL[rec.actionType] ?? rec.actionType}
               </span>
+              {rec.campaignTargetingType && (
+                <Badge variant="outline">{campaignTypeLabel(rec.campaignTargetingType)}</Badge>
+              )}
               <span className="text-xs text-muted-foreground">{rec.ruleId}</span>
             </div>
             <div>
@@ -704,16 +825,7 @@ function RecommendationCard({
               </p>
             </div>
           </div>
-          <div className="flex shrink-0 flex-wrap gap-2">
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={onApprove}
-              disabled={busy || rec.status !== "PROPOSED"}
-            >
-              <CheckCircle2 className="mr-2 h-4 w-4" />
-              Aprovar
-            </Button>
+          <div className="flex shrink-0 flex-wrap justify-end gap-2">
             <Button
               size="sm"
               variant="outline"
@@ -747,13 +859,106 @@ function RecommendationCard({
           </div>
         </div>
 
+        <ApprovalPanel rec={rec} busy={busy} onApprove={onApprove} />
+
         <div className="grid gap-2 lg:grid-cols-3">
           <MetricsBlock label="7 dias" metrics={rec.metrics7d} />
           <MetricsBlock label="30 dias" metrics={rec.metrics30d} />
           <MetricsBlock label={historyLabel} metrics={rec.metricsLifetime} />
         </div>
-      </CardContent>
-    </Card>
+      </div>
+    </div>
+  );
+}
+
+function ApprovalPanel({
+  rec,
+  busy,
+  onApprove,
+}: {
+  rec: Recommendation;
+  busy: boolean;
+  onApprove: (input: ApprovalInput) => void;
+}) {
+  const editableBid = rec.status === "PROPOSED" && canEditBid(rec);
+  const finalBidCentavos = rec.approvedBidCentavos ?? rec.proposedBidCentavos;
+  const [bidInput, setBidInput] = React.useState(centavosToInput(finalBidCentavos));
+
+  React.useEffect(() => {
+    setBidInput(centavosToInput(finalBidCentavos));
+  }, [finalBidCentavos, rec.id]);
+
+  if (rec.status !== "PROPOSED") {
+    return (
+      <div className="rounded-md border bg-muted/20 p-3 text-sm">
+        <div className="grid gap-2 sm:grid-cols-3">
+          <Fact label="Proposta original" value={afterValue({ ...rec, approvedBidCentavos: null })} />
+          <Fact label="Aprovado para executar" value={afterValue(rec)} />
+          <Fact label="Status" value={STATUS_LABEL[rec.status] ?? rec.status} />
+        </div>
+      </div>
+    );
+  }
+
+  if (!editableBid) {
+    return (
+      <div className="flex flex-col gap-3 rounded-md border bg-muted/20 p-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="text-sm">
+          <p className="font-medium">
+            Acao proposta: {ACTION_LABEL[rec.actionType] ?? rec.actionType}
+          </p>
+          <p className="text-muted-foreground">Resultado esperado: {afterValue(rec)}</p>
+          <p className="text-muted-foreground">
+            Esta recomendacao nao tem lance editavel. A aprovacao registra o payload antes da execucao.
+          </p>
+        </div>
+        <Button size="sm" onClick={() => onApprove({})} disabled={busy}>
+          <CheckCircle2 className="mr-2 h-4 w-4" />
+          Aprovar acao
+        </Button>
+      </div>
+    );
+  }
+
+  const parsedBid = parseBidInputCentavos(bidInput);
+  const validBid = parsedBid != null && parsedBid > 0;
+
+  return (
+    <div className="rounded-md border bg-amber-50/50 p-3">
+      <div className="grid gap-3 lg:grid-cols-[1fr_1.2fr_auto] lg:items-end">
+        <div className="text-sm">
+          <p className="text-xs font-medium uppercase text-muted-foreground">
+            Proposta do sistema
+          </p>
+          <p className="font-semibold">{afterValue({ ...rec, approvedBidCentavos: null })}</p>
+          <p className="text-xs text-muted-foreground">
+            Lance atual: {formatMoneyOrDash(rec.currentBidCentavos)}
+          </p>
+        </div>
+        <label className="block">
+          <span className="mb-1 block text-xs font-medium text-muted-foreground">
+            Meu lance final para aprovar
+          </span>
+          <Input
+            value={bidInput}
+            onChange={(event) => setBidInput(event.target.value)}
+            inputMode="decimal"
+            placeholder="0,95"
+          />
+        </label>
+        <Button
+          size="sm"
+          onClick={() => onApprove({ bidCentavos: parsedBid })}
+          disabled={busy || !validBid}
+        >
+          <CheckCircle2 className="mr-2 h-4 w-4" />
+          Aprovar ajuste
+        </Button>
+      </div>
+      <p className="mt-2 text-xs text-muted-foreground">
+        O Atlas salva a proposta original e executa na Amazon o lance final aprovado aqui.
+      </p>
+    </div>
   );
 }
 
@@ -801,18 +1006,104 @@ function unique(values: string[]) {
   return [...new Set(values)].sort((a, b) => a.localeCompare(b));
 }
 
+function groupBySku(recommendations: Recommendation[]): SkuGroup[] {
+  const groups = new Map<string, Recommendation[]>();
+  for (const rec of recommendations) {
+    const key = rec.sku ?? rec.asin ?? "NO_SKU";
+    const current = groups.get(key) ?? [];
+    current.push(rec);
+    groups.set(key, current);
+  }
+  return [...groups.entries()]
+    .map(([key, items]) => ({
+      key,
+      sku: items.find((item) => item.sku)?.sku ?? null,
+      asin: items.find((item) => item.asin)?.asin ?? null,
+      recommendations: items,
+      totals30d: aggregateMetrics(items.map((item) => item.metrics30d)),
+      criticalCount: items.filter((item) => item.severity === "CRITICAL").length,
+      approvedCount: items.filter((item) => item.status === "APPROVED").length,
+    }))
+    .sort((a, b) => {
+      if (b.criticalCount !== a.criticalCount) return b.criticalCount - a.criticalCount;
+      return b.totals30d.gastoCentavos - a.totals30d.gastoCentavos;
+    });
+}
+
+function aggregateMetrics(values: OptimizerMetrics[]): OptimizerMetrics {
+  const base = values.reduce(
+    (acc, item) => ({
+      impressoes: acc.impressoes + item.impressoes,
+      cliques: acc.cliques + item.cliques,
+      gastoCentavos: acc.gastoCentavos + item.gastoCentavos,
+      vendasCentavos: acc.vendasCentavos + item.vendasCentavos,
+      pedidos: acc.pedidos + item.pedidos,
+      unidades: acc.unidades + item.unidades,
+    }),
+    {
+      impressoes: 0,
+      cliques: 0,
+      gastoCentavos: 0,
+      vendasCentavos: 0,
+      pedidos: 0,
+      unidades: 0,
+    },
+  );
+  return {
+    ...base,
+    acos: base.vendasCentavos > 0 ? base.gastoCentavos / base.vendasCentavos : null,
+    roas: base.gastoCentavos > 0 ? base.vendasCentavos / base.gastoCentavos : null,
+    ctr: base.impressoes > 0 ? base.cliques / base.impressoes : null,
+    cpcCentavos: base.cliques > 0 ? Math.round(base.gastoCentavos / base.cliques) : null,
+    conversao: base.cliques > 0 ? base.pedidos / base.cliques : null,
+  };
+}
+
 function entityTitle(rec: Recommendation) {
   return rec.label || rec.searchTerm || rec.entityId;
 }
 
 function beforeValue(rec: Recommendation) {
   if (rec.currentBidCentavos != null) return `Lance ${formatBRL(rec.currentBidCentavos)}`;
-  return rec.beforeState ?? "-";
+  return stateLabel(rec.beforeState);
 }
 
 function afterValue(rec: Recommendation) {
-  if (rec.proposedBidCentavos != null) return `Lance ${formatBRL(rec.proposedBidCentavos)}`;
-  return rec.proposedState ?? "-";
+  const finalBid = rec.approvedBidCentavos ?? rec.proposedBidCentavos;
+  if (finalBid != null) return `Lance ${formatBRL(finalBid)}`;
+  return stateLabel(rec.proposedState);
+}
+
+function canEditBid(rec: Recommendation) {
+  return (
+    ["INCREASE_BID", "DECREASE_BID", "CREATE_EXACT_KEYWORD"].includes(rec.actionType) &&
+    rec.proposedBidCentavos != null
+  );
+}
+
+function centavosToInput(value: number | null) {
+  return value == null ? "" : (value / 100).toFixed(2).replace(".", ",");
+}
+
+function parseBidInputCentavos(value: string) {
+  const parsed = Number(value.trim().replace(",", "."));
+  if (!Number.isFinite(parsed)) return null;
+  return Math.round(parsed * 100);
+}
+
+function campaignTypeLabel(value: string) {
+  const normalized = value.toLowerCase();
+  if (normalized === "auto") return "Automatica";
+  if (normalized === "manual") return "Manual";
+  return value;
+}
+
+function stateLabel(value: string | null) {
+  const normalized = value?.toLowerCase();
+  if (normalized === "paused") return "Pausado";
+  if (normalized === "enabled") return "Ativo";
+  if (normalized === "archived") return "Arquivado";
+  return value ?? "-";
 }
 
 function formatPct(value: number | null) {

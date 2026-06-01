@@ -75,6 +75,14 @@ type MetricAccumulator = {
   unidades: number;
 };
 
+export type AdsOptimizerApprovalInput = {
+  bidCentavos?: number | null;
+};
+
+export type AdsOptimizerExecutionOptions = {
+  dryRun?: boolean;
+};
+
 export const adsOptimizerService = {
   async syncBaseData() {
     const creds = await requireAdsCredentials();
@@ -246,9 +254,20 @@ export const adsOptimizerService = {
       }),
       profileId ? getOptimizerCoverage(profileId) : Promise.resolve(null),
     ]);
+    const campaignIds = uniqueStrings(recommendations.map((rec) => rec.campaignId));
+    const campaignRows = campaignIds.length > 0
+      ? await db.amazonAdsCampaignEntity.findMany({
+          where: { profileId, campaignId: { in: campaignIds } },
+          select: { campaignId: true, targetingType: true },
+        })
+      : [];
+    const targetingTypeByCampaign = new Map(
+      campaignRows.map((campaign) => [campaign.campaignId, campaign.targetingType]),
+    );
 
     const items = recommendations.map((rec) => {
       const evidence = parseJson<{ label?: string }>(rec.evidenceJson);
+      const approvedPayload = parseOptionalJson<JsonRecord>(rec.amazonPayloadJson);
       return {
         id: rec.id,
         status: rec.status,
@@ -257,6 +276,7 @@ export const adsOptimizerService = {
         label: evidence.label ?? rec.searchTerm ?? rec.entityId,
         campaignId: rec.campaignId,
         campaignName: rec.campaignName,
+        campaignTargetingType: targetingTypeByCampaign.get(rec.campaignId) ?? null,
         portfolioId: rec.portfolioId,
         portfolioName: rec.portfolioName,
         adGroupId: rec.adGroupId,
@@ -274,6 +294,7 @@ export const adsOptimizerService = {
         confianca: rec.confianca,
         currentBidCentavos: rec.currentBidCentavos,
         proposedBidCentavos: rec.proposedBidCentavos,
+        approvedBidCentavos: extractBidCentavosFromPayload(approvedPayload),
         beforeState: rec.beforeState,
         proposedState: rec.proposedState,
         metrics7d: parseJson<AdsOptimizerMetrics>(rec.metrics7dJson),
@@ -311,12 +332,17 @@ export const adsOptimizerService = {
     };
   },
 
-  async approveRecommendation(id: string, session: SessionPayload) {
+  async approveRecommendation(
+    id: string,
+    session: SessionPayload,
+    input: AdsOptimizerApprovalInput = {},
+  ) {
     const rec = await db.adsOptimizationRecommendation.findFirst({ where: { id } });
     if (!rec) throw new Error("recomendação não encontrada");
     if (rec.status !== "PROPOSED") {
       throw new Error(`recomendação não está pendente: ${rec.status}`);
     }
+    const request = buildAmazonActionPayload(rec, normalizeApprovalInput(rec.actionType, input));
     return db.adsOptimizationRecommendation.update({
       where: { id: rec.id },
       data: {
@@ -324,6 +350,7 @@ export const adsOptimizerService = {
         aprovadoPorId: session.uid,
         aprovadoPorEmail: session.email,
         aprovadoEm: new Date(),
+        amazonPayloadJson: json(request),
       },
     });
   },
@@ -345,9 +372,15 @@ export const adsOptimizerService = {
     });
   },
 
-  async executeApproved(session: SessionPayload) {
+  async executeApproved(
+    session: SessionPayload,
+    options: AdsOptimizerExecutionOptions = {},
+  ) {
     const creds = await requireAdsCredentials();
-    await syncEditableAdsEntities(creds);
+    const dryRun = options.dryRun === true || isDryRunMode();
+    if (!dryRun) {
+      await syncEditableAdsEntities(creds);
+    }
 
     const approved = await db.adsOptimizationRecommendation.findMany({
       where: { profileId: requireProfileId(creds), status: "APPROVED" },
@@ -357,11 +390,12 @@ export const adsOptimizerService = {
 
     const results = [];
     for (const rec of approved) {
-      results.push(await executeRecommendation(creds, rec, session));
+      results.push(await executeRecommendation(creds, rec, session, { dryRun }));
     }
     return {
       total: results.length,
       applied: results.filter((r) => r.status === "APPLIED").length,
+      dryRun: results.filter((r) => r.status === "DRY_RUN").length,
       failed: results.filter((r) => r.status === "FAILED").length,
       stale: results.filter((r) => r.status === "STALE").length,
       results,
@@ -1238,6 +1272,7 @@ async function executeRecommendation(
   creds: AdsAPICredentials,
   rec: Awaited<ReturnType<typeof db.adsOptimizationRecommendation.findMany>>[number],
   session: SessionPayload,
+  options: AdsOptimizerExecutionOptions = {},
 ) {
   const stale = await validateRecommendationFresh(rec);
   if (stale) {
@@ -1245,8 +1280,23 @@ async function executeRecommendation(
     return { id: rec.id, status: "STALE", message: stale };
   }
 
-  const request = buildAmazonActionPayload(rec);
+  let request: JsonRecord | null = null;
   try {
+    request = getApprovedAmazonActionPayload(rec);
+    if (options.dryRun) {
+      await db.adsOptimizationExecutionLog.create({
+        data: {
+          recommendationId: rec.id,
+          status: "DRY_RUN",
+          requestJson: json(request),
+          responseJson: json({ dryRun: true, skippedAmazonWrite: true }),
+          executadoPorId: session.uid,
+          executadoPorEmail: session.email,
+        },
+      });
+      return { id: rec.id, status: "DRY_RUN" };
+    }
+
     const response = await dispatchAmazonAction(creds, rec.actionType, request);
     await db.adsOptimizationExecutionLog.create({
       data: {
@@ -1273,7 +1323,7 @@ async function executeRecommendation(
       data: {
         recommendationId: rec.id,
         status: "FAILED",
-        requestJson: json(request),
+        requestJson: request ? json(request) : null,
         errorMessage: message,
         executadoPorId: session.uid,
         executadoPorEmail: session.email,
@@ -1347,14 +1397,16 @@ async function markRecommendationStale(
 
 function buildAmazonActionPayload(
   rec: Awaited<ReturnType<typeof db.adsOptimizationRecommendation.findMany>>[number],
+  input: AdsOptimizerApprovalInput = {},
 ) {
+  const approvedBidCentavos = input.bidCentavos ?? rec.proposedBidCentavos;
   if (rec.actionType === "INCREASE_BID" || rec.actionType === "DECREASE_BID") {
-    if (!rec.proposedBidCentavos) throw new Error("bid proposto ausente");
+    if (!approvedBidCentavos) throw new Error("bid proposto ausente");
     if (rec.keywordId) {
-      return { keywords: [{ keywordId: rec.keywordId, bid: rec.proposedBidCentavos / 100 }] };
+      return { keywords: [{ keywordId: rec.keywordId, bid: approvedBidCentavos / 100 }] };
     }
     if (rec.targetId) {
-      return { targetingClauses: [{ targetId: rec.targetId, bid: rec.proposedBidCentavos / 100 }] };
+      return { targetingClauses: [{ targetId: rec.targetId, bid: approvedBidCentavos / 100 }] };
     }
   }
   if (rec.actionType === "PAUSE_KEYWORD") {
@@ -1393,11 +1445,40 @@ function buildAmazonActionPayload(
         keywordText: rec.searchTerm ?? rec.entityId,
         matchType: "EXACT",
         state: "enabled",
-        bid: (rec.proposedBidCentavos ?? rec.currentBidCentavos ?? 50) / 100,
+        bid: (approvedBidCentavos ?? rec.currentBidCentavos ?? 50) / 100,
       }],
     };
   }
   throw new Error(`ação não suportada: ${rec.actionType}`);
+}
+
+function getApprovedAmazonActionPayload(
+  rec: Awaited<ReturnType<typeof db.adsOptimizationRecommendation.findMany>>[number],
+) {
+  const approvedPayload = parseOptionalJson<JsonRecord>(rec.amazonPayloadJson);
+  if (approvedPayload) return approvedPayload;
+  return buildAmazonActionPayload(rec);
+}
+
+function normalizeApprovalInput(
+  actionType: string,
+  input: AdsOptimizerApprovalInput,
+): AdsOptimizerApprovalInput {
+  if (input.bidCentavos == null) return {};
+  if (!["INCREASE_BID", "DECREASE_BID", "CREATE_EXACT_KEYWORD"].includes(actionType)) {
+    throw new Error("esta ação não aceita ajuste de lance");
+  }
+  if (!Number.isInteger(input.bidCentavos) || input.bidCentavos < 1) {
+    throw new Error("lance aprovado inválido");
+  }
+  if (input.bidCentavos > 100000) {
+    throw new Error("lance aprovado acima do limite de segurança");
+  }
+  return { bidCentavos: input.bidCentavos };
+}
+
+function isDryRunMode() {
+  return process.env.ADS_OPTIMIZER_EXECUTION_MODE?.toLowerCase() === "dry_run";
 }
 
 async function dispatchAmazonAction(
@@ -1528,6 +1609,33 @@ function json(value: unknown) {
 
 function parseJson<T>(value: string): T {
   return JSON.parse(value) as T;
+}
+
+function parseOptionalJson<T>(value: string | null | undefined): T | null {
+  if (!value) return null;
+  try {
+    return JSON.parse(value) as T;
+  } catch {
+    return null;
+  }
+}
+
+function uniqueStrings(values: Array<string | null | undefined>) {
+  return [...new Set(values.filter((value): value is string => Boolean(value)))];
+}
+
+function extractBidCentavosFromPayload(payload: JsonRecord | null) {
+  if (!payload) return null;
+  const keywordBid = firstObject(payload.keywords)?.bid;
+  const targetBid = firstObject(payload.targetingClauses)?.bid;
+  const bid = typeof keywordBid === "number" ? keywordBid : targetBid;
+  return typeof bid === "number" && Number.isFinite(bid) ? Math.round(bid * 100) : null;
+}
+
+function firstObject(value: unknown): JsonRecord | null {
+  if (!Array.isArray(value)) return null;
+  const first = value.find((item) => item && typeof item === "object");
+  return first ? first as JsonRecord : null;
 }
 
 function idString(value: unknown): string | null {

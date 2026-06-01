@@ -263,6 +263,31 @@ describe("adsOptimizerService.backfillHistory", () => {
   });
 });
 
+describe("adsOptimizerService.approveRecommendation", () => {
+  it("stores the final approved Amazon payload when bid is edited", async () => {
+    mocks.db.adsOptimizationRecommendation.findFirst.mockResolvedValue({
+      ...approvedKeywordRecommendation(),
+      status: "PROPOSED",
+      proposedBidCentavos: 95,
+    });
+
+    await adsOptimizerService.approveRecommendation("rec-1", session, {
+      bidCentavos: 88,
+    });
+
+    expect(mocks.db.adsOptimizationRecommendation.update).toHaveBeenCalledWith({
+      where: { id: "rec-1" },
+      data: expect.objectContaining({
+        status: "APPROVED",
+        aprovadoPorId: "user-1",
+        amazonPayloadJson: JSON.stringify({
+          keywords: [{ keywordId: "kw-1", bid: 0.88 }],
+        }),
+      }),
+    });
+  });
+});
+
 describe("adsOptimizerService.executeApproved", () => {
   it("executes an approved bid recommendation and logs the Amazon response", async () => {
     const result = await adsOptimizerService.executeApproved(session);
@@ -283,6 +308,52 @@ describe("adsOptimizerService.executeApproved", () => {
       data: expect.objectContaining({ status: "APPLIED" }),
     });
     expect(result).toMatchObject({ total: 1, applied: 1, failed: 0, stale: 0 });
+  });
+
+  it("executes the bid that was approved by the user, not only the original proposal", async () => {
+    mocks.db.adsOptimizationRecommendation.findMany.mockResolvedValue([
+      {
+        ...approvedKeywordRecommendation(),
+        amazonPayloadJson: JSON.stringify({
+          keywords: [{ keywordId: "kw-1", bid: 0.88 }],
+        }),
+      },
+    ]);
+
+    await adsOptimizerService.executeApproved(session);
+
+    expect(mocks.api.updateSponsoredProductsKeywords).toHaveBeenCalledWith(
+      mocks.creds,
+      [{ keywordId: "kw-1", bid: 0.88 }],
+    );
+  });
+
+  it("dry-runs an approved recommendation without calling Amazon or consuming approval", async () => {
+    const result = await adsOptimizerService.executeApproved(session, { dryRun: true });
+
+    expect(mocks.api.updateSponsoredProductsKeywords).not.toHaveBeenCalled();
+    expect(mocks.api.listSponsoredProductsCampaigns).not.toHaveBeenCalled();
+    expect(mocks.db.adsOptimizationExecutionLog.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        recommendationId: "rec-1",
+        status: "DRY_RUN",
+        requestJson: JSON.stringify({
+          keywords: [{ keywordId: "kw-1", bid: 0.95 }],
+        }),
+        responseJson: JSON.stringify({
+          dryRun: true,
+          skippedAmazonWrite: true,
+        }),
+      }),
+    });
+    expect(mocks.db.adsOptimizationRecommendation.update).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      total: 1,
+      applied: 0,
+      dryRun: 1,
+      failed: 0,
+      stale: 0,
+    });
   });
 
   it("marks a recommendation as stale when the current bid changed", async () => {

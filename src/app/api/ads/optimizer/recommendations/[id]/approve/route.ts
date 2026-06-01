@@ -6,10 +6,13 @@ export const dynamic = "force-dynamic";
 
 type Params = { params: Promise<{ id: string }> };
 
-export const POST = handleAuth([UsuarioRole.ADMIN], async (_req: Request, { params }: Params) => {
+export const POST = handleAuth([UsuarioRole.ADMIN], async (req: Request, { params }: Params) => {
   const [{ id }, session] = await Promise.all([
     params,
     requireRole(UsuarioRole.ADMIN),
   ]);
-  return ok(await adsOptimizerService.approveRecommendation(id, session));
+  const body = await req.json().catch(() => ({})) as { bidCentavos?: unknown };
+  const bidCentavos =
+    typeof body.bidCentavos === "number" ? Math.round(body.bidCentavos) : undefined;
+  return ok(await adsOptimizerService.approveRecommendation(id, session, { bidCentavos }));
 });
