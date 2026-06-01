@@ -74,7 +74,7 @@ model PlataformaUsuario {
 
 model Usuario {
   id               String    @id @default(cuid())
-  email            String    @unique
+  email            String
   senhaHash        String
   nome             String
   // ADMIN | OPERADOR | FINANCEIRO | LEITURA
@@ -89,18 +89,18 @@ model Usuario {
   // Tokens de sessao carregam esse `v` no payload; getSession compara
   // contra o valor atual para revogar sessoes obsoletas.
   sessionVersion   Int       @default(0)
-  // Multi-tenant: nullable nesta fase (backfill + NOT NULL em bloco posterior,
-  // após pg_dump + staging). O SUPERADMIN não usa Usuario (ver PlataformaUsuario).
-  empresaId        String?
+  empresaId        String
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
 
-  empresa           Empresa?                @relation(fields: [empresaId], references: [id])
+  empresa           Empresa                 @relation(fields: [empresaId], references: [id])
   tokensRecuperacao TokenRecuperacaoSenha[]
   codigos2fa        CodigoVerificacao2FA[]
+  convites          ConviteUsuario[]
   auditLogs         AuditLog[]
   tarefas           Tarefa[]
 
+  @@unique([empresaId, email])
   @@index([email])
   @@index([ativo])
   @@index([empresaId])
@@ -118,6 +118,34 @@ model TokenRecuperacaoSenha {
 
   @@index([usuarioId])
   @@index([expiresAt])
+}
+
+model ConviteUsuario {
+  id        String    @id @default(cuid())
+  usuarioId String
+  tokenHash String    @unique
+  expiresAt DateTime
+  usadoEm   DateTime?
+  createdAt DateTime  @default(now())
+
+  usuario Usuario @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+
+  @@index([usuarioId])
+  @@index([expiresAt])
+}
+
+model AuditPlataforma {
+  id                  String   @id @default(cuid())
+  plataformaUsuarioId String?
+  acao                String
+  empresaIdAlvo       String?
+  metadata            String?  // JSON serializado (String em AMBOS os schemas)
+  ip                  String?
+  createdAt           DateTime @default(now())
+
+  @@index([plataformaUsuarioId])
+  @@index([empresaIdAlvo])
+  @@index([createdAt])
 }
 
 model LoginThrottle {
