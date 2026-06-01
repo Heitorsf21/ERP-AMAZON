@@ -78,6 +78,7 @@ type Recommendation = {
   keywordId: string | null;
   targetId: string | null;
   searchTerm: string | null;
+  matchType: string | null;
   sku: string | null;
   asin: string | null;
   skuAttributionStatus: "RESOLVED" | "UNRESOLVED";
@@ -150,6 +151,7 @@ type SkuGroup = {
   criticalCount: number;
   approvedCount: number;
   proposedCount: number;
+  actionGroupCount: number;
 };
 
 type ReportWindow = {
@@ -234,6 +236,14 @@ const ACTION_LABEL: Record<string, string> = {
   CREATE_EXACT_KEYWORD: "Criar palavra-chave exata",
 };
 
+const MATCH_TYPE_LABEL: Record<string, string> = {
+  BROAD: "Ampla",
+  PHRASE: "Frase",
+  EXACT: "Exata",
+  MANUAL: "Manual",
+  AUTO: "Automatica",
+};
+
 const SEVERITY_LABEL: Record<Recommendation["severity"], string> = {
   LOW: "Baixa",
   MEDIUM: "Media",
@@ -248,6 +258,7 @@ export default function AdsOptimizerPage() {
   const [severityFilter, setSeverityFilter] = React.useState("ALL");
   const [campaignTypeFilter, setCampaignTypeFilter] = React.useState("ALL");
   const [entityTypeFilter, setEntityTypeFilter] = React.useState("ALL");
+  const [matchTypeFilter, setMatchTypeFilter] = React.useState("ALL");
   const [search, setSearch] = React.useState("");
 
   const query = useQuery<Snapshot>({
@@ -367,6 +378,7 @@ export default function AdsOptimizerPage() {
       return false;
     }
     if (entityTypeFilter !== "ALL" && rec.entityType !== entityTypeFilter) return false;
+    if (matchTypeFilter !== "ALL" && rec.matchType !== matchTypeFilter) return false;
     const needle = search.trim().toLowerCase();
     if (!needle) return true;
     return [
@@ -376,6 +388,7 @@ export default function AdsOptimizerPage() {
       rec.displayLabel,
       rec.label,
       rec.searchTerm,
+      rec.matchType ? matchTypeLabel(rec.matchType) : null,
       rec.sku,
       rec.asin,
     ]
@@ -387,10 +400,16 @@ export default function AdsOptimizerPage() {
   const campaignTypeOptions = unique(
     recommendations.map((rec) => rec.campaignTargetingType).filter(Boolean) as string[],
   );
+  const matchTypeOptions = unique(
+    recommendations.map((rec) => rec.matchType).filter(Boolean) as string[],
+  );
   const grouped = React.useMemo(() => groupRecommendations(filtered), [filtered]);
-  const blockedPendingCount = recommendations.filter(
-    (rec) => rec.status === "PROPOSED" && !rec.isExecutable,
-  ).length;
+  const pendingRecommendations = recommendations.filter((rec) => rec.status === "PROPOSED");
+  const approvedRecommendations = recommendations.filter((rec) => rec.status === "APPROVED");
+  const blockedPending = pendingRecommendations.filter((rec) => !rec.isExecutable);
+  const pendingGroupCount = countActionGroups(pendingRecommendations);
+  const approvedGroupCount = countActionGroups(approvedRecommendations);
+  const blockedPendingCount = countActionGroups(blockedPending);
   const isBusy =
     runMutation.isPending ||
     backfillMutation.isPending ||
@@ -443,8 +462,18 @@ export default function AdsOptimizerPage() {
       />
 
       <div className="grid gap-3 md:grid-cols-4">
-        <SummaryCard label="Pendentes" value={query.data?.totals.proposed ?? 0} tone="amber" />
-        <SummaryCard label="Aprovadas" value={query.data?.totals.approved ?? 0} tone="blue" />
+        <SummaryCard
+          label="Pendentes"
+          value={pendingGroupCount}
+          sub={summarySub(pendingGroupCount, query.data?.totals.proposed ?? 0)}
+          tone="amber"
+        />
+        <SummaryCard
+          label="Aprovadas"
+          value={approvedGroupCount}
+          sub={summarySub(approvedGroupCount, query.data?.totals.approved ?? 0)}
+          tone="blue"
+        />
         <SummaryCard label="Bloqueadas" value={blockedPendingCount} tone="red" />
         <SummaryCard label="Obsoletas" value={query.data?.totals.stale ?? 0} tone="slate" />
       </div>
@@ -452,8 +481,8 @@ export default function AdsOptimizerPage() {
       <SkuSummaryRail groups={grouped.resolvedGroups} unresolvedCount={grouped.unresolved.length} />
 
       <Card>
-        <CardContent className="grid gap-3 pt-6 md:grid-cols-5">
-          <div className="md:col-span-2">
+        <CardContent className="grid gap-3 pt-6 md:grid-cols-3 lg:grid-cols-8">
+          <div className="lg:col-span-2">
             <div className="mb-1 flex items-center gap-1 text-xs font-medium text-muted-foreground">
               <Filter className="h-3.5 w-3.5" />
               Busca
@@ -489,6 +518,18 @@ export default function AdsOptimizerPage() {
             {actionOptions.map((value) => (
               <option key={value} value={value}>
                 {ACTION_LABEL[value] ?? value}
+              </option>
+            ))}
+          </FilterSelect>
+          <FilterSelect
+            label="Correspondencia"
+            value={matchTypeFilter}
+            onChange={setMatchTypeFilter}
+          >
+            <option value="ALL">Todas</option>
+            {matchTypeOptions.map((value) => (
+              <option key={value} value={value}>
+                {matchTypeLabel(value)}
               </option>
             ))}
           </FilterSelect>
@@ -562,10 +603,12 @@ export default function AdsOptimizerPage() {
 function SummaryCard({
   label,
   value,
+  sub,
   tone,
 }: {
   label: string;
   value: number;
+  sub?: string;
   tone: "amber" | "blue" | "red" | "slate";
 }) {
   const toneClass = {
@@ -579,6 +622,7 @@ function SummaryCard({
       <CardContent className="pt-5">
         <p className="text-xs font-medium uppercase text-muted-foreground">{label}</p>
         <p className="mt-2 text-2xl font-semibold">{value}</p>
+        {sub && <p className="mt-1 text-xs text-muted-foreground">{sub}</p>}
       </CardContent>
     </Card>
   );
@@ -615,7 +659,7 @@ function SkuSummaryRail({
                 <div className="min-w-0">
                   <p className="truncate text-sm font-semibold">{group.sku}</p>
                   <p className="text-xs text-muted-foreground">
-                    {plural(group.recommendations.length, "acao", "acoes")} |{" "}
+                    {plural(group.actionGroupCount, "grupo", "grupos")} |{" "}
                     {plural(group.proposedCount, "pendente", "pendentes")}
                   </p>
                 </div>
@@ -837,7 +881,10 @@ function SkuGroupCard({
             <h2 className="mt-2 break-words text-xl font-semibold">{group.sku}</h2>
             <p className="text-sm text-muted-foreground">
               {group.asin ? `ASIN ${group.asin} | ` : ""}
-              {plural(group.recommendations.length, "acao encontrada", "acoes encontradas")}
+              {plural(group.actionGroupCount, "grupo de acao", "grupos de acao")}
+              {group.actionGroupCount !== group.recommendations.length
+                ? ` | ${plural(group.recommendations.length, "item editavel", "itens editaveis")}`
+                : ""}
             </p>
           </div>
           <div className="grid grid-cols-2 gap-3 rounded-md border bg-muted/25 p-3 text-sm sm:grid-cols-4">
@@ -969,6 +1016,13 @@ function RecommendationCard({
               </Badge>
               <Badge variant="outline">{STATUS_LABEL[rec.status] ?? rec.status}</Badge>
               <Badge variant="outline">{rec.displayEntityType}</Badge>
+              {rec.matchType && (
+                <Badge variant="outline">
+                  {rec.entityType === "SEARCH_TERM"
+                    ? `Origem ${matchTypeLabel(rec.matchType).toLowerCase()}`
+                    : matchTypeLabel(rec.matchType)}
+                </Badge>
+              )}
               {rec.campaignTargetingType && (
                 <Badge variant="outline">{campaignTypeLabel(rec.campaignTargetingType)}</Badge>
               )}
@@ -1057,6 +1111,10 @@ function RecommendationDetailsDialog({
             <DetailRow label="Acao" value={ACTION_LABEL[rec.actionType] ?? rec.actionType} />
             <DetailRow label="Regra" value={rec.ruleId} />
             <DetailRow label="Tipo" value={rec.displayEntityType} />
+            <DetailRow
+              label="Correspondencia"
+              value={rec.matchType ? matchTypeLabel(rec.matchType) : "-"}
+            />
             <DetailRow label="Origem do SKU" value={skuSourceLabel(rec.skuAttributionSource)} />
             <DetailRow label="Campanha" value={rec.campaignName ?? rec.campaignId} />
             <DetailRow label="Grupo" value={rec.adGroupName ?? rec.adGroupId ?? "-"} />
@@ -1274,6 +1332,7 @@ function groupRecommendations(recommendations: Recommendation[]) {
       criticalCount: items.filter((item) => item.severity === "CRITICAL").length,
       approvedCount: items.filter((item) => item.status === "APPROVED").length,
       proposedCount: items.filter((item) => item.status === "PROPOSED").length,
+      actionGroupCount: countActionGroups(items),
     }))
     .sort((a, b) => {
       if (b.criticalCount !== a.criticalCount) return b.criticalCount - a.criticalCount;
@@ -1281,6 +1340,31 @@ function groupRecommendations(recommendations: Recommendation[]) {
     });
 
   return { resolvedGroups, unresolved };
+}
+
+function countActionGroups(recommendations: Recommendation[]) {
+  return new Set(recommendations.map(actionGroupKey)).size;
+}
+
+function actionGroupKey(rec: Recommendation) {
+  return [
+    rec.sku ?? "",
+    rec.campaignId,
+    rec.adGroupId ?? "",
+    rec.entityType,
+    rec.actionType,
+    normalizeDisplayText(rec.displayLabel || rec.label || rec.searchTerm || rec.entityId),
+  ].join("|");
+}
+
+function normalizeDisplayText(value: string) {
+  return value.trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+function summarySub(groupCount: number, itemCount: number) {
+  if (itemCount === 0) return "nenhum item";
+  if (groupCount === itemCount) return "grupos de acao";
+  return `${plural(itemCount, "item editavel", "itens editaveis")}`;
 }
 
 function aggregateMetrics(values: OptimizerMetrics[]): OptimizerMetrics {
@@ -1349,6 +1433,10 @@ function campaignTypeLabel(value: string) {
   if (normalized === "auto") return "Automatica";
   if (normalized === "manual") return "Manual";
   return value;
+}
+
+function matchTypeLabel(value: string) {
+  return MATCH_TYPE_LABEL[value.toUpperCase()] ?? value;
 }
 
 function stateLabel(value: string | null) {

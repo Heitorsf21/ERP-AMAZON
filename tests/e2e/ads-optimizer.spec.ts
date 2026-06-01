@@ -100,6 +100,7 @@ test("otimizador permite revisar por SKU, editar lance e aprovar sem Amazon real
   await page.getByRole("button", { name: "Aprovar ajuste" }).click();
 
   await expect.poll(() => approvedBidCentavos).toBe(102);
+  await page.getByLabel("Status").selectOption("APPROVED");
   await expect(page.getByText("Proposta original")).toBeVisible();
   await expect(page.getByText("Aprovado para executar")).toBeVisible();
   await expect(page.getByText("Lance R$ 1,02")).toHaveCount(2);

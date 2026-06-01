@@ -86,6 +86,7 @@ function parseBaseRow(row: AdsReportRow): AdsOptimizerMetricRow | null {
       adGroupId: firstString(row, ["adGroupId"]),
       targetingText,
       keywordText,
+      matchType: firstString(row, ["matchType", "keywordType", "targetingType"]),
     });
 
   const gastoCentavos = toCentavos(row.cost ?? row.spend);

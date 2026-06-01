@@ -106,6 +106,29 @@ describe("sp optimizer report parsers", () => {
     expect(searchTerms[0]?.naturalKey).not.toBe(targeting?.naturalKey);
   });
 
+  it("does not collapse broad and phrase keyword rows when Amazon omits keywordId", () => {
+    const baseRow: AdsReportRow = {
+      date: "2026-05-30",
+      campaignId: "camp-1",
+      adGroupId: "ag-1",
+      keywordText: "garrafa termica",
+      clicks: 8,
+      cost: 5,
+      sales7d: 50,
+      purchases7d: 1,
+    };
+
+    const [broad, phrase] = parseSpTargetingRows([
+      { ...baseRow, matchType: "BROAD" },
+      { ...baseRow, matchType: "PHRASE" },
+    ]);
+
+    expect(broad?.keywordId).toBeNull();
+    expect(phrase?.keywordId).toBeNull();
+    expect(broad?.entityId).not.toBe(phrase?.entityId);
+    expect(broad?.naturalKey).not.toBe(phrase?.naturalKey);
+  });
+
   it("drops search term rows without campaign or term", () => {
     expect(parseSpSearchTermRows([{ campaignId: "camp-1" }])).toEqual([]);
     expect(parseSpSearchTermRows([{ searchTerm: "missing campaign" }])).toEqual([]);

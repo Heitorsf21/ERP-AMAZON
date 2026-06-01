@@ -82,6 +82,7 @@ type RecommendationEvidence = {
   label?: string;
   displayLabel?: string;
   displayEntityType?: string;
+  matchType?: string | null;
   skuAttributionStatus?: SkuAttributionStatus;
   skuAttributionSource?: SkuAttributionSource;
   skuAttributionCandidates?: Array<{ adId: string; sku: string; asin: string | null }>;
@@ -305,14 +306,28 @@ export const adsOptimizerService = {
       db.adsOptimizationRecommendation.count({ where: countWhere("STALE") }),
     ]);
     const campaignIds = uniqueStrings(recommendations.map((rec) => rec.campaignId));
-    const campaignRows = campaignIds.length > 0
-      ? await db.amazonAdsCampaignEntity.findMany({
-          where: { profileId, campaignId: { in: campaignIds } },
-          select: { campaignId: true, targetingType: true },
-        })
-      : [];
+    const keywordIds = uniqueStrings(
+      recommendations.map((rec) => rec.keywordId).filter(Boolean) as string[],
+    );
+    const [campaignRows, keywordRows] = await Promise.all([
+      campaignIds.length > 0
+        ? db.amazonAdsCampaignEntity.findMany({
+            where: { profileId, campaignId: { in: campaignIds } },
+            select: { campaignId: true, targetingType: true },
+          })
+        : Promise.resolve([]),
+      keywordIds.length > 0
+        ? db.amazonAdsKeyword.findMany({
+            where: { profileId, keywordId: { in: keywordIds } },
+            select: { keywordId: true, matchType: true },
+          })
+        : Promise.resolve([]),
+    ]);
     const targetingTypeByCampaign = new Map(
       campaignRows.map((campaign) => [campaign.campaignId, campaign.targetingType]),
+    );
+    const matchTypeByKeyword = new Map(
+      keywordRows.map((keyword) => [keyword.keywordId, keyword.matchType]),
     );
 
     const items = recommendations.map((rec) => {
@@ -337,6 +352,9 @@ export const adsOptimizerService = {
         keywordId: rec.keywordId,
         targetId: rec.targetId,
         searchTerm: rec.searchTerm,
+        matchType:
+          evidence.matchType ??
+          (rec.keywordId ? matchTypeByKeyword.get(rec.keywordId) ?? null : null),
         sku: rec.sku,
         asin: rec.asin,
         skuAttributionStatus:
@@ -1425,6 +1443,7 @@ function buildRecommendationEvidence(
     label: entity.label,
     displayLabel: displayLabel(entity),
     displayEntityType: displayEntityType(entity.entityType),
+    matchType: entity.matchType,
     skuAttributionStatus: entity.skuAttributionStatus,
     skuAttributionSource: entity.skuAttributionSource,
     skuAttributionCandidates: entity.skuAttributionCandidates,
@@ -1482,6 +1501,7 @@ function aggregateMetrics(
     keywordId: string | null;
     targetId: string | null;
     searchTerm: string;
+    matchType: string | null;
     impressoes: number;
     cliques: number;
     gastoCentavos: number;
@@ -1528,14 +1548,20 @@ function searchRowMatches(
     keywordId: string | null;
     targetId: string | null;
     searchTerm: string;
+    matchType: string | null;
   },
   entity: OptimizerEntity,
 ) {
+  const hasStableParent = row.keywordId != null || row.targetId != null;
+  const sameParent =
+    row.keywordId === entity.keywordId &&
+    row.targetId === entity.targetId &&
+    (hasStableParent || row.matchType === entity.matchType);
+
   return (
     row.campaignId === entity.campaignId &&
     row.adGroupId === entity.adGroupId &&
-    row.keywordId === entity.keywordId &&
-    row.targetId === entity.targetId &&
+    sameParent &&
     row.searchTerm === entity.searchTerm
   );
 }
