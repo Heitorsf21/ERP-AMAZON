@@ -68,6 +68,9 @@ export async function POST(req: Request) {
     role: user.role,
     exp: buildSessionExpiry(false),
     v: novoV,
+    // Preserva o empresaId — senao, sob TENANT_ISOLATION=enforce, o getSession
+    // invalida o cookie reemitido (sem empresaId) e desloga o usuario.
+    empresaId: session.empresaId,
   });
   res.cookies.set(SESSION_COOKIE_NAME, token, buildSessionCookieOptions(false));
   return res;
