@@ -1113,7 +1113,7 @@ async function persistTargetingRows(profileId: string, rows: AdsReportRow[]) {
   for (const row of parsed) {
     await upsertFirst(
       "amazonAdsTargetingMetricDaily",
-      { profileId, naturalKey: row.naturalKey },
+      metricIdentityWhere(profileId, row),
       metricData(profileId, row),
     );
   }
@@ -1125,7 +1125,10 @@ async function persistSearchTermRows(profileId: string, rows: AdsReportRow[]) {
   for (const row of parsed) {
     await upsertFirst(
       "amazonAdsSearchTermMetricDaily",
-      { profileId, naturalKey: row.naturalKey },
+      {
+        ...metricIdentityWhere(profileId, row),
+        searchTerm: row.searchTerm,
+      },
       {
         ...metricData(profileId, row),
         searchTerm: row.searchTerm,
@@ -1162,6 +1165,20 @@ function metricData(profileId: string, row: AdsOptimizerMetricRow) {
     pedidos: row.pedidos,
     acos: row.acos,
     payloadJson: json(row.payload),
+  };
+}
+
+function metricIdentityWhere(profileId: string, row: AdsOptimizerMetricRow) {
+  return {
+    profileId,
+    data: row.data,
+    campaignId: row.campaignId,
+    adGroupId: row.adGroupId,
+    entityType: row.entityType,
+    entityId: row.entityId,
+    keywordId: row.keywordId,
+    targetId: row.targetId,
+    matchType: row.matchType,
   };
 }
 
