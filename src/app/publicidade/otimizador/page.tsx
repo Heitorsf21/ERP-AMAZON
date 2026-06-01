@@ -670,8 +670,8 @@ function SkuSummaryRail({
                 )}
               </div>
               <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
-                <Fact label="Gasto" value={formatBRL(group.totals30d.gastoCentavos)} />
-                <Fact label="Vendas" value={formatBRL(group.totals30d.vendasCentavos)} />
+                <Fact label="Gasto afetado" value={formatBRL(group.totals30d.gastoCentavos)} />
+                <Fact label="Vendas afetadas" value={formatBRL(group.totals30d.vendasCentavos)} />
                 <Fact label="ACOS" value={formatPct(group.totals30d.acos)} />
               </div>
             </div>
@@ -888,8 +888,8 @@ function SkuGroupCard({
             </p>
           </div>
           <div className="grid grid-cols-2 gap-3 rounded-md border bg-muted/25 p-3 text-sm sm:grid-cols-4">
-            <Fact label="Gasto 30d" value={formatBRL(group.totals30d.gastoCentavos)} />
-            <Fact label="Vendas 30d" value={formatBRL(group.totals30d.vendasCentavos)} />
+            <Fact label="Gasto 30d afetado" value={formatBRL(group.totals30d.gastoCentavos)} />
+            <Fact label="Vendas 30d afetadas" value={formatBRL(group.totals30d.vendasCentavos)} />
             <Fact label="Pedidos" value={String(group.totals30d.pedidos)} />
             <Fact label="ACOS" value={formatPct(group.totals30d.acos)} />
           </div>
@@ -1328,7 +1328,7 @@ function groupRecommendations(recommendations: Recommendation[]) {
       sku,
       asin: items.find((item) => item.asin)?.asin ?? null,
       recommendations: items,
-      totals30d: aggregateMetrics(items.map((item) => item.metrics30d)),
+      totals30d: aggregateMetrics(metricContributors(items).map((item) => item.metrics30d)),
       criticalCount: items.filter((item) => item.severity === "CRITICAL").length,
       approvedCount: items.filter((item) => item.status === "APPROVED").length,
       proposedCount: items.filter((item) => item.status === "PROPOSED").length,
@@ -1340,6 +1340,38 @@ function groupRecommendations(recommendations: Recommendation[]) {
     });
 
   return { resolvedGroups, unresolved };
+}
+
+function metricContributors(recommendations: Recommendation[]) {
+  const parentRecommended = new Set(
+    recommendations
+      .filter((rec) => rec.entityType !== "SEARCH_TERM")
+      .map(parentMetricKey),
+  );
+  const byMetricKey = new Map<string, Recommendation>();
+  for (const rec of recommendations) {
+    if (rec.entityType === "SEARCH_TERM" && parentRecommended.has(parentMetricKey(rec))) {
+      continue;
+    }
+    const key = rec.entityType === "SEARCH_TERM" ? searchTermMetricKey(rec) : parentMetricKey(rec);
+    if (!byMetricKey.has(key)) {
+      byMetricKey.set(key, rec);
+    }
+  }
+  return [...byMetricKey.values()];
+}
+
+function parentMetricKey(rec: Recommendation) {
+  return [
+    rec.campaignId,
+    rec.adGroupId ?? "",
+    rec.keywordId ?? rec.targetId ?? rec.entityId,
+    rec.matchType ?? "",
+  ].join("|");
+}
+
+function searchTermMetricKey(rec: Recommendation) {
+  return [parentMetricKey(rec), normalizeDisplayText(rec.searchTerm ?? rec.displayLabel)].join("|");
 }
 
 function countActionGroups(recommendations: Recommendation[]) {

@@ -80,6 +80,7 @@ test("otimizador permite revisar por SKU, editar lance e aprovar sem Amazon real
   await expect.poll(() => snapshotCalls).toBeGreaterThan(0);
   await expect(page.getByRole("heading", { name: "BOLSA-TERMICA-01" })).toBeVisible();
   await expect(page.getByText("1 critica")).toBeVisible();
+  await expect(page.getByText("R$ 45,30").first()).toBeVisible();
   await expect(page.locator("body")).not.toContainText("SEARCH_TERM");
   await expect(page.locator("body")).not.toContainText("ACOS_LOW_INCREASE_BID");
 
@@ -192,6 +193,8 @@ function snapshot(approvedBidCentavos: number | null) {
       }),
       recommendation({
         id: "rec-pause",
+        entityId: "keyword-waste-e2e",
+        keywordId: "keyword-waste-e2e",
         status: "PROPOSED",
         actionType: "PAUSE_KEYWORD",
         severity: "CRITICAL",
