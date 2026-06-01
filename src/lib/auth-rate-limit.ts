@@ -29,6 +29,13 @@ export function getLoginFailureKey(headers: Headers, email: string): string {
   return `${getClientIp(headers)}:${normalizedEmail}`;
 }
 
+// Chave por (ip, slug, email) para o login multiempresa.
+// TRADEOFF CONHECIDO (aceito na escala atual — poucas empresas): incluir o slug
+// na chave permite, em tese, contornar o limite por-email variando o slug
+// (N slugs => N*limite tentativas para o mesmo email). Mitigado porque o slug
+// precisa ser de uma empresa REAL (slug invalido cai em ":unknownslug:" e gasta
+// tentativa). Quando o numero de tenants crescer, considerar uma 2a camada de
+// throttle por (ip, email) agregando todos os slugs. Ver plano A+B (Task 11).
 export function getLoginFailureKeyComEmpresa(headers: Headers, slug: string, email: string): string {
   const e = email.toLowerCase().trim() || "unknown";
   const s = slug.toLowerCase().trim() || "unknown";
