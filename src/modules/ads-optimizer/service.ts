@@ -1,4 +1,4 @@
-import { addDays, startOfDay } from "date-fns";
+import { addDays, differenceInCalendarDays, startOfDay } from "date-fns";
 import { db } from "@/lib/db";
 import { isAmazonQuotaCooldownError } from "@/lib/amazon-rate-limit";
 import {
@@ -41,6 +41,8 @@ import {
 const ACTIVE_STATES = new Set(["enabled"]);
 const MAX_PAGES = 50;
 const DEFAULT_REPORT_DAYS = 30;
+const REPORT_RETENTION_DAYS = 95;
+const BACKFILL_WINDOW_DAYS = 30;
 
 type JsonRecord = Record<string, unknown>;
 
@@ -81,6 +83,14 @@ export const adsOptimizerService = {
       syncOptimizerReports(creds),
     ]);
     return { entities, reports };
+  },
+
+  async backfillHistory() {
+    const creds = await requireAdsCredentials();
+    const profileId = requireProfileId(creds);
+    const reports = await backfillOptimizerReportsWithCooldown(creds);
+    const coverage = await getOptimizerCoverage(profileId);
+    return { profileId, reports, coverage };
   },
 
   async runOptimization(session: SessionPayload) {
@@ -222,7 +232,7 @@ export const adsOptimizerService = {
   async getSnapshot() {
     const creds = await getAmazonAdsCredentials();
     const profileId = creds?.profileId ?? "";
-    const [recommendations, lastRun] = await Promise.all([
+    const [recommendations, lastRun, coverage] = await Promise.all([
       db.adsOptimizationRecommendation.findMany({
         where: profileId
           ? { profileId, status: { in: ["PROPOSED", "APPROVED", "FAILED", "STALE"] } }
@@ -234,6 +244,7 @@ export const adsOptimizerService = {
         where: profileId ? { profileId } : {},
         orderBy: { iniciadoEm: "desc" },
       }),
+      profileId ? getOptimizerCoverage(profileId) : Promise.resolve(null),
     ]);
 
     const items = recommendations.map((rec) => {
@@ -295,6 +306,7 @@ export const adsOptimizerService = {
         failed: items.filter((r) => r.status === "FAILED").length,
         stale: items.filter((r) => r.status === "STALE").length,
       },
+      coverage,
       recommendations: items,
     };
   },
@@ -645,6 +657,51 @@ async function syncOptimizerReportsWithCooldown(creds: AdsAPICredentials) {
   }
 }
 
+async function backfillOptimizerReportsWithCooldown(creds: AdsAPICredentials) {
+  try {
+    return await backfillOptimizerReports(creds);
+  } catch (error) {
+    if (isAmazonQuotaCooldownError(error)) {
+      return {
+        status: "COOLDOWN" as const,
+        operation: error.operation,
+        retryAt: error.nextAllowedAt.toISOString(),
+      };
+    }
+    throw error;
+  }
+}
+
+async function backfillOptimizerReports(creds: AdsAPICredentials) {
+  const profileId = requireProfileId(creds);
+  const today = startOfDay(new Date());
+  const earliestAvailable = startOfDay(addDays(today, -REPORT_RETENTION_DAYS));
+  const latestClosed = startOfDay(addDays(today, -1));
+
+  const [targeting, searchTerms] = await Promise.all([
+    syncBackfillReportLifecycle({
+      creds,
+      profileId,
+      reportKey: "TARGETING_BACKFILL",
+      earliestAvailable,
+      latestClosed,
+      create: createSpTargetingReport,
+      persist: persistTargetingRows,
+    }),
+    syncBackfillReportLifecycle({
+      creds,
+      profileId,
+      reportKey: "SEARCH_TERM_BACKFILL",
+      earliestAvailable,
+      latestClosed,
+      create: createSpSearchTermReport,
+      persist: persistSearchTermRows,
+    }),
+  ]);
+
+  return { targeting, searchTerms };
+}
+
 async function countOptimizerMetrics(profileId: string) {
   const [targeting, searchTerms] = await Promise.all([
     db.amazonAdsTargetingMetricDaily.count({ where: { profileId } }),
@@ -667,15 +724,24 @@ async function syncReportLifecycle(args: {
   persist: (profileId: string, rows: AdsReportRow[]) => Promise<number>;
 }) {
   const pendingId = await getState(args.profileId, args.reportKey, "pendingId");
+  const pendingStart = await getState(args.profileId, args.reportKey, "start");
+  const pendingEnd = await getState(args.profileId, args.reportKey, "end");
+  const start = pendingId && pendingStart ? new Date(pendingStart) : args.start;
+  const end = pendingId && pendingEnd ? new Date(pendingEnd) : args.end;
+
   if (!pendingId) {
     const created = await args.create(args.creds, {
-      startDate: isoDate(args.start),
-      endDate: isoDate(args.end),
+      startDate: isoDate(start),
+      endDate: isoDate(end),
     });
     await setState(args.profileId, args.reportKey, "pendingId", created.reportId);
-    await setState(args.profileId, args.reportKey, "start", args.start.toISOString());
-    await setState(args.profileId, args.reportKey, "end", args.end.toISOString());
-    return { status: "PENDING_NEW", reportId: created.reportId };
+    await setState(args.profileId, args.reportKey, "start", start.toISOString());
+    await setState(args.profileId, args.reportKey, "end", end.toISOString());
+    return {
+      status: "PENDING_NEW",
+      reportId: created.reportId,
+      window: { startDate: isoDate(start), endDate: isoDate(end) },
+    };
   }
 
   const report = await getAdsReport(args.creds, pendingId);
@@ -683,21 +749,234 @@ async function syncReportLifecycle(args: {
   if (status !== "COMPLETED" && status !== "SUCCESS") {
     if (status === "FAILED" || status === "CANCELLED") {
       await clearReportState(args.profileId, args.reportKey);
-      return { status: "FAILED", reportId: pendingId, processingStatus: status };
+      return {
+        status: "FAILED",
+        reportId: pendingId,
+        processingStatus: status,
+        window: { startDate: isoDate(start), endDate: isoDate(end) },
+      };
     }
-    return { status: "PENDING_PROCESSING", reportId: pendingId, processingStatus: status || "UNKNOWN" };
+    return {
+      status: "PENDING_PROCESSING",
+      reportId: pendingId,
+      processingStatus: status || "UNKNOWN",
+      window: { startDate: isoDate(start), endDate: isoDate(end) },
+    };
   }
 
   if (!report.url) {
     await clearReportState(args.profileId, args.reportKey);
-    return { status: "FAILED", reportId: pendingId, processingStatus: "NO_URL" };
+    return {
+      status: "FAILED",
+      reportId: pendingId,
+      processingStatus: "NO_URL",
+      window: { startDate: isoDate(start), endDate: isoDate(end) },
+    };
   }
 
   const rows = await downloadAdsReportRows(report.url);
   const saved = await args.persist(args.profileId, rows);
   await clearReportState(args.profileId, args.reportKey);
   await setState(args.profileId, args.reportKey, "lastCompletedAt", new Date().toISOString());
-  return { status: "DONE", reportId: pendingId, rows: rows.length, saved };
+  return {
+    status: "DONE",
+    reportId: pendingId,
+    rows: rows.length,
+    saved,
+    window: { startDate: isoDate(start), endDate: isoDate(end) },
+  };
+}
+
+async function syncBackfillReportLifecycle(args: {
+  creds: AdsAPICredentials;
+  profileId: string;
+  reportKey: string;
+  earliestAvailable: Date;
+  latestClosed: Date;
+  create: typeof createSpTargetingReport;
+  persist: (profileId: string, rows: AdsReportRow[]) => Promise<number>;
+}) {
+  const window = await getNextBackfillWindow(args);
+  if (!window) {
+    const cursor = await getState(args.profileId, args.reportKey, "cursor");
+    return {
+      status: "COMPLETE" as const,
+      cursor,
+      earliestAvailable: isoDate(args.earliestAvailable),
+      latestClosed: isoDate(args.latestClosed),
+    };
+  }
+
+  const result = await syncReportLifecycle({
+    creds: args.creds,
+    profileId: args.profileId,
+    reportKey: args.reportKey,
+    start: window.start,
+    end: window.end,
+    create: args.create,
+    persist: args.persist,
+  });
+
+  if (result.status === "DONE") {
+    const nextCursor = addDays(window.end, 1);
+    await setState(args.profileId, args.reportKey, "cursor", nextCursor.toISOString());
+    return {
+      ...result,
+      cursor: nextCursor.toISOString(),
+      complete: nextCursor > args.latestClosed,
+    };
+  }
+
+  return {
+    ...result,
+    cursor: window.start.toISOString(),
+    complete: false,
+  };
+}
+
+async function getNextBackfillWindow(args: {
+  profileId: string;
+  reportKey: string;
+  earliestAvailable: Date;
+  latestClosed: Date;
+}) {
+  const [pendingStart, pendingEnd] = await Promise.all([
+    getState(args.profileId, args.reportKey, "start"),
+    getState(args.profileId, args.reportKey, "end"),
+  ]);
+  if (pendingStart && pendingEnd) {
+    return { start: new Date(pendingStart), end: new Date(pendingEnd) };
+  }
+
+  const cursorIso = await getState(args.profileId, args.reportKey, "cursor");
+  const cursor = cursorIso ? startOfDay(new Date(cursorIso)) : args.earliestAvailable;
+  const start = cursor < args.earliestAvailable ? args.earliestAvailable : cursor;
+  if (start > args.latestClosed) return null;
+
+  const tentativeEnd = addDays(start, BACKFILL_WINDOW_DAYS - 1);
+  return {
+    start,
+    end: tentativeEnd > args.latestClosed ? args.latestClosed : tentativeEnd,
+  };
+}
+
+async function getOptimizerCoverage(profileId: string) {
+  const today = startOfDay(new Date());
+  const earliestAvailable = startOfDay(addDays(today, -REPORT_RETENTION_DAYS));
+  const latestClosed = startOfDay(addDays(today, -1));
+  const expectedDays = Math.max(
+    0,
+    differenceInCalendarDays(latestClosed, earliestAvailable) + 1,
+  );
+
+  const [targeting, searchTerms, targetingBackfill, searchTermBackfill] =
+    await Promise.all([
+      getMetricCoverage("amazonAdsTargetingMetricDaily", profileId, expectedDays),
+      getMetricCoverage("amazonAdsSearchTermMetricDaily", profileId, expectedDays),
+      getBackfillState(profileId, "TARGETING_BACKFILL", earliestAvailable, latestClosed),
+      getBackfillState(profileId, "SEARCH_TERM_BACKFILL", earliestAvailable, latestClosed),
+    ]);
+
+  const minDates = [targeting.minDate, searchTerms.minDate].filter(Boolean).sort();
+  const maxDates = [targeting.maxDate, searchTerms.maxDate].filter(Boolean).sort();
+
+  return {
+    earliestAvailable: isoDate(earliestAvailable),
+    latestClosed: isoDate(latestClosed),
+    expectedDays,
+    historyStartDate: minDates[0] ?? null,
+    historyEndDate: maxDates[maxDates.length - 1] ?? null,
+    targeting,
+    searchTerms,
+    backfill: {
+      targeting: targetingBackfill,
+      searchTerms: searchTermBackfill,
+      pending:
+        targetingBackfill.status === "PENDING" ||
+        searchTermBackfill.status === "PENDING",
+      complete:
+        targetingBackfill.status === "COMPLETE" &&
+        searchTermBackfill.status === "COMPLETE",
+    },
+  };
+}
+
+async function getMetricCoverage(
+  model: "amazonAdsTargetingMetricDaily" | "amazonAdsSearchTermMetricDaily",
+  profileId: string,
+  expectedDays: number,
+) {
+  const delegate = db[model] as unknown as {
+    aggregate(args: unknown): Promise<{
+      _min: { data: Date | null };
+      _max: { data: Date | null };
+      _count: { _all: number };
+    }>;
+    findMany(args: unknown): Promise<Array<{ data: Date }>>;
+  };
+  const [aggregate, distinctDays] = await Promise.all([
+    delegate.aggregate({
+      where: { profileId },
+      _min: { data: true },
+      _max: { data: true },
+      _count: { _all: true },
+    }),
+    delegate.findMany({
+      where: { profileId },
+      distinct: ["data"],
+      select: { data: true },
+    }),
+  ]);
+  const minDate = aggregate._min.data ? isoDate(aggregate._min.data) : null;
+  const maxDate = aggregate._max.data ? isoDate(aggregate._max.data) : null;
+  return {
+    minDate,
+    maxDate,
+    rows: aggregate._count._all,
+    daysWithData: distinctDays.length,
+    expectedDays,
+  };
+}
+
+async function getBackfillState(
+  profileId: string,
+  reportKey: string,
+  earliestAvailable: Date,
+  latestClosed: Date,
+) {
+  const [pendingId, pendingStart, pendingEnd, cursor, lastCompletedAt] =
+    await Promise.all([
+      getState(profileId, reportKey, "pendingId"),
+      getState(profileId, reportKey, "start"),
+      getState(profileId, reportKey, "end"),
+      getState(profileId, reportKey, "cursor"),
+      getState(profileId, reportKey, "lastCompletedAt"),
+    ]);
+
+  if (pendingId) {
+    return {
+      status: "PENDING" as const,
+      pendingId,
+      window:
+        pendingStart && pendingEnd
+          ? { startDate: isoDate(new Date(pendingStart)), endDate: isoDate(new Date(pendingEnd)) }
+          : null,
+      cursor,
+      progressPct: progressPct(cursor ?? pendingStart, earliestAvailable, latestClosed),
+      lastCompletedAt,
+    };
+  }
+
+  const cursorDate = cursor ? new Date(cursor) : earliestAvailable;
+  const complete = cursorDate > latestClosed;
+  return {
+    status: complete ? ("COMPLETE" as const) : ("READY" as const),
+    pendingId: null,
+    window: null,
+    cursor,
+    progressPct: progressPct(cursor, earliestAvailable, latestClosed),
+    lastCompletedAt,
+  };
 }
 
 async function persistTargetingRows(profileId: string, rows: AdsReportRow[]) {
@@ -1227,6 +1506,14 @@ async function clearReportState(profileId: string, tipo: string) {
 
 function isoDate(date: Date) {
   return date.toISOString().slice(0, 10);
+}
+
+function progressPct(value: string | null | undefined, start: Date, end: Date) {
+  const totalDays = Math.max(1, differenceInCalendarDays(end, start) + 1);
+  if (!value) return 0;
+  const current = startOfDay(new Date(value));
+  const doneDays = Math.min(totalDays, Math.max(0, differenceInCalendarDays(current, start)));
+  return Math.round((doneDays / totalDays) * 100);
 }
 
 function json(value: unknown) {

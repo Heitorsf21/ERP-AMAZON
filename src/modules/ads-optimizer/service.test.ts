@@ -1,7 +1,8 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => {
   const delegate = () => ({
+    aggregate: vi.fn(),
     count: vi.fn(),
     findFirst: vi.fn(),
     findMany: vi.fn(),
@@ -123,6 +124,22 @@ beforeEach(() => {
   });
   mocks.db.amazonAdsTargetingMetricDaily.count.mockResolvedValue(0);
   mocks.db.amazonAdsSearchTermMetricDaily.count.mockResolvedValue(0);
+  mocks.db.amazonAdsTargetingMetricDaily.aggregate.mockResolvedValue({
+    _min: { data: null },
+    _max: { data: null },
+    _count: { _all: 0 },
+  });
+  mocks.db.amazonAdsSearchTermMetricDaily.aggregate.mockResolvedValue({
+    _min: { data: null },
+    _max: { data: null },
+    _count: { _all: 0 },
+  });
+  mocks.db.amazonAdsTargetingMetricDaily.findMany.mockResolvedValue([]);
+  mocks.db.amazonAdsSearchTermMetricDaily.findMany.mockResolvedValue([]);
+});
+
+afterEach(() => {
+  vi.useRealTimers();
 });
 
 describe("adsOptimizerService.runOptimization", () => {
@@ -161,6 +178,87 @@ describe("adsOptimizerService.runOptimization", () => {
       status: "COOLDOWN",
       operation: "ADS_REPORTS_DOWNLOAD",
       retryAt: "2026-05-31T23:27:40.000Z",
+    });
+  });
+});
+
+describe("adsOptimizerService.backfillHistory", () => {
+  it("creates historical reports from the Amazon retention start", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-06-01T12:00:00.000Z"));
+    mocks.db.amazonAdsOptimizerState.findFirst.mockResolvedValue(null);
+    mocks.db.amazonAdsOptimizerState.create.mockResolvedValue({});
+    mocks.api.createSpTargetingReport.mockResolvedValue({ reportId: "target-backfill" });
+    mocks.api.createSpSearchTermReport.mockResolvedValue({ reportId: "search-backfill" });
+
+    const result = await adsOptimizerService.backfillHistory();
+
+    expect(mocks.api.createSpTargetingReport).toHaveBeenCalledWith(
+      mocks.creds,
+      { startDate: "2026-02-26", endDate: "2026-03-27" },
+    );
+    expect(mocks.api.createSpSearchTermReport).toHaveBeenCalledWith(
+      mocks.creds,
+      { startDate: "2026-02-26", endDate: "2026-03-27" },
+    );
+    expect(result.reports).toMatchObject({
+      targeting: {
+        status: "PENDING_NEW",
+        reportId: "target-backfill",
+        window: { startDate: "2026-02-26", endDate: "2026-03-27" },
+      },
+      searchTerms: {
+        status: "PENDING_NEW",
+        reportId: "search-backfill",
+        window: { startDate: "2026-02-26", endDate: "2026-03-27" },
+      },
+    });
+  });
+
+  it("downloads completed backfill reports and advances the cursor", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-06-01T12:00:00.000Z"));
+    const state = new Map<string, string>([
+      ["TARGETING_BACKFILL:pendingId", "target-report"],
+      ["TARGETING_BACKFILL:start", "2026-02-26T00:00:00.000Z"],
+      ["TARGETING_BACKFILL:end", "2026-03-27T00:00:00.000Z"],
+      ["SEARCH_TERM_BACKFILL:pendingId", "search-report"],
+      ["SEARCH_TERM_BACKFILL:start", "2026-02-26T00:00:00.000Z"],
+      ["SEARCH_TERM_BACKFILL:end", "2026-03-27T00:00:00.000Z"],
+    ]);
+    mocks.db.amazonAdsOptimizerState.findFirst.mockImplementation(
+      ({ where }: { where: { tipo: string; chave: string } }) => {
+        const key = `${where.tipo}:${where.chave}`;
+        const valor = state.get(key);
+        return Promise.resolve(valor ? { id: key, valor } : null);
+      },
+    );
+    mocks.db.amazonAdsOptimizerState.create.mockResolvedValue({});
+    mocks.api.getAdsReport.mockImplementation((_creds: unknown, reportId: string) =>
+      Promise.resolve({ reportId, status: "COMPLETED", url: `https://reports.test/${reportId}` }),
+    );
+    mocks.api.downloadAdsReportRows.mockResolvedValue([]);
+
+    const result = await adsOptimizerService.backfillHistory();
+
+    expect(mocks.api.downloadAdsReportRows).toHaveBeenCalledTimes(2);
+    expect(mocks.db.amazonAdsOptimizerState.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        tipo: "TARGETING_BACKFILL",
+        chave: "cursor",
+        valor: "2026-03-28T00:00:00.000Z",
+      }),
+    });
+    expect(mocks.db.amazonAdsOptimizerState.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        tipo: "SEARCH_TERM_BACKFILL",
+        chave: "cursor",
+        valor: "2026-03-28T00:00:00.000Z",
+      }),
+    });
+    expect(result.reports).toMatchObject({
+      targeting: { status: "DONE", rows: 0, saved: 0 },
+      searchTerms: { status: "DONE", rows: 0, saved: 0 },
     });
   });
 });

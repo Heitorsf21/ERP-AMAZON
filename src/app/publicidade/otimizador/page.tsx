@@ -3,8 +3,10 @@
 import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  CalendarClock,
   CheckCircle2,
   Filter,
+  History,
   Play,
   RefreshCw,
   ShieldCheck,
@@ -96,6 +98,7 @@ type Snapshot = {
     failed: number;
     stale: number;
   };
+  coverage: OptimizerCoverage | null;
   recommendations: Recommendation[];
 };
 
@@ -107,6 +110,69 @@ type MutationResult = {
   failed?: number;
   stale?: number;
   totalRecomendacoes?: number;
+};
+
+type ReportWindow = {
+  startDate: string;
+  endDate: string;
+};
+
+type BackfillReportResult = {
+  status: "PENDING_NEW" | "PENDING_PROCESSING" | "FAILED" | "DONE" | "COMPLETE";
+  reportId?: string;
+  processingStatus?: string;
+  window?: ReportWindow;
+  rows?: number;
+  saved?: number;
+  cursor?: string | null;
+  complete?: boolean;
+};
+
+type OptimizerCoverage = {
+  earliestAvailable: string;
+  latestClosed: string;
+  expectedDays: number;
+  historyStartDate: string | null;
+  historyEndDate: string | null;
+  targeting: MetricCoverage;
+  searchTerms: MetricCoverage;
+  backfill: {
+    targeting: BackfillState;
+    searchTerms: BackfillState;
+    pending: boolean;
+    complete: boolean;
+  };
+};
+
+type MetricCoverage = {
+  minDate: string | null;
+  maxDate: string | null;
+  rows: number;
+  daysWithData: number;
+  expectedDays: number;
+};
+
+type BackfillState = {
+  status: "PENDING" | "READY" | "COMPLETE";
+  pendingId: string | null;
+  window: ReportWindow | null;
+  cursor: string | null;
+  progressPct: number;
+  lastCompletedAt: string | null;
+};
+
+type BackfillResult = {
+  reports:
+    | {
+        status: "COOLDOWN";
+        operation: string;
+        retryAt: string;
+      }
+    | {
+        targeting: BackfillReportResult;
+        searchTerms: BackfillReportResult;
+      };
+  coverage: OptimizerCoverage;
 };
 
 const STATUS_LABEL: Record<RecommendationStatus, string> = {
@@ -172,6 +238,38 @@ export default function AdsOptimizerPage() {
     onError: (error: Error) => toast.error(error.message),
   });
 
+  const backfillMutation = useMutation({
+    mutationFn: () =>
+      fetchJSON<BackfillResult>("/api/ads/optimizer/backfill", { method: "POST" }),
+    onSuccess: (data) => {
+      if ("status" in data.reports && data.reports.status === "COOLDOWN") {
+        toast.warning(
+          `Amazon em cooldown. Tente novamente apos ${formatDateTime(data.reports.retryAt)}.`,
+        );
+        invalidate();
+        return;
+      }
+      const reports = "targeting" in data.reports
+        ? [data.reports.targeting, data.reports.searchTerms]
+        : [];
+      const completed = reports.filter((report) => report.status === "DONE").length;
+      const pending = reports.filter((report) =>
+        report.status === "PENDING_NEW" || report.status === "PENDING_PROCESSING",
+      ).length;
+      if (data.coverage.backfill.complete) {
+        toast.success("Historico maximo da Amazon Ads ja esta coberto.");
+      } else if (completed > 0) {
+        toast.success(`${completed} janela(s) historica(s) importada(s).`);
+      } else if (pending > 0) {
+        toast.info("Reports historicos solicitados. Aguarde alguns minutos e clique novamente.");
+      } else {
+        toast.info("Backfill historico atualizado.");
+      }
+      invalidate();
+    },
+    onError: (error: Error) => toast.error(error.message),
+  });
+
   const executeMutation = useMutation({
     mutationFn: () =>
       fetchJSON<MutationResult>("/api/ads/optimizer/execute-approved", {
@@ -211,6 +309,10 @@ export default function AdsOptimizerPage() {
   });
 
   const recommendations = query.data?.recommendations ?? [];
+  const coverage = query.data?.coverage ?? null;
+  const historyLabel = coverage?.historyStartDate
+    ? `Historico desde ${formatDate(coverage.historyStartDate)}`
+    : "Historico disponivel";
   const filtered = recommendations.filter((rec) => {
     if (statusFilter !== "ALL" && rec.status !== statusFilter) return false;
     if (actionFilter !== "ALL" && rec.actionType !== actionFilter) return false;
@@ -237,6 +339,7 @@ export default function AdsOptimizerPage() {
   const ruleOptions = unique(recommendations.map((rec) => rec.ruleId));
   const isBusy =
     runMutation.isPending ||
+    backfillMutation.isPending ||
     executeMutation.isPending ||
     approveMutation.isPending ||
     rejectMutation.isPending;
@@ -247,6 +350,15 @@ export default function AdsOptimizerPage() {
         title="Otimizador de Ads"
         description="Regras deterministicas para Amazon Ads com aprovacao humana antes de qualquer alteracao."
       >
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => backfillMutation.mutate()}
+          disabled={isBusy}
+        >
+          <History className={cn("mr-2 h-4 w-4", backfillMutation.isPending && "animate-spin")} />
+          Buscar historico
+        </Button>
         <Button
           variant="outline"
           size="sm"
@@ -265,6 +377,13 @@ export default function AdsOptimizerPage() {
           Executar aprovadas
         </Button>
       </PageHeader>
+
+      <CoveragePanel
+        coverage={coverage}
+        loading={query.isLoading}
+        busy={isBusy}
+        onBackfill={() => backfillMutation.mutate()}
+      />
 
       <div className="grid gap-3 md:grid-cols-4">
         <SummaryCard label="Pendentes" value={query.data?.totals.proposed ?? 0} tone="amber" />
@@ -341,6 +460,7 @@ export default function AdsOptimizerPage() {
             <RecommendationCard
               key={rec.id}
               rec={rec}
+              historyLabel={historyLabel}
               busy={isBusy}
               onApprove={() => approveMutation.mutate(rec.id)}
               onReject={() => rejectMutation.mutate(rec.id)}
@@ -389,6 +509,139 @@ function SummaryCard({
   );
 }
 
+function CoveragePanel({
+  coverage,
+  loading,
+  busy,
+  onBackfill,
+}: {
+  coverage: OptimizerCoverage | null;
+  loading: boolean;
+  busy: boolean;
+  onBackfill: () => void;
+}) {
+  if (loading) return <Skeleton className="h-44 rounded-lg" />;
+  if (!coverage) {
+    return (
+      <Card className="border-dashed">
+        <CardContent className="flex flex-col gap-3 py-5 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="text-sm font-semibold">Historico Ads nao carregado</p>
+            <p className="text-sm text-muted-foreground">
+              Configure o profile de Amazon Ads e rode uma sincronizacao.
+            </p>
+          </div>
+          <Button size="sm" variant="outline" onClick={onBackfill} disabled={busy}>
+            <History className="mr-2 h-4 w-4" />
+            Buscar historico
+          </Button>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const periodLabel = `${formatDate(coverage.earliestAvailable)} a ${formatDate(coverage.latestClosed)}`;
+  const historyLabel = coverage.historyStartDate
+    ? `${formatDate(coverage.historyStartDate)} a ${coverage.historyEndDate ? formatDate(coverage.historyEndDate) : "-"}`
+    : "Sem metricas granulares salvas";
+
+  return (
+    <Card className="overflow-hidden border-l-4 border-l-amber-500">
+      <CardContent className="space-y-5 pt-5">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div className="space-y-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge variant="outline" className="bg-amber-50 text-amber-800">
+                <CalendarClock className="mr-1 h-3.5 w-3.5" />
+                Limite Amazon: {periodLabel}
+              </Badge>
+              <Badge variant="outline">
+                {coverage.backfill.complete ? "Backfill completo" : "Backfill em andamento"}
+              </Badge>
+            </div>
+            <div>
+              <p className="text-sm font-semibold">Historico granular disponivel</p>
+              <p className="text-sm text-muted-foreground">
+                {historyLabel}. Este periodo alimenta keyword, target, search term e as regras
+                de otimizacao.
+              </p>
+            </div>
+          </div>
+          <Button size="sm" variant="outline" onClick={onBackfill} disabled={busy}>
+            <History className="mr-2 h-4 w-4" />
+            Continuar backfill
+          </Button>
+        </div>
+
+        <div className="grid gap-3 lg:grid-cols-2">
+          <CoverageTile
+            title="Targeting e keywords"
+            coverage={coverage.targeting}
+            state={coverage.backfill.targeting}
+          />
+          <CoverageTile
+            title="Search terms"
+            coverage={coverage.searchTerms}
+            state={coverage.backfill.searchTerms}
+          />
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function CoverageTile({
+  title,
+  coverage,
+  state,
+}: {
+  title: string;
+  coverage: MetricCoverage;
+  state: BackfillState;
+}) {
+  const range = coverage.minDate
+    ? `${formatDate(coverage.minDate)} a ${coverage.maxDate ? formatDate(coverage.maxDate) : "-"}`
+    : "Sem dados";
+  return (
+    <div className="rounded-md border bg-muted/20 p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-sm font-semibold">{title}</p>
+          <p className="mt-1 text-xs text-muted-foreground">{range}</p>
+        </div>
+        <BackfillBadge state={state.status} />
+      </div>
+      <div className="mt-4 h-2 overflow-hidden rounded-full bg-slate-200">
+        <div
+          className="h-full rounded-full bg-amber-500 transition-all"
+          style={{ width: `${Math.max(4, state.progressPct)}%` }}
+        />
+      </div>
+      <div className="mt-3 grid grid-cols-3 gap-2 text-sm">
+        <Fact label="Linhas" value={String(coverage.rows)} />
+        <Fact label="Dias c/ dados" value={String(coverage.daysWithData)} />
+        <Fact label="Progresso" value={`${state.progressPct}%`} />
+      </div>
+      {state.window && (
+        <p className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+          Janela pendente: {formatDate(state.window.startDate)} a{" "}
+          {formatDate(state.window.endDate)}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function BackfillBadge({ state }: { state: BackfillState["status"] }) {
+  if (state === "COMPLETE") {
+    return <Badge className="border-transparent bg-emerald-600 text-white">Completo</Badge>;
+  }
+  if (state === "PENDING") {
+    return <Badge className="border-transparent bg-amber-500 text-white">Pendente</Badge>;
+  }
+  return <Badge variant="outline">Pronto</Badge>;
+}
+
 function FilterSelect({
   label,
   value,
@@ -412,18 +665,20 @@ function FilterSelect({
 
 function RecommendationCard({
   rec,
+  historyLabel,
   busy,
   onApprove,
   onReject,
 }: {
   rec: Recommendation;
+  historyLabel: string;
   busy: boolean;
   onApprove: () => void;
   onReject: () => void;
 }) {
   const canReview = rec.status === "PROPOSED" || rec.status === "APPROVED";
   return (
-    <Card className="overflow-hidden">
+    <Card className={cn("overflow-hidden border-l-4", severityBorderClass(rec.severity))}>
       <CardContent className="space-y-4 pt-5">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
           <div className="min-w-0 space-y-2">
@@ -495,7 +750,7 @@ function RecommendationCard({
         <div className="grid gap-2 lg:grid-cols-3">
           <MetricsBlock label="7 dias" metrics={rec.metrics7d} />
           <MetricsBlock label="30 dias" metrics={rec.metrics30d} />
-          <MetricsBlock label="Vitalicio" metrics={rec.metricsLifetime} />
+          <MetricsBlock label={historyLabel} metrics={rec.metricsLifetime} />
         </div>
       </CardContent>
     </Card>
@@ -573,6 +828,19 @@ function formatDateTime(value: string) {
     dateStyle: "short",
     timeStyle: "short",
   }).format(new Date(value));
+}
+
+function formatDate(value: string) {
+  return new Intl.DateTimeFormat("pt-BR", {
+    dateStyle: "short",
+  }).format(new Date(`${value}T00:00:00`));
+}
+
+function severityBorderClass(severity: Recommendation["severity"]) {
+  if (severity === "CRITICAL") return "border-l-red-600";
+  if (severity === "HIGH") return "border-l-orange-600";
+  if (severity === "MEDIUM") return "border-l-amber-500";
+  return "border-l-emerald-600";
 }
 
 function severityClass(severity: Recommendation["severity"]) {
