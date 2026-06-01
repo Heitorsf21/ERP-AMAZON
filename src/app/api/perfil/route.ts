@@ -44,6 +44,8 @@ export async function PATCH(req: Request) {
     return NextResponse.json({ erro: "USUARIO_NAO_ENCONTRADO" }, { status: 404 });
   }
   if (novoEmail !== atual.email) {
+    // Guard de transicao: sob TENANT_ISOLATION=enforce o getSession ja rejeita
+    // sessoes sem empresaId (vira dead-code). Mantido para o periodo off/transicao.
     if (!session.empresaId) {
       return NextResponse.json({ erro: "EMPRESA_NAO_IDENTIFICADA" }, { status: 400 });
     }

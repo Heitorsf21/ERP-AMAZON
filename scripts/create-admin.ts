@@ -41,6 +41,9 @@ const reset = process.argv.includes("--reset");
 async function main() {
   console.log(`\n[create-admin] banco: ${process.env.DATABASE_URL?.split("@")[1] ?? "local"}`);
   console.log(`[create-admin] empresa: ${empresaSlug}`);
+  if (!process.argv.includes("--empresa")) {
+    console.warn(`[create-admin] ⚠  --empresa nao informado, usando padrao "mundofs". Passe --empresa <slug> explicitamente para outro tenant.`);
+  }
   console.log(`[create-admin] email alvo: ${email}`);
 
   const empresa = await db.empresa.findUnique({ where: { slug: empresaSlug } });
