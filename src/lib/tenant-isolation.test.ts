@@ -13,7 +13,7 @@ vi.mock("./tenant-request", () => ({
   resolveEmpresaIdFromRequestCookie: vi.fn(async () => null),
 }));
 
-import { applyTenantIsolation } from "./db";
+import { applyTenantIsolation, GLOBAL_MODEL_NAMES, TENANT_MODEL_NAMES } from "./db";
 import { resolveEmpresaIdFromRequestCookie } from "./tenant-request";
 import { runWithTenant, type TenantContext } from "./tenant-context";
 
@@ -446,5 +446,14 @@ describe("applyTenantIsolation — modo ENFORCE", () => {
       query,
     });
     expect(seen[0]).toBe(args);
+  });
+});
+
+describe("classificacao dos models novos (A+B)", () => {
+  it("ConviteUsuario e AuditPlataforma sao GLOBAIS (nunca auto-filtrados)", () => {
+    expect(GLOBAL_MODEL_NAMES.has("ConviteUsuario")).toBe(true);
+    expect(GLOBAL_MODEL_NAMES.has("AuditPlataforma")).toBe(true);
+    expect(TENANT_MODEL_NAMES.has("ConviteUsuario")).toBe(false);
+    expect(TENANT_MODEL_NAMES.has("AuditPlataforma")).toBe(false);
   });
 });

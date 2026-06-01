@@ -137,6 +137,11 @@ const GLOBAL_MODELS = new Set<string>([
   // futura. Hoje AuditLog é WRITE-ONLY (nenhum findMany na base), então não há
   // risco de vazamento entre tenants por leitura via extensão.
   "AuditLog",
+  // Convite de admin e auditoria de plataforma: gravados em fluxos PRE-contexto
+  // (criacao de empresa pelo superadmin, set-password publico). Sem empresaId de
+  // negocio; escopo resolvido explicitamente pela aplicacao.
+  "ConviteUsuario",
+  "AuditPlataforma",
 ]);
 
 // Exportadas para inspeção/teste. Não usar em código de produção fora daqui.
