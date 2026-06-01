@@ -23,6 +23,10 @@ async function hashAleatorio(): Promise<string> {
   return bcrypt.hash(crypto.randomBytes(24).toString("base64"), 10);
 }
 
+// NOTA: a auditoria (AuditPlataforma "EMPRESA_CRIADA"/"ADMIN_CONVIDADO") é
+// responsabilidade do chamador na CAMADA DE API (rota /api/plataforma/empresas),
+// que tem o ator superadmin + IP da requisição. Este service permanece puro e
+// testável, sem dependência de sessão/request.
 export async function criarEmpresa(input: CriarEmpresaInput): Promise<CriarEmpresaResult> {
   const slugCheck = validarSlug(input.slug);
   if (!slugCheck.ok) throw new Error(`SLUG_INVALIDO: ${slugCheck.motivo}`);
