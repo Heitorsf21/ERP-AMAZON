@@ -4,8 +4,10 @@
  * Uso na VPS:
  *   sudo -u erp npx tsx scripts/create-admin.ts
  *   sudo -u erp npx tsx scripts/create-admin.ts --email admin@empresa.com --senha MinhaSenh@123 --nome "Heitor"
+ *   sudo -u erp npx tsx scripts/create-admin.ts --empresa mundofs --email admin@empresa.com
  *
  * Flags opcionais:
+ *   --empresa (padrão: mundofs) — slug da empresa no banco
  *   --email   (padrão: admin@mundofs.cloud)
  *   --senha   (gerada automaticamente se omitida)
  *   --nome    (padrão: Administrador)
@@ -27,6 +29,7 @@ function gerarSenhaAleatoria(): string {
   return crypto.randomBytes(18).toString("base64url").slice(0, 16);
 }
 
+const empresaSlug = arg("--empresa", "mundofs").toLowerCase().trim();
 const email = arg("--email", "admin@mundofs.cloud").toLowerCase().trim();
 const senhaArg = process.argv.indexOf("--senha");
 const senhaFornecida = senhaArg !== -1 ? process.argv[senhaArg + 1] : undefined;
@@ -37,9 +40,18 @@ const reset = process.argv.includes("--reset");
 
 async function main() {
   console.log(`\n[create-admin] banco: ${process.env.DATABASE_URL?.split("@")[1] ?? "local"}`);
+  console.log(`[create-admin] empresa: ${empresaSlug}`);
   console.log(`[create-admin] email alvo: ${email}`);
 
-  const existente = await db.usuario.findUnique({ where: { email } });
+  const empresa = await db.empresa.findUnique({ where: { slug: empresaSlug } });
+  if (!empresa) {
+    console.error(`[create-admin] empresa "${empresaSlug}" nao encontrada. Verifique o slug ou use --empresa <slug>.`);
+    process.exit(1);
+  }
+
+  const existente = await db.usuario.findUnique({
+    where: { empresaId_email: { empresaId: empresa.id, email } },
+  });
 
   if (existente) {
     if (!reset) {
@@ -51,14 +63,14 @@ async function main() {
 
     const senhaHash = await bcrypt.hash(senha, 12);
     await db.usuario.update({
-      where: { email },
+      where: { empresaId_email: { empresaId: empresa.id, email } },
       data: { senhaHash, ativo: true, twoFactorEnabled: false },
     });
     console.log(`\n✓ Senha do usuário "${email}" redefinida.`);
   } else {
     const senhaHash = await bcrypt.hash(senha, 12);
     await db.usuario.create({
-      data: { email, nome, senhaHash, role: "ADMIN", ativo: true },
+      data: { email, nome, senhaHash, role: "ADMIN", ativo: true, empresaId: empresa.id },
     });
     console.log(`\n✓ Usuário ADMIN criado: ${email}`);
   }

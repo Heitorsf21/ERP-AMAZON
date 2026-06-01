@@ -44,8 +44,11 @@ export async function PATCH(req: Request) {
     return NextResponse.json({ erro: "USUARIO_NAO_ENCONTRADO" }, { status: 404 });
   }
   if (novoEmail !== atual.email) {
+    if (!session.empresaId) {
+      return NextResponse.json({ erro: "EMPRESA_NAO_IDENTIFICADA" }, { status: 400 });
+    }
     const conflito = await db.usuario.findUnique({
-      where: { email: novoEmail },
+      where: { empresaId_email: { empresaId: session.empresaId, email: novoEmail } },
       select: { id: true },
     });
     if (conflito && conflito.id !== session.uid) {

@@ -2,12 +2,13 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, Loader2, Mail, CheckCircle2 } from "lucide-react";
+import { ArrowLeft, Loader2, Mail, CheckCircle2, Building2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
 export function EsqueciSenhaForm() {
+  const [empresa, setEmpresa] = useState("");
   const [email, setEmail] = useState("");
   const [enviando, setEnviando] = useState(false);
   const [enviado, setEnviado] = useState(false);
@@ -21,7 +22,7 @@ export function EsqueciSenhaForm() {
       const r = await fetch("/api/auth/recuperar-senha", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ email }),
+        body: JSON.stringify({ empresa, email }),
       });
       if (!r.ok) {
         setErro("Não foi possível processar agora. Tente novamente.");
@@ -72,6 +73,24 @@ export function EsqueciSenhaForm() {
             </p>
 
             <form onSubmit={onSubmit} className="mt-6 space-y-4" noValidate>
+              <div className="space-y-1.5">
+                <Label htmlFor="empresa">Empresa</Label>
+                <div className="relative">
+                  <Building2 className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    id="empresa"
+                    type="text"
+                    autoComplete="organization"
+                    placeholder="ex: lojax"
+                    className="pl-9"
+                    value={empresa}
+                    onChange={(e) => setEmpresa(e.target.value)}
+                    required
+                    disabled={enviando}
+                  />
+                </div>
+              </div>
+
               <div className="space-y-1.5">
                 <Label htmlFor="email">E-mail</Label>
                 <div className="relative">
