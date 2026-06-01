@@ -1,6 +1,6 @@
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
-import { TipoCategoria } from "../src/modules/shared/domain";
+import { semearEmpresa } from "../src/modules/plataforma/seed-empresa";
 
 const db = new PrismaClient();
 
@@ -8,34 +8,6 @@ const db = new PrismaClient();
 // seed.ts usa PrismaClient cru (sem a extensão de isolamento), então preenchemos
 // empresaId explicitamente.
 const SEED_EMPRESA_ID = "mundofs";
-
-// Conjunto mínimo para destravar o F1: categorias padrão + 1 fornecedor exemplo.
-// Cada categoria vira âncora de movimentações e contas. Percentuais da
-// "destinação do recebido" (F6) virão depois em ConfiguracaoSistema.
-const CATEGORIAS_PADRAO: Array<{
-  nome: string;
-  tipo: TipoCategoria;
-  cor: string;
-}> = [
-  { nome: "Pagamento Amazon", tipo: "RECEITA", cor: "#16a34a" },
-  { nome: "Outras receitas", tipo: "RECEITA", cor: "#0ea5e9" },
-  { nome: "Aportes dos sócios", tipo: "RECEITA", cor: "#22c55e" },
-  { nome: "Resgates de aplicações", tipo: "RECEITA", cor: "#14b8a6" },
-  { nome: "Compra de mercadorias / produtos", tipo: "DESPESA", cor: "#ea580c" },
-  { nome: "Fretes e entregas", tipo: "DESPESA", cor: "#f97316" },
-  { nome: "Impostos", tipo: "DESPESA", cor: "#dc2626" },
-  { nome: "Despesas operacionais", tipo: "DESPESA", cor: "#6366f1" },
-  { nome: "Contabilidade", tipo: "DESPESA", cor: "#0891b2" },
-  { nome: "Pagamento de fatura", tipo: "DESPESA", cor: "#7c3aed" },
-  { nome: "Marketing", tipo: "DESPESA", cor: "#ec4899" },
-  { nome: "Serviços terceirizados", tipo: "DESPESA", cor: "#0f766e" },
-  { nome: "Tecnologia e sistemas", tipo: "DESPESA", cor: "#2563eb" },
-  { nome: "Taxas de plataformas / pagamentos", tipo: "DESPESA", cor: "#9333ea" },
-  { nome: "Aplicações financeiras", tipo: "DESPESA", cor: "#64748b" },
-  { nome: "Reserva", tipo: "DESPESA", cor: "#64748b" },
-  { nome: "Pró-labore / Lucro", tipo: "DESPESA", cor: "#a16207" },
-  { nome: "Ajuste de saldo", tipo: "AMBAS", cor: "#475569" },
-];
 
 // Renomeações de categorias entre versões do seed. Quando a nova categoria já
 // existe, os vínculos são mesclados antes de remover a antiga.
@@ -45,14 +17,8 @@ const RENOMEACOES: Array<{ antigo: string; novo: string }> = [
 ];
 
 async function main() {
-  console.log("→ seed: categorias padrão");
-  for (const cat of CATEGORIAS_PADRAO) {
-    await db.categoria.upsert({
-      where: { empresaId_nome: { empresaId: SEED_EMPRESA_ID, nome: cat.nome } },
-      update: { tipo: cat.tipo, cor: cat.cor },
-      create: { ...cat, empresaId: SEED_EMPRESA_ID },
-    });
-  }
+  console.log("→ seed: categorias padrão + sentinelas Contas Fixas");
+  await semearEmpresa(db, SEED_EMPRESA_ID);
 
   for (const r of RENOMEACOES) {
     const antiga = await db.categoria.findFirst({ where: { nome: r.antigo } });
@@ -88,18 +54,6 @@ async function main() {
     }
   }
 
-  console.log("→ seed: fornecedor exemplo");
-  await db.fornecedor.upsert({
-    where: { empresaId_nome: { empresaId: SEED_EMPRESA_ID, nome: "Fornecedor Exemplo" } },
-    update: {},
-    create: {
-      nome: "Fornecedor Exemplo",
-      empresaId: SEED_EMPRESA_ID,
-      observacoes:
-        "Registro de exemplo criado pelo seed. Pode ser apagado quando a base real for cadastrada.",
-    },
-  });
-
   await seedUsuarioInicial();
 
   console.log("✓ seed concluído");
@@ -119,7 +73,9 @@ async function seedUsuarioInicial() {
     return;
   }
 
-  const existente = await db.usuario.findUnique({ where: { email } });
+  const existente = await db.usuario.findUnique({
+    where: { empresaId_email: { empresaId: SEED_EMPRESA_ID, email } },
+  });
   if (existente) {
     console.log(`→ seed: usuário "${email}" já existe, mantendo`);
     return;
@@ -127,7 +83,7 @@ async function seedUsuarioInicial() {
 
   const senhaHash = await bcrypt.hash(senha, 12);
   await db.usuario.create({
-    data: { email, nome, senhaHash, role: "ADMIN" },
+    data: { email, nome, senhaHash, role: "ADMIN", empresaId: SEED_EMPRESA_ID },
   });
   console.log(`✓ seed: usuário inicial "${email}" criado`);
 }
