@@ -34,9 +34,16 @@ import {
   deriveMetrics,
   emptyMetrics,
   evaluateAdsOptimizerRules,
+  type AdsOptimizerActionType,
   type AdsOptimizerEntityType,
   type AdsOptimizerMetrics,
 } from "./rules";
+import {
+  resolveSkuAttribution,
+  type ProductAdForSkuAttribution,
+  type SkuAttributionSource,
+  type SkuAttributionStatus,
+} from "./sku-attribution";
 
 const ACTIVE_STATES = new Set(["enabled"]);
 const MAX_PAGES = 50;
@@ -64,6 +71,22 @@ type OptimizerEntity = {
   currentBidCentavos: number | null;
   sku: string | null;
   asin: string | null;
+  skuAttributionStatus: SkuAttributionStatus;
+  skuAttributionSource: SkuAttributionSource;
+  skuAttributionCandidates: Array<{ adId: string; sku: string; asin: string | null }>;
+  blockedReason: string | null;
+};
+
+type RecommendationEvidence = {
+  metricsPrev7d?: AdsOptimizerMetrics;
+  label?: string;
+  displayLabel?: string;
+  displayEntityType?: string;
+  matchType?: string | null;
+  skuAttributionStatus?: SkuAttributionStatus;
+  skuAttributionSource?: SkuAttributionSource;
+  skuAttributionCandidates?: Array<{ adId: string; sku: string; asin: string | null }>;
+  blockedReason?: string | null;
 };
 
 type MetricAccumulator = {
@@ -73,6 +96,25 @@ type MetricAccumulator = {
   vendasCentavos: number;
   pedidos: number;
   unidades: number;
+};
+
+type AggregateMetricRow = MetricAccumulator & {
+  data: Date;
+  campaignId?: string;
+  adGroupId?: string | null;
+  entityType?: string;
+  entityId?: string;
+  keywordId?: string | null;
+  targetId?: string | null;
+  searchTerm?: string;
+  matchType?: string | null;
+  atualizadoEm?: Date;
+};
+
+type OptimizerRuleContext = {
+  activeExactKeywords: Set<string>;
+  activeNegativeKeywords: Set<string>;
+  activeNegativeTargets: Set<string>;
 };
 
 export type AdsOptimizerApprovalInput = {
@@ -152,6 +194,7 @@ export const adsOptimizerService = {
 
       const snapshot = await buildOptimizationSnapshot(profileId);
       let total = 0;
+      const seenRecommendationKeys = new Set<string>();
 
       for (const item of snapshot.items) {
         const recommendations = evaluateAdsOptimizerRules({
@@ -173,6 +216,16 @@ export const adsOptimizerService = {
         });
 
         for (const rec of recommendations) {
+          if (
+            shouldSkipRecommendation(
+              item.entity,
+              rec.actionType,
+              snapshot.ruleContext,
+              seenRecommendationKeys,
+            )
+          ) {
+            continue;
+          }
           await db.adsOptimizationRecommendation.create({
             data: {
               runId: run.id,
@@ -203,10 +256,7 @@ export const adsOptimizerService = {
               metrics7dJson: json(item.metrics7d),
               metrics30dJson: json(item.metrics30d),
               metricsLifetimeJson: json(item.metricsLifetime),
-              evidenceJson: json({
-                metricsPrev7d: item.metricsPrev7d,
-                label: item.entity.label,
-              }),
+              evidenceJson: json(buildRecommendationEvidence(item.entity, item.metricsPrev7d)),
             },
           });
           total += 1;
@@ -240,11 +290,21 @@ export const adsOptimizerService = {
   async getSnapshot() {
     const creds = await getAmazonAdsCredentials();
     const profileId = creds?.profileId ?? "";
-    const [recommendations, lastRun, coverage] = await Promise.all([
+    const recommendationWhere = profileId
+      ? { profileId, status: { in: ["PROPOSED", "APPROVED", "FAILED"] } }
+      : { status: { in: ["PROPOSED", "APPROVED", "FAILED"] } };
+    const countWhere = (status: string) => (profileId ? { profileId, status } : { status });
+    const [
+      recommendations,
+      lastRun,
+      coverage,
+      proposedTotal,
+      approvedTotal,
+      failedTotal,
+      staleTotal,
+    ] = await Promise.all([
       db.adsOptimizationRecommendation.findMany({
-        where: profileId
-          ? { profileId, status: { in: ["PROPOSED", "APPROVED", "FAILED", "STALE"] } }
-          : { status: { in: ["PROPOSED", "APPROVED", "FAILED", "STALE"] } },
+        where: recommendationWhere,
         orderBy: [{ status: "asc" }, { criadoEm: "desc" }],
         take: 300,
       }),
@@ -253,27 +313,48 @@ export const adsOptimizerService = {
         orderBy: { iniciadoEm: "desc" },
       }),
       profileId ? getOptimizerCoverage(profileId) : Promise.resolve(null),
+      db.adsOptimizationRecommendation.count({ where: countWhere("PROPOSED") }),
+      db.adsOptimizationRecommendation.count({ where: countWhere("APPROVED") }),
+      db.adsOptimizationRecommendation.count({ where: countWhere("FAILED") }),
+      db.adsOptimizationRecommendation.count({ where: countWhere("STALE") }),
     ]);
     const campaignIds = uniqueStrings(recommendations.map((rec) => rec.campaignId));
-    const campaignRows = campaignIds.length > 0
-      ? await db.amazonAdsCampaignEntity.findMany({
-          where: { profileId, campaignId: { in: campaignIds } },
-          select: { campaignId: true, targetingType: true },
-        })
-      : [];
+    const keywordIds = uniqueStrings(
+      recommendations.map((rec) => rec.keywordId).filter(Boolean) as string[],
+    );
+    const [campaignRows, keywordRows] = await Promise.all([
+      campaignIds.length > 0
+        ? db.amazonAdsCampaignEntity.findMany({
+            where: { profileId, campaignId: { in: campaignIds } },
+            select: { campaignId: true, targetingType: true },
+          })
+        : Promise.resolve([]),
+      keywordIds.length > 0
+        ? db.amazonAdsKeyword.findMany({
+            where: { profileId, keywordId: { in: keywordIds } },
+            select: { keywordId: true, matchType: true },
+          })
+        : Promise.resolve([]),
+    ]);
     const targetingTypeByCampaign = new Map(
       campaignRows.map((campaign) => [campaign.campaignId, campaign.targetingType]),
     );
+    const matchTypeByKeyword = new Map(
+      keywordRows.map((keyword) => [keyword.keywordId, keyword.matchType]),
+    );
 
     const items = recommendations.map((rec) => {
-      const evidence = parseJson<{ label?: string }>(rec.evidenceJson);
+      const evidence = parseOptionalJson<RecommendationEvidence>(rec.evidenceJson) ?? {};
       const approvedPayload = parseOptionalJson<JsonRecord>(rec.amazonPayloadJson);
+      const blockedReason = getEvidenceBlockedReason(evidence, rec);
       return {
         id: rec.id,
         status: rec.status,
         entityType: rec.entityType,
         entityId: rec.entityId,
         label: evidence.label ?? rec.searchTerm ?? rec.entityId,
+        displayEntityType: evidence.displayEntityType ?? displayEntityType(rec.entityType),
+        displayLabel: evidence.displayLabel ?? evidence.label ?? rec.searchTerm ?? rec.entityId,
         campaignId: rec.campaignId,
         campaignName: rec.campaignName,
         campaignTargetingType: targetingTypeByCampaign.get(rec.campaignId) ?? null,
@@ -284,8 +365,17 @@ export const adsOptimizerService = {
         keywordId: rec.keywordId,
         targetId: rec.targetId,
         searchTerm: rec.searchTerm,
+        matchType:
+          evidence.matchType ??
+          (rec.keywordId ? matchTypeByKeyword.get(rec.keywordId) ?? null : null),
         sku: rec.sku,
         asin: rec.asin,
+        skuAttributionStatus:
+          evidence.skuAttributionStatus ?? (rec.sku ? "RESOLVED" : "UNRESOLVED"),
+        skuAttributionSource:
+          evidence.skuAttributionSource ?? (rec.sku ? "REPORT" : "UNRESOLVED_NO_ACTIVE_PRODUCT_AD"),
+        isExecutable: !blockedReason,
+        blockedReason,
         actionType: rec.actionType,
         severity: rec.severity,
         ruleId: rec.ruleId,
@@ -322,10 +412,10 @@ export const adsOptimizerService = {
           }
         : null,
       totals: {
-        proposed: items.filter((r) => r.status === "PROPOSED").length,
-        approved: items.filter((r) => r.status === "APPROVED").length,
-        failed: items.filter((r) => r.status === "FAILED").length,
-        stale: items.filter((r) => r.status === "STALE").length,
+        proposed: proposedTotal,
+        approved: approvedTotal,
+        failed: failedTotal,
+        stale: staleTotal,
       },
       coverage,
       recommendations: items,
@@ -341,6 +431,11 @@ export const adsOptimizerService = {
     if (!rec) throw new Error("recomendação não encontrada");
     if (rec.status !== "PROPOSED") {
       throw new Error(`recomendação não está pendente: ${rec.status}`);
+    }
+    const blocked = await validateRecommendationFresh(rec);
+    if (blocked) {
+      await markRecommendationStale(rec.id, blocked, session);
+      throw new Error(blocked);
     }
     const request = buildAmazonActionPayload(rec, normalizeApprovalInput(rec.actionType, input));
     return db.adsOptimizationRecommendation.update({
@@ -1018,7 +1113,7 @@ async function persistTargetingRows(profileId: string, rows: AdsReportRow[]) {
   for (const row of parsed) {
     await upsertFirst(
       "amazonAdsTargetingMetricDaily",
-      { profileId, naturalKey: row.naturalKey },
+      metricIdentityWhere(profileId, row),
       metricData(profileId, row),
     );
   }
@@ -1030,7 +1125,10 @@ async function persistSearchTermRows(profileId: string, rows: AdsReportRow[]) {
   for (const row of parsed) {
     await upsertFirst(
       "amazonAdsSearchTermMetricDaily",
-      { profileId, naturalKey: row.naturalKey },
+      {
+        ...metricIdentityWhere(profileId, row),
+        searchTerm: row.searchTerm,
+      },
       {
         ...metricData(profileId, row),
         searchTerm: row.searchTerm,
@@ -1070,6 +1168,20 @@ function metricData(profileId: string, row: AdsOptimizerMetricRow) {
   };
 }
 
+function metricIdentityWhere(profileId: string, row: AdsOptimizerMetricRow) {
+  return {
+    profileId,
+    data: row.data,
+    campaignId: row.campaignId,
+    adGroupId: row.adGroupId,
+    entityType: row.entityType,
+    entityId: row.entityId,
+    keywordId: row.keywordId,
+    targetId: row.targetId,
+    matchType: row.matchType,
+  };
+}
+
 async function buildOptimizationSnapshot(profileId: string) {
   const today = startOfAdsDay(new Date());
   const last7Start = addDays(today, -7);
@@ -1077,61 +1189,96 @@ async function buildOptimizationSnapshot(profileId: string) {
   const prev7End = addDays(last7Start, -1);
   const last30Start = addDays(today, -30);
 
-  const [keywords, targets, targetingRows, searchRows, portfolios] = await Promise.all([
+  const [
+    keywords,
+    targets,
+    targetingRows,
+    searchRows,
+    portfolios,
+    productAds,
+    negativeKeywords,
+    negativeTargets,
+  ] = await Promise.all([
     db.amazonAdsKeyword.findMany({ where: { profileId } }),
     db.amazonAdsTarget.findMany({ where: { profileId } }),
     db.amazonAdsTargetingMetricDaily.findMany({ where: { profileId } }),
     db.amazonAdsSearchTermMetricDaily.findMany({ where: { profileId } }),
     db.amazonAdsPortfolio.findMany({ where: { profileId } }),
+    db.amazonAdsProductAd.findMany({ where: { profileId } }),
+    db.amazonAdsNegativeKeyword.findMany({ where: { profileId } }),
+    db.amazonAdsNegativeTarget.findMany({ where: { profileId } }),
   ]);
   const portfolioNameById = new Map(portfolios.map((p) => [p.portfolioId, p.nome]));
+  const productAdsForAttribution: ProductAdForSkuAttribution[] = productAds.map((ad) => ({
+    campaignId: ad.campaignId,
+    adGroupId: ad.adGroupId,
+    adId: ad.adId,
+    sku: ad.sku,
+    asin: ad.asin,
+    estado: ad.estado,
+  }));
 
   const entities: OptimizerEntity[] = [
-    ...keywords.map((k) => ({
-      entityType: "KEYWORD" as const,
-      entityId: k.keywordId,
-      label: k.keywordText,
-      campaignId: k.campaignId,
-      campaignName: k.campaignName,
-      portfolioId: k.portfolioId,
-      portfolioName: k.portfolioId ? portfolioNameById.get(k.portfolioId) ?? null : null,
-      adGroupId: k.adGroupId,
-      adGroupName: k.adGroupName,
-      keywordId: k.keywordId,
-      targetId: null,
-      searchTerm: null,
-      matchType: k.matchType,
-      estado: k.estado,
-      currentBidCentavos: k.bidCentavos,
-      sku: null,
-      asin: null,
-    })),
-    ...targets.map((t) => ({
-      entityType: "TARGET" as const,
-      entityId: t.targetId,
-      label: t.expressionText,
-      campaignId: t.campaignId,
-      campaignName: t.campaignName,
-      portfolioId: t.portfolioId,
-      portfolioName: t.portfolioId ? portfolioNameById.get(t.portfolioId) ?? null : null,
-      adGroupId: t.adGroupId,
-      adGroupName: t.adGroupName,
-      keywordId: null,
-      targetId: t.targetId,
-      searchTerm: null,
-      matchType: t.expressionType,
-      estado: t.estado,
-      currentBidCentavos: t.bidCentavos,
-      sku: null,
-      asin: null,
-    })),
+    ...keywords.map((k) =>
+      withSkuAttribution(
+        {
+          entityType: "KEYWORD" as const,
+          entityId: k.keywordId,
+          label: k.keywordText,
+          campaignId: k.campaignId,
+          campaignName: k.campaignName,
+          portfolioId: k.portfolioId,
+          portfolioName: k.portfolioId ? portfolioNameById.get(k.portfolioId) ?? null : null,
+          adGroupId: k.adGroupId,
+          adGroupName: k.adGroupName,
+          keywordId: k.keywordId,
+          targetId: null,
+          searchTerm: null,
+          matchType: k.matchType,
+          estado: k.estado,
+          currentBidCentavos: k.bidCentavos,
+          sku: null,
+          asin: null,
+        },
+        productAdsForAttribution,
+      ),
+    ),
+    ...targets.map((t) =>
+      withSkuAttribution(
+        {
+          entityType: "TARGET" as const,
+          entityId: t.targetId,
+          label: t.expressionText,
+          campaignId: t.campaignId,
+          campaignName: t.campaignName,
+          portfolioId: t.portfolioId,
+          portfolioName: t.portfolioId ? portfolioNameById.get(t.portfolioId) ?? null : null,
+          adGroupId: t.adGroupId,
+          adGroupName: t.adGroupName,
+          keywordId: null,
+          targetId: t.targetId,
+          searchTerm: null,
+          matchType: t.expressionType,
+          estado: t.estado,
+          currentBidCentavos: t.bidCentavos,
+          sku: null,
+          asin: null,
+        },
+        productAdsForAttribution,
+      ),
+    ),
   ];
 
   const entityById = new Map(entities.map((e) => [`${e.entityType}:${e.entityId}`, e]));
-  const searchEntities = buildSearchTermEntities(searchRows, entityById);
+  const searchEntities = buildSearchTermEntities(
+    searchRows,
+    entityById,
+    productAdsForAttribution,
+  );
   const allEntities = [...entities, ...searchEntities];
 
   return {
+    ruleContext: buildRuleContext(keywords, negativeKeywords, negativeTargets),
     items: allEntities.map((entity) => ({
       entity,
       metrics7d: aggregateMetrics(targetingRows, searchRows, entity, last7Start, today),
@@ -1157,6 +1304,7 @@ function buildSearchTermEntities(
     asin: string | null;
   }>,
   entityById: Map<string, OptimizerEntity>,
+  productAds: ProductAdForSkuAttribution[],
 ) {
   const map = new Map<string, OptimizerEntity>();
   for (const row of rows) {
@@ -1168,27 +1316,200 @@ function buildSearchTermEntities(
     const parent = parentKey ? entityById.get(parentKey) : null;
     const entityId = `SEARCH_TERM:${row.campaignId}:${row.adGroupId ?? ""}:${row.keywordId ?? row.targetId ?? ""}:${row.searchTerm}`;
     if (map.has(entityId)) continue;
-    map.set(entityId, {
-      entityType: "SEARCH_TERM",
+    map.set(
       entityId,
-      label: row.searchTerm,
-      campaignId: row.campaignId,
-      portfolioId: row.portfolioId ?? parent?.portfolioId ?? null,
-      portfolioName: parent?.portfolioName ?? null,
-      campaignName: row.campaignName ?? parent?.campaignName ?? null,
-      adGroupId: row.adGroupId,
-      adGroupName: row.adGroupName ?? parent?.adGroupName ?? null,
-      keywordId: row.keywordId,
-      targetId: row.targetId,
-      searchTerm: row.searchTerm,
-      matchType: row.matchType ?? parent?.matchType ?? null,
-      estado: parent?.estado ?? "enabled",
-      currentBidCentavos: parent?.currentBidCentavos ?? null,
-      sku: row.sku,
-      asin: row.asin,
-    });
+      withSkuAttribution(
+        {
+          entityType: "SEARCH_TERM",
+          entityId,
+          label: row.searchTerm,
+          campaignId: row.campaignId,
+          portfolioId: row.portfolioId ?? parent?.portfolioId ?? null,
+          portfolioName: parent?.portfolioName ?? null,
+          campaignName: row.campaignName ?? parent?.campaignName ?? null,
+          adGroupId: row.adGroupId,
+          adGroupName: row.adGroupName ?? parent?.adGroupName ?? null,
+          keywordId: row.keywordId,
+          targetId: row.targetId,
+          searchTerm: row.searchTerm,
+          matchType: row.matchType ?? parent?.matchType ?? null,
+          estado: parent?.estado ?? "enabled",
+          currentBidCentavos: parent?.currentBidCentavos ?? null,
+          sku: row.sku,
+          asin: row.asin,
+        },
+        productAds,
+      ),
+    );
   }
   return [...map.values()];
+}
+
+function withSkuAttribution(
+  entity: Omit<
+    OptimizerEntity,
+    | "skuAttributionStatus"
+    | "skuAttributionSource"
+    | "skuAttributionCandidates"
+    | "blockedReason"
+  >,
+  productAds: ProductAdForSkuAttribution[],
+): OptimizerEntity {
+  const attribution = resolveSkuAttribution(
+    {
+      sku: entity.sku,
+      asin: entity.asin,
+      campaignId: entity.campaignId,
+      adGroupId: entity.adGroupId,
+    },
+    productAds,
+  );
+
+  return {
+    ...entity,
+    sku: attribution.sku,
+    asin: attribution.asin,
+    skuAttributionStatus: attribution.status,
+    skuAttributionSource: attribution.source,
+    skuAttributionCandidates: attribution.candidates,
+    blockedReason: attribution.blockedReason,
+  };
+}
+
+function buildRuleContext(
+  keywords: Array<{
+    adGroupId: string;
+    keywordText: string;
+    matchType: string | null;
+    estado: string | null;
+  }>,
+  negativeKeywords: Array<{
+    campaignId: string;
+    adGroupId: string | null;
+    keywordText: string;
+    estado: string | null;
+  }>,
+  negativeTargets: Array<{
+    campaignId: string;
+    adGroupId: string | null;
+    expressionText: string;
+    estado: string | null;
+  }>,
+): OptimizerRuleContext {
+  return {
+    activeExactKeywords: new Set(
+      keywords
+        .filter(
+          (keyword) =>
+            isActiveState(keyword.estado) &&
+            keyword.matchType?.toUpperCase() === "EXACT",
+        )
+        .map((keyword) => adGroupTextKey(keyword.adGroupId, keyword.keywordText)),
+    ),
+    activeNegativeKeywords: new Set(
+      negativeKeywords
+        .filter((keyword) => isActiveState(keyword.estado))
+        .map((keyword) =>
+          campaignAdGroupTextKey(keyword.campaignId, keyword.adGroupId, keyword.keywordText),
+        ),
+    ),
+    activeNegativeTargets: new Set(
+      negativeTargets
+        .filter((target) => isActiveState(target.estado))
+        .map((target) =>
+          campaignAdGroupTextKey(target.campaignId, target.adGroupId, target.expressionText),
+        ),
+    ),
+  };
+}
+
+function shouldSkipRecommendation(
+  entity: OptimizerEntity,
+  actionType: AdsOptimizerActionType,
+  context: OptimizerRuleContext,
+  seenRecommendationKeys: Set<string>,
+) {
+  const dedupeKey = recommendationDedupeKey(entity, actionType);
+  if (seenRecommendationKeys.has(dedupeKey)) return true;
+  seenRecommendationKeys.add(dedupeKey);
+
+  if (actionType === "CREATE_EXACT_KEYWORD" && entity.adGroupId && entity.searchTerm) {
+    return context.activeExactKeywords.has(adGroupTextKey(entity.adGroupId, entity.searchTerm));
+  }
+
+  if (actionType === "ADD_NEGATIVE_KEYWORD" && entity.searchTerm) {
+    return context.activeNegativeKeywords.has(
+      campaignAdGroupTextKey(entity.campaignId, entity.adGroupId, entity.searchTerm),
+    );
+  }
+
+  if (actionType === "ADD_NEGATIVE_TARGET" && entity.searchTerm) {
+    return context.activeNegativeTargets.has(
+      campaignAdGroupTextKey(entity.campaignId, entity.adGroupId, entity.searchTerm),
+    );
+  }
+
+  return false;
+}
+
+function recommendationDedupeKey(
+  entity: OptimizerEntity,
+  actionType: AdsOptimizerActionType,
+) {
+  return [
+    entity.campaignId,
+    entity.adGroupId ?? "",
+    actionType,
+    normalizeText(entity.searchTerm ?? entity.label),
+  ].join("|");
+}
+
+function buildRecommendationEvidence(
+  entity: OptimizerEntity,
+  metricsPrev7d: AdsOptimizerMetrics,
+): RecommendationEvidence {
+  return {
+    metricsPrev7d,
+    label: entity.label,
+    displayLabel: displayLabel(entity),
+    displayEntityType: displayEntityType(entity.entityType),
+    matchType: entity.matchType,
+    skuAttributionStatus: entity.skuAttributionStatus,
+    skuAttributionSource: entity.skuAttributionSource,
+    skuAttributionCandidates: entity.skuAttributionCandidates,
+    blockedReason: entity.blockedReason,
+  };
+}
+
+function displayEntityType(entityType: string) {
+  if (entityType === "KEYWORD") return "Palavra-chave";
+  if (entityType === "TARGET") return "Segmentacao";
+  if (entityType === "SEARCH_TERM") return "Termo pesquisado";
+  return entityType;
+}
+
+function displayLabel(entity: Pick<OptimizerEntity, "entityType" | "label">) {
+  return entity.label;
+}
+
+function isActiveState(value: string | null) {
+  return value?.toLowerCase() === "enabled";
+}
+
+function adGroupTextKey(adGroupId: string, text: string) {
+  return `${adGroupId}|${normalizeText(text)}`;
+}
+
+function campaignAdGroupTextKey(
+  campaignId: string,
+  adGroupId: string | null,
+  text: string,
+) {
+  return `${campaignId}|${adGroupId ?? ""}|${normalizeText(text)}`;
+}
+
+function normalizeText(value: string) {
+  return value.trim().toLowerCase().replace(/\s+/g, " ");
 }
 
 function aggregateMetrics(
@@ -1196,6 +1517,10 @@ function aggregateMetrics(
     data: Date;
     entityType: string;
     entityId: string;
+    keywordId: string | null;
+    targetId: string | null;
+    matchType: string | null;
+    atualizadoEm?: Date;
     impressoes: number;
     cliques: number;
     gastoCentavos: number;
@@ -1210,6 +1535,8 @@ function aggregateMetrics(
     keywordId: string | null;
     targetId: string | null;
     searchTerm: string;
+    matchType: string | null;
+    atualizadoEm?: Date;
     impressoes: number;
     cliques: number;
     gastoCentavos: number;
@@ -1229,13 +1556,14 @@ function aggregateMetrics(
     pedidos: 0,
     unidades: 0,
   };
-  const rows =
+  const rows: AggregateMetricRow[] =
     entity.entityType === "SEARCH_TERM"
       ? searchRows.filter((row) => searchRowMatches(row, entity))
       : targetingRows.filter(
           (row) => row.entityType === entity.entityType && row.entityId === entity.entityId,
         );
-  for (const row of rows) {
+  const dedupedRows = dedupeMetricRows(rows, entity);
+  for (const row of dedupedRows) {
     if (start && row.data < start) continue;
     if (end && row.data > end) continue;
     acc.impressoes += row.impressoes;
@@ -1245,8 +1573,58 @@ function aggregateMetrics(
     acc.pedidos += row.pedidos;
     acc.unidades += row.unidades;
   }
-  if (rows.length === 0) return emptyMetrics();
+  if (dedupedRows.length === 0) return emptyMetrics();
   return deriveMetrics(acc);
+}
+
+function dedupeMetricRows<T extends AggregateMetricRow>(
+  rows: T[],
+  entity: OptimizerEntity,
+) {
+  const byKey = new Map<string, T>();
+  for (const row of rows) {
+    const key = metricRowKey(row, entity);
+    const current = byKey.get(key);
+    if (!current || preferMetricRow(row, current)) {
+      byKey.set(key, row);
+    }
+  }
+  return [...byKey.values()];
+}
+
+function metricRowKey(row: AggregateMetricRow, entity: OptimizerEntity) {
+  const date = row.data.toISOString();
+  if (entity.entityType === "SEARCH_TERM") {
+    return [
+      "SEARCH_TERM",
+      date,
+      row.campaignId ?? entity.campaignId,
+      row.adGroupId ?? "",
+      row.keywordId ?? "",
+      row.targetId ?? "",
+      row.matchType ?? "",
+      row.searchTerm ?? "",
+    ].join("|");
+  }
+  return [
+    entity.entityType,
+    date,
+    row.entityId ?? entity.entityId,
+    row.keywordId ?? entity.keywordId ?? "",
+    row.targetId ?? entity.targetId ?? "",
+    row.matchType ?? entity.matchType ?? "",
+  ].join("|");
+}
+
+function preferMetricRow(candidate: AggregateMetricRow, current: AggregateMetricRow) {
+  const candidateUpdated = candidate.atualizadoEm?.getTime() ?? 0;
+  const currentUpdated = current.atualizadoEm?.getTime() ?? 0;
+  if (candidateUpdated !== currentUpdated) return candidateUpdated > currentUpdated;
+  return metricWeight(candidate) > metricWeight(current);
+}
+
+function metricWeight(row: AggregateMetricRow) {
+  return row.impressoes + row.cliques + row.gastoCentavos + row.vendasCentavos + row.pedidos;
 }
 
 function searchRowMatches(
@@ -1256,14 +1634,20 @@ function searchRowMatches(
     keywordId: string | null;
     targetId: string | null;
     searchTerm: string;
+    matchType: string | null;
   },
   entity: OptimizerEntity,
 ) {
+  const hasStableParent = row.keywordId != null || row.targetId != null;
+  const sameParent =
+    row.keywordId === entity.keywordId &&
+    row.targetId === entity.targetId &&
+    (hasStableParent || row.matchType === entity.matchType);
+
   return (
     row.campaignId === entity.campaignId &&
     row.adGroupId === entity.adGroupId &&
-    row.keywordId === entity.keywordId &&
-    row.targetId === entity.targetId &&
+    sameParent &&
     row.searchTerm === entity.searchTerm
   );
 }
@@ -1340,6 +1724,10 @@ async function executeRecommendation(
 async function validateRecommendationFresh(
   rec: Awaited<ReturnType<typeof db.adsOptimizationRecommendation.findMany>>[number],
 ) {
+  const evidence = parseOptionalJson<RecommendationEvidence>(rec.evidenceJson) ?? {};
+  const blockedReason = getEvidenceBlockedReason(evidence, rec);
+  if (blockedReason) return blockedReason;
+
   if (rec.entityType === "KEYWORD" || rec.keywordId) {
     const keyword = await db.amazonAdsKeyword.findFirst({
       where: { profileId: rec.profileId, keywordId: rec.keywordId ?? rec.entityId },
@@ -1372,6 +1760,8 @@ async function validateRecommendationFresh(
       return `Bid atual mudou de ${rec.currentBidCentavos} para ${target.bidCentavos}`;
     }
   }
+  const duplicateReason = await getDuplicateActionReason(rec);
+  if (duplicateReason) return duplicateReason;
   return null;
 }
 
@@ -1393,6 +1783,77 @@ async function markRecommendationStale(
     where: { id },
     data: { status: "STALE", staleReason },
   });
+}
+
+function getEvidenceBlockedReason(
+  evidence: RecommendationEvidence,
+  rec: { sku: string | null; entityType: string },
+) {
+  if (evidence.blockedReason) return evidence.blockedReason;
+  if (evidence.skuAttributionStatus === "UNRESOLVED") {
+    return "Recomendacao sem SKU atribuido com seguranca.";
+  }
+  if (!rec.sku) {
+    return "Recomendacao sem SKU atribuido com seguranca.";
+  }
+  return null;
+}
+
+async function getDuplicateActionReason(
+  rec: Awaited<ReturnType<typeof db.adsOptimizationRecommendation.findMany>>[number],
+) {
+  if (rec.actionType === "CREATE_EXACT_KEYWORD" && rec.adGroupId && rec.searchTerm) {
+    const searchTerm = rec.searchTerm;
+    const keywords = await db.amazonAdsKeyword.findMany({
+      where: { profileId: rec.profileId, adGroupId: rec.adGroupId },
+      select: { keywordText: true, matchType: true, estado: true },
+    });
+    const exists = keywords.some(
+      (keyword) =>
+        isActiveState(keyword.estado) &&
+        keyword.matchType?.toUpperCase() === "EXACT" &&
+        normalizeText(keyword.keywordText) === normalizeText(searchTerm),
+    );
+    if (exists) return "Keyword exact ja existe ativa neste ad group.";
+  }
+
+  if (rec.actionType === "ADD_NEGATIVE_KEYWORD" && rec.searchTerm) {
+    const searchTerm = rec.searchTerm;
+    const negatives = await db.amazonAdsNegativeKeyword.findMany({
+      where: {
+        profileId: rec.profileId,
+        campaignId: rec.campaignId,
+        adGroupId: rec.adGroupId,
+      },
+      select: { keywordText: true, estado: true },
+    });
+    const exists = negatives.some(
+      (negative) =>
+        isActiveState(negative.estado) &&
+        normalizeText(negative.keywordText) === normalizeText(searchTerm),
+    );
+    if (exists) return "Negativa ja existe ativa para este termo.";
+  }
+
+  if (rec.actionType === "ADD_NEGATIVE_TARGET" && rec.searchTerm) {
+    const negatives = await db.amazonAdsNegativeTarget.findMany({
+      where: {
+        profileId: rec.profileId,
+        campaignId: rec.campaignId,
+        adGroupId: rec.adGroupId,
+      },
+      select: { expressionText: true, estado: true },
+    });
+    const term = normalizeText(rec.searchTerm);
+    const exists = negatives.some(
+      (negative) =>
+        isActiveState(negative.estado) &&
+        normalizeText(negative.expressionText).includes(term),
+    );
+    if (exists) return "Negativa de ASIN ja existe ativa para este termo.";
+  }
+
+  return null;
 }
 
 function buildAmazonActionPayload(
