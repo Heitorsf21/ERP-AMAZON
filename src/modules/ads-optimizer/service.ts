@@ -276,11 +276,21 @@ export const adsOptimizerService = {
   async getSnapshot() {
     const creds = await getAmazonAdsCredentials();
     const profileId = creds?.profileId ?? "";
-    const [recommendations, lastRun, coverage] = await Promise.all([
+    const recommendationWhere = profileId
+      ? { profileId, status: { in: ["PROPOSED", "APPROVED", "FAILED"] } }
+      : { status: { in: ["PROPOSED", "APPROVED", "FAILED"] } };
+    const countWhere = (status: string) => (profileId ? { profileId, status } : { status });
+    const [
+      recommendations,
+      lastRun,
+      coverage,
+      proposedTotal,
+      approvedTotal,
+      failedTotal,
+      staleTotal,
+    ] = await Promise.all([
       db.adsOptimizationRecommendation.findMany({
-        where: profileId
-          ? { profileId, status: { in: ["PROPOSED", "APPROVED", "FAILED", "STALE"] } }
-          : { status: { in: ["PROPOSED", "APPROVED", "FAILED", "STALE"] } },
+        where: recommendationWhere,
         orderBy: [{ status: "asc" }, { criadoEm: "desc" }],
         take: 300,
       }),
@@ -289,6 +299,10 @@ export const adsOptimizerService = {
         orderBy: { iniciadoEm: "desc" },
       }),
       profileId ? getOptimizerCoverage(profileId) : Promise.resolve(null),
+      db.adsOptimizationRecommendation.count({ where: countWhere("PROPOSED") }),
+      db.adsOptimizationRecommendation.count({ where: countWhere("APPROVED") }),
+      db.adsOptimizationRecommendation.count({ where: countWhere("FAILED") }),
+      db.adsOptimizationRecommendation.count({ where: countWhere("STALE") }),
     ]);
     const campaignIds = uniqueStrings(recommendations.map((rec) => rec.campaignId));
     const campaignRows = campaignIds.length > 0
@@ -367,10 +381,10 @@ export const adsOptimizerService = {
           }
         : null,
       totals: {
-        proposed: items.filter((r) => r.status === "PROPOSED").length,
-        approved: items.filter((r) => r.status === "APPROVED").length,
-        failed: items.filter((r) => r.status === "FAILED").length,
-        stale: items.filter((r) => r.status === "STALE").length,
+        proposed: proposedTotal,
+        approved: approvedTotal,
+        failed: failedTotal,
+        stale: staleTotal,
       },
       coverage,
       recommendations: items,

@@ -207,6 +207,77 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
+describe("adsOptimizerService.getSnapshot", () => {
+  it("keeps stale recommendations out of the actionable workspace while preserving the stale total", async () => {
+    const rec = {
+      ...approvedKeywordRecommendation(),
+      id: "rec-current",
+      status: "PROPOSED",
+      campaignName: "Campanha",
+      portfolioId: null,
+      portfolioName: null,
+      adGroupName: "Grupo",
+      searchTerm: null,
+      asin: "ASIN-1",
+      severity: "LOW",
+      ruleId: "RULE",
+      motivo: "Motivo",
+      risco: null,
+      confianca: 80,
+      beforeState: "enabled",
+      proposedState: null,
+      metrics7dJson: JSON.stringify({}),
+      metrics30dJson: JSON.stringify({}),
+      metricsLifetimeJson: JSON.stringify({}),
+      amazonPayloadJson: null,
+      criadoEm: new Date("2026-06-01T12:00:00.000Z"),
+      aprovadoEm: null,
+      executadoEm: null,
+      staleReason: null,
+      errorMessage: null,
+    };
+    mocks.db.adsOptimizationRecommendation.findMany.mockResolvedValue([rec]);
+    mocks.db.adsOptimizationRecommendation.count.mockImplementation(
+      ({ where }: { where: { status: string } }) => {
+        const totals: Record<string, number> = {
+          PROPOSED: 1,
+          APPROVED: 0,
+          FAILED: 0,
+          STALE: 25,
+        };
+        return Promise.resolve(totals[where.status] ?? 0);
+      },
+    );
+    mocks.db.adsOptimizationRun.findFirst.mockResolvedValue({
+      id: "run-1",
+      status: "DONE",
+      iniciadoEm: new Date("2026-06-01T12:00:00.000Z"),
+      finalizadoEm: new Date("2026-06-01T12:01:00.000Z"),
+      totalEntidades: 1,
+      totalRecomendacoes: 1,
+      erro: null,
+    });
+
+    const snapshot = await adsOptimizerService.getSnapshot();
+
+    expect(mocks.db.adsOptimizationRecommendation.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          status: { in: ["PROPOSED", "APPROVED", "FAILED"] },
+        }),
+      }),
+    );
+    expect(snapshot.recommendations).toHaveLength(1);
+    expect(snapshot.recommendations[0]?.status).toBe("PROPOSED");
+    expect(snapshot.totals).toMatchObject({
+      proposed: 1,
+      approved: 0,
+      failed: 0,
+      stale: 25,
+    });
+  });
+});
+
 describe("adsOptimizerService.runOptimization", () => {
   it("does not create a misleading zero-recommendation run while initial reports are pending", async () => {
     mocks.db.amazonAdsOptimizerState.findFirst.mockResolvedValue(null);

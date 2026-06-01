@@ -243,7 +243,7 @@ const SEVERITY_LABEL: Record<Recommendation["severity"], string> = {
 
 export default function AdsOptimizerPage() {
   const queryClient = useQueryClient();
-  const [statusFilter, setStatusFilter] = React.useState("ALL");
+  const [statusFilter, setStatusFilter] = React.useState("PROPOSED");
   const [actionFilter, setActionFilter] = React.useState("ALL");
   const [severityFilter, setSeverityFilter] = React.useState("ALL");
   const [campaignTypeFilter, setCampaignTypeFilter] = React.useState("ALL");
@@ -388,6 +388,9 @@ export default function AdsOptimizerPage() {
     recommendations.map((rec) => rec.campaignTargetingType).filter(Boolean) as string[],
   );
   const grouped = React.useMemo(() => groupRecommendations(filtered), [filtered]);
+  const blockedPendingCount = recommendations.filter(
+    (rec) => rec.status === "PROPOSED" && !rec.isExecutable,
+  ).length;
   const isBusy =
     runMutation.isPending ||
     backfillMutation.isPending ||
@@ -442,7 +445,7 @@ export default function AdsOptimizerPage() {
       <div className="grid gap-3 md:grid-cols-4">
         <SummaryCard label="Pendentes" value={query.data?.totals.proposed ?? 0} tone="amber" />
         <SummaryCard label="Aprovadas" value={query.data?.totals.approved ?? 0} tone="blue" />
-        <SummaryCard label="Bloqueadas" value={grouped.unresolved.length} tone="red" />
+        <SummaryCard label="Bloqueadas" value={blockedPendingCount} tone="red" />
         <SummaryCard label="Obsoletas" value={query.data?.totals.stale ?? 0} tone="slate" />
       </div>
 
