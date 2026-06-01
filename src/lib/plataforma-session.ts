@@ -68,5 +68,15 @@ export function buildPlataformaExpiry(): number {
   return Math.floor(Date.now() / 1000) + TWELVE_HOURS;
 }
 export function buildPlataformaClearCookie() {
-  return { httpOnly: true, sameSite: "lax" as const, secure: process.env.NODE_ENV === "production", path: "/", maxAge: 0 };
+  // `secure` DEVE casar com buildPlataformaCookieOptions (incl. COOKIE_SECURE):
+  // o browser trata cookies com flag Secure diferente como distintos, entao um
+  // clear sem Secure nao apagaria o cookie setado com Secure (logout falharia em
+  // staging com COOKIE_SECURE=true e NODE_ENV!=production).
+  return {
+    httpOnly: true,
+    sameSite: "lax" as const,
+    secure: process.env.NODE_ENV === "production" || process.env.COOKIE_SECURE === "true",
+    path: "/",
+    maxAge: 0,
+  };
 }
