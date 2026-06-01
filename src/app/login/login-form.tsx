@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useTransition, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import {
   Eye,
@@ -23,9 +23,11 @@ type LoginResponse =
   | { usuario: { id: string; email: string; nome: string; role: string } }
   | { requires2FA: true; challengeId: string; lembrar: boolean };
 
-export function LoginForm({ nextPath }: { nextPath?: string }) {
+function LoginFormInner({ nextPath }: { nextPath?: string }) {
   const router = useRouter();
-  const [email, setEmail] = useState("");
+  const searchParams = useSearchParams();
+  const [empresa, setEmpresa] = useState(searchParams.get("empresa") ?? "");
+  const [email, setEmail] = useState(searchParams.get("email") ?? "");
   const [senha, setSenha] = useState("");
   const [lembrar, setLembrar] = useState(false);
   const [mostrarSenha, setMostrarSenha] = useState(false);
@@ -49,7 +51,7 @@ export function LoginForm({ nextPath }: { nextPath?: string }) {
       const res = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ email, senha, lembrar }),
+        body: JSON.stringify({ empresa, email, senha, lembrar }),
       });
 
       if (!res.ok) {
@@ -180,6 +182,24 @@ export function LoginForm({ nextPath }: { nextPath?: string }) {
 
               <form onSubmit={onSubmit} className="mt-7 space-y-4" noValidate>
                 <div className="space-y-1.5">
+                  <Label htmlFor="empresa">Empresa</Label>
+                  <div className="relative">
+                    <Building2 className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                    <Input
+                      id="empresa"
+                      type="text"
+                      autoComplete="organization"
+                      placeholder="ex: lojax"
+                      className="pl-9"
+                      value={empresa}
+                      onChange={(e) => setEmpresa(e.target.value)}
+                      required
+                      disabled={enviando}
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
                   <Label htmlFor="email">E-mail</Label>
                   <div className="relative">
                     <Mail className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -277,6 +297,14 @@ export function LoginForm({ nextPath }: { nextPath?: string }) {
         </div>
       </section>
     </div>
+  );
+}
+
+export function LoginForm({ nextPath }: { nextPath?: string }) {
+  return (
+    <Suspense>
+      <LoginFormInner nextPath={nextPath} />
+    </Suspense>
   );
 }
 
