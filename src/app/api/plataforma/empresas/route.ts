@@ -52,5 +52,5 @@ export async function POST(req: Request) {
   });
   await auditPlataforma({ plataformaUsuarioId: su.puid, acao: "ADMIN_CONVIDADO", empresaIdAlvo: result.empresaId, metadata: { email: parsed.data.admin.email, viaConsole: envio.viaConsole }, ip: getClientIp(req.headers) });
 
-  return NextResponse.json({ ok: true, empresaId: result.empresaId, conviteViaConsole: envio.viaConsole });
+  return NextResponse.json({ ok: true, empresaId: result.empresaId, conviteViaConsole: envio.viaConsole, conviteEmailOk: envio.ok });
 }

@@ -45,7 +45,6 @@ export async function criarEmpresa(input: CriarEmpresaInput): Promise<CriarEmpre
     return runWithTenant(
       { empresaId: empresa.id, isSuperAdmin: false, source: "system" },
       async () => {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         await semearEmpresa(tx as unknown as Parameters<typeof semearEmpresa>[0], empresa.id);
 
         const admin = await tx.usuario.create({
@@ -79,12 +78,16 @@ export async function listarEmpresas() {
   });
 }
 
-export async function desativarEmpresa(empresaId: string) {
-  return db.empresa.update({ where: { id: empresaId }, data: { ativa: false } });
+// Retorna false quando o empresaId nao existe (updateMany.count === 0) — o
+// caller (rota) traduz para 404 em vez de deixar um P2025 virar 500 opaco.
+export async function desativarEmpresa(empresaId: string): Promise<boolean> {
+  const r = await db.empresa.updateMany({ where: { id: empresaId }, data: { ativa: false } });
+  return r.count > 0;
 }
 
-export async function reativarEmpresa(empresaId: string) {
-  return db.empresa.update({ where: { id: empresaId }, data: { ativa: true } });
+export async function reativarEmpresa(empresaId: string): Promise<boolean> {
+  const r = await db.empresa.updateMany({ where: { id: empresaId }, data: { ativa: true } });
+  return r.count > 0;
 }
 
 export async function reenviarConvite(empresaId: string): Promise<{
@@ -92,7 +95,8 @@ export async function reenviarConvite(empresaId: string): Promise<{
 }> {
   const empresa = await db.empresa.findUnique({ where: { id: empresaId }, select: { nome: true, slug: true } });
   if (!empresa) return { ok: false };
-  // admin = usuario ADMIN mais antigo da empresa que ainda nao usou o convite
+  // admin = usuario ADMIN mais antigo da empresa (o convite reemitido invalida
+  // os pendentes e cria um novo; ver transacao abaixo).
   const admin = await db.usuario.findFirst({
     where: { empresaId, role: "ADMIN" }, orderBy: { createdAt: "asc" },
     select: { id: true, nome: true, email: true },

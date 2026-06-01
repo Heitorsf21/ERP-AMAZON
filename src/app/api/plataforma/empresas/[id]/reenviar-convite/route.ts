@@ -17,8 +17,10 @@ export async function POST(req: Request, { params }: Params) {
   const su = await requireSuperAdmin();
   const { id } = await params;
   const r = await reenviarConvite(id);
-  if (!r.ok || !r.rawToken || !r.admin) return NextResponse.json({ erro: "NAO_ENCONTRADO" }, { status: 404 });
-  const envio = await enviarConviteAdmin({ to: r.admin.email, nome: r.admin.nome, empresaNome: r.empresaNome!, slug: r.slug!, rawToken: r.rawToken });
+  if (!r.ok || !r.rawToken || !r.admin || !r.empresaNome || !r.slug) {
+    return NextResponse.json({ erro: "NAO_ENCONTRADO" }, { status: 404 });
+  }
+  const envio = await enviarConviteAdmin({ to: r.admin.email, nome: r.admin.nome, empresaNome: r.empresaNome, slug: r.slug, rawToken: r.rawToken });
   await auditPlataforma({ plataformaUsuarioId: su.puid, acao: "CONVITE_REENVIADO", empresaIdAlvo: id, ip: getClientIp(req.headers) });
-  return NextResponse.json({ ok: true, conviteViaConsole: envio.viaConsole });
+  return NextResponse.json({ ok: true, conviteViaConsole: envio.viaConsole, conviteEmailOk: envio.ok });
 }

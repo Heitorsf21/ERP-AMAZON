@@ -15,7 +15,9 @@ export async function POST(req: Request, { params }: Params) {
   if (bloqueio) return bloqueio;
   const su = await requireSuperAdmin();
   const { id } = await params;
-  await reativarEmpresa(id);
+  if (!(await reativarEmpresa(id))) {
+    return NextResponse.json({ erro: "NAO_ENCONTRADO" }, { status: 404 });
+  }
   await auditPlataforma({ plataformaUsuarioId: su.puid, acao: "EMPRESA_REATIVADA", empresaIdAlvo: id, ip: getClientIp(req.headers) });
   return NextResponse.json({ ok: true });
 }
