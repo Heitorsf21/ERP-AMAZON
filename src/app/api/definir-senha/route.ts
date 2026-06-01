@@ -37,6 +37,12 @@ export async function POST(req: Request) {
   const tokenHash = hashTokenConvite(parsed.data.token);
   const convite = await db.conviteUsuario.findUnique({ where: { tokenHash } });
 
+  // TOCTOU aceito: o intervalo entre este findUnique e o update de `usadoEm`
+  // (~bcrypt) permite, em tese, duplo-uso do MESMO token por requisicoes
+  // simultaneas. Risco proporcional ao modelo de ameaca de um link de convite
+  // (URL one-time enviada a um inbox especifico) + o form desabilita o botao no
+  // submit. Se virar credencial de maior valor, trocar por update condicional
+  // (WHERE usadoEm IS NULL) tratando 0 linhas como LINK_INVALIDO.
   // Resposta UNIFORME para inexistente/expirado/usado (anti-enumeracao).
   const invalido =
     !convite || convite.usadoEm != null || convite.expiresAt.getTime() < Date.now();
