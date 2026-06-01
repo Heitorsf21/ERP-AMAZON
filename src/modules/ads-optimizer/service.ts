@@ -98,6 +98,19 @@ type MetricAccumulator = {
   unidades: number;
 };
 
+type AggregateMetricRow = MetricAccumulator & {
+  data: Date;
+  campaignId?: string;
+  adGroupId?: string | null;
+  entityType?: string;
+  entityId?: string;
+  keywordId?: string | null;
+  targetId?: string | null;
+  searchTerm?: string;
+  matchType?: string | null;
+  atualizadoEm?: Date;
+};
+
 type OptimizerRuleContext = {
   activeExactKeywords: Set<string>;
   activeNegativeKeywords: Set<string>;
@@ -1487,6 +1500,10 @@ function aggregateMetrics(
     data: Date;
     entityType: string;
     entityId: string;
+    keywordId: string | null;
+    targetId: string | null;
+    matchType: string | null;
+    atualizadoEm?: Date;
     impressoes: number;
     cliques: number;
     gastoCentavos: number;
@@ -1502,6 +1519,7 @@ function aggregateMetrics(
     targetId: string | null;
     searchTerm: string;
     matchType: string | null;
+    atualizadoEm?: Date;
     impressoes: number;
     cliques: number;
     gastoCentavos: number;
@@ -1521,13 +1539,14 @@ function aggregateMetrics(
     pedidos: 0,
     unidades: 0,
   };
-  const rows =
+  const rows: AggregateMetricRow[] =
     entity.entityType === "SEARCH_TERM"
       ? searchRows.filter((row) => searchRowMatches(row, entity))
       : targetingRows.filter(
           (row) => row.entityType === entity.entityType && row.entityId === entity.entityId,
         );
-  for (const row of rows) {
+  const dedupedRows = dedupeMetricRows(rows, entity);
+  for (const row of dedupedRows) {
     if (start && row.data < start) continue;
     if (end && row.data > end) continue;
     acc.impressoes += row.impressoes;
@@ -1537,8 +1556,58 @@ function aggregateMetrics(
     acc.pedidos += row.pedidos;
     acc.unidades += row.unidades;
   }
-  if (rows.length === 0) return emptyMetrics();
+  if (dedupedRows.length === 0) return emptyMetrics();
   return deriveMetrics(acc);
+}
+
+function dedupeMetricRows<T extends AggregateMetricRow>(
+  rows: T[],
+  entity: OptimizerEntity,
+) {
+  const byKey = new Map<string, T>();
+  for (const row of rows) {
+    const key = metricRowKey(row, entity);
+    const current = byKey.get(key);
+    if (!current || preferMetricRow(row, current)) {
+      byKey.set(key, row);
+    }
+  }
+  return [...byKey.values()];
+}
+
+function metricRowKey(row: AggregateMetricRow, entity: OptimizerEntity) {
+  const date = row.data.toISOString();
+  if (entity.entityType === "SEARCH_TERM") {
+    return [
+      "SEARCH_TERM",
+      date,
+      row.campaignId ?? entity.campaignId,
+      row.adGroupId ?? "",
+      row.keywordId ?? "",
+      row.targetId ?? "",
+      row.matchType ?? "",
+      row.searchTerm ?? "",
+    ].join("|");
+  }
+  return [
+    entity.entityType,
+    date,
+    row.entityId ?? entity.entityId,
+    row.keywordId ?? entity.keywordId ?? "",
+    row.targetId ?? entity.targetId ?? "",
+    row.matchType ?? entity.matchType ?? "",
+  ].join("|");
+}
+
+function preferMetricRow(candidate: AggregateMetricRow, current: AggregateMetricRow) {
+  const candidateUpdated = candidate.atualizadoEm?.getTime() ?? 0;
+  const currentUpdated = current.atualizadoEm?.getTime() ?? 0;
+  if (candidateUpdated !== currentUpdated) return candidateUpdated > currentUpdated;
+  return metricWeight(candidate) > metricWeight(current);
+}
+
+function metricWeight(row: AggregateMetricRow) {
+  return row.impressoes + row.cliques + row.gastoCentavos + row.vendasCentavos + row.pedidos;
 }
 
 function searchRowMatches(

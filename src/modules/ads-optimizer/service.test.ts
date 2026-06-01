@@ -151,6 +151,36 @@ function searchTermMetricRow(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function targetingMetricRow(overrides: Record<string, unknown> = {}) {
+  return {
+    data: new Date("2026-05-30T00:00:00.000Z"),
+    campaignId: "camp-1",
+    portfolioId: "portfolio-1",
+    campaignName: "Campanha manual",
+    adGroupId: "ag-1",
+    adGroupName: "Grupo unico",
+    entityType: "KEYWORD",
+    entityId: "kw-phrase",
+    keywordId: "kw-phrase",
+    targetId: null,
+    keywordText: "almofada para banco de carro",
+    targetingText: null,
+    matchType: "PHRASE",
+    sku: null,
+    asin: null,
+    impressoes: 1904,
+    cliques: 16,
+    gastoCentavos: 1270,
+    vendasCentavos: 0,
+    unidades: 0,
+    pedidos: 0,
+    acos: null,
+    payloadJson: "{}",
+    atualizadoEm: new Date("2026-06-01T12:00:00.000Z"),
+    ...overrides,
+  };
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.getAmazonAdsCredentials.mockResolvedValue(mocks.creds);
@@ -497,6 +527,48 @@ describe("adsOptimizerService.runOptimization", () => {
 
     expect(mocks.db.adsOptimizationRecommendation.create).toHaveBeenCalledTimes(1);
     expect(result).toMatchObject({ totalRecomendacoes: 1 });
+  });
+
+  it("deduplicates imported targeting metric variants before applying click thresholds", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-06-01T12:00:00.000Z"));
+    mockCompletedOptimizerReports();
+    mocks.db.adsOptimizationRun.create.mockResolvedValue({ id: "run-1" });
+    mocks.db.adsOptimizationRun.update.mockResolvedValue({});
+    mocks.db.amazonAdsKeyword.findMany.mockResolvedValue([
+      {
+        keywordId: "kw-phrase",
+        campaignId: "camp-1",
+        portfolioId: "portfolio-1",
+        adGroupId: "ag-1",
+        keywordText: "almofada para banco de carro",
+        matchType: "PHRASE",
+        estado: "ENABLED",
+        bidCentavos: 110,
+        servingStatus: null,
+        campaignName: "Campanha manual",
+        adGroupName: "Grupo unico",
+      },
+    ]);
+    mocks.db.amazonAdsProductAd.findMany.mockResolvedValue([
+      {
+        campaignId: "camp-1",
+        adGroupId: "ag-1",
+        adId: "ad-1",
+        sku: "SKU-1",
+        asin: "ASIN-1",
+        estado: "ENABLED",
+      },
+    ]);
+    mocks.db.amazonAdsTargetingMetricDaily.findMany.mockResolvedValue([
+      targetingMetricRow({ portfolioId: "portfolio-1" }),
+      targetingMetricRow({ portfolioId: null }),
+    ]);
+
+    const result = await adsOptimizerService.runOptimization(session);
+
+    expect(mocks.db.adsOptimizationRecommendation.create).not.toHaveBeenCalled();
+    expect(result).toMatchObject({ totalRecomendacoes: 0 });
   });
 });
 

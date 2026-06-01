@@ -128,12 +128,12 @@ function naturalKeyParts(row: AdsOptimizerMetricRow) {
   return {
     data: row.data.toISOString(),
     campaignId: row.campaignId,
-    portfolioId: row.portfolioId,
     adGroupId: row.adGroupId,
     entityType: row.entityType,
     entityId: row.entityId,
-    sku: row.sku,
-    asin: row.asin,
+    keywordId: row.keywordId,
+    targetId: row.targetId,
+    matchType: row.matchType,
   };
 }
 
