@@ -32,7 +32,7 @@ test("otimizador permite revisar por SKU, editar lance e aprovar sem Amazon real
   let executeCalled = false;
   let snapshotCalls = 0;
 
-  await page.route("**/api/ads/optimizer/snapshot**", async (route) => {
+  await context.route("**/api/ads/optimizer/snapshot**", async (route) => {
     snapshotCalls += 1;
     await route.fulfill({
       status: 200,
@@ -41,7 +41,7 @@ test("otimizador permite revisar por SKU, editar lance e aprovar sem Amazon real
     });
   });
 
-  await page.route(
+  await context.route(
     "**/api/ads/optimizer/recommendations/rec-bid/approve**",
     async (route) => {
       const body = JSON.parse(route.request().postData() ?? "{}") as {
@@ -56,7 +56,7 @@ test("otimizador permite revisar por SKU, editar lance e aprovar sem Amazon real
     },
   );
 
-  await page.route("**/api/ads/optimizer/execute-approved**", async (route) => {
+  await context.route("**/api/ads/optimizer/execute-approved**", async (route) => {
     executeCalled = true;
     await route.fulfill({
       status: 200,
@@ -79,10 +79,22 @@ test("otimizador permite revisar por SKU, editar lance e aprovar sem Amazon real
   ).toBeVisible();
   await expect.poll(() => snapshotCalls).toBeGreaterThan(0);
   await expect(page.getByRole("heading", { name: "BOLSA-TERMICA-01" })).toBeVisible();
-  await expect(page.getByText("1 critica(s)")).toBeVisible();
+  await expect(page.getByText("1 critica")).toBeVisible();
+  await expect(page.locator("body")).not.toContainText("SEARCH_TERM");
+  await expect(page.locator("body")).not.toContainText("ACOS_LOW_INCREASE_BID");
+
+  await page.getByRole("tab", { name: /Oportunidades de termos/ }).click();
+  await expect(page.getByText("bolsa termica premium")).toBeVisible();
+  await expect(page.getByText("Termo pesquisado", { exact: true })).toBeVisible();
+
+  await page.getByRole("tab", { name: /Ajustes existentes/ }).click();
+  await page.getByRole("button", { name: "Detalhes" }).first().click();
+  await expect(page.getByText("ACOS_LOW_INCREASE_BID")).toBeVisible();
+  await expect(page.getByText("Risco operacional")).toBeVisible();
+  await page.keyboard.press("Escape");
 
   await page.getByLabel("Tipo campanha").selectOption("manual");
-  await page.getByLabel("Entidade").selectOption("KEYWORD");
+  await page.getByLabel("Tipo", { exact: true }).selectOption("KEYWORD");
 
   await page.getByLabel("Meu lance final para aprovar").fill("1,02");
   await page.getByRole("button", { name: "Aprovar ajuste" }).click();
@@ -97,7 +109,7 @@ test("otimizador permite revisar por SKU, editar lance e aprovar sem Amazon real
 
   await expect.poll(() => executeCalled).toBe(true);
   await expect(
-    page.getByText("1 simulacao(oes), nenhuma alteracao enviada para Amazon"),
+    page.getByText("1 simulacao, nenhuma alteracao enviada para Amazon"),
   ).toBeVisible();
 });
 
@@ -110,12 +122,12 @@ function snapshot(approvedBidCentavos: number | null) {
       status: "DONE",
       iniciadoEm: "2026-06-01T10:00:00.000Z",
       finalizadoEm: "2026-06-01T10:01:00.000Z",
-      totalEntidades: 2,
-      totalRecomendacoes: 2,
+      totalEntidades: 3,
+      totalRecomendacoes: 3,
       erro: null,
     },
     totals: {
-      proposed: isApproved ? 1 : 2,
+      proposed: isApproved ? 2 : 3,
       approved: isApproved ? 1 : 0,
       failed: 0,
       stale: 0,
@@ -193,6 +205,26 @@ function snapshot(approvedBidCentavos: number | null) {
         proposedState: "paused",
         metrics30d: wasteMetrics,
       }),
+      recommendation({
+        id: "rec-search-term",
+        entityType: "SEARCH_TERM",
+        displayEntityType: "Termo pesquisado",
+        entityId: "SEARCH_TERM:campaign-e2e:ad-group-e2e:kw:e2e",
+        keywordId: "keyword-e2e",
+        searchTerm: "bolsa termica premium",
+        displayLabel: "bolsa termica premium",
+        label: "bolsa termica premium",
+        actionType: "CREATE_EXACT_KEYWORD",
+        severity: "LOW",
+        ruleId: "SEARCH_TERM_GOOD_HARVEST_EXACT",
+        motivo:
+          "Termo pesquisado converteu com ACOS baixo em 30 dias. Criar exact permite controlar o lance.",
+        risco: "Pode duplicar trafego se a campanha original continuar capturando o termo.",
+        currentBidCentavos: 90,
+        proposedBidCentavos: 95,
+        approvedBidCentavos: null,
+        metrics30d: healthyMetrics,
+      }),
     ],
   };
 }
@@ -206,8 +238,10 @@ function baseRecommendation(): Record<string, unknown> {
     id: "rec",
     status: "PROPOSED",
     entityType: "KEYWORD",
+    displayEntityType: "Palavra-chave",
     entityId: "keyword-e2e",
     label: "keyword",
+    displayLabel: "keyword",
     campaignId: "campaign-e2e",
     campaignName: "SP Manual | Bolsa termica",
     campaignTargetingType: "manual",
@@ -220,6 +254,10 @@ function baseRecommendation(): Record<string, unknown> {
     searchTerm: null,
     sku: "BOLSA-TERMICA-01",
     asin: "B0SAMPLE01",
+    skuAttributionStatus: "RESOLVED",
+    skuAttributionSource: "SINGLE_ACTIVE_PRODUCT_AD",
+    isExecutable: true,
+    blockedReason: null,
     actionType: "INCREASE_BID",
     severity: "LOW",
     ruleId: "RULE",

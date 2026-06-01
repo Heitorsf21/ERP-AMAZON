@@ -88,8 +88,66 @@ function approvedKeywordRecommendation() {
     keywordId: "kw-1",
     targetId: null,
     actionType: "DECREASE_BID",
+    sku: "SKU-1",
+    evidenceJson: JSON.stringify({
+      skuAttributionStatus: "RESOLVED",
+      skuAttributionSource: "REPORT",
+    }),
     currentBidCentavos: 100,
     proposedBidCentavos: 95,
+  };
+}
+
+function mockCompletedOptimizerReports() {
+  const state = new Map<string, string>([
+    ["TARGETING:pendingId", "target-report"],
+    ["TARGETING:start", "2026-05-01T00:00:00.000Z"],
+    ["TARGETING:end", "2026-05-31T00:00:00.000Z"],
+    ["SEARCH_TERM:pendingId", "search-report"],
+    ["SEARCH_TERM:start", "2026-05-01T00:00:00.000Z"],
+    ["SEARCH_TERM:end", "2026-05-31T00:00:00.000Z"],
+  ]);
+  mocks.db.amazonAdsOptimizerState.findFirst.mockImplementation(
+    ({ where }: { where: { tipo: string; chave: string } }) => {
+      const valor = state.get(`${where.tipo}:${where.chave}`);
+      return Promise.resolve(valor ? { id: `${where.tipo}:${where.chave}`, valor } : null);
+    },
+  );
+  mocks.db.amazonAdsOptimizerState.deleteMany.mockResolvedValue({});
+  mocks.db.amazonAdsOptimizerState.create.mockResolvedValue({});
+  mocks.api.getAdsReport.mockImplementation((_creds: unknown, reportId: string) =>
+    Promise.resolve({ reportId, status: "COMPLETED", url: `https://reports.test/${reportId}` }),
+  );
+  mocks.api.downloadAdsReportRows.mockResolvedValue([]);
+}
+
+function searchTermMetricRow(overrides: Record<string, unknown> = {}) {
+  return {
+    data: new Date("2026-05-30T00:00:00.000Z"),
+    campaignId: "camp-1",
+    portfolioId: null,
+    campaignName: "Campanha manual",
+    adGroupId: "ag-1",
+    adGroupName: "Grupo unico",
+    entityType: "KEYWORD",
+    entityId: "kw-broad",
+    keywordId: "kw-broad",
+    targetId: null,
+    searchTerm: "bolsa termica boa",
+    keywordText: "bolsa",
+    targetingText: null,
+    matchType: "BROAD",
+    sku: null,
+    asin: null,
+    impressoes: 1000,
+    cliques: 20,
+    gastoCentavos: 100,
+    vendasCentavos: 10000,
+    unidades: 2,
+    pedidos: 2,
+    acos: 0.01,
+    payloadJson: "{}",
+    ...overrides,
   };
 }
 
@@ -136,6 +194,13 @@ beforeEach(() => {
   });
   mocks.db.amazonAdsTargetingMetricDaily.findMany.mockResolvedValue([]);
   mocks.db.amazonAdsSearchTermMetricDaily.findMany.mockResolvedValue([]);
+  mocks.db.amazonAdsKeyword.findMany.mockResolvedValue([]);
+  mocks.db.amazonAdsTarget.findMany.mockResolvedValue([]);
+  mocks.db.amazonAdsPortfolio.findMany.mockResolvedValue([]);
+  mocks.db.amazonAdsProductAd.findMany.mockResolvedValue([]);
+  mocks.db.amazonAdsNegativeKeyword.findMany.mockResolvedValue([]);
+  mocks.db.amazonAdsNegativeTarget.findMany.mockResolvedValue([]);
+  mocks.db.amazonAdsCampaignEntity.findMany.mockResolvedValue([]);
 });
 
 afterEach(() => {
@@ -179,6 +244,188 @@ describe("adsOptimizerService.runOptimization", () => {
       operation: "ADS_REPORTS_DOWNLOAD",
       retryAt: "2026-05-31T23:27:40.000Z",
     });
+  });
+
+  it("resolves search term recommendations to the single active product ad SKU", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-06-01T12:00:00.000Z"));
+    mockCompletedOptimizerReports();
+    mocks.db.adsOptimizationRun.create.mockResolvedValue({ id: "run-1" });
+    mocks.db.adsOptimizationRun.update.mockResolvedValue({});
+    mocks.db.adsOptimizationRecommendation.create.mockResolvedValue({});
+    mocks.db.amazonAdsKeyword.findMany.mockResolvedValue([
+      {
+        keywordId: "kw-broad",
+        campaignId: "camp-1",
+        portfolioId: null,
+        adGroupId: "ag-1",
+        keywordText: "bolsa",
+        matchType: "BROAD",
+        estado: "ENABLED",
+        bidCentavos: 100,
+        servingStatus: null,
+        campaignName: "Campanha manual",
+        adGroupName: "Grupo unico",
+      },
+    ]);
+    mocks.db.amazonAdsProductAd.findMany.mockResolvedValue([
+      {
+        campaignId: "camp-1",
+        adGroupId: "ag-1",
+        adId: "ad-1",
+        sku: "SKU-1",
+        asin: "ASIN-1",
+        estado: "ENABLED",
+      },
+    ]);
+    mocks.db.amazonAdsSearchTermMetricDaily.findMany.mockResolvedValue([
+      searchTermMetricRow({
+        searchTerm: "bolsa termica boa",
+        pedidos: 2,
+        vendasCentavos: 10000,
+        gastoCentavos: 100,
+      }),
+    ]);
+
+    const result = await adsOptimizerService.runOptimization(session);
+
+    expect(mocks.db.adsOptimizationRecommendation.create).toHaveBeenCalledTimes(1);
+    expect(mocks.db.adsOptimizationRecommendation.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        sku: "SKU-1",
+        asin: "ASIN-1",
+        actionType: "CREATE_EXACT_KEYWORD",
+        evidenceJson: expect.stringContaining("SINGLE_ACTIVE_PRODUCT_AD"),
+      }),
+    });
+    expect(result).toMatchObject({ totalRecomendacoes: 1 });
+  });
+
+  it("does not harvest a search term when an active exact keyword already exists", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-06-01T12:00:00.000Z"));
+    mockCompletedOptimizerReports();
+    mocks.db.adsOptimizationRun.create.mockResolvedValue({ id: "run-1" });
+    mocks.db.adsOptimizationRun.update.mockResolvedValue({});
+    mocks.db.amazonAdsKeyword.findMany.mockResolvedValue([
+      {
+        keywordId: "kw-broad",
+        campaignId: "camp-1",
+        portfolioId: null,
+        adGroupId: "ag-1",
+        keywordText: "bolsa",
+        matchType: "BROAD",
+        estado: "ENABLED",
+        bidCentavos: 100,
+        servingStatus: null,
+        campaignName: "Campanha manual",
+        adGroupName: "Grupo unico",
+      },
+      {
+        keywordId: "kw-exact",
+        campaignId: "camp-1",
+        portfolioId: null,
+        adGroupId: "ag-1",
+        keywordText: "bolsa termica boa",
+        matchType: "EXACT",
+        estado: "ENABLED",
+        bidCentavos: 100,
+        servingStatus: null,
+        campaignName: "Campanha manual",
+        adGroupName: "Grupo unico",
+      },
+    ]);
+    mocks.db.amazonAdsProductAd.findMany.mockResolvedValue([
+      {
+        campaignId: "camp-1",
+        adGroupId: "ag-1",
+        adId: "ad-1",
+        sku: "SKU-1",
+        asin: "ASIN-1",
+        estado: "ENABLED",
+      },
+    ]);
+    mocks.db.amazonAdsSearchTermMetricDaily.findMany.mockResolvedValue([
+      searchTermMetricRow({
+        searchTerm: "bolsa termica boa",
+        pedidos: 2,
+        vendasCentavos: 10000,
+        gastoCentavos: 100,
+      }),
+    ]);
+
+    const result = await adsOptimizerService.runOptimization(session);
+
+    expect(mocks.db.adsOptimizationRecommendation.create).not.toHaveBeenCalled();
+    expect(result).toMatchObject({ totalRecomendacoes: 0 });
+  });
+
+  it("deduplicates the same search term action in the same ad group", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-06-01T12:00:00.000Z"));
+    mockCompletedOptimizerReports();
+    mocks.db.adsOptimizationRun.create.mockResolvedValue({ id: "run-1" });
+    mocks.db.adsOptimizationRun.update.mockResolvedValue({});
+    mocks.db.adsOptimizationRecommendation.create.mockResolvedValue({});
+    mocks.db.amazonAdsKeyword.findMany.mockResolvedValue([
+      {
+        keywordId: "kw-1",
+        campaignId: "camp-1",
+        portfolioId: null,
+        adGroupId: "ag-1",
+        keywordText: "bolsa",
+        matchType: "BROAD",
+        estado: "ENABLED",
+        bidCentavos: 100,
+        servingStatus: null,
+        campaignName: "Campanha manual",
+        adGroupName: "Grupo unico",
+      },
+      {
+        keywordId: "kw-2",
+        campaignId: "camp-1",
+        portfolioId: null,
+        adGroupId: "ag-1",
+        keywordText: "organizador",
+        matchType: "BROAD",
+        estado: "ENABLED",
+        bidCentavos: 100,
+        servingStatus: null,
+        campaignName: "Campanha manual",
+        adGroupName: "Grupo unico",
+      },
+    ]);
+    mocks.db.amazonAdsProductAd.findMany.mockResolvedValue([
+      {
+        campaignId: "camp-1",
+        adGroupId: "ag-1",
+        adId: "ad-1",
+        sku: "SKU-1",
+        asin: "ASIN-1",
+        estado: "ENABLED",
+      },
+    ]);
+    mocks.db.amazonAdsSearchTermMetricDaily.findMany.mockResolvedValue([
+      searchTermMetricRow({
+        keywordId: "kw-1",
+        searchTerm: "bolsa termica boa",
+        pedidos: 2,
+        vendasCentavos: 10000,
+        gastoCentavos: 100,
+      }),
+      searchTermMetricRow({
+        keywordId: "kw-2",
+        searchTerm: "bolsa termica boa",
+        pedidos: 2,
+        vendasCentavos: 10000,
+        gastoCentavos: 100,
+      }),
+    ]);
+
+    const result = await adsOptimizerService.runOptimization(session);
+
+    expect(mocks.db.adsOptimizationRecommendation.create).toHaveBeenCalledTimes(1);
+    expect(result).toMatchObject({ totalRecomendacoes: 1 });
   });
 });
 

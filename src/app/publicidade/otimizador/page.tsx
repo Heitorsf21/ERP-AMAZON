@@ -3,10 +3,13 @@
 import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  AlertTriangle,
   CalendarClock,
   CheckCircle2,
+  Eye,
   Filter,
   History,
+  Layers3,
   Package,
   Play,
   RefreshCw,
@@ -17,10 +20,20 @@ import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { PageHeader } from "@/components/ui/page-header";
 import { Select } from "@/components/ui/select";
+import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { fetchJSON } from "@/lib/fetcher";
 import { formatBRL } from "@/lib/money";
 import { cn } from "@/lib/utils";
@@ -51,18 +64,26 @@ type Recommendation = {
   id: string;
   status: RecommendationStatus;
   entityType: "KEYWORD" | "TARGET" | "SEARCH_TERM";
+  displayEntityType: string;
   entityId: string;
   label: string;
+  displayLabel: string;
+  campaignId: string;
   campaignName: string | null;
   campaignTargetingType: string | null;
   portfolioId: string | null;
   portfolioName: string | null;
+  adGroupId: string | null;
   adGroupName: string | null;
   keywordId: string | null;
   targetId: string | null;
   searchTerm: string | null;
   sku: string | null;
   asin: string | null;
+  skuAttributionStatus: "RESOLVED" | "UNRESOLVED";
+  skuAttributionSource: string;
+  isExecutable: boolean;
+  blockedReason: string | null;
   actionType: string;
   severity: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
   ruleId: string;
@@ -122,12 +143,13 @@ type ApprovalInput = {
 
 type SkuGroup = {
   key: string;
-  sku: string | null;
+  sku: string;
   asin: string | null;
   recommendations: Recommendation[];
   totals30d: OptimizerMetrics;
   criticalCount: number;
   approvedCount: number;
+  proposedCount: number;
 };
 
 type ReportWindow = {
@@ -205,11 +227,11 @@ const STATUS_LABEL: Record<RecommendationStatus, string> = {
 const ACTION_LABEL: Record<string, string> = {
   INCREASE_BID: "Aumentar lance",
   DECREASE_BID: "Reduzir lance",
-  PAUSE_KEYWORD: "Pausar keyword",
-  PAUSE_TARGET: "Pausar target",
-  ADD_NEGATIVE_KEYWORD: "Negativar keyword",
-  ADD_NEGATIVE_TARGET: "Negativar target",
-  CREATE_EXACT_KEYWORD: "Criar exact",
+  PAUSE_KEYWORD: "Pausar palavra-chave",
+  PAUSE_TARGET: "Pausar segmentacao",
+  ADD_NEGATIVE_KEYWORD: "Negativar termo",
+  ADD_NEGATIVE_TARGET: "Negativar ASIN",
+  CREATE_EXACT_KEYWORD: "Criar palavra-chave exata",
 };
 
 const SEVERITY_LABEL: Record<Recommendation["severity"], string> = {
@@ -224,7 +246,6 @@ export default function AdsOptimizerPage() {
   const [statusFilter, setStatusFilter] = React.useState("ALL");
   const [actionFilter, setActionFilter] = React.useState("ALL");
   const [severityFilter, setSeverityFilter] = React.useState("ALL");
-  const [ruleFilter, setRuleFilter] = React.useState("ALL");
   const [campaignTypeFilter, setCampaignTypeFilter] = React.useState("ALL");
   const [entityTypeFilter, setEntityTypeFilter] = React.useState("ALL");
   const [search, setSearch] = React.useState("");
@@ -251,7 +272,7 @@ export default function AdsOptimizerPage() {
           `Amazon em cooldown. Tente novamente apos ${data.retryAt ? formatDateTime(data.retryAt) : "alguns minutos"}.`,
         );
       } else {
-        toast.success(`${data.totalRecomendacoes ?? 0} recomendacao(oes) gerada(s)`);
+        toast.success(`${data.totalRecomendacoes ?? 0} acoes encontradas`);
       }
       invalidate();
     },
@@ -279,7 +300,7 @@ export default function AdsOptimizerPage() {
       if (data.coverage.backfill.complete) {
         toast.success("Historico maximo da Amazon Ads ja esta coberto.");
       } else if (completed > 0) {
-        toast.success(`${completed} janela(s) historica(s) importada(s).`);
+        toast.success(`${completed} janela historica importada`);
       } else if (pending > 0) {
         toast.info("Reports historicos solicitados. Aguarde alguns minutos e clique novamente.");
       } else {
@@ -297,10 +318,10 @@ export default function AdsOptimizerPage() {
       }),
     onSuccess: (data) => {
       if ((data.dryRun ?? 0) > 0) {
-        toast.success(`${data.dryRun} simulacao(oes), nenhuma alteracao enviada para Amazon`);
+        toast.success(`${data.dryRun} simulacao, nenhuma alteracao enviada para Amazon`);
       } else {
         toast.success(
-          `${data.applied ?? 0} aplicada(s), ${data.stale ?? 0} obsoleta(s), ${data.failed ?? 0} falha(s)`,
+          `${data.applied ?? 0} aplicada, ${data.stale ?? 0} obsoleta, ${data.failed ?? 0} falha`,
         );
       }
       invalidate();
@@ -315,7 +336,7 @@ export default function AdsOptimizerPage() {
         body: JSON.stringify(input),
       }),
     onSuccess: () => {
-      toast.success("Recomendacao aprovada");
+      toast.success("Acao aprovada");
       invalidate();
     },
     onError: (error: Error) => toast.error(error.message),
@@ -327,7 +348,7 @@ export default function AdsOptimizerPage() {
         method: "POST",
       }),
     onSuccess: () => {
-      toast.success("Recomendacao rejeitada");
+      toast.success("Acao rejeitada");
       invalidate();
     },
     onError: (error: Error) => toast.error(error.message),
@@ -342,7 +363,6 @@ export default function AdsOptimizerPage() {
     if (statusFilter !== "ALL" && rec.status !== statusFilter) return false;
     if (actionFilter !== "ALL" && rec.actionType !== actionFilter) return false;
     if (severityFilter !== "ALL" && rec.severity !== severityFilter) return false;
-    if (ruleFilter !== "ALL" && rec.ruleId !== ruleFilter) return false;
     if (campaignTypeFilter !== "ALL" && rec.campaignTargetingType !== campaignTypeFilter) {
       return false;
     }
@@ -353,35 +373,36 @@ export default function AdsOptimizerPage() {
       rec.campaignName,
       rec.portfolioName,
       rec.adGroupName,
+      rec.displayLabel,
       rec.label,
       rec.searchTerm,
       rec.sku,
       rec.asin,
-      rec.entityId,
-      rec.ruleId,
     ]
       .filter(Boolean)
       .some((value) => String(value).toLowerCase().includes(needle));
   });
 
   const actionOptions = unique(recommendations.map((rec) => rec.actionType));
-  const ruleOptions = unique(recommendations.map((rec) => rec.ruleId));
   const campaignTypeOptions = unique(
     recommendations.map((rec) => rec.campaignTargetingType).filter(Boolean) as string[],
   );
-  const skuGroups = React.useMemo(() => groupBySku(filtered), [filtered]);
+  const grouped = React.useMemo(() => groupRecommendations(filtered), [filtered]);
   const isBusy =
     runMutation.isPending ||
     backfillMutation.isPending ||
     executeMutation.isPending ||
     approveMutation.isPending ||
     rejectMutation.isPending;
+  const executableApproved = recommendations.filter(
+    (rec) => rec.status === "APPROVED" && rec.isExecutable,
+  ).length;
 
   return (
     <div className="flex flex-col gap-5 p-6">
       <PageHeader
         title="Otimizador de Ads"
-        description="Regras deterministicas para Amazon Ads com aprovacao humana antes de qualquer alteracao."
+        description="Acoes por SKU para ajustar lances, pausar desperdicio e transformar bons termos em campanhas mais controladas."
       >
         <Button
           variant="outline"
@@ -404,7 +425,7 @@ export default function AdsOptimizerPage() {
         <Button
           size="sm"
           onClick={() => executeMutation.mutate()}
-          disabled={isBusy || (query.data?.totals.approved ?? 0) === 0}
+          disabled={isBusy || executableApproved === 0}
         >
           <Play className="mr-2 h-4 w-4" />
           Executar aprovadas
@@ -421,12 +442,14 @@ export default function AdsOptimizerPage() {
       <div className="grid gap-3 md:grid-cols-4">
         <SummaryCard label="Pendentes" value={query.data?.totals.proposed ?? 0} tone="amber" />
         <SummaryCard label="Aprovadas" value={query.data?.totals.approved ?? 0} tone="blue" />
-        <SummaryCard label="Falhas" value={query.data?.totals.failed ?? 0} tone="red" />
+        <SummaryCard label="Bloqueadas" value={grouped.unresolved.length} tone="red" />
         <SummaryCard label="Obsoletas" value={query.data?.totals.stale ?? 0} tone="slate" />
       </div>
 
+      <SkuSummaryRail groups={grouped.resolvedGroups} unresolvedCount={grouped.unresolved.length} />
+
       <Card>
-        <CardContent className="grid gap-3 pt-6 md:grid-cols-6">
+        <CardContent className="grid gap-3 pt-6 md:grid-cols-5">
           <div className="md:col-span-2">
             <div className="mb-1 flex items-center gap-1 text-xs font-medium text-muted-foreground">
               <Filter className="h-3.5 w-3.5" />
@@ -435,7 +458,7 @@ export default function AdsOptimizerPage() {
             <Input
               value={search}
               onChange={(event) => setSearch(event.target.value)}
-              placeholder="Campanha, SKU, termo ou regra"
+              placeholder="SKU, campanha, grupo ou termo"
             />
           </div>
           <FilterSelect label="Status" value={statusFilter} onChange={setStatusFilter}>
@@ -466,11 +489,11 @@ export default function AdsOptimizerPage() {
               </option>
             ))}
           </FilterSelect>
-          <FilterSelect label="Entidade" value={entityTypeFilter} onChange={setEntityTypeFilter}>
-            <option value="ALL">Todas</option>
-            <option value="KEYWORD">Keywords</option>
-            <option value="TARGET">Targets</option>
-            <option value="SEARCH_TERM">Search terms</option>
+          <FilterSelect label="Tipo" value={entityTypeFilter} onChange={setEntityTypeFilter}>
+            <option value="ALL">Todos</option>
+            <option value="KEYWORD">Palavras-chave</option>
+            <option value="TARGET">Segmentacoes</option>
+            <option value="SEARCH_TERM">Termos pesquisados</option>
           </FilterSelect>
           <FilterSelect
             label="Severidade"
@@ -484,16 +507,6 @@ export default function AdsOptimizerPage() {
               </option>
             ))}
           </FilterSelect>
-          <div className="md:col-span-2">
-            <FilterSelect label="Regra" value={ruleFilter} onChange={setRuleFilter}>
-              <option value="ALL">Todas as regras</option>
-              {ruleOptions.map((value) => (
-                <option key={value} value={value}>
-                  {value}
-                </option>
-              ))}
-            </FilterSelect>
-          </div>
         </CardContent>
       </Card>
 
@@ -507,7 +520,7 @@ export default function AdsOptimizerPage() {
         <EmptyState hasData={recommendations.length > 0} />
       ) : (
         <div className="grid gap-4">
-          {skuGroups.map((group) => (
+          {grouped.resolvedGroups.map((group) => (
             <SkuGroupCard
               key={group.key}
               group={group}
@@ -517,15 +530,23 @@ export default function AdsOptimizerPage() {
               onReject={(id) => rejectMutation.mutate(id)}
             />
           ))}
+          {grouped.unresolved.length > 0 && (
+            <UnresolvedPanel
+              recommendations={grouped.unresolved}
+              historyLabel={historyLabel}
+              busy={isBusy}
+              onReject={(id) => rejectMutation.mutate(id)}
+            />
+          )}
         </div>
       )}
 
       <div className="text-xs text-muted-foreground">
         {query.data?.lastRun ? (
           <span>
-            Ultima rodada: {formatDateTime(query.data.lastRun.iniciadoEm)} ·{" "}
-            {query.data.lastRun.totalEntidades} entidades analisadas ·{" "}
-            {query.data.lastRun.totalRecomendacoes} recomendacoes
+            Ultima rodada: {formatDateTime(query.data.lastRun.iniciadoEm)} |{" "}
+            {query.data.lastRun.totalEntidades} entidades analisadas |{" "}
+            {query.data.lastRun.totalRecomendacoes} acoes
           </span>
         ) : (
           <span>Nenhuma rodada executada ainda.</span>
@@ -555,6 +576,60 @@ function SummaryCard({
       <CardContent className="pt-5">
         <p className="text-xs font-medium uppercase text-muted-foreground">{label}</p>
         <p className="mt-2 text-2xl font-semibold">{value}</p>
+      </CardContent>
+    </Card>
+  );
+}
+
+function SkuSummaryRail({
+  groups,
+  unresolvedCount,
+}: {
+  groups: SkuGroup[];
+  unresolvedCount: number;
+}) {
+  if (groups.length === 0 && unresolvedCount === 0) return null;
+  return (
+    <Card>
+      <CardContent className="space-y-3 pt-5">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <p className="text-sm font-semibold">Resumo por SKU</p>
+            <p className="text-sm text-muted-foreground">
+              Priorize os SKUs com mais gasto, acoes criticas e oportunidades de termo.
+            </p>
+          </div>
+          {unresolvedCount > 0 && (
+            <Badge variant="outline" className="border-amber-300 bg-amber-50 text-amber-900">
+              {unresolvedCount} sem atribuicao segura
+            </Badge>
+          )}
+        </div>
+        <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-4">
+          {groups.slice(0, 8).map((group) => (
+            <div key={group.key} className="rounded-md border bg-muted/20 p-3">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-semibold">{group.sku}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {plural(group.recommendations.length, "acao", "acoes")} |{" "}
+                    {plural(group.proposedCount, "pendente", "pendentes")}
+                  </p>
+                </div>
+                {group.criticalCount > 0 && (
+                  <Badge className="border-transparent bg-red-600 text-white">
+                    {group.criticalCount}
+                  </Badge>
+                )}
+              </div>
+              <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
+                <Fact label="Gasto" value={formatBRL(group.totals30d.gastoCentavos)} />
+                <Fact label="Vendas" value={formatBRL(group.totals30d.vendasCentavos)} />
+                <Fact label="ACOS" value={formatPct(group.totals30d.acos)} />
+              </div>
+            </div>
+          ))}
+        </div>
       </CardContent>
     </Card>
   );
@@ -613,8 +688,8 @@ function CoveragePanel({
             <div>
               <p className="text-sm font-semibold">Historico granular disponivel</p>
               <p className="text-sm text-muted-foreground">
-                {historyLabel}. Este periodo alimenta keyword, target, search term e as regras
-                de otimizacao.
+                {historyLabel}. Este periodo alimenta as decisoes de keyword, segmentacao
+                e termos pesquisados.
               </p>
             </div>
           </div>
@@ -626,12 +701,12 @@ function CoveragePanel({
 
         <div className="grid gap-3 lg:grid-cols-2">
           <CoverageTile
-            title="Targeting e keywords"
+            title="Segmentacoes e palavras-chave"
             coverage={coverage.targeting}
             state={coverage.backfill.targeting}
           />
           <CoverageTile
-            title="Search terms"
+            title="Termos pesquisados"
             coverage={coverage.searchTerms}
             state={coverage.backfill.searchTerms}
           />
@@ -707,7 +782,11 @@ function FilterSelect({
   return (
     <label className="block">
       <span className="mb-1 block text-xs font-medium text-muted-foreground">{label}</span>
-      <Select value={value} onChange={(event) => onChange(event.target.value)}>
+      <Select
+        aria-label={label}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+      >
         {children}
       </Select>
     </label>
@@ -727,9 +806,13 @@ function SkuGroupCard({
   onApprove: (id: string, input: ApprovalInput) => void;
   onReject: (id: string) => void;
 }) {
+  const existing = group.recommendations.filter((rec) => rec.entityType !== "SEARCH_TERM");
+  const opportunities = group.recommendations.filter((rec) => rec.entityType === "SEARCH_TERM");
+  const defaultTab = existing.length > 0 ? "existing" : "opportunities";
+
   return (
     <Card className="overflow-hidden">
-      <CardContent className="space-y-4 pt-5">
+      <CardContent className="space-y-5 pt-5">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
@@ -739,21 +822,19 @@ function SkuGroupCard({
               </Badge>
               {group.criticalCount > 0 && (
                 <Badge className="border-transparent bg-red-600 text-white">
-                  {group.criticalCount} critica(s)
+                  {plural(group.criticalCount, "critica", "criticas")}
                 </Badge>
               )}
               {group.approvedCount > 0 && (
                 <Badge className="border-transparent bg-blue-600 text-white">
-                  {group.approvedCount} aprovada(s)
+                  {plural(group.approvedCount, "aprovada", "aprovadas")}
                 </Badge>
               )}
             </div>
-            <h2 className="mt-2 break-words text-lg font-semibold">
-              {group.sku ?? "SKU nao identificado"}
-            </h2>
+            <h2 className="mt-2 break-words text-xl font-semibold">{group.sku}</h2>
             <p className="text-sm text-muted-foreground">
-              {group.asin ? `ASIN ${group.asin} · ` : ""}
-              {group.recommendations.length} recomendacao(oes) encontradas neste SKU
+              {group.asin ? `ASIN ${group.asin} | ` : ""}
+              {plural(group.recommendations.length, "acao encontrada", "acoes encontradas")}
             </p>
           </div>
           <div className="grid grid-cols-2 gap-3 rounded-md border bg-muted/25 p-3 text-sm sm:grid-cols-4">
@@ -764,14 +845,91 @@ function SkuGroupCard({
           </div>
         </div>
 
+        <Tabs defaultValue={defaultTab}>
+          <TabsList className="h-auto flex-wrap justify-start">
+            <TabsTrigger value="existing">
+              Ajustes existentes ({existing.length})
+            </TabsTrigger>
+            <TabsTrigger value="opportunities">
+              Oportunidades de termos ({opportunities.length})
+            </TabsTrigger>
+          </TabsList>
+          <TabsContent value="existing" className="mt-4 grid gap-3">
+            {existing.length > 0 ? (
+              existing.map((rec) => (
+                <RecommendationCard
+                  key={rec.id}
+                  rec={rec}
+                  historyLabel={historyLabel}
+                  busy={busy}
+                  onApprove={(input) => onApprove(rec.id, input)}
+                  onReject={() => onReject(rec.id)}
+                />
+              ))
+            ) : (
+              <MiniEmpty text="Nenhum ajuste em keyword ou segmentacao para este SKU." />
+            )}
+          </TabsContent>
+          <TabsContent value="opportunities" className="mt-4 grid gap-3">
+            {opportunities.length > 0 ? (
+              opportunities.map((rec) => (
+                <RecommendationCard
+                  key={rec.id}
+                  rec={rec}
+                  historyLabel={historyLabel}
+                  busy={busy}
+                  onApprove={(input) => onApprove(rec.id, input)}
+                  onReject={() => onReject(rec.id)}
+                />
+              ))
+            ) : (
+              <MiniEmpty text="Nenhum termo pesquisado novo para este SKU." />
+            )}
+          </TabsContent>
+        </Tabs>
+      </CardContent>
+    </Card>
+  );
+}
+
+function UnresolvedPanel({
+  recommendations,
+  historyLabel,
+  busy,
+  onReject,
+}: {
+  recommendations: Recommendation[];
+  historyLabel: string;
+  busy: boolean;
+  onReject: (id: string) => void;
+}) {
+  return (
+    <Card className="overflow-hidden border-amber-200">
+      <CardContent className="space-y-4 pt-5">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge variant="outline" className="border-amber-300 bg-amber-50 text-amber-900">
+                <AlertTriangle className="mr-1 h-3.5 w-3.5" />
+                Revisao estrutural
+              </Badge>
+            </div>
+            <h2 className="mt-2 text-lg font-semibold">Campanhas sem atribuicao segura</h2>
+            <p className="text-sm text-muted-foreground">
+              A Amazon nao trouxe SKU direto e o ad group nao permite atribuir com 100% de
+              seguranca. Estas acoes nao podem ser executadas automaticamente.
+            </p>
+          </div>
+          <Badge variant="outline">{plural(recommendations.length, "acao", "acoes")}</Badge>
+        </div>
         <div className="grid gap-3">
-          {group.recommendations.map((rec) => (
+          {recommendations.map((rec) => (
             <RecommendationCard
               key={rec.id}
               rec={rec}
               historyLabel={historyLabel}
               busy={busy}
-              onApprove={(input) => onApprove(rec.id, input)}
+              onApprove={() => undefined}
               onReject={() => onReject(rec.id)}
             />
           ))}
@@ -794,9 +952,11 @@ function RecommendationCard({
   onApprove: (input: ApprovalInput) => void;
   onReject: () => void;
 }) {
-  const canReview = rec.status === "PROPOSED" || rec.status === "APPROVED";
+  const canReject = rec.status === "PROPOSED" || rec.status === "APPROVED";
+  const statusTone = rec.isExecutable ? "bg-background" : "bg-amber-50/30";
+
   return (
-    <div className={cn("rounded-md border border-l-4 bg-background p-4", severityBorderClass(rec.severity))}>
+    <div className={cn("rounded-md border border-l-4 p-4", statusTone, severityBorderClass(rec.severity))}>
       <div className="space-y-4">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
           <div className="min-w-0 space-y-2">
@@ -805,32 +965,37 @@ function RecommendationCard({
                 {SEVERITY_LABEL[rec.severity]}
               </Badge>
               <Badge variant="outline">{STATUS_LABEL[rec.status] ?? rec.status}</Badge>
-              <span className="text-sm font-semibold">
-                {ACTION_LABEL[rec.actionType] ?? rec.actionType}
-              </span>
+              <Badge variant="outline">{rec.displayEntityType}</Badge>
               {rec.campaignTargetingType && (
                 <Badge variant="outline">{campaignTypeLabel(rec.campaignTargetingType)}</Badge>
               )}
-              <span className="text-xs text-muted-foreground">{rec.ruleId}</span>
+              {!rec.isExecutable && (
+                <Badge variant="outline" className="border-amber-300 bg-amber-50 text-amber-900">
+                  Execucao bloqueada
+                </Badge>
+              )}
             </div>
             <div>
-              <h2 className="break-words text-base font-semibold">
+              <p className="text-sm font-semibold text-blue-700">
+                {ACTION_LABEL[rec.actionType] ?? rec.actionType}
+              </p>
+              <h3 className="mt-1 break-words text-base font-semibold">
                 {entityTitle(rec)}
-              </h2>
+              </h3>
               <p className="text-sm text-muted-foreground">
                 {rec.campaignName ?? "Campanha sem nome"}
-                {rec.portfolioName ? ` · Portfolio ${rec.portfolioName}` : ""}
-                {rec.adGroupName ? ` · ${rec.adGroupName}` : ""}
-                {rec.sku ? ` · SKU ${rec.sku}` : ""}
+                {rec.adGroupName ? ` | ${rec.adGroupName}` : ""}
+                {rec.portfolioName ? ` | Portfolio ${rec.portfolioName}` : ""}
               </p>
             </div>
           </div>
           <div className="flex shrink-0 flex-wrap justify-end gap-2">
+            <RecommendationDetailsDialog rec={rec} historyLabel={historyLabel} />
             <Button
               size="sm"
               variant="outline"
               onClick={onReject}
-              disabled={busy || !canReview}
+              disabled={busy || !canReject}
             >
               <XCircle className="mr-2 h-4 w-4" />
               Rejeitar
@@ -841,33 +1006,86 @@ function RecommendationCard({
         <div className="grid gap-3 lg:grid-cols-[1.2fr_0.8fr]">
           <div className="space-y-2 text-sm">
             <p>{rec.motivo}</p>
-            <p className="text-muted-foreground">
-              <ShieldCheck className="mr-1 inline h-4 w-4 align-text-bottom" />
-              Risco: {rec.risco}
-            </p>
-            {(rec.staleReason || rec.errorMessage) && (
+            {(rec.blockedReason || rec.staleReason || rec.errorMessage) && (
               <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-                {rec.staleReason ?? rec.errorMessage}
+                {rec.blockedReason ?? rec.staleReason ?? rec.errorMessage}
               </p>
             )}
           </div>
           <div className="grid gap-2 rounded-md border bg-muted/30 p-3 text-sm sm:grid-cols-2">
             <Fact label="Antes" value={beforeValue(rec)} />
             <Fact label="Depois" value={afterValue(rec)} />
+            <Fact label="ACOS 30d" value={formatPct(rec.metrics30d.acos)} />
             <Fact label="Confianca" value={`${rec.confianca}%`} />
-            <Fact label="Criada em" value={formatDateTime(rec.criadoEm)} />
           </div>
         </div>
 
         <ApprovalPanel rec={rec} busy={busy} onApprove={onApprove} />
-
-        <div className="grid gap-2 lg:grid-cols-3">
-          <MetricsBlock label="7 dias" metrics={rec.metrics7d} />
-          <MetricsBlock label="30 dias" metrics={rec.metrics30d} />
-          <MetricsBlock label={historyLabel} metrics={rec.metricsLifetime} />
-        </div>
       </div>
     </div>
+  );
+}
+
+function RecommendationDetailsDialog({
+  rec,
+  historyLabel,
+}: {
+  rec: Recommendation;
+  historyLabel: string;
+}) {
+  return (
+    <Dialog>
+      <DialogTrigger asChild>
+        <Button size="sm" variant="outline">
+          <Eye className="mr-2 h-4 w-4" />
+          Detalhes
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="max-w-3xl">
+        <DialogHeader>
+          <DialogTitle>{entityTitle(rec)}</DialogTitle>
+          <DialogDescription>
+            Evidencias e dados tecnicos usados antes de aprovar a acao.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-5">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <DetailRow label="Acao" value={ACTION_LABEL[rec.actionType] ?? rec.actionType} />
+            <DetailRow label="Regra" value={rec.ruleId} />
+            <DetailRow label="Tipo" value={rec.displayEntityType} />
+            <DetailRow label="Origem do SKU" value={skuSourceLabel(rec.skuAttributionSource)} />
+            <DetailRow label="Campanha" value={rec.campaignName ?? rec.campaignId} />
+            <DetailRow label="Grupo" value={rec.adGroupName ?? rec.adGroupId ?? "-"} />
+          </div>
+
+          <Separator />
+
+          <div className="space-y-2">
+            <p className="text-sm font-semibold">Risco operacional</p>
+            <p className="rounded-md border bg-muted/20 p-3 text-sm text-muted-foreground">
+              <ShieldCheck className="mr-2 inline h-4 w-4 align-text-bottom" />
+              {rec.risco}
+            </p>
+          </div>
+
+          <div className="grid gap-2 sm:grid-cols-3">
+            <MetricsBlock label="7 dias" metrics={rec.metrics7d} />
+            <MetricsBlock label="30 dias" metrics={rec.metrics30d} />
+            <MetricsBlock label={historyLabel} metrics={rec.metricsLifetime} />
+          </div>
+
+          <div className="grid gap-3 rounded-md border bg-muted/20 p-3 text-xs sm:grid-cols-2">
+            <DetailRow label="Campaign ID" value={rec.campaignId} />
+            <DetailRow label="Ad group ID" value={rec.adGroupId ?? "-"} />
+            <DetailRow label="Keyword ID" value={rec.keywordId ?? "-"} />
+            <DetailRow label="Target ID" value={rec.targetId ?? "-"} />
+            <DetailRow label="Entity ID" value={rec.entityId} />
+            <DetailRow label="Criada em" value={formatDateTime(rec.criadoEm)} />
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -880,7 +1098,7 @@ function ApprovalPanel({
   busy: boolean;
   onApprove: (input: ApprovalInput) => void;
 }) {
-  const editableBid = rec.status === "PROPOSED" && canEditBid(rec);
+  const editableBid = rec.status === "PROPOSED" && rec.isExecutable && canEditBid(rec);
   const finalBidCentavos = rec.approvedBidCentavos ?? rec.proposedBidCentavos;
   const [bidInput, setBidInput] = React.useState(centavosToInput(finalBidCentavos));
 
@@ -900,16 +1118,25 @@ function ApprovalPanel({
     );
   }
 
+  if (!rec.isExecutable) {
+    return (
+      <div className="flex flex-col gap-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">
+        <p className="font-medium">
+          <AlertTriangle className="mr-2 inline h-4 w-4 align-text-bottom" />
+          Esta acao precisa de revisao antes de executar.
+        </p>
+        <p>{rec.blockedReason ?? "O SKU nao foi atribuido com seguranca."}</p>
+      </div>
+    );
+  }
+
   if (!editableBid) {
     return (
       <div className="flex flex-col gap-3 rounded-md border bg-muted/20 p-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="text-sm">
-          <p className="font-medium">
-            Acao proposta: {ACTION_LABEL[rec.actionType] ?? rec.actionType}
-          </p>
-          <p className="text-muted-foreground">Resultado esperado: {afterValue(rec)}</p>
+          <p className="font-medium">Resultado esperado: {afterValue(rec)}</p>
           <p className="text-muted-foreground">
-            Esta recomendacao nao tem lance editavel. A aprovacao registra o payload antes da execucao.
+            A acao sera executada somente depois de aprovada.
           </p>
         </div>
         <Button size="sm" onClick={() => onApprove({})} disabled={busy}>
@@ -955,9 +1182,6 @@ function ApprovalPanel({
           Aprovar ajuste
         </Button>
       </div>
-      <p className="mt-2 text-xs text-muted-foreground">
-        O Atlas salva a proposta original e executa na Amazon o lance final aprovado aqui.
-      </p>
     </div>
   );
 }
@@ -978,6 +1202,15 @@ function MetricsBlock({ label, metrics }: { label: string; metrics: OptimizerMet
   );
 }
 
+function DetailRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="min-w-0">
+      <p className="text-[11px] uppercase text-muted-foreground">{label}</p>
+      <p className="break-words font-medium">{value}</p>
+    </div>
+  );
+}
+
 function Fact({ label, value }: { label: string; value: string }) {
   return (
     <div className="min-w-0">
@@ -987,12 +1220,20 @@ function Fact({ label, value }: { label: string; value: string }) {
   );
 }
 
+function MiniEmpty({ text }: { text: string }) {
+  return (
+    <div className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
+      {text}
+    </div>
+  );
+}
+
 function EmptyState({ hasData }: { hasData: boolean }) {
   return (
     <Card>
       <CardContent className="py-10 text-center">
         <p className="text-sm font-medium">
-          {hasData ? "Nenhuma recomendacao nos filtros atuais." : "Nenhuma recomendacao gerada."}
+          {hasData ? "Nenhuma acao nos filtros atuais." : "Nenhuma acao gerada."}
         </p>
         <p className="mt-1 text-sm text-muted-foreground">
           Execute uma rodada para sincronizar entidades editaveis e gerar sugestoes.
@@ -1006,28 +1247,37 @@ function unique(values: string[]) {
   return [...new Set(values)].sort((a, b) => a.localeCompare(b));
 }
 
-function groupBySku(recommendations: Recommendation[]): SkuGroup[] {
+function groupRecommendations(recommendations: Recommendation[]) {
   const groups = new Map<string, Recommendation[]>();
+  const unresolved: Recommendation[] = [];
+
   for (const rec of recommendations) {
-    const key = rec.sku ?? rec.asin ?? "NO_SKU";
-    const current = groups.get(key) ?? [];
+    if (rec.skuAttributionStatus === "UNRESOLVED" || !rec.sku) {
+      unresolved.push(rec);
+      continue;
+    }
+    const current = groups.get(rec.sku) ?? [];
     current.push(rec);
-    groups.set(key, current);
+    groups.set(rec.sku, current);
   }
-  return [...groups.entries()]
-    .map(([key, items]) => ({
-      key,
-      sku: items.find((item) => item.sku)?.sku ?? null,
+
+  const resolvedGroups = [...groups.entries()]
+    .map(([sku, items]) => ({
+      key: sku,
+      sku,
       asin: items.find((item) => item.asin)?.asin ?? null,
       recommendations: items,
       totals30d: aggregateMetrics(items.map((item) => item.metrics30d)),
       criticalCount: items.filter((item) => item.severity === "CRITICAL").length,
       approvedCount: items.filter((item) => item.status === "APPROVED").length,
+      proposedCount: items.filter((item) => item.status === "PROPOSED").length,
     }))
     .sort((a, b) => {
       if (b.criticalCount !== a.criticalCount) return b.criticalCount - a.criticalCount;
       return b.totals30d.gastoCentavos - a.totals30d.gastoCentavos;
     });
+
+  return { resolvedGroups, unresolved };
 }
 
 function aggregateMetrics(values: OptimizerMetrics[]): OptimizerMetrics {
@@ -1060,7 +1310,7 @@ function aggregateMetrics(values: OptimizerMetrics[]): OptimizerMetrics {
 }
 
 function entityTitle(rec: Recommendation) {
-  return rec.label || rec.searchTerm || rec.entityId;
+  return rec.displayLabel || rec.label || rec.searchTerm || rec.entityId;
 }
 
 function beforeValue(rec: Recommendation) {
@@ -1106,6 +1356,15 @@ function stateLabel(value: string | null) {
   return value ?? "-";
 }
 
+function skuSourceLabel(value: string) {
+  if (value === "REPORT") return "Relatorio Amazon";
+  if (value === "SINGLE_ACTIVE_PRODUCT_AD") return "Product ad unico ativo";
+  if (value === "UNRESOLVED_MULTI_SKU") return "Multiplos SKUs ativos";
+  if (value === "UNRESOLVED_NO_ACTIVE_PRODUCT_AD") return "Sem product ad ativo";
+  if (value === "UNRESOLVED_MISSING_AD_GROUP") return "Ad group ausente";
+  return value;
+}
+
 function formatPct(value: number | null) {
   return value == null ? "-" : `${(value * 100).toFixed(1)}%`;
 }
@@ -1125,6 +1384,10 @@ function formatDate(value: string) {
   return new Intl.DateTimeFormat("pt-BR", {
     dateStyle: "short",
   }).format(new Date(`${value}T00:00:00`));
+}
+
+function plural(count: number, singular: string, pluralValue: string) {
+  return `${count} ${count === 1 ? singular : pluralValue}`;
 }
 
 function severityBorderClass(severity: Recommendation["severity"]) {
