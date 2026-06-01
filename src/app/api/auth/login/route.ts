@@ -11,7 +11,11 @@ import {
   signSession,
 } from "@/lib/session";
 import { enviarEmail, escapeHtml } from "@/lib/email";
-import { recordLoginFailure, resetLoginFailures } from "@/lib/auth-rate-limit";
+import {
+  recordLoginFailureByKey,
+  resetLoginFailuresByKey,
+  getLoginFailureKeyComEmpresa,
+} from "@/lib/auth-rate-limit";
 import { originViolationResponse } from "@/lib/origin-check";
 import { TipoAuditLog } from "@/modules/shared/domain";
 
@@ -19,10 +23,16 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const schema = z.object({
+  empresa: z.string().min(1).max(40),
   email: z.string().email().max(200),
   senha: z.string().min(1).max(200),
   lembrar: z.boolean().optional(),
 });
+
+// Hash bcrypt REAL para o dummy compare (uniformiza tempo quando empresa/usuario
+// nao existem). Gerado no load do modulo: garante hash valido => bcrypt.compare
+// faz o trabalho real (um hash malformado seria rejeitado rapido, anulando a defesa).
+const DUMMY_HASH = bcrypt.hashSync("atlas-seller-dummy-password", 10);
 
 export async function POST(req: Request) {
   const origemBloqueada = originViolationResponse(req);
@@ -40,23 +50,38 @@ export async function POST(req: Request) {
     return NextResponse.json({ erro: "DADOS_INVALIDOS" }, { status: 400 });
   }
 
+  const slug = parsed.data.empresa.toLowerCase().trim();
   const email = parsed.data.email.toLowerCase().trim();
   const lembrar = parsed.data.lembrar === true;
-  const user = await db.usuario.findUnique({ where: { email } });
 
-  const senhaOk = user
-    ? await bcrypt.compare(parsed.data.senha, user.senhaHash)
-    : false;
+  const empresa = await db.empresa.findUnique({ where: { slug }, select: { id: true, ativa: true } });
+  const user = empresa
+    ? await db.usuario.findUnique({
+        where: { empresaId_email: { empresaId: empresa.id, email } },
+      })
+    : null;
 
-  if (!user || !user.ativo || !senhaOk) {
-    const failureLimit = await recordLoginFailure(req, email);
+  // Dummy bcrypt SEMPRE quando nao ha user: tempo uniforme (anti-enumeracao).
+  let senhaOk = false;
+  if (user) {
+    senhaOk = await bcrypt.compare(parsed.data.senha, user.senhaHash);
+  } else {
+    await bcrypt.compare(parsed.data.senha, DUMMY_HASH); // descarta resultado, so p/ uniformizar tempo
+  }
+
+  const empresaInativa = empresa != null && empresa.ativa === false;
+
+  if (!empresa || !user || !user.ativo || empresaInativa || !senhaOk) {
+    const failureLimit = await recordLoginFailureByKey(
+      getLoginFailureKeyComEmpresa(req.headers, slug, email),
+    );
 
     await auditLog({
       req,
       acao: TipoAuditLog.LOGIN_FALHA,
       entidade: "Usuario",
       entidadeId: user?.id ?? null,
-      metadata: { email },
+      metadata: { email, slug },
     });
 
     if (failureLimit.limited) {
@@ -80,7 +105,7 @@ export async function POST(req: Request) {
     );
   }
 
-  await resetLoginFailures(req, email);
+  await resetLoginFailuresByKey(getLoginFailureKeyComEmpresa(req.headers, slug, email));
 
   // Se 2FA habilitado, gera challenge e envia código por email — NÃO cria sessão.
   if (user.twoFactorEnabled && user.twoFactorMethod === "EMAIL") {

@@ -29,6 +29,12 @@ export function getLoginFailureKey(headers: Headers, email: string): string {
   return `${getClientIp(headers)}:${normalizedEmail}`;
 }
 
+export function getLoginFailureKeyComEmpresa(headers: Headers, slug: string, email: string): string {
+  const e = email.toLowerCase().trim() || "unknown";
+  const s = slug.toLowerCase().trim() || "unknown";
+  return `${getClientIp(headers)}:${s}:${e}`;
+}
+
 /**
  * Registra uma falha de login. Atomic upsert renova `resetAt` se a janela
  * anterior expirou, mantem-na caso contrario, e incrementa count em todo
