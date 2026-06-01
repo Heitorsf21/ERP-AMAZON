@@ -14,6 +14,7 @@ export async function POST(req: Request, { params }: Params) {
   const bloqueio = originViolationResponse(req);
   if (bloqueio) return bloqueio;
   const su = await requireSuperAdmin();
+  if (su instanceof NextResponse) return su;
   const { id } = await params;
   if (!(await reativarEmpresa(id))) {
     return NextResponse.json({ erro: "NAO_ENCONTRADO" }, { status: 404 });

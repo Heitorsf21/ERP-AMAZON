@@ -18,7 +18,8 @@ const schema = z.object({
 });
 
 export async function GET() {
-  await requireSuperAdmin();
+  const su = await requireSuperAdmin();
+  if (su instanceof NextResponse) return su;
   return NextResponse.json({ empresas: await listarEmpresas() });
 }
 
@@ -26,6 +27,7 @@ export async function POST(req: Request) {
   const bloqueio = originViolationResponse(req);
   if (bloqueio) return bloqueio;
   const su = await requireSuperAdmin();
+  if (su instanceof NextResponse) return su;
 
   let body: unknown;
   try { body = await req.json(); } catch { return NextResponse.json({ erro: "JSON_INVALIDO" }, { status: 400 }); }
