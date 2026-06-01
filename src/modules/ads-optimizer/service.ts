@@ -1,4 +1,4 @@
-import { addDays, differenceInCalendarDays, startOfDay } from "date-fns";
+import { addDays, differenceInCalendarDays } from "date-fns";
 import { db } from "@/lib/db";
 import { isAmazonQuotaCooldownError } from "@/lib/amazon-rate-limit";
 import {
@@ -617,8 +617,8 @@ async function syncEditableAdsEntities(creds: AdsAPICredentials) {
 
 async function syncOptimizerReports(creds: AdsAPICredentials) {
   const profileId = requireProfileId(creds);
-  const end = startOfDay(addDays(new Date(), -1));
-  const start = startOfDay(addDays(end, -DEFAULT_REPORT_DAYS + 1));
+  const end = startOfAdsDay(addDays(new Date(), -1));
+  const start = startOfAdsDay(addDays(end, -DEFAULT_REPORT_DAYS + 1));
   const [targeting, searchTerms] = await Promise.all([
     syncReportLifecycle({
       creds,
@@ -674,9 +674,9 @@ async function backfillOptimizerReportsWithCooldown(creds: AdsAPICredentials) {
 
 async function backfillOptimizerReports(creds: AdsAPICredentials) {
   const profileId = requireProfileId(creds);
-  const today = startOfDay(new Date());
-  const earliestAvailable = startOfDay(addDays(today, -REPORT_RETENTION_DAYS));
-  const latestClosed = startOfDay(addDays(today, -1));
+  const today = startOfAdsDay(new Date());
+  const earliestAvailable = startOfAdsDay(addDays(today, -REPORT_RETENTION_DAYS));
+  const latestClosed = startOfAdsDay(addDays(today, -1));
 
   const [targeting, searchTerms] = await Promise.all([
     syncBackfillReportLifecycle({
@@ -849,7 +849,7 @@ async function getNextBackfillWindow(args: {
   }
 
   const cursorIso = await getState(args.profileId, args.reportKey, "cursor");
-  const cursor = cursorIso ? startOfDay(new Date(cursorIso)) : args.earliestAvailable;
+  const cursor = cursorIso ? startOfAdsDay(new Date(cursorIso)) : args.earliestAvailable;
   const start = cursor < args.earliestAvailable ? args.earliestAvailable : cursor;
   if (start > args.latestClosed) return null;
 
@@ -861,9 +861,9 @@ async function getNextBackfillWindow(args: {
 }
 
 async function getOptimizerCoverage(profileId: string) {
-  const today = startOfDay(new Date());
-  const earliestAvailable = startOfDay(addDays(today, -REPORT_RETENTION_DAYS));
-  const latestClosed = startOfDay(addDays(today, -1));
+  const today = startOfAdsDay(new Date());
+  const earliestAvailable = startOfAdsDay(addDays(today, -REPORT_RETENTION_DAYS));
+  const latestClosed = startOfAdsDay(addDays(today, -1));
   const expectedDays = Math.max(
     0,
     differenceInCalendarDays(latestClosed, earliestAvailable) + 1,
@@ -1037,7 +1037,7 @@ function metricData(profileId: string, row: AdsOptimizerMetricRow) {
 }
 
 async function buildOptimizationSnapshot(profileId: string) {
-  const today = startOfDay(new Date());
+  const today = startOfAdsDay(new Date());
   const last7Start = addDays(today, -7);
   const prev7Start = addDays(today, -14);
   const prev7End = addDays(last7Start, -1);
@@ -1508,10 +1508,16 @@ function isoDate(date: Date) {
   return date.toISOString().slice(0, 10);
 }
 
+function startOfAdsDay(date: Date) {
+  const result = new Date(date);
+  result.setUTCHours(0, 0, 0, 0);
+  return result;
+}
+
 function progressPct(value: string | null | undefined, start: Date, end: Date) {
   const totalDays = Math.max(1, differenceInCalendarDays(end, start) + 1);
   if (!value) return 0;
-  const current = startOfDay(new Date(value));
+  const current = startOfAdsDay(new Date(value));
   const doneDays = Math.min(totalDays, Math.max(0, differenceInCalendarDays(current, start)));
   return Math.round((doneDays / totalDays) * 100);
 }
