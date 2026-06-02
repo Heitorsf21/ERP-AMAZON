@@ -1,4 +1,4 @@
-﻿import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => {
   const delegate = () => ({
@@ -34,6 +34,7 @@ const mocks = vi.hoisted(() => {
       amazonAdsSearchTermMetricDaily: delegate(),
       amazonAdsOptimizerState: delegate(),
       adsOptimizationRun: delegate(),
+      produto: delegate(),
     },
     api: {
       listSponsoredProductsAdGroups: vi.fn(),
@@ -231,6 +232,7 @@ beforeEach(() => {
   mocks.db.amazonAdsNegativeKeyword.findMany.mockResolvedValue([]);
   mocks.db.amazonAdsNegativeTarget.findMany.mockResolvedValue([]);
   mocks.db.amazonAdsCampaignEntity.findMany.mockResolvedValue([]);
+  mocks.db.produto.findMany.mockResolvedValue([]);
 });
 
 afterEach(() => {
