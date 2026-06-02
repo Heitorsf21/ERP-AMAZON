@@ -580,7 +580,9 @@ async function upsertOrdersHistoryRows(
     : [];
   const produtosPorSku = new Map(produtos.map((p) => [p.sku, p]));
 
-  const linhasValidas = rows.filter((r) => r.amazonOrderId && r.sku);
+  const linhasValidas = rows.filter(
+    (r) => r.amazonOrderId && r.sku && r.quantity > 0,
+  );
   ignoradas += rows.length - linhasValidas.length;
   const linhasAgrupadas = agruparLinhasVendaAmazon(
     linhasValidas.map((r) => ({
@@ -626,28 +628,26 @@ async function upsertOrdersHistoryRows(
       marketplace: r.salesChannel ?? marketplaceFallback,
       fulfillmentChannel: r.fulfillmentChannel,
       statusPedido: r.orderStatus,
-      statusFinanceiro: statusFinanceiroFinal,
       dataVenda: r.purchaseDate ?? existente?.dataVenda ?? new Date(),
       ultimaSyncEm: new Date(),
     };
 
-    if (existente) {
-      await db.vendaAmazon.update({ where: { id: existente.id }, data });
-      atualizadas++;
-    } else {
-      await db.vendaAmazon.create({
-        data: {
-          amazonOrderId: r.amazonOrderId,
-          sku: r.sku,
-          ...data,
-          custoUnitarioCentavos:
-            produto?.custoUnitario && produto.custoUnitario > 0
-              ? produto.custoUnitario
-              : null,
-        },
-      });
-      criadas++;
-    }
+    await db.vendaAmazon.upsert({
+      where,
+      update: data,
+      create: {
+        amazonOrderId: r.amazonOrderId,
+        sku: r.sku,
+        ...data,
+        statusFinanceiro: statusFinanceiroFinal,
+        custoUnitarioCentavos:
+          produto?.custoUnitario && produto.custoUnitario > 0
+            ? produto.custoUnitario
+            : null,
+      },
+    });
+    if (existente) atualizadas++;
+    else criadas++;
   }
 
   return { linhas: rows.length, pedidosBrutos, criadas, atualizadas, ignoradas };
@@ -679,7 +679,7 @@ async function upsertRawOrdersHistoryRows(
     const statusPedido =
       group.find((row) => row.orderStatus && row.orderStatus !== "UNKNOWN")
         ?.orderStatus ?? "UNKNOWN";
-    const itensProcessados = group.some((row) => !!row.sku);
+    const itensProcessados = group.some((row) => !!row.sku && row.quantity > 0);
     const data = {
       statusPedido,
       createdTime: first.purchaseDate,

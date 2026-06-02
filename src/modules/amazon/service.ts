@@ -767,13 +767,18 @@ async function syncOrdersInternal(
 
       const itensDetalhados = itemsPorOrderId.get(amazonOrderId) ?? [];
       await upsertAmazonOrderRaw(creds, order, {
-        itensProcessados: itensDetalhados.some((item) => !!item.SellerSKU),
+        itensProcessados: itensDetalhados.some(
+          (item) => !!item.SellerSKU && getOrderItemQuantityOrdered(item) > 0,
+        ),
       });
 
-      const itensComSku = itensDetalhados.filter((item) => !!item.SellerSKU);
+      const itensComSku = itensDetalhados.filter(
+        (item) => !!item.SellerSKU && getOrderItemQuantityOrdered(item) > 0,
+      );
       ignoradas += itensDetalhados.length - itensComSku.length;
       const itensAgrupados = agruparLinhasVendaAmazon(
         itensComSku.map((item) => {
+          const quantidade = getOrderItemQuantityOrdered(item);
           const valorBrutoCentavos = calcularValorBrutoOrderItemCentavos(item);
           const taxasCentavos =
             parseAmountCentavos(item.ItemTax) +
@@ -783,7 +788,7 @@ async function syncOrdersInternal(
             ...item,
             amazonOrderId,
             sku: item.SellerSKU as string,
-            quantidade: Math.max(1, Number(item.QuantityOrdered || 1)),
+            quantidade,
             valorBrutoCentavos,
             fretesCentavos: parseAmountCentavos(item.ShippingPrice),
             taxasCentavos,
@@ -878,32 +883,27 @@ async function syncOrdersInternal(
             getOrderMarketplace(order, creds.marketplaceId),
           fulfillmentChannel: getOrderFulfillmentChannel(order),
           statusPedido,
-          statusFinanceiro: statusFinanceiroFinal,
           precoOrigem: precoOrigemFinal,
           dataVenda: createdAt,
           ultimaSyncEm: new Date(),
         };
 
-        if (existente) {
-          await db.vendaAmazon.update({
-            where: { id: existente.id },
-            data,
-          });
-          atualizadas++;
-        } else {
-          await db.vendaAmazon.create({
-            data: {
-              amazonOrderId,
-              sku,
-              ...data,
-              custoUnitarioCentavos:
-                produto?.custoUnitario && produto.custoUnitario > 0
-                  ? produto.custoUnitario
-                  : null,
-            },
-          });
-          criadas++;
-        }
+        await db.vendaAmazon.upsert({
+          where,
+          update: data,
+          create: {
+            amazonOrderId,
+            sku,
+            ...data,
+            statusFinanceiro: statusFinanceiroFinal,
+            custoUnitarioCentavos:
+              produto?.custoUnitario && produto.custoUnitario > 0
+                ? produto.custoUnitario
+                : null,
+          },
+        });
+        if (existente) atualizadas++;
+        else criadas++;
 
         pedidos.push({
           amazonOrderId,
@@ -1500,9 +1500,7 @@ export function orderItemsFromOrderSummary(order: SPOrder): SPOrderItemDetail[] 
       const asin =
         readStringFromRecord(record, ["ASIN", "asin"]) ??
         readStringFromRecord(product, ["ASIN", "asin"]);
-      const quantity =
-        readDeepNumber(item, ["QuantityOrdered", "quantityOrdered", "quantity"]) ??
-        1;
+      const quantity = getOrderItemQuantityOrdered(item);
 
       return {
         ASIN: asin,
@@ -1513,17 +1511,20 @@ export function orderItemsFromOrderSummary(order: SPOrder): SPOrderItemDetail[] 
         Title:
           readStringFromRecord(record, ["Title", "title"]) ??
           readStringFromRecord(product, ["Title", "title", "itemName"]),
-        QuantityOrdered: Math.max(1, Number(quantity) || 1),
+        QuantityOrdered: quantity,
         // Bug fix: o `product.price` da Order Summary vem por UNIDADE.
         // Multiplicamos pela quantidade para casar com a semantica de `ItemPrice`
         // da SP-API Orders, que e sempre TOTAL DA LINHA (preco unit x qty).
         // Sem isso, pedidos multi-unidade vinhos so pelo summary (fallback,
         // sem detalhes de getOrderItems) gravam valorBrutoCentavos com 1/qty
         // do valor real, gerando margem absurdamente negativa nos cards.
-        ItemPrice: toSpMoneyTotalLinha(
-          product.price ?? record.price ?? record.ItemPrice,
-          Math.max(1, Number(quantity) || 1),
-        ),
+        ItemPrice:
+          quantity > 0
+            ? toSpMoneyTotalLinha(
+                product.price ?? record.price ?? record.ItemPrice,
+                quantity,
+              )
+            : undefined,
         ShippingPrice: toSpMoney(record.ShippingPrice ?? record.shippingPrice),
         PromotionDiscount: toSpMoney(
           record.PromotionDiscount ?? record.promotionDiscount,
@@ -1533,6 +1534,17 @@ export function orderItemsFromOrderSummary(order: SPOrder): SPOrderItemDetail[] 
       };
     })
     .filter((item) => !!item.SellerSKU || !!item.ASIN);
+}
+
+function getOrderItemQuantityOrdered(item: unknown): number {
+  const quantity = readDeepNumber(item, [
+    "QuantityOrdered",
+    "quantityOrdered",
+    "quantity",
+  ]);
+  if (quantity == null) return 1;
+  const normalized = Math.trunc(quantity);
+  return Number.isFinite(normalized) && normalized > 0 ? normalized : 0;
 }
 
 function toSpMoney(
