@@ -88,6 +88,27 @@ export function checkRequiredSecrets(env: StartupEnv): GuardIssue[] {
   return issues;
 }
 
+/**
+ * Heurística de entropia: avisa (WARN, nunca fatal) quando um segredo tem baixa
+ * diversidade de caracteres (ex: "aaaa...", "abab..."), sinal de chave fraca/
+ * placeholder. Ignora valores curtos/ausentes (tratados em checkRequiredSecrets).
+ */
+export function checkSecretEntropy(
+  name: string,
+  value: string | undefined,
+): GuardIssue | null {
+  if (!value || value.length < 16) return null;
+  const unique = new Set(value).size;
+  if (unique < 10) {
+    return {
+      level: "warn",
+      code: `${name}_BAIXA_ENTROPIA`,
+      message: `${name} tem baixa diversidade de caracteres (${unique} únicos) — gere um segredo aleatório (ex: crypto.randomBytes).`,
+    };
+  }
+  return null;
+}
+
 function readEnv(): StartupEnv {
   return {
     nodeEnv: process.env.NODE_ENV,
@@ -110,6 +131,16 @@ export async function runStartupChecks(opts?: {
 }): Promise<void> {
   const env = readEnv();
   const issues: GuardIssue[] = [...checkRequiredSecrets(env)];
+
+  // Entropia (warn) dos segredos de assinatura.
+  for (const [name, value] of [
+    ["SESSION_SECRET", env.sessionSecret],
+    ["PLATAFORMA_SESSION_SECRET", env.plataformaSessionSecret],
+    ["CONFIG_ENCRYPTION_KEY", env.configEncryptionKey],
+  ] as const) {
+    const entropyIssue = checkSecretEntropy(name, value);
+    if (entropyIssue) issues.push(entropyIssue);
+  }
 
   try {
     const counter =

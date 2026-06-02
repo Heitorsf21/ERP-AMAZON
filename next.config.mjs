@@ -2,6 +2,8 @@
 const nextConfig = {
   reactStrictMode: true,
   typedRoutes: true,
+  // Não anunciar a stack (remove header X-Powered-By: Next.js — fingerprinting).
+  poweredByHeader: false,
   // Source maps off em dev: reduz uso de RAM em Windows (~30-40%).
   productionBrowserSourceMaps: false,
   // TypeScript é verificado localmente (npm run typecheck) antes do push.

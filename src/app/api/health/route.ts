@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { timingSafeEqual } from "node:crypto";
 import { db } from "@/lib/db";
 import { getSession } from "@/lib/auth";
+import { logger } from "@/lib/logger";
 import { runWithTenant } from "@/lib/tenant-context";
 
 export const dynamic = "force-dynamic";
@@ -29,6 +30,12 @@ function isInternalTokenValid(received: string | null): boolean {
 export async function GET(request: Request) {
   const inicio = Date.now();
 
+  // Token interno é checado por env (sem DB) — pode ser avaliado mesmo com o
+  // banco fora. Só chamadores privilegiados veem a mensagem crua de erro.
+  const internalTokenOk = isInternalTokenValid(
+    request.headers.get(INTERNAL_TOKEN_HEADER),
+  );
+
   const dbCheck = await db.$queryRaw`SELECT 1 as ok`
     .then(() => ({ ok: true as const, error: null as string | null }))
     .catch((e: unknown) => ({
@@ -36,12 +43,14 @@ export async function GET(request: Request) {
       error: e instanceof Error ? e.message : String(e),
     }));
 
-  // Se o banco caiu, devolve 503 sem mais consultas.
+  // Se o banco caiu, devolve 503. NÃO vaza a mensagem crua do banco (pode revelar
+  // host/credencial/schema) para chamadores não-privilegiados — só loga server-side.
   if (!dbCheck.ok) {
+    logger.error({ err: dbCheck.error }, "[health] db check falhou");
     return NextResponse.json(
       {
         ok: false,
-        db: dbCheck,
+        db: internalTokenOk ? dbCheck : { ok: false },
         version: process.env.GIT_SHA ?? "dev",
         elapsedMs: Date.now() - inicio,
       },
@@ -103,9 +112,6 @@ export async function GET(request: Request) {
   const ageSec = heartbeatAt ? Math.floor((Date.now() - heartbeatAt.getTime()) / 1000) : null;
   const workerOk = ageSec !== null && ageSec <= 300;
 
-  const internalTokenOk = isInternalTokenValid(
-    request.headers.get(INTERNAL_TOKEN_HEADER),
-  );
   const session = internalTokenOk ? null : await getSession();
   const canSeeDetails = internalTokenOk || session?.role === "ADMIN";
 

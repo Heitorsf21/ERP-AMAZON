@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   checkRequiredSecrets,
+  checkSecretEntropy,
   checkTenantIsolation,
   type StartupEnv,
 } from "./startup-checks";
@@ -63,5 +64,27 @@ describe("checkRequiredSecrets", () => {
   it("em desenvolvimento não emite FATAL, no máximo WARN", () => {
     const issues = checkRequiredSecrets({ nodeEnv: "development" });
     expect(issues.every((i) => i.level === "warn")).toBe(true);
+  });
+});
+
+describe("checkSecretEntropy", () => {
+  it("avisa (WARN) para segredo de caractere repetido", () => {
+    const issue = checkSecretEntropy("SESSION_SECRET", "a".repeat(48));
+    expect(issue?.level).toBe("warn");
+  });
+
+  it("avisa para baixa diversidade de caracteres", () => {
+    expect(checkSecretEntropy("SESSION_SECRET", "ab".repeat(24))).not.toBeNull();
+  });
+
+  it("não avisa para segredo aleatório diverso", () => {
+    expect(
+      checkSecretEntropy("SESSION_SECRET", "f3A9c0Q1zR7tK2mB8nL4vX6wD5sE0pH"),
+    ).toBeNull();
+  });
+
+  it("ignora valores curtos/ausentes (tratados pelo check de obrigatórios)", () => {
+    expect(checkSecretEntropy("SESSION_SECRET", "")).toBeNull();
+    expect(checkSecretEntropy("SESSION_SECRET", undefined)).toBeNull();
   });
 });

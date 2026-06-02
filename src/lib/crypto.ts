@@ -93,6 +93,26 @@ export function decryptConfigValue(stored: string | null | undefined): string | 
 }
 
 /**
+ * Máscara FIXA de exibição para segredos na UI/API. Diferente de mascarar com
+ * `*`.repeat(len-4)+last4, esta NÃO revela o tamanho nem trecho do segredo
+ * (audit 2026-06: GET de config vazava comprimento + últimos 4 chars do
+ * client_secret/refresh_token). Vazio permanece vazio.
+ */
+export const SECRET_DISPLAY_MASK = "********";
+export function maskSecretForDisplay(value: string | null | undefined): string {
+  return value ? SECRET_DISPLAY_MASK : "";
+}
+
+/**
+ * True quando o valor é apenas a máscara (só asteriscos). Usado no SAVE para
+ * preservar o segredo existente quando a UI reenvia o campo mascarado.
+ */
+export function isMaskedSecret(value: string): boolean {
+  const v = value.trim();
+  return v.length > 0 && /^\*+$/.test(v);
+}
+
+/**
  * Heurística: chaves cujo nome sugere segredo. Usado para decidir se um valor
  * em ConfiguracaoSistema deve ser criptografado em repouso.
  */

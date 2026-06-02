@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { handle, ok } from "@/lib/api";
 import { auditLog, redactForAudit } from "@/lib/audit";
 import { requireRole, UsuarioRole } from "@/lib/auth";
+import { isMaskedSecret, maskSecretForDisplay } from "@/lib/crypto";
 import {
   ADS_CONFIG_KEYS,
   getAmazonAdsConfig,
@@ -11,19 +12,15 @@ import {
 
 export const dynamic = "force-dynamic";
 
+const isSecretKey = (key: string) => key.includes("secret") || key.includes("token");
+
 export const GET = handle(async () => {
   const config = await getAmazonAdsConfig();
   const safe: Record<string, string> = {};
   for (const key of ADS_CONFIG_KEYS) {
     const val = config[key] ?? "";
-    if (val && (key.includes("secret") || key.includes("token"))) {
-      safe[key] =
-        val.length > 8
-          ? `${"*".repeat(val.length - 4)}${val.slice(-4)}`
-          : "****";
-    } else {
-      safe[key] = val;
-    }
+    // Segredos: máscara FIXA (não vaza tamanho nem últimos 4 caracteres).
+    safe[key] = isSecretKey(key) ? maskSecretForDisplay(val) : val;
   }
   return ok({ config: safe, configurado: isAmazonAdsConfigured(config) });
 });
@@ -34,7 +31,12 @@ export const POST = handle(async (req: NextRequest) => {
   const body = (await req.json()) as Record<string, string>;
   const updates: Record<string, string> = {};
   for (const key of ADS_CONFIG_KEYS) {
-    if (key in body) updates[key] = String(body[key] ?? "");
+    if (!(key in body)) continue;
+    const value = String(body[key] ?? "");
+    // Preserva o segredo existente quando a UI reenvia a máscara (********):
+    // não sobrescreve com asteriscos.
+    if (isSecretKey(key) && isMaskedSecret(value)) continue;
+    updates[key] = value;
   }
   await saveAmazonAdsConfig(updates);
   const depois = await getAmazonAdsConfig();

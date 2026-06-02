@@ -79,6 +79,9 @@ async function statsSqlite() {
   const tableStats = await Promise.all(
     tabelas.map(async (t) => {
       try {
+        // SEM SQL injection: `t.name` vem do catálogo (sqlite_master), nunca de
+        // input do usuário. Raw query é métrica de banco (contagem agregada,
+        // platform-wide) e este endpoint é ADMIN-only — não expõe PII de tenant.
         const rows = await db.$queryRawUnsafe<Array<{ c: bigint | number }>>(
           `SELECT COUNT(*) as c FROM "${t.name}"`,
         );

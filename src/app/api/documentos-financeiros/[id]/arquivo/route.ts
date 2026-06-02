@@ -3,7 +3,8 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { db } from "@/lib/db";
 import { logger } from "@/lib/logger";
-import { requireSession } from "@/lib/auth";
+import { requireRole, UsuarioRole } from "@/lib/auth";
+import { resolveFileServeHeaders } from "@/lib/file-serving";
 
 export const dynamic = "force-dynamic";
 
@@ -11,7 +12,9 @@ type Params = { params: Promise<{ id: string }> };
 
 export async function GET(req: Request, { params }: Params) {
   try {
-    await requireSession();
+    // Documento financeiro = PII/fiscal: restringe a FINANCEIRO/ADMIN (defense-in-
+    // depth além do middleware, que hoje deixaria OPERADOR alcançar este path).
+    const session = await requireRole(UsuarioRole.FINANCEIRO);
     const { id } = await params;
     const url = new URL(req.url);
     const download = url.searchParams.get("download") === "1";
@@ -20,13 +23,20 @@ export async function GET(req: Request, { params }: Params) {
       where: { id },
       select: {
         id: true,
+        empresaId: true,
         nomeArquivo: true,
         caminhoArquivo: true,
         mimeType: true,
       },
     });
 
-    if (!doc) {
+    // 404 uniforme para inexistente E para documento de outra empresa (anti-IDOR,
+    // não revela existência). Seguro em modo off (checagem explícita aqui) e em
+    // enforce (a extensão do Prisma também escopa por empresaId).
+    if (
+      !doc ||
+      (session.empresaId && doc.empresaId && doc.empresaId !== session.empresaId)
+    ) {
       return NextResponse.json(
         { error: "documento nao encontrado" },
         { status: 404 },
@@ -59,10 +69,13 @@ export async function GET(req: Request, { params }: Params) {
       );
     }
 
-    const safeFilename = doc.nomeArquivo.replace(/"/g, "");
-    const disposition = download
-      ? `attachment; filename="${safeFilename}"`
-      : `inline; filename="${safeFilename}"`;
+    // Headers seguros: só tipos allowlistados (PDF/imagem) podem ir inline; o
+    // resto vira download. Impede XSS armazenado via HTML/SVG servido no origin.
+    const { contentType, disposition } = resolveFileServeHeaders(
+      doc.mimeType,
+      doc.nomeArquivo,
+      download,
+    );
 
     // Cria uma cópia em ArrayBuffer "puro" (sem SharedArrayBuffer) para o
     // tipo BodyInit aceitar — evita warnings com Buffer/Uint8Array<ArrayBufferLike>.
@@ -72,9 +85,10 @@ export async function GET(req: Request, { params }: Params) {
     return new NextResponse(ab, {
       status: 200,
       headers: {
-        "Content-Type": doc.mimeType || "application/octet-stream",
+        "Content-Type": contentType,
         "Content-Disposition": disposition,
         "Content-Length": String(conteudo.byteLength),
+        "X-Content-Type-Options": "nosniff",
         "Cache-Control": "private, max-age=60",
       },
     });
