@@ -250,6 +250,57 @@ async function getCredentialsOrThrow(): Promise<SPAPICredentials> {
   return creds;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// F02 — Credenciais OAuth por seller (multi-tenant).
+// app credential (client_id/secret, global) + seller grant (refresh_token,
+// per-AmazonAccount cifrado) → SPAPICredentials. Ver
+// docs/superpowers/specs/2026-06-02-amazon-oauth-multiseller-credenciais-design.md
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Mescla a credencial app-level (client_id/secret) com o grant do seller
+ * (refresh_token já decifrado). Pura — sem I/O. Lança se faltar refresh_token.
+ */
+export function montarCredenciais(
+  app: { clientId: string; clientSecret: string },
+  conta: { refreshToken: string; marketplaceId?: string | null; endpoint?: string | null },
+): SPAPICredentials {
+  if (!conta.refreshToken) throw new Error("[amazon] conta sem refresh_token (não conectada)");
+  return {
+    clientId: app.clientId,
+    clientSecret: app.clientSecret,
+    refreshToken: conta.refreshToken,
+    marketplaceId: conta.marketplaceId || DEFAULT_MARKETPLACE_ID,
+    endpoint: conta.endpoint || undefined,
+  };
+}
+
+/** App-level creds (client_id/secret) — globais, do app no Developer Console. */
+export async function getAppCredentials(): Promise<{ clientId: string; clientSecret: string }> {
+  const cfg = await getAmazonConfig();
+  return { clientId: cfg.amazon_client_id, clientSecret: cfg.amazon_client_secret };
+}
+
+/**
+ * Resolve as credenciais SP-API da conta ATIVA de uma empresa (filtro explícito
+ * de empresaId — AmazonAccount é GLOBAL_MODEL, não auto-filtrado). Decifra o
+ * refresh_token. Lança claro quando a conta não está conectada.
+ */
+export async function resolverCredenciaisDaConta(empresaId: string): Promise<SPAPICredentials> {
+  const conta = await db.amazonAccount.findFirst({
+    where: { empresaId, ativa: true, status: "ATIVA" },
+  });
+  if (!conta?.refreshTokenEnc) {
+    throw new Error(`[amazon] empresa ${empresaId} sem conta Amazon conectada`);
+  }
+  const app = await getAppCredentials();
+  return montarCredenciais(app, {
+    refreshToken: decryptConfigValue(conta.refreshTokenEnc) ?? "",
+    marketplaceId: conta.marketplaceId,
+    endpoint: conta.endpoint,
+  });
+}
+
 async function createLog(
   tipo: string,
   status: string,
