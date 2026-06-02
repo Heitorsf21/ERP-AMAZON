@@ -44,6 +44,13 @@ model AmazonAccount {
   marketplaceId String?
   sellerId      String?
   endpoint      String?
+  // Credenciais OAuth por seller (F02). refresh_token cifrado AES-256-GCM (crypto.ts,
+  // formato enc:v1:). access token cacheado é opcional (refresh sob demanda).
+  refreshTokenEnc String?
+  accessTokenEnc  String?
+  tokenExpiresAt  DateTime?
+  lwaScopes       String?
+  conectadoEm     DateTime?
   ativa         Boolean  @default(true)
   // PENDENTE | ATIVA | ERRO — gate do worker (só itera contas ATIVA com credenciais).
   status        String   @default("PENDENTE")
