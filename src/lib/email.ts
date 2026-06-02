@@ -22,6 +22,38 @@ export function escapeHtml(value: string): string {
     .replace(/'/g, "&#39;");
 }
 
+/**
+ * Mascara um email para logging seguro: mantém os 2 primeiros caracteres do
+ * local-part e o domínio. Entrada sem "@" vira "***" (nunca vaza o valor cru).
+ */
+export function maskEmail(email: string): string {
+  const at = email.indexOf("@");
+  if (at < 0) return "***";
+  const local = email.slice(0, at);
+  const domain = email.slice(at);
+  if (local.length <= 2) return `***${domain}`;
+  return `${local.slice(0, 2)}***${domain}`;
+}
+
+export type DevEmailLog = { to: string; subject: string; bodyPreview?: string };
+
+/**
+ * Monta o payload de log para o modo dev (SMTP ausente). Por padrão NÃO inclui o
+ * corpo — o body de emails transacionais carrega SEGREDOS (link de reset de
+ * senha, código 2FA, token de convite). O preview só entra com opt-in explícito
+ * (EMAIL_DEV_LOG_BODY=true em ambiente não-produção), para depuração local.
+ */
+export function buildDevEmailLog(
+  input: { to: string; subject: string; text?: string; html: string },
+  opts: { logBody: boolean },
+): DevEmailLog {
+  const log: DevEmailLog = { to: maskEmail(input.to), subject: input.subject };
+  if (opts.logBody) {
+    log.bodyPreview = (input.text ?? input.html.replace(/<[^>]+>/g, "")).slice(0, 400);
+  }
+  return log;
+}
+
 let transporterCache: Transporter | null = null;
 let configChecked = false;
 let configValid = false;
@@ -67,17 +99,25 @@ export async function enviarEmail(
   const transporter = getTransporter();
 
   if (!transporter) {
-    // Modo dev: log estruturado para devs verem o que seria enviado
+    // PRODUÇÃO sem SMTP = misconfiguração. NÃO logar o corpo (vazaria link de
+    // reset / código 2FA / token de convite) e NÃO fingir sucesso: o email não
+    // saiu. Retornar ok=false força o caller a tratar como falha real.
+    if (process.env.NODE_ENV === "production") {
+      logger.error(
+        { to: maskEmail(input.to), subject: input.subject },
+        "[email] SMTP não configurado em produção — email NÃO enviado",
+      );
+      return { ok: false, viaConsole: false };
+    }
+
+    // DEV: por padrão loga só metadados mascarados. Para ver o link/código no
+    // console (depuração local), defina EMAIL_DEV_LOG_BODY=true.
+    const logBody = process.env.EMAIL_DEV_LOG_BODY === "true";
     logger.info(
-      {
-        to: input.to,
-        subject: input.subject,
-        textPreview: (input.text ?? input.html.replace(/<[^>]+>/g, "")).slice(
-          0,
-          400,
-        ),
-      },
-      "[email DEV] email simulado (SMTP não configurado)",
+      buildDevEmailLog(input, { logBody }),
+      logBody
+        ? "[email DEV] email simulado (SMTP não configurado) — corpo logado (EMAIL_DEV_LOG_BODY=true)"
+        : "[email DEV] email simulado (SMTP não configurado) — defina EMAIL_DEV_LOG_BODY=true p/ ver o conteúdo",
     );
     return { ok: true, viaConsole: true };
   }

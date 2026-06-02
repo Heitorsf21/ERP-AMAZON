@@ -33,7 +33,10 @@ sudo chmod 600 .env
 # DATABASE_URL="postgresql://erp_amazon:senha_forte_aqui@localhost:5432/erp_amazon?schema=public"
 # CONFIG_ENCRYPTION_KEY=$(node -e "console.log(require('crypto').randomBytes(32).toString('hex'))")
 # SESSION_SECRET=$(node -e "console.log(require('crypto').randomBytes(48).toString('hex'))")
+# PLATAFORMA_SESSION_SECRET=$(node -e "console.log(require('crypto').randomBytes(48).toString('hex'))")
 # INTERNAL_HEALTH_TOKEN=$(node -e "console.log(require('crypto').randomBytes(32).toString('hex'))")
+# TENANT_ISOLATION="off"  # use "enforce" antes de cadastrar a 2ª empresa; validar em staging antes
+# WAHA_ALLOWED_HOSTS="127.0.0.1:3002,localhost:3002"
 # AMAZON_SQS_QUEUE_ARN="arn:aws:sqs:..."
 # AMAZON_SQS_QUEUE_URL="https://sqs..."
 # AMAZON_SQS_REGION="us-east-1"

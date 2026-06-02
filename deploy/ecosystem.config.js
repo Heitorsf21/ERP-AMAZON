@@ -21,6 +21,10 @@ module.exports = {
       max_memory_restart: "700M",
       env: {
         NODE_ENV: "production",
+        // Isolamento multi-tenant. Descomente (= "enforce") ANTES de onboardar a
+        // 2ª empresa — rollout GATED (backup + staging antes). Com a flag off e
+        // 2+ empresas, o guard de boot aborta o processo de propósito.
+        // TENANT_ISOLATION: "enforce",
       },
       time: true,
     },
@@ -36,6 +40,10 @@ module.exports = {
       max_memory_restart: "500M",
       env: {
         NODE_ENV: "production",
+        // Isolamento multi-tenant. Descomente (= "enforce") ANTES de onboardar a
+        // 2ª empresa — rollout GATED (backup + staging antes). Com a flag off e
+        // 2+ empresas, o guard de boot aborta o processo de propósito.
+        // TENANT_ISOLATION: "enforce",
       },
       time: true,
     },
@@ -51,6 +59,10 @@ module.exports = {
       max_memory_restart: "300M",
       env: {
         NODE_ENV: "production",
+        // Isolamento multi-tenant. Descomente (= "enforce") ANTES de onboardar a
+        // 2ª empresa — rollout GATED (backup + staging antes). Com a flag off e
+        // 2+ empresas, o guard de boot aborta o processo de propósito.
+        // TENANT_ISOLATION: "enforce",
       },
       time: true,
     },

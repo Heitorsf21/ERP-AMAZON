@@ -14,6 +14,7 @@ import {
   reserveAmazonOperationSlot,
   type AmazonSpApiOperation as AmazonSpApiOperationType,
 } from "@/lib/amazon-rate-limit";
+import { assertAmazonEndpoint } from "@/lib/ssrf-guard";
 
 export interface SPAPICredentials {
   clientId: string;
@@ -200,6 +201,10 @@ export async function spApiRequest<T = unknown>(
 ): Promise<T> {
   const method = options.method ?? "GET";
   const endpoint = creds.endpoint || DEFAULT_ENDPOINT;
+  // SSRF guard: o endpoint vem de config (amazon_endpoint) e o request carrega o
+  // access token LWA no header — validar que é host oficial da Amazon ANTES de
+  // enviar, senão um endpoint forjado exfiltraria o token.
+  assertAmazonEndpoint(endpoint);
   const accessToken = options.accessToken ?? (await getLWAToken(creds));
 
   const url = new URL(pathname, endpoint);

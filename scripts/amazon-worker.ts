@@ -24,6 +24,7 @@ if (process.env.NODE_ENV !== "production" && !process.env.CONFIG_ENCRYPTION_KEY)
 
 import { processAmazonSyncJobs } from "../src/modules/amazon/worker";
 import { cleanupExpiredLoginThrottle } from "../src/lib/auth-rate-limit";
+import { runStartupChecks } from "../src/lib/startup-checks";
 
 const once = process.argv.includes("--once");
 const intervalMs = Number(process.env.AMAZON_WORKER_INTERVAL_MS ?? 30_000);
@@ -55,6 +56,15 @@ async function maybeRunLoginThrottleCleanup() {
 }
 
 async function main() {
+  // Guards de boot (segredos obrigatórios + isolamento multi-tenant quando há 2+
+  // empresas). Aborta o worker em produção se algo crítico estiver mal configurado.
+  try {
+    await runStartupChecks();
+  } catch (err) {
+    console.error(err instanceof Error ? err.message : String(err));
+    process.exit(1);
+  }
+
   do {
     const result = await processAmazonSyncJobs({
       workerId: process.env.AMAZON_WORKER_ID ?? "amazon-worker",
