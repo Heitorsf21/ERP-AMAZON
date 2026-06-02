@@ -1,6 +1,7 @@
 import { format } from "date-fns";
 import { toZonedTime } from "date-fns-tz";
 import { db } from "@/lib/db";
+import { runWithTenant } from "@/lib/tenant-context";
 import { TIMEZONE } from "@/lib/date";
 import { getReviewAutomationConfig } from "@/modules/amazon/service";
 import { getWhatsappEstoqueScheduleConfig } from "@/modules/whatsapp-estoque/config";
@@ -16,7 +17,14 @@ type EnqueueOptions = {
   maxAttempts?: number;
   dedupeKey?: string;
   dedupeAnyStatus?: boolean;
+  // F02: empresa dona do job (multi-seller). null = legado/global (adotado pela
+  // empresa primária no worker). Setado explicitamente para funcionar tanto em
+  // TENANT_ISOLATION=off quanto enforce (a extensão só injeta quando ausente).
+  empresaId?: string | null;
 };
+
+// Empresa de background (single-tenant fallback). Mesma chave do worker/tenant-context.
+const WORKER_EMPRESA_ID = process.env.WORKER_EMPRESA_ID || "mundofs";
 
 const OPEN_JOB_STATUSES = [
   StatusAmazonSyncJob.QUEUED,
@@ -316,11 +324,13 @@ export async function enqueueAmazonSyncJob(
   options: EnqueueOptions = {},
 ) {
   const dedupeKey = options.dedupeKey;
+  const empresaId = options.empresaId ?? null;
 
   if (dedupeKey) {
     const existing = await db.amazonSyncJob.findFirst({
       where: {
         dedupeKey,
+        empresaId,
         ...(options.dedupeAnyStatus
           ? {}
           : { status: { in: [...OPEN_JOB_STATUSES] } }),
@@ -333,6 +343,7 @@ export async function enqueueAmazonSyncJob(
   return db.amazonSyncJob.create({
     data: {
       tipo,
+      empresaId,
       status: StatusAmazonSyncJob.QUEUED,
       priority: options.priority ?? 0,
       payload: encodeJobJson(payload) as never,
@@ -457,7 +468,36 @@ async function getReviewAutomacaoAtivaCached(now: number): Promise<boolean> {
   return value;
 }
 
+/**
+ * Empresas para as quais agendar jobs recorrentes (F02 multi-seller): contas
+ * Amazon conectadas (ATIVA + refreshTokenEnc). AmazonAccount é GLOBAL_MODEL, então
+ * a leitura não é filtrada por tenant. Sem nenhuma conta conectada, cai no
+ * fallback single-tenant (empresa primária usando a config global de credenciais).
+ */
+async function empresaIdsParaAgendar(): Promise<string[]> {
+  const contas = await db.amazonAccount.findMany({
+    where: { ativa: true, status: "ATIVA", refreshTokenEnc: { not: null } },
+    select: { empresaId: true },
+  });
+  const ids = [...new Set(contas.map((c) => c.empresaId))];
+  return ids.length > 0 ? ids : [WORKER_EMPRESA_ID];
+}
+
 export async function ensureRecurringAmazonJobs(now = new Date()) {
+  const created: unknown[] = [];
+  for (const empresaId of await empresaIdsParaAgendar()) {
+    // Cada empresa agenda sob seu próprio contexto de tenant — os gates que leem
+    // modelos TENANT (ex: AmazonApiQuota) ficam escopados à empresa em enforce.
+    const lote = await runWithTenant(
+      { empresaId, isSuperAdmin: false, source: "worker" },
+      () => agendarRecorrentesDaEmpresa(empresaId, now),
+    );
+    created.push(...lote);
+  }
+  return created;
+}
+
+async function agendarRecorrentesDaEmpresa(empresaId: string, now: Date) {
   const created = [];
 
   // Toggle master da automação de reviews. Se desativado, não enfileiramos
@@ -479,9 +519,12 @@ export async function ensureRecurringAmazonJobs(now = new Date()) {
       if (skip) continue;
     }
 
-    const dedupeKey = schedule.dedupeKeyOverride
+    const dedupeBase = schedule.dedupeKeyOverride
       ? schedule.dedupeKeyOverride(now)
       : `${schedule.tipo}:${Math.floor(now.getTime() / schedule.intervalMs)}`;
+    // Prefixo por empresa: evita colisão de dedupe entre sellers (cada um agenda
+    // o mesmo tipo no mesmo slot).
+    const dedupeKey = `${empresaId}:${dedupeBase}`;
     const runAfter = schedule.runAfterOffsetMs
       ? new Date(now.getTime() + schedule.runAfterOffsetMs)
       : undefined;
@@ -493,6 +536,7 @@ export async function ensureRecurringAmazonJobs(now = new Date()) {
         dedupeAnyStatus: true,
         priority: schedule.priority,
         runAfter,
+        empresaId,
       },
     );
     created.push(job);

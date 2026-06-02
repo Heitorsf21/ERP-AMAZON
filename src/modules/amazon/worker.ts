@@ -1,7 +1,8 @@
 import { isAmazonQuotaCooldownError } from "@/lib/amazon-rate-limit";
+import type { SPAPICredentials } from "@/lib/amazon-sp-api";
 import { pollSqsNotifications } from "@/lib/amazon-sqs";
 import { db } from "@/lib/db";
-import { runWithTenant } from "@/lib/tenant-context";
+import { getEmpresaId, runWithTenant } from "@/lib/tenant-context";
 import { notificarJobFalhando } from "@/lib/notificacoes";
 import {
   completeAmazonSyncJob,
@@ -19,6 +20,7 @@ import {
   syncRefunds,
   getAmazonConfig,
   isAmazonConfigured,
+  resolverCredenciaisDaConta,
 } from "@/modules/amazon/service";
 import {
   runAmazonFbaPromoExpiryCheck,
@@ -81,11 +83,16 @@ type SyncPayload = {
 // per-AmazonAccount quando o worker iterar contas.
 const WORKER_EMPRESA_ID = process.env.WORKER_EMPRESA_ID || "mundofs";
 
+// Contexto de manutenção global (sem filtro de tenant): usado para operações de
+// fila keyed por id único (claim/complete/fail/release) e adoção de órfãos.
+const SUPERADMIN_WORKER = {
+  empresaId: null,
+  isSuperAdmin: true,
+  source: "worker" as const,
+};
+
 export async function processAmazonSyncJobs(options: WorkerOptions = {}) {
-  return runWithTenant(
-    { empresaId: WORKER_EMPRESA_ID, isSuperAdmin: false, source: "worker" },
-    () => processAmazonSyncJobsInner(options),
-  );
+  return processAmazonSyncJobsInner(options);
 }
 
 async function processAmazonSyncJobsInner(options: WorkerOptions = {}) {
@@ -93,40 +100,62 @@ async function processAmazonSyncJobsInner(options: WorkerOptions = {}) {
   const limit = options.limit ?? 10;
   const results: Array<Record<string, unknown>> = [];
 
-  await releaseStaleRunningJobs(workerId);
+  // Manutenção global sob superadmin (sem filtro): adota jobs órfãos (empresaId
+  // null — legados/SQS) para a empresa primária e libera RUNNING presos de todas.
+  await runWithTenant(SUPERADMIN_WORKER, async () => {
+    await adoptOrphanJobs();
+    await releaseStaleRunningJobs(workerId);
+  });
 
+  // Agendamento recorrente: por conta Amazon ATIVA (cada uma sob seu tenant).
   if (options.schedule !== false) {
     await ensureRecurringAmazonJobs();
   }
 
+  // Drena a fila por prioridade (claim global sob superadmin) e processa cada job
+  // sob o tenant do PRÓPRIO job (job.empresaId) — credenciais resolvidas por conta.
   for (let i = 0; i < limit; i += 1) {
-    const job = await claimNextAmazonSyncJob(workerId);
+    const job = await runWithTenant(SUPERADMIN_WORKER, () =>
+      claimNextAmazonSyncJob(workerId),
+    );
     if (!job) break;
 
+    const empresaId = job.empresaId ?? WORKER_EMPRESA_ID;
+    const jobTenant = { empresaId, isSuperAdmin: false, source: "worker" as const };
+
     try {
-      const result = await processJob(job.tipo, job.payload);
-      await completeAmazonSyncJob(job.id, result);
-      results.push({ jobId: job.id, tipo: job.tipo, status: "SUCCESS", result });
+      const result = await runWithTenant(jobTenant, () =>
+        processJob(job.tipo, job.payload),
+      );
+      await runWithTenant(SUPERADMIN_WORKER, () =>
+        completeAmazonSyncJob(job.id, result),
+      );
+      results.push({ jobId: job.id, tipo: job.tipo, empresaId, status: "SUCCESS", result });
     } catch (error) {
       const retryAt = getRetryAt(error);
       const message = error instanceof Error ? error.message : String(error);
-      await failAmazonSyncJob({
-        jobId: job.id,
-        attempts: job.attempts,
-        maxAttempts: job.maxAttempts,
-        error: message,
-        runAfter: retryAt,
-      });
+      await runWithTenant(SUPERADMIN_WORKER, () =>
+        failAmazonSyncJob({
+          jobId: job.id,
+          attempts: job.attempts,
+          maxAttempts: job.maxAttempts,
+          error: message,
+          runAfter: retryAt,
+        }),
+      );
 
-      // Notificacao no sino do ERP quando job esgota tentativas.
+      // Notificacao no sino do ERP quando job esgota tentativas (Notificacao é
+      // TENANT — registra sob o tenant da empresa dona do job).
       if (job.attempts >= job.maxAttempts && !retryAt) {
         try {
-          await notificarJobFalhando({
-            jobId: job.id,
-            tipo: job.tipo,
-            attempts: job.attempts,
-            error: message,
-          });
+          await runWithTenant(jobTenant, () =>
+            notificarJobFalhando({
+              jobId: job.id,
+              tipo: job.tipo,
+              attempts: job.attempts,
+              error: message,
+            }),
+          );
         } catch {
           // Nunca propaga erro de notificacao.
         }
@@ -135,6 +164,7 @@ async function processAmazonSyncJobsInner(options: WorkerOptions = {}) {
       results.push({
         jobId: job.id,
         tipo: job.tipo,
+        empresaId,
         status: retryAt ? "RETRY" : "FAILED",
         error: message,
         runAfter: retryAt?.toISOString(),
@@ -142,28 +172,43 @@ async function processAmazonSyncJobsInner(options: WorkerOptions = {}) {
     }
   }
 
-  // Heartbeat: outras partes do sistema (health endpoint, watchdog)
-  // usam isso para detectar worker travado.
+  // Heartbeat: outras partes do sistema (health endpoint, watchdog) usam isso
+  // para detectar worker travado. ConfiguracaoSistema é GLOBAL — sem tenant.
   await writeHeartbeat();
 
-  // Polling SQS — drena notificações push do SP-API (ORDER_CHANGE, etc.)
-  // Usa long-polling de 1s para não bloquear o loop. Cada mensagem vira um job
-  // de alta prioridade na fila local, processado na próxima iteração.
-  try {
-    await pollSqsNotifications({ maxMessages: 10, waitTimeSeconds: 1 });
-  } catch (e) {
-    console.warn("pollSqsNotifications erro:", e);
-  }
-
-  // Reconciliação Nubank ↔ ContaReceber (sem custo de SP-API).
-  // Roda a cada loop, é barato e dá liquidação automática rápida.
-  try {
-    await reconciliarRecebimentosAmazon();
-  } catch (e) {
-    console.warn("reconciliarRecebimentosAmazon erro:", e);
-  }
+  // SQS + reconciliação sob a empresa primária (single-tenant por ora).
+  // SQS drena notificações push do SP-API; reconciliação Nubank ↔ ContaReceber.
+  await runWithTenant(
+    { empresaId: WORKER_EMPRESA_ID, isSuperAdmin: false, source: "worker" },
+    async () => {
+      try {
+        await pollSqsNotifications({ maxMessages: 10, waitTimeSeconds: 1 });
+      } catch (e) {
+        console.warn("pollSqsNotifications erro:", e);
+      }
+      try {
+        await reconciliarRecebimentosAmazon();
+      } catch (e) {
+        console.warn("reconciliarRecebimentosAmazon erro:", e);
+      }
+    },
+  );
 
   return { processed: results.length, results };
+}
+
+// Adota jobs órfãos (empresaId null — enfileirados por SQS/rotas/legado antes do
+// F02) para a empresa primária, para que o claim por tenant os alcance. Roda sob
+// superadmin (sem filtro). No-op após o primeiro loop (nada mais fica null).
+async function adoptOrphanJobs() {
+  try {
+    await db.amazonSyncJob.updateMany({
+      where: { empresaId: null },
+      data: { empresaId: WORKER_EMPRESA_ID },
+    });
+  } catch (e) {
+    console.warn("adoptOrphanJobs erro:", e);
+  }
 }
 
 async function writeHeartbeat() {
@@ -236,27 +281,37 @@ async function processJob(
     tipo !== TipoAmazonSyncJob.AMAZON_ADS_STREAM_INGEST &&
     tipo !== TipoAmazonSyncJob.WHATSAPP_ESTOQUE_RESUMO;
 
-  let creds: Awaited<ReturnType<typeof getAmazonConfig>> | null = null;
+  // F02: resolve as credenciais SP-API pela CONTA da empresa do contexto (grant
+  // OAuth cifrado por seller). Fallback para a config global enquanto a conta não
+  // foi conectada via OAuth (transição / single-tenant legado).
+  let sp: SPAPICredentials | null = null;
   if (needCreds) {
-    creds = await getAmazonConfig();
-    if (!isAmazonConfigured(creds)) {
-      return {
-        ok: false,
-        skipped: true,
-        mensagem: "Credenciais Amazon nao configuradas — job pulado.",
+    const empresaId = getEmpresaId();
+    if (empresaId) {
+      try {
+        sp = await resolverCredenciaisDaConta(empresaId);
+      } catch {
+        sp = null; // conta não conectada → tenta a config global abaixo
+      }
+    }
+    if (!sp) {
+      const config = await getAmazonConfig();
+      if (!isAmazonConfigured(config)) {
+        return {
+          ok: false,
+          skipped: true,
+          mensagem: "Credenciais Amazon nao configuradas — job pulado.",
+        };
+      }
+      sp = {
+        clientId: config.amazon_client_id!,
+        clientSecret: config.amazon_client_secret!,
+        refreshToken: config.amazon_refresh_token!,
+        marketplaceId: config.amazon_marketplace_id!,
+        endpoint: config.amazon_endpoint || undefined,
       };
     }
   }
-
-  const sp = creds
-    ? {
-        clientId: creds.amazon_client_id!,
-        clientSecret: creds.amazon_client_secret!,
-        refreshToken: creds.amazon_refresh_token!,
-        marketplaceId: creds.amazon_marketplace_id!,
-        endpoint: creds.amazon_endpoint || undefined,
-      }
-    : null;
 
   switch (tipo) {
     case TipoAmazonSyncJob.ORDERS_SYNC:
