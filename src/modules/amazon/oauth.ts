@@ -49,3 +49,20 @@ export function verificarState(
     return null;
   }
 }
+
+/**
+ * Monta a URL de consentimento do Seller Central (LWA). `draft=true` adiciona
+ * `version=beta`, exigido enquanto o app não está publicado no Developer Console.
+ */
+export function montarAuthorizationUrl(opts: {
+  sellerCentralBase: string;
+  applicationId: string;
+  state: string;
+  draft: boolean;
+}): string {
+  const url = new URL("/apps/authorize/consent", opts.sellerCentralBase);
+  url.searchParams.set("application_id", opts.applicationId);
+  url.searchParams.set("state", opts.state);
+  if (opts.draft) url.searchParams.set("version", "beta");
+  return url.toString();
+}
