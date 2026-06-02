@@ -6,6 +6,7 @@
  * required for the flows used here.
  */
 
+import { logger } from "@/lib/logger";
 import {
   adoptObservedRateLimit,
   AmazonSpApiOperation,
@@ -691,7 +692,7 @@ export async function getProductOffers(
   } catch (e) {
     if (isAmazonSpApiQuotaError(e)) throw e;
     const msg = e instanceof Error ? e.message : String(e);
-    console.warn(`[getProductOffers] ASIN ${asin} falhou: ${msg.slice(0, 200)}`);
+    logger.warn({ asin, err: msg.slice(0, 200) }, "[getProductOffers] falha ao buscar ofertas");
     return null;
   }
 }

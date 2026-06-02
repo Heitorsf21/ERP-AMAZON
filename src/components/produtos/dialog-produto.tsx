@@ -356,10 +356,10 @@ function AmazonPriceReadOnly({
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="text-xs font-semibold uppercase text-muted-foreground">
-            Preco Amazon sincronizado
+            Preço Amazon sincronizado
           </p>
           <p className="mt-1 font-mono text-xl font-semibold tabular-nums text-slate-900">
-            {temPreco ? formatBRL(precoCentavos) : "Sem preco"}
+            {temPreco ? formatBRL(precoCentavos) : "Sem preço"}
           </p>
         </div>
         <span className="inline-flex h-9 w-9 items-center justify-center rounded-md bg-white text-primary shadow-sm">
@@ -373,7 +373,7 @@ function AmazonPriceReadOnly({
       <p className="mt-2 text-xs text-muted-foreground">
         {syncEm
           ? `Atualizado via SP-API em ${formatDataHora(syncEm)}.`
-          : "Aguardando sincronizacao do listing pela Amazon."}
+          : "Aguardando sincronização do listing pela Amazon."}
       </p>
     </div>
   );

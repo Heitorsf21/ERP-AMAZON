@@ -361,12 +361,12 @@ function exportarCSV(
       "SKU",
       "Nome",
       "ASIN",
-      "Preco Amazon (R$)",
-      "Estoque vendavel",
+      "Preço Amazon (R$)",
+      "Estoque vendável",
       "Custo unit. (R$)",
       "Margem (%)",
       "Vendas 30d",
-      "Ultima sync",
+      "Última sync",
       "Status",
     ],
     ...produtos.map((p) => {
@@ -533,7 +533,7 @@ function StatusBadge({ produto }: { produto: Produto }) {
   if (produto.statusReposicao === StatusReposicao.ATENCAO) {
     return (
       <span className="inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-700">
-        Atencao
+        Atenção
       </span>
     );
   }
@@ -564,7 +564,7 @@ function EstoqueCell({ produto }: { produto: Produto }) {
           semEstoque ? "font-semibold text-red-600" : "text-muted-foreground",
         )}
       >
-        {semEstoque ? "Sem estoque" : "Disponivel"}
+        {semEstoque ? "Sem estoque" : "Disponível"}
       </div>
     </div>
   );
@@ -594,7 +594,7 @@ function PriceCell({ produto }: { produto: Produto }) {
   if (!preco) {
     return (
       <div className="text-right">
-        <div className="text-xs font-semibold text-red-600">Sem preco</div>
+        <div className="text-xs font-semibold text-red-600">Sem preço</div>
         <div className="text-[11px] text-muted-foreground">Amazon</div>
       </div>
     );
@@ -618,8 +618,8 @@ function CoverageHint({ cobertura }: { cobertura: ResumoTabelaCobertura }) {
   return (
     <div className="flex flex-wrap items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
       <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600" />
-      {semTraffic && <span>Metricas de trafego ocultas: sem dados recentes por SKU.</span>}
-      {semBuybox && <span>Buybox historico oculto: sem snapshots nos ultimos 15 dias.</span>}
+      {semTraffic && <span>Métricas de tráfego ocultas: sem dados recentes por SKU.</span>}
+      {semBuybox && <span>Buybox histórico oculto: sem snapshots nos últimos 15 dias.</span>}
     </div>
   );
 }
@@ -679,7 +679,7 @@ function EmptyState({
         {busca
           ? `Sem resultados para "${busca}". Tente buscar por SKU, nome ou ASIN.`
           : filtrado
-            ? "Nenhum produto nessa visao. Ajuste os filtros ou limpe a busca."
+            ? "Nenhum produto nessa visão. Ajuste os filtros ou limpe a busca."
             : "Comece criando seu primeiro produto com um SKU no formato MFS-XXXX."}
       </p>
       {filtrado && (
@@ -956,7 +956,7 @@ export function ListaProdutos({
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["estoque-produtos"] });
       qc.invalidateQueries({ queryKey: ["estoque-totais"] });
-      toast.success("Custo unitario atualizado");
+      toast.success("Custo unitário atualizado");
     },
     onError: (err) =>
       toast.error((err as Error).message ?? "Erro ao atualizar custo"),
@@ -972,12 +972,12 @@ export function ListaProdutos({
     onSuccess: (res) => {
       qc.invalidateQueries({ queryKey: ["estoque-produtos"] });
       if (res.erros.length) {
-        toast.warning(`Catalogo sincronizado com erros: ${res.erros[0]}`);
+        toast.warning(`Catálogo sincronizado com erros: ${res.erros[0]}`);
       } else {
-        toast.success("Catalogo Amazon atualizado");
+        toast.success("Catálogo Amazon atualizado");
       }
     },
-    onError: () => toast.error("Erro ao buscar catalogo Amazon"),
+    onError: () => toast.error("Erro ao buscar catálogo Amazon"),
   });
 
   const syncBuybox = useMutation({
@@ -1025,10 +1025,10 @@ export function ListaProdutos({
         headers: { "content-type": "application/json" },
       }),
     onSuccess: () => {
-      toast.success("Sincronizacao enfileirada");
+      toast.success("Sincronização enfileirada");
     },
     onError: (err) =>
-      toast.error((err as Error).message ?? "Erro ao enfileirar sincronizacao"),
+      toast.error((err as Error).message ?? "Erro ao enfileirar sincronização"),
   });
 
   const busca = filtros.busca ?? "";
@@ -1042,7 +1042,7 @@ export function ListaProdutos({
               <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600" />
               {semCusto > 0 && <span>{semCusto} produto(s) sem custo.</span>}
               {semPrecoAmazon > 0 && (
-                <span>{semPrecoAmazon} produto(s) sem preco Amazon sincronizado.</span>
+                <span>{semPrecoAmazon} produto(s) sem preço Amazon sincronizado.</span>
               )}
             </div>
           )}
@@ -1112,7 +1112,7 @@ export function ListaProdutos({
                     <div>
                       <p className="text-sm font-semibold">Colunas da tabela</p>
                       <p className="text-xs text-muted-foreground">
-                        Dados sem cobertura ficam ocultos por padrao.
+                        Dados sem cobertura ficam ocultos por padrão.
                       </p>
                     </div>
                     {COLUMN_OPTIONS.map((column) => {
@@ -1210,7 +1210,7 @@ export function ListaProdutos({
                         <TableHead className="hidden w-10 px-4 sm:table-cell">
                           <input
                             type="checkbox"
-                            aria-label="Selecionar pagina"
+                            aria-label="Selecionar página"
                             checked={todosPaginaSelecionados}
                             onChange={(e) => {
                               const checked = e.target.checked;
@@ -1252,7 +1252,7 @@ export function ListaProdutos({
                         {columns.precoAmazon && (
                           <TableHead className="w-[86px] px-2 text-right sm:w-[105px]">
                             <SortableHeader
-                              label="Preco Amazon"
+                              label="Preço Amazon"
                               sortKey="precoAmazon"
                               sort={sort}
                               align="right"
@@ -1306,7 +1306,7 @@ export function ListaProdutos({
                         )}
                         {columns.traffic && (
                           <TableHead className="hidden w-[95px] px-3 text-right 2xl:table-cell">
-                            Sessoes
+                            Sessões
                           </TableHead>
                         )}
                         {columns.conversion && (
@@ -1322,7 +1322,7 @@ export function ListaProdutos({
                         {columns.ultimaSync && (
                           <TableHead className="hidden w-[120px] px-2 2xl:table-cell">
                             <SortableHeader
-                              label="Ultima sync"
+                              label="Última sync"
                               sortKey="ultimaSync"
                               sort={sort}
                               onToggle={toggleSort}
@@ -1492,7 +1492,7 @@ export function ListaProdutos({
                                     variant="ghost"
                                     size="icon"
                                     className="h-7 w-7 sm:h-8 sm:w-8"
-                                    aria-label={`Acoes de ${p.sku}`}
+                                    aria-label={`Ações de ${p.sku}`}
                                   >
                                     <MoreHorizontal className="h-4 w-4" />
                                   </Button>
@@ -1527,7 +1527,7 @@ export function ListaProdutos({
                                     }
                                   >
                                     <ArrowDownCircle className="mr-2 h-4 w-4 text-destructive" />
-                                    Registrar saida
+                                    Registrar saída
                                   </DropdownMenuItem>
                                   <DropdownMenuSeparator />
                                   {p.asin && (
@@ -1537,7 +1537,7 @@ export function ListaProdutos({
                                         disabled={syncCatalog.isPending}
                                       >
                                         <RefreshCw className="mr-2 h-4 w-4" />
-                                        Buscar catalogo Amazon
+                                        Buscar catálogo Amazon
                                       </DropdownMenuItem>
                                       <DropdownMenuItem
                                         onClick={() => syncBuybox.mutate(p.id)}
@@ -1562,7 +1562,7 @@ export function ListaProdutos({
                                     }
                                   >
                                     <History className="mr-2 h-4 w-4" />
-                                    Historico de custo
+                                    Histórico de custo
                                   </DropdownMenuItem>
                                   <DropdownMenuItem
                                     onClick={() =>
@@ -1603,7 +1603,7 @@ export function ListaProdutos({
                     >
                       {PAGE_SIZE_OPTIONS.map((size) => (
                         <option key={size} value={size}>
-                          {size} por pagina
+                          {size} por página
                         </option>
                       ))}
                     </Select>
@@ -1698,16 +1698,16 @@ export function ListaProdutos({
 const COLUMN_OPTIONS: Array<{ key: ColumnKey; label: string }> = [
   { key: "sku", label: "SKU" },
   { key: "asin", label: "ASIN" },
-  { key: "precoAmazon", label: "Preco Amazon" },
+  { key: "precoAmazon", label: "Preço Amazon" },
   { key: "estoque", label: "Estoque" },
   { key: "custo", label: "Custo" },
   { key: "margem", label: "Margem" },
   { key: "vendas30d", label: "Vendas 30d" },
-  { key: "ultimaSync", label: "Ultima sync" },
+  { key: "ultimaSync", label: "Última sync" },
   { key: "status", label: "Status" },
-  { key: "traffic", label: "Sessoes" },
-  { key: "conversion", label: "Conversao" },
-  { key: "buybox", label: "Buybox historico" },
+  { key: "traffic", label: "Sessões" },
+  { key: "conversion", label: "Conversão" },
+  { key: "buybox", label: "Buybox histórico" },
 ];
 
 function SegmentButton({
@@ -1792,7 +1792,7 @@ function ProdutosFiltrosSheet({
         <SheetHeader className="border-b pb-4">
           <SheetTitle>Filtros</SheetTitle>
           <SheetDescription>
-            Refine produtos por estoque, custo, margem e sincronizacao.
+            Refine produtos por estoque, custo, margem e sincronização.
           </SheetDescription>
         </SheetHeader>
 
@@ -1811,7 +1811,7 @@ function ProdutosFiltrosSheet({
             >
               <option value="TODOS">Todos</option>
               <option value={StatusReposicao.REPOR}>Repor</option>
-              <option value={StatusReposicao.ATENCAO}>Atencao</option>
+              <option value={StatusReposicao.ATENCAO}>Atenção</option>
               <option value={StatusReposicao.OK}>OK</option>
             </Select>
           </FilterGroup>
@@ -1846,7 +1846,7 @@ function ProdutosFiltrosSheet({
                 type="number"
                 min="0"
                 step="0.01"
-                placeholder="Minimo"
+                placeholder="Mínimo"
                 value={custoMin}
                 onChange={(e) => onCustoMinChange(e.target.value)}
               />
@@ -1855,7 +1855,7 @@ function ProdutosFiltrosSheet({
                 type="number"
                 min="0"
                 step="0.01"
-                placeholder="Maximo"
+                placeholder="Máximo"
                 value={custoMax}
                 onChange={(e) => onCustoMaxChange(e.target.value)}
               />
@@ -1881,7 +1881,7 @@ function ProdutosFiltrosSheet({
               <Input
                 type="number"
                 step="0.1"
-                placeholder="Minimo"
+                placeholder="Mínimo"
                 value={margemMin}
                 onChange={(e) => onMargemMinChange(e.target.value)}
               />
@@ -1889,7 +1889,7 @@ function ProdutosFiltrosSheet({
               <Input
                 type="number"
                 step="0.1"
-                placeholder="Maximo"
+                placeholder="Máximo"
                 value={margemMax}
                 onChange={(e) => onMargemMaxChange(e.target.value)}
               />
@@ -1902,7 +1902,7 @@ function ProdutosFiltrosSheet({
                 type="number"
                 min="0"
                 step="1"
-                placeholder="Minimo"
+                placeholder="Mínimo"
                 value={vendasMin}
                 onChange={(e) => onVendasMinChange(e.target.value)}
               />
@@ -1911,14 +1911,14 @@ function ProdutosFiltrosSheet({
                 type="number"
                 min="0"
                 step="1"
-                placeholder="Maximo"
+                placeholder="Máximo"
                 value={vendasMax}
                 onChange={(e) => onVendasMaxChange(e.target.value)}
               />
             </div>
           </FilterGroup>
 
-          <FilterGroup label="Sincronizacao Amazon">
+          <FilterGroup label="Sincronização Amazon">
             <Select
               value={filtros.semSyncAmazon ? "SEM_SYNC" : "TODOS"}
               onChange={(e) =>
@@ -2019,7 +2019,7 @@ function CustoUnitarioInput({
         if (e.key === "Enter") e.currentTarget.blur();
       }}
       className="ml-auto h-8 w-[88px] text-right font-mono text-xs tabular-nums"
-      aria-label="Custo unitario"
+      aria-label="Custo unitário"
       placeholder="0,00"
     />
   );
