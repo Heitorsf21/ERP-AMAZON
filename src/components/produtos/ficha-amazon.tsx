@@ -451,13 +451,13 @@ export function FichaAmazonKpis({
   produtoId,
   estoqueAtual,
   amazonEstoqueTotal,
-  precoVenda,
+  precoAmazonCentavos,
   custoUnitario,
 }: {
   produtoId: string;
   estoqueAtual: number;
   amazonEstoqueTotal: number | null;
-  precoVenda: number | null;
+  precoAmazonCentavos: number | null;
   custoUnitario: number | null;
 }) {
   const { data: vendas } = useQuery<VendasResposta>({
@@ -468,12 +468,12 @@ export function FichaAmazonKpis({
   });
 
   const margemCentavos =
-    precoVenda != null && custoUnitario != null
-      ? precoVenda - custoUnitario
+    precoAmazonCentavos != null && custoUnitario != null
+      ? precoAmazonCentavos - custoUnitario
       : null;
   const margemPct =
-    margemCentavos != null && precoVenda && precoVenda > 0
-      ? (margemCentavos / precoVenda) * 100
+    margemCentavos != null && precoAmazonCentavos && precoAmazonCentavos > 0
+      ? (margemCentavos / precoAmazonCentavos) * 100
       : null;
 
   return (
@@ -529,10 +529,10 @@ export function FichaAmazonKpis({
         <Card>
           <CardContent className="pt-4 pb-4">
             <p className="text-xs uppercase tracking-wide text-muted-foreground">
-              Preço de venda
+              Preco Amazon
             </p>
             <p className="mt-1 text-xl font-semibold tabular-nums">
-              {precoVenda ? formatBRL(precoVenda) : "—"}
+              {precoAmazonCentavos ? formatBRL(precoAmazonCentavos) : "—"}
             </p>
           </CardContent>
         </Card>

@@ -1,4 +1,4 @@
-import crypto from "node:crypto";
+﻿import crypto from "node:crypto";
 import { expect, test } from "@playwright/test";
 
 const sessionSecret =

@@ -53,7 +53,8 @@ type Produto = {
   nome: string;
   descricao: string | null;
   custoUnitario: number | null;
-  precoVenda: number | null;
+  amazonPrecoListagemCentavos: number | null;
+  amazonPrecoListagemSyncEm: string | null;
   estoqueAtual: number;
   estoqueMinimo: number;
   unidade: string;
@@ -271,7 +272,7 @@ export default function FichaProdutoPage({
             produtoId={produto.id}
             estoqueAtual={produto.estoqueAtual}
             amazonEstoqueTotal={produto.amazonEstoqueTotal}
-            precoVenda={produto.precoVenda}
+            precoAmazonCentavos={produto.amazonPrecoListagemCentavos}
             custoUnitario={produto.custoUnitario}
           />
 

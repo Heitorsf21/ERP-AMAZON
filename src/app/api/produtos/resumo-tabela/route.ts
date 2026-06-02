@@ -6,68 +6,110 @@ import { whereVendaAmazonContabilizavelEstrito } from "@/modules/vendas/filtros"
 
 export const dynamic = "force-dynamic";
 
+type TrafficRow = {
+  sku: string;
+  sessoes: number;
+  pageViews: number;
+  unitsOrdered: number;
+  orderedRevenueCentavos: number;
+  buyBoxPercent: number | null;
+  conversaoPercent: number | null;
+  atualizadoEm: Date;
+};
+
+type TrafficAggregate = {
+  sessions: number;
+  pageViews: number;
+  unitsOrdered: number;
+  orderedRevenueCentavos: number;
+  buyBoxTotal: number;
+  buyBoxCount: number;
+  conversaoTotal: number;
+  conversaoCount: number;
+};
+
 // Resumo agregado por produto para enriquecer a tabela principal sem N+1.
-// Retorna agregados comerciais e de trafego por produto ativo.
+// Vendas/ads seguem janela de 30d; traffic usa o ultimo report processado,
+// porque a Amazon pode atualizar um report recente com datas internas antigas.
 export const GET = handleAuth([UsuarioRole.OPERADOR], async () => {
   const desde30d = subDays(new Date(), 30);
   const desde15dBuybox = subDays(new Date(), 15);
 
-  const [produtos, vendas, reembolsos, buybox, traffic, ads] = await Promise.all([
-    db.produto.findMany({
-      where: { ativo: true },
-      select: { id: true, sku: true },
-    }),
-    db.vendaAmazon.groupBy({
-      by: ["sku"],
-      where: whereVendaAmazonContabilizavelEstrito({
-        dataVenda: { gte: desde30d },
-      }),
-      _sum: { quantidade: true },
-    }),
-    db.amazonReembolso.groupBy({
-      by: ["sku"],
-      where: { dataReembolso: { gte: desde30d } },
-      _sum: { quantidade: true },
-    }),
-    db.buyBoxSnapshot.groupBy({
-      by: ["sku"],
-      where: { capturadoEm: { gte: desde15dBuybox } },
-      _count: { _all: true },
-      _sum: { numeroOfertas: true }, // nao usado; placeholder p/ contagem
-    }),
-    db.amazonSkuTrafficDaily.groupBy({
-      by: ["sku"],
-      where: { data: { gte: desde30d } },
-      _sum: {
-        sessoes: true,
-        pageViews: true,
-        unitsOrdered: true,
-        orderedRevenueCentavos: true,
-      },
-      _avg: {
-        buyBoxPercent: true,
-      },
-    }),
-    db.amazonAdsMetricaDiaria.groupBy({
-      by: ["sku"],
-      where: { data: { gte: desde30d }, sku: { not: null } },
-      _sum: {
-        gastoCentavos: true,
-        vendasCentavos: true,
-        impressoes: true,
-        cliques: true,
-      },
-    }),
-  ]);
-
-  // Para % do tempo com buybox, precisamos saber quantos snapshots tinham somosBuybox=true.
-  // GroupBy não suporta filtro condicional dentro do agregado, então buscamos
-  // separadamente os snapshots em que somosBuybox=true.
-  const buyboxGanhos = await db.buyBoxSnapshot.groupBy({
-    by: ["sku"],
-    where: { capturadoEm: { gte: desde15dBuybox }, somosBuybox: true },
-    _count: { _all: true },
+  const produtos = await db.produto.findMany({
+    where: { ativo: true },
+    select: { id: true, sku: true },
   });
+  const skus = produtos.map((p) => p.sku);
+
+  const ultimoTraffic = skus.length
+    ? await db.amazonSkuTrafficDaily.findFirst({
+        where: { sku: { in: skus } },
+        orderBy: { atualizadoEm: "desc" },
+        select: { atualizadoEm: true },
+      })
+    : null;
+  const janelaUltimoTraffic = ultimoTraffic
+    ? new Date(ultimoTraffic.atualizadoEm.getTime() - 15 * 60_000)
+    : null;
+
+  const [vendas, reembolsos, buybox, buyboxGanhos, trafficRows, ads] =
+    await Promise.all([
+      db.vendaAmazon.groupBy({
+        by: ["sku"],
+        where: whereVendaAmazonContabilizavelEstrito({
+          dataVenda: { gte: desde30d },
+        }),
+        _sum: { quantidade: true },
+      }),
+      db.amazonReembolso.groupBy({
+        by: ["sku"],
+        where: { dataReembolso: { gte: desde30d } },
+        _sum: { quantidade: true },
+      }),
+      db.buyBoxSnapshot.groupBy({
+        by: ["sku"],
+        where: { capturadoEm: { gte: desde15dBuybox } },
+        _count: { _all: true },
+      }),
+      db.buyBoxSnapshot.groupBy({
+        by: ["sku"],
+        where: { capturadoEm: { gte: desde15dBuybox }, somosBuybox: true },
+        _count: { _all: true },
+      }),
+      janelaUltimoTraffic
+        ? db.amazonSkuTrafficDaily.findMany({
+            where: {
+              sku: { in: skus },
+              atualizadoEm: { gte: janelaUltimoTraffic },
+            },
+            select: {
+              sku: true,
+              sessoes: true,
+              pageViews: true,
+              unitsOrdered: true,
+              orderedRevenueCentavos: true,
+              buyBoxPercent: true,
+              conversaoPercent: true,
+              atualizadoEm: true,
+            },
+          })
+        : Promise.resolve([] as TrafficRow[]),
+      skus.length
+        ? db.amazonAdsMetricaDiaria.groupBy({
+            by: ["sku"],
+            where: {
+              data: { gte: desde30d },
+              sku: { in: skus },
+            },
+            _sum: {
+              gastoCentavos: true,
+              vendasCentavos: true,
+              impressoes: true,
+              cliques: true,
+            },
+          })
+        : Promise.resolve([]),
+    ]);
 
   const vendidoPorSku = new Map(
     vendas.map((v) => [v.sku, v._sum.quantidade ?? 0]),
@@ -81,7 +123,7 @@ export const GET = handleAuth([UsuarioRole.OPERADOR], async () => {
   const ganhosPorSku = new Map(
     buyboxGanhos.map((b) => [b.sku, b._count._all]),
   );
-  const trafficPorSku = new Map(traffic.map((t) => [t.sku, t]));
+  const trafficPorSku = aggregateTraffic(trafficRows);
   const adsPorSku = new Map(ads.map((a) => [a.sku, a]));
 
   const resultado = produtos.map((p) => {
@@ -89,12 +131,10 @@ export const GET = handleAuth([UsuarioRole.OPERADOR], async () => {
     const devolvido = devolvidoPorSku.get(p.sku) ?? 0;
     const totalSnaps = totalSnapsPorSku.get(p.sku) ?? 0;
     const ganhos = ganhosPorSku.get(p.sku) ?? 0;
-    const trafficRow = trafficPorSku.get(p.sku);
-    const trafficSum = trafficRow?._sum;
-    const trafficAvg = trafficRow?._avg;
-    const sessions30d = trafficSum?.sessoes ?? 0;
-    const pageViews30d = trafficSum?.pageViews ?? 0;
-    const trafficUnitsOrdered30d = trafficSum?.unitsOrdered ?? 0;
+    const traffic = trafficPorSku.get(p.sku);
+    const sessions30d = traffic?.sessions ?? 0;
+    const pageViews30d = traffic?.pageViews ?? 0;
+    const trafficUnitsOrdered30d = traffic?.unitsOrdered ?? 0;
 
     const denominador = vendido30d + devolvido;
     const reembolsoPercent =
@@ -110,6 +150,11 @@ export const GET = handleAuth([UsuarioRole.OPERADOR], async () => {
     const adsAcosPercent =
       adsVendas > 0 ? Math.round((adsGasto / adsVendas) * 1000) / 10 : null;
 
+    const conversaoMedia =
+      traffic && traffic.conversaoCount > 0
+        ? Math.round((traffic.conversaoTotal / traffic.conversaoCount) * 10) / 10
+        : null;
+
     return {
       id: p.id,
       sku: p.sku,
@@ -119,15 +164,15 @@ export const GET = handleAuth([UsuarioRole.OPERADOR], async () => {
       sessions30d,
       pageViews30d,
       trafficUnitsOrdered30d,
-      trafficRevenueOrderedCentavos: trafficSum?.orderedRevenueCentavos ?? 0,
+      trafficRevenueOrderedCentavos: traffic?.orderedRevenueCentavos ?? 0,
       trafficConversionPercent:
         sessions30d > 0
           ? Math.round((trafficUnitsOrdered30d / sessions30d) * 1000) / 10
-          : null,
+          : conversaoMedia,
       trafficBuyBoxPercent:
-        trafficAvg?.buyBoxPercent == null
-          ? null
-          : Math.round(trafficAvg.buyBoxPercent * 10) / 10,
+        traffic && traffic.buyBoxCount > 0
+          ? Math.round((traffic.buyBoxTotal / traffic.buyBoxCount) * 10) / 10
+          : null,
       adsGastoCentavos30d: adsGasto,
       adsVendasCentavos30d: adsVendas,
       adsAcosPercent30d: adsAcosPercent,
@@ -136,5 +181,60 @@ export const GET = handleAuth([UsuarioRole.OPERADOR], async () => {
     };
   });
 
-  return ok(resultado);
+  const skusComTraffic = new Set(
+    trafficRows
+      .filter(
+        (r) =>
+          r.sessoes > 0 ||
+          r.pageViews > 0 ||
+          r.unitsOrdered > 0 ||
+          r.orderedRevenueCentavos > 0,
+      )
+      .map((r) => r.sku),
+  );
+
+  return ok({
+    itens: resultado,
+    cobertura: {
+      totalProdutos: produtos.length,
+      trafficRows: trafficRows.length,
+      skusComTraffic: skusComTraffic.size,
+      buyboxSnapshots15d: buybox.reduce((total, b) => total + b._count._all, 0),
+      skusComBuybox15d: buybox.length,
+      trafficAtualizadoEm: ultimoTraffic?.atualizadoEm.toISOString() ?? null,
+    },
+  });
 });
+
+function aggregateTraffic(rows: TrafficRow[]) {
+  const map = new Map<string, TrafficAggregate>();
+
+  for (const row of rows) {
+    const current = map.get(row.sku) ?? {
+      sessions: 0,
+      pageViews: 0,
+      unitsOrdered: 0,
+      orderedRevenueCentavos: 0,
+      buyBoxTotal: 0,
+      buyBoxCount: 0,
+      conversaoTotal: 0,
+      conversaoCount: 0,
+    };
+
+    current.sessions += row.sessoes;
+    current.pageViews += row.pageViews;
+    current.unitsOrdered += row.unitsOrdered;
+    current.orderedRevenueCentavos += row.orderedRevenueCentavos;
+    if (row.buyBoxPercent != null) {
+      current.buyBoxTotal += row.buyBoxPercent;
+      current.buyBoxCount += 1;
+    }
+    if (row.conversaoPercent != null) {
+      current.conversaoTotal += row.conversaoPercent;
+      current.conversaoCount += 1;
+    }
+    map.set(row.sku, current);
+  }
+
+  return map;
+}

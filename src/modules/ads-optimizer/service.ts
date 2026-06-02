@@ -1,4 +1,4 @@
-import { addDays, differenceInCalendarDays } from "date-fns";
+﻿import { addDays, differenceInCalendarDays } from "date-fns";
 import { db } from "@/lib/db";
 import { isAmazonQuotaCooldownError } from "@/lib/amazon-rate-limit";
 import {
@@ -189,7 +189,7 @@ export const adsOptimizerService = {
     try {
       await db.adsOptimizationRecommendation.updateMany({
         where: { profileId, status: "PROPOSED" },
-        data: { status: "STALE", staleReason: "Nova rodada de otimização gerada" },
+        data: { status: "STALE", staleReason: "Nova rodada de otimizaÃ§Ã£o gerada" },
       });
 
       const snapshot = await buildOptimizationSnapshot(profileId);
@@ -428,9 +428,9 @@ export const adsOptimizerService = {
     input: AdsOptimizerApprovalInput = {},
   ) {
     const rec = await db.adsOptimizationRecommendation.findFirst({ where: { id } });
-    if (!rec) throw new Error("recomendação não encontrada");
+    if (!rec) throw new Error("recomendaÃ§Ã£o nÃ£o encontrada");
     if (rec.status !== "PROPOSED") {
-      throw new Error(`recomendação não está pendente: ${rec.status}`);
+      throw new Error(`recomendaÃ§Ã£o nÃ£o estÃ¡ pendente: ${rec.status}`);
     }
     const blocked = await validateRecommendationFresh(rec);
     if (blocked) {
@@ -452,9 +452,9 @@ export const adsOptimizerService = {
 
   async rejectRecommendation(id: string, session: SessionPayload) {
     const rec = await db.adsOptimizationRecommendation.findFirst({ where: { id } });
-    if (!rec) throw new Error("recomendação não encontrada");
+    if (!rec) throw new Error("recomendaÃ§Ã£o nÃ£o encontrada");
     if (!["PROPOSED", "APPROVED"].includes(rec.status)) {
-      throw new Error(`recomendação não pode ser rejeitada: ${rec.status}`);
+      throw new Error(`recomendaÃ§Ã£o nÃ£o pode ser rejeitada: ${rec.status}`);
     }
     return db.adsOptimizationRecommendation.update({
       where: { id: rec.id },
@@ -501,7 +501,7 @@ export const adsOptimizerService = {
 async function requireAdsCredentials() {
   const creds = await getAmazonAdsCredentials();
   if (!creds?.profileId) {
-    throw new Error("Amazon Ads não está configurado com profileId");
+    throw new Error("Amazon Ads nÃ£o estÃ¡ configurado com profileId");
   }
   return creds;
 }
@@ -1732,9 +1732,9 @@ async function validateRecommendationFresh(
     const keyword = await db.amazonAdsKeyword.findFirst({
       where: { profileId: rec.profileId, keywordId: rec.keywordId ?? rec.entityId },
     });
-    if (!keyword) return "Keyword não encontrada no snapshot atual";
+    if (!keyword) return "Keyword nÃ£o encontrada no snapshot atual";
     if (!ACTIVE_STATES.has((keyword.estado ?? "").toLowerCase())) {
-      return `Keyword não está ativa (${keyword.estado ?? "sem estado"})`;
+      return `Keyword nÃ£o estÃ¡ ativa (${keyword.estado ?? "sem estado"})`;
     }
     if (
       rec.currentBidCentavos != null &&
@@ -1748,9 +1748,9 @@ async function validateRecommendationFresh(
     const target = await db.amazonAdsTarget.findFirst({
       where: { profileId: rec.profileId, targetId: rec.targetId ?? rec.entityId },
     });
-    if (!target) return "Target não encontrado no snapshot atual";
+    if (!target) return "Target nÃ£o encontrado no snapshot atual";
     if (!ACTIVE_STATES.has((target.estado ?? "").toLowerCase())) {
-      return `Target não está ativo (${target.estado ?? "sem estado"})`;
+      return `Target nÃ£o estÃ¡ ativo (${target.estado ?? "sem estado"})`;
     }
     if (
       rec.currentBidCentavos != null &&
@@ -1910,7 +1910,7 @@ function buildAmazonActionPayload(
       }],
     };
   }
-  throw new Error(`ação não suportada: ${rec.actionType}`);
+  throw new Error(`aÃ§Ã£o nÃ£o suportada: ${rec.actionType}`);
 }
 
 function getApprovedAmazonActionPayload(
@@ -1927,13 +1927,13 @@ function normalizeApprovalInput(
 ): AdsOptimizerApprovalInput {
   if (input.bidCentavos == null) return {};
   if (!["INCREASE_BID", "DECREASE_BID", "CREATE_EXACT_KEYWORD"].includes(actionType)) {
-    throw new Error("esta ação não aceita ajuste de lance");
+    throw new Error("esta aÃ§Ã£o nÃ£o aceita ajuste de lance");
   }
   if (!Number.isInteger(input.bidCentavos) || input.bidCentavos < 1) {
-    throw new Error("lance aprovado inválido");
+    throw new Error("lance aprovado invÃ¡lido");
   }
   if (input.bidCentavos > 100000) {
-    throw new Error("lance aprovado acima do limite de segurança");
+    throw new Error("lance aprovado acima do limite de seguranÃ§a");
   }
   return { bidCentavos: input.bidCentavos };
 }
@@ -1968,7 +1968,7 @@ async function dispatchAmazonAction(
   if (actionType === "CREATE_EXACT_KEYWORD") {
     return createSponsoredProductsKeywords(creds, request.keywords as never);
   }
-  throw new Error(`ação não suportada: ${actionType}`);
+  throw new Error(`aÃ§Ã£o nÃ£o suportada: ${actionType}`);
 }
 
 async function collectPages<T>(

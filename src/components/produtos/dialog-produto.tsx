@@ -5,7 +5,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { ImagePlus, Trash2 } from "lucide-react";
+import { CheckCircle2, ImagePlus, RefreshCw, Trash2 } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -19,6 +19,7 @@ import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { fetchJSON } from "@/lib/fetcher";
+import { formatBRL } from "@/lib/money";
 import {
   formatCommissionRule,
   listCommissionCategories,
@@ -35,7 +36,8 @@ type Props = {
     nome: string;
     descricao?: string | null;
     custoUnitario?: number | null;
-    precoVenda?: number | null;
+    amazonPrecoListagemCentavos?: number | null;
+    amazonPrecoListagemSyncEm?: string | null;
     estoqueMinimo: number;
     unidade: string;
     observacoes?: string | null;
@@ -122,7 +124,6 @@ export function DialogProduto({ aberto, onOpenChange, produto }: Props) {
         nome: produto.nome,
         descricao: produto.descricao ?? "",
         custoUnitario: produto.custoUnitario ?? undefined,
-        precoVenda: produto.precoVenda ?? undefined,
         estoqueMinimo: produto.estoqueMinimo,
         unidade: produto.unidade,
         observacoes: produto.observacoes ?? "",
@@ -220,7 +221,14 @@ export function DialogProduto({ aberto, onOpenChange, produto }: Props) {
             )}
           </div>
 
-          <div className="grid grid-cols-3 gap-3">
+          {isEdit && (
+            <AmazonPriceReadOnly
+              precoCentavos={produto?.amazonPrecoListagemCentavos ?? null}
+              syncEm={produto?.amazonPrecoListagemSyncEm ?? null}
+            />
+          )}
+
+          <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label htmlFor="custoUnitario">Custo unit. (R$)</Label>
               <Input
@@ -229,20 +237,6 @@ export function DialogProduto({ aberto, onOpenChange, produto }: Props) {
                 step="0.01"
                 min="0"
                 {...register("custoUnitario", {
-                  setValueAs: (v) =>
-                    v === "" || v === null ? null : Math.round(parseFloat(v) * 100),
-                })}
-                placeholder="0,00"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="precoVenda">Preço venda (R$)</Label>
-              <Input
-                id="precoVenda"
-                type="number"
-                step="0.01"
-                min="0"
-                {...register("precoVenda", {
                   setValueAs: (v) =>
                     v === "" || v === null ? null : Math.round(parseFloat(v) * 100),
                 })}
@@ -339,11 +333,58 @@ export function DialogProduto({ aberto, onOpenChange, produto }: Props) {
               Cancelar
             </Button>
             <Button type="submit" disabled={salvar.isPending}>
-              {salvar.isPending ? "Salvando…" : "Salvar"}
+              {salvar.isPending ? "Salvando..." : "Salvar"}
             </Button>
           </DialogFooter>
         </form>
       </DialogContent>
     </Dialog>
   );
+}
+
+function AmazonPriceReadOnly({
+  precoCentavos,
+  syncEm,
+}: {
+  precoCentavos: number | null;
+  syncEm: string | null;
+}) {
+  const temPreco = precoCentavos != null && precoCentavos > 0;
+
+  return (
+    <div className="rounded-lg border bg-slate-50 p-3">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-xs font-semibold uppercase text-muted-foreground">
+            Preco Amazon sincronizado
+          </p>
+          <p className="mt-1 font-mono text-xl font-semibold tabular-nums text-slate-900">
+            {temPreco ? formatBRL(precoCentavos) : "Sem preco"}
+          </p>
+        </div>
+        <span className="inline-flex h-9 w-9 items-center justify-center rounded-md bg-white text-primary shadow-sm">
+          {temPreco ? (
+            <CheckCircle2 className="h-4 w-4" />
+          ) : (
+            <RefreshCw className="h-4 w-4" />
+          )}
+        </span>
+      </div>
+      <p className="mt-2 text-xs text-muted-foreground">
+        {syncEm
+          ? `Atualizado via SP-API em ${formatDataHora(syncEm)}.`
+          : "Aguardando sincronizacao do listing pela Amazon."}
+      </p>
+    </div>
+  );
+}
+
+function formatDataHora(iso: string) {
+  return new Date(iso).toLocaleString("pt-BR", {
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: "America/Sao_Paulo",
+  });
 }

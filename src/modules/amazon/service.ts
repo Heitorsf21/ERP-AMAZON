@@ -40,6 +40,7 @@ import {
   extractAmazonListingEffectivePriceCentavos,
   mergeAmazonOrderItemsWithSummary,
 } from "@/modules/amazon/pricing";
+import { extractProductOfferSnapshot } from "@/modules/amazon/offers-normalizer";
 import { inferAmazonCategoriaFee } from "@/modules/produtos/amazon-fee-category-mapper";
 import {
   OrigemAmazonReviewSolicitation,
@@ -3616,7 +3617,13 @@ export async function syncBuybox(produtoIds?: string[]): Promise<SyncBuyboxResul
 
   const produtos = await db.produto.findMany({
     where,
-    select: { id: true, asin: true },
+    select: {
+      id: true,
+      sku: true,
+      asin: true,
+      precoVenda: true,
+      amazonPrecoListagemCentavos: true,
+    },
   });
 
   let atualizados = 0;
@@ -3626,40 +3633,46 @@ export async function syncBuybox(produtoIds?: string[]): Promise<SyncBuyboxResul
     if (!produto.asin) continue;
     try {
       const offers = await getProductOffers(creds, produto.asin);
-      if (!offers) continue;
+      if (!offers) {
+        erros.push(`${produto.asin}: sem dados de ofertas`);
+        await db.produto.update({
+          where: { id: produto.id },
+          data: { buyboxUltimaSyncEm: new Date() },
+        });
+        continue;
+      }
 
-      // Verificar se somos o vendedor com o buybox
-      const sellerId = config.amazon_seller_id ?? "";
-      const minhaOferta = offers.offers?.find((o) => o.sellerId === sellerId);
-      const buyboxGanho = minhaOferta?.isBuyBoxWinner ?? false;
-
-      // Preço do buybox (primeira entrada em buyBoxPrices com condição New)
-      const buyboxPriceData = offers.summary?.buyBoxPrices?.find(
-        (p) => p.condition === "New",
+      const precoNosso =
+        produto.amazonPrecoListagemCentavos ?? produto.precoVenda;
+      const snapshot = extractProductOfferSnapshot(
+        offers,
+        config.amazon_seller_id ?? null,
+        precoNosso,
       );
-      const buyboxPrecoFloat =
-        buyboxPriceData?.listingPrice?.amount ??
-        buyboxPriceData?.landedPrice?.amount ??
-        null;
-      const buyboxPreco = buyboxPrecoFloat != null
-        ? Math.round(buyboxPrecoFloat * 100)
-        : null;
 
-      // Total de concorrentes elegíveis para buybox
-      const concorrentes =
-        offers.summary?.buyBoxEligibleOffers?.reduce((s, o) => s + (o.offerCount ?? 0), 0)
-        ?? offers.offers?.length
-        ?? 0;
-
-      await db.produto.update({
-        where: { id: produto.id },
-        data: {
-          buyboxGanho,
-          buyboxPreco,
-          buyboxConcorrentes: concorrentes,
-          buyboxUltimaSyncEm: new Date(),
-        },
-      });
+      await db.$transaction([
+        db.produto.update({
+          where: { id: produto.id },
+          data: {
+            buyboxGanho: snapshot.somosBuybox,
+            buyboxPreco: snapshot.buyboxPriceCentavos,
+            buyboxConcorrentes: snapshot.numeroOfertas,
+            buyboxUltimaSyncEm: new Date(),
+          },
+        }),
+        db.buyBoxSnapshot.create({
+          data: {
+            produtoId: produto.id,
+            sku: produto.sku,
+            asin: produto.asin,
+            somosBuybox: !!snapshot.somosBuybox,
+            precoNosso,
+            precoBuybox: snapshot.buyboxPriceCentavos,
+            sellerBuybox: snapshot.sellerBuybox,
+            numeroOfertas: snapshot.numeroOfertas,
+          },
+        }),
+      ]);
       atualizados++;
     } catch (e) {
       erros.push(`${produto.asin}: ${e instanceof Error ? e.message : String(e)}`);

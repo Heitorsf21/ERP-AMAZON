@@ -6,6 +6,7 @@ import {
   type SPListingsItem,
 } from "@/lib/amazon-sp-api";
 import { getAmazonConfig, isAmazonConfigured } from "@/modules/amazon/service";
+import { extractAmazonListingEffectivePriceCentavos } from "@/modules/amazon/pricing";
 
 export type ListingDiffField = {
   campo: "titulo" | "preco" | "status" | "imagem";
@@ -20,7 +21,7 @@ export type ProdutoAmazonListingDiff = {
     sku: string;
     asin: string | null;
     nome: string;
-    precoVenda: number | null;
+    precoAmazonCacheCentavos: number | null;
     ativo: boolean;
     imagemUrl: string | null;
   };
@@ -48,7 +49,7 @@ export async function getProdutoAmazonListingDiff(
       sku: true,
       asin: true,
       nome: true,
-      precoVenda: true,
+      amazonPrecoListagemCentavos: true,
       ativo: true,
       imagemUrl: true,
       amazonImagemUrl: true,
@@ -83,7 +84,9 @@ export async function getProdutoAmazonListingDiff(
     sku: listing.sku ?? produto.sku,
     asin: summary?.asin ?? produto.asin,
     titulo: summary?.itemName ?? firstAttributeString(listing.attributes, "item_name"),
-    precoCentavos: extractListingPriceCentavos(listing),
+    precoCentavos:
+      extractAmazonListingEffectivePriceCentavos(listing) ??
+      extractListingPriceCentavos(listing),
     status: normalizeStatus(summary?.status),
     imagemUrl:
       summary?.mainImage?.link ??
@@ -101,12 +104,12 @@ export async function getProdutoAmazonListingDiff(
     },
     {
       campo: "preco",
-      erp: produto.precoVenda,
+      erp: produto.amazonPrecoListagemCentavos,
       amazon: amazon.precoCentavos,
       igual:
-        produto.precoVenda != null &&
+        produto.amazonPrecoListagemCentavos != null &&
         amazon.precoCentavos != null &&
-        Math.abs(produto.precoVenda - amazon.precoCentavos) <= 1,
+        Math.abs(produto.amazonPrecoListagemCentavos - amazon.precoCentavos) <= 1,
     },
     {
       campo: "status",
@@ -130,7 +133,7 @@ export async function getProdutoAmazonListingDiff(
       sku: produto.sku,
       asin: produto.asin,
       nome: produto.nome,
-      precoVenda: produto.precoVenda,
+      precoAmazonCacheCentavos: produto.amazonPrecoListagemCentavos,
       ativo: produto.ativo,
       imagemUrl: erpImagem,
     },

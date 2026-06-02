@@ -4,35 +4,48 @@ import {
   useEffect,
   useMemo,
   useState,
-  type ComponentType,
   type Dispatch,
+  type ReactNode,
   type SetStateAction,
 } from "react";
-import { useQuery, useMutation, useQueryClient, keepPreviousData } from "@tanstack/react-query";
+import Link from "next/link";
 import {
   AlertTriangle,
-  Download,
-  Search,
-  Pencil,
-  PowerOff,
-  ChevronRight,
-  RefreshCw,
-  CheckCircle2,
-  XCircle,
-  ShoppingCart,
-  ImageOff,
-  Copy,
-  PackageSearch,
-  Sparkles,
-  ArrowUpCircle,
+  ArrowDown,
   ArrowDownCircle,
   ArrowUp,
-  ArrowDown,
+  ArrowUpCircle,
+  CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
   ChevronsUpDown,
+  Columns3,
+  Copy,
+  Download,
+  ExternalLink,
+  Filter,
   History,
+  ImageOff,
+  MoreHorizontal,
+  Package,
+  PackageSearch,
+  Pencil,
+  PowerOff,
+  RefreshCw,
+  Search,
+  ShoppingCart,
+  SlidersHorizontal,
+  Sparkles,
+  X,
+  XCircle,
 } from "lucide-react";
+import {
+  keepPreviousData,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { toast } from "sonner";
-import Link from "next/link";
 import {
   Table,
   TableBody,
@@ -55,25 +68,35 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { MarginBadge } from "@/components/ui/margin-badge";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Select } from "@/components/ui/select";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetFooter,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
+import { Switch } from "@/components/ui/switch";
+import { DataTableSkeleton } from "@/components/ui/data-table-skeleton";
 import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { DataTableSkeleton } from "@/components/ui/data-table-skeleton";
-import { BadgeReposicao } from "./badge-reposicao";
-import { DialogProduto } from "./dialog-produto";
-import { DialogMovimentacaoEstoque } from "./dialog-movimentacao-estoque";
 import { DialogCustoHistorico } from "./dialog-custo-historico";
+import { DialogMovimentacaoEstoque } from "./dialog-movimentacao-estoque";
+import { DialogProduto } from "./dialog-produto";
 import { fetchJSON } from "@/lib/fetcher";
 import { formatBRL } from "@/lib/money";
 import { resolverImagemProduto } from "@/lib/amazon-images";
 import { cn } from "@/lib/utils";
-import type { StatusReposicao } from "@/modules/shared/domain";
+import { StatusReposicao } from "@/modules/shared/domain";
 import {
   DEFAULT_PRODUTO_FILTROS,
   EstoqueFiltroOperacional,
@@ -89,19 +112,19 @@ type Produto = {
   descricao: string | null;
   custoUnitario: number | null;
   precoVenda: number | null;
+  amazonPrecoListagemCentavos: number | null;
+  amazonPrecoListagemSyncEm: string | null;
   estoqueAtual: number;
   amazonEstoqueDisponivel: number | null;
   amazonEstoqueReservado: number | null;
   amazonEstoqueInbound: number | null;
   amazonEstoqueTotal: number | null;
   amazonUltimaSyncEm: string | null;
-  // B1 — Catálogo
   amazonImagemUrl: string | null;
   amazonTituloOficial: string | null;
   amazonCategoria: string | null;
   amazonCategoriaFee: string | null;
   amazonCatalogSyncEm: string | null;
-  // B2 — Buybox
   buyboxGanho: boolean | null;
   buyboxPreco: number | null;
   buyboxConcorrentes: number | null;
@@ -142,6 +165,22 @@ type ResumoTabelaItem = {
   adsCliques30d: number;
 };
 
+type ResumoTabelaCobertura = {
+  totalProdutos: number;
+  trafficRows: number;
+  skusComTraffic: number;
+  buyboxSnapshots15d: number;
+  skusComBuybox15d: number;
+  trafficAtualizadoEm: string | null;
+};
+
+type ResumoTabelaResponse =
+  | ResumoTabelaItem[]
+  | {
+      itens: ResumoTabelaItem[];
+      cobertura: ResumoTabelaCobertura;
+    };
+
 type ListingDiffField = {
   campo: "titulo" | "preco" | "status" | "imagem";
   erp: string | number | null;
@@ -168,143 +207,199 @@ type ListingDiffResponse = {
   diffs: ListingDiffField[];
 };
 
-function exportarCSV(produtos: Produto[], velocidades: Map<string, VelocidadeProduto>) {
-  const linhas = [
-    ["SKU", "Nome", "ASIN", "Estoque", "Estoque Mín.", "Custo Unit. (R$)", "Status", "Dias Estoque"],
-    ...produtos.map((p) => {
-      const vel = velocidades.get(p.id);
-      return [
-        p.sku,
-        p.nome,
-        p.asin ?? "",
-        String(p.estoqueAtual),
-        String(p.estoqueMinimo),
-        p.custoUnitario ? (p.custoUnitario / 100).toFixed(2) : "",
-        p.statusReposicao,
-        vel?.diasEstoque != null ? String(vel.diasEstoque) : "",
-      ];
-    }),
-  ];
+type SortKey =
+  | "nome"
+  | "sku"
+  | "precoAmazon"
+  | "estoqueVendavel"
+  | "custoUnitario"
+  | "margem"
+  | "vendido30d"
+  | "ultimaSync"
+  | "status";
 
-  const csv = linhas.map((l) => l.map((c) => `"${c.replace(/"/g, '""')}"`).join(";")).join("\n");
-  const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `estoque_${new Date().toISOString().slice(0, 10)}.csv`;
-  a.click();
-  URL.revokeObjectURL(url);
+type SortState = { key: SortKey; dir: "asc" | "desc" } | null;
+
+type ColumnKey =
+  | "sku"
+  | "asin"
+  | "precoAmazon"
+  | "estoque"
+  | "custo"
+  | "margem"
+  | "vendas30d"
+  | "ultimaSync"
+  | "status"
+  | "traffic"
+  | "conversion"
+  | "buybox";
+
+type ListaProdutosProps = {
+  filtros: ProdutoFiltrosQuery;
+  filtrosConsulta: ProdutoFiltrosQuery;
+  onFiltrosChange: Dispatch<SetStateAction<ProdutoFiltrosQuery>>;
+};
+
+const DEFAULT_COLUMNS: Record<ColumnKey, boolean> = {
+  sku: true,
+  asin: true,
+  precoAmazon: true,
+  estoque: true,
+  custo: true,
+  margem: true,
+  vendas30d: true,
+  ultimaSync: true,
+  status: true,
+  traffic: false,
+  conversion: false,
+  buybox: false,
+};
+
+const PAGE_SIZE_OPTIONS = [5, 10, 25, 50];
+
+function normalizeResumoResponse(data: ResumoTabelaResponse | undefined) {
+  if (!data) {
+    return {
+      itens: [] as ResumoTabelaItem[],
+      cobertura: {
+        totalProdutos: 0,
+        trafficRows: 0,
+        skusComTraffic: 0,
+        buyboxSnapshots15d: 0,
+        skusComBuybox15d: 0,
+        trafficAtualizadoEm: null,
+      } satisfies ResumoTabelaCobertura,
+    };
+  }
+
+  if (Array.isArray(data)) {
+    return {
+      itens: data,
+      cobertura: {
+        totalProdutos: data.length,
+        trafficRows: data.filter((r) => r.sessions30d > 0 || r.pageViews30d > 0).length,
+        skusComTraffic: data.filter(
+          (r) =>
+            r.sessions30d > 0 ||
+            r.pageViews30d > 0 ||
+            r.trafficUnitsOrdered30d > 0,
+        ).length,
+        buyboxSnapshots15d: data.filter((r) => r.buyboxPercent != null).length,
+        skusComBuybox15d: data.filter((r) => r.buyboxPercent != null).length,
+        trafficAtualizadoEm: null,
+      },
+    };
+  }
+
+  return data;
 }
 
-function formatDataCurta(iso: string | null): string {
-  if (!iso) return "—";
-  return new Date(iso).toLocaleDateString("pt-BR", {
+function valorPositivo(valor: number | null | undefined) {
+  return valor != null && valor > 0 ? valor : null;
+}
+
+function getPrecoAmazon(produto: Produto) {
+  return valorPositivo(produto.amazonPrecoListagemCentavos);
+}
+
+function getCusto(produto: Produto) {
+  return valorPositivo(produto.custoUnitario);
+}
+
+function getEstoqueVendavel(produto: Produto) {
+  if (produto.amazonEstoqueDisponivel != null) {
+    return Math.max(0, produto.amazonEstoqueDisponivel);
+  }
+  return Math.max(0, produto.estoqueAtual);
+}
+
+function getMargemPercent(produto: Produto) {
+  const preco = getPrecoAmazon(produto);
+  const custo = getCusto(produto);
+  if (!preco || !custo) return null;
+  return Math.round(((preco - custo) / preco) * 1000) / 10;
+}
+
+function getUltimaSync(produto: Produto) {
+  return (
+    produto.amazonPrecoListagemSyncEm ??
+    produto.amazonUltimaSyncEm ??
+    produto.amazonCatalogSyncEm ??
+    produto.buyboxUltimaSyncEm
+  );
+}
+
+function formatDataHoraCurta(iso: string | null): string {
+  if (!iso) return "-";
+  return new Date(iso).toLocaleString("pt-BR", {
     day: "2-digit",
     month: "2-digit",
-    year: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
     timeZone: "America/Sao_Paulo",
   });
 }
 
-// ── Buybox Popover ───────────────────────────────────────────────────────────
-
-function BuyboxPopover({
-  produto,
-  onSyncBuybox,
-  isSyncing,
-}: {
-  produto: Produto;
-  onSyncBuybox: (id: string) => void;
-  isSyncing: boolean;
-}) {
-  const temDados = produto.buyboxUltimaSyncEm !== null;
-
-  return (
-    <Popover>
-      <PopoverTrigger asChild>
-        <button
-          type="button"
-          className={cn(
-            "inline-flex h-5 w-5 items-center justify-center rounded text-xs transition",
-            temDados
-              ? produto.buyboxGanho
-                ? "text-emerald-600 hover:bg-emerald-50 dark:text-emerald-400 dark:hover:bg-emerald-900/20"
-                : "text-amber-600 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-900/20"
-              : "text-muted-foreground hover:bg-muted",
-          )}
-          title="Ver status do Buybox"
-        >
-          <ShoppingCart className="h-3 w-3" />
-        </button>
-      </PopoverTrigger>
-      <PopoverContent className="w-64 p-3" align="start">
-        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-          Buybox — {produto.asin}
-        </p>
-
-        {temDados ? (
-          <div className="space-y-2">
-            <div className="flex items-center gap-2">
-              {produto.buyboxGanho ? (
-                <CheckCircle2 className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
-              ) : (
-                <XCircle className="h-4 w-4 text-amber-600 dark:text-amber-400" />
-              )}
-              <span className={cn(
-                "text-sm font-medium",
-                produto.buyboxGanho
-                  ? "text-emerald-700 dark:text-emerald-300"
-                  : "text-amber-700 dark:text-amber-300",
-              )}>
-                {produto.buyboxGanho ? "Ganhando o Buybox" : "Perdendo o Buybox"}
-              </span>
-            </div>
-
-            <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
-              <span className="text-muted-foreground">Preço buybox</span>
-              <span className="text-right font-mono font-medium">
-                {produto.buyboxPreco ? formatBRL(produto.buyboxPreco) : "—"}
-              </span>
-              <span className="text-muted-foreground">Concorrentes</span>
-              <span className="text-right font-mono">
-                {produto.buyboxConcorrentes ?? "—"}
-              </span>
-              {produto.precoVenda && produto.buyboxPreco && (
-                <>
-                  <span className="text-muted-foreground">Seu preço</span>
-                  <span className="text-right font-mono">
-                    {formatBRL(produto.precoVenda)}
-                  </span>
-                </>
-              )}
-            </div>
-
-            <p className="text-[10px] text-muted-foreground">
-              Sync: {formatDataCurta(produto.buyboxUltimaSyncEm)}
-            </p>
-          </div>
-        ) : (
-          <p className="mb-3 text-sm text-muted-foreground">
-            Sem dados de buybox. Clique para sincronizar.
-          </p>
-        )}
-
-        <Button
-          size="sm"
-          variant="outline"
-          className="mt-2 h-7 w-full gap-1.5 text-xs"
-          disabled={isSyncing}
-          onClick={() => onSyncBuybox(produto.id)}
-        >
-          <RefreshCw className={cn("h-3 w-3", isSyncing && "animate-spin")} />
-          {isSyncing ? "Atualizando…" : "Atualizar buybox"}
-        </Button>
-      </PopoverContent>
-    </Popover>
-  );
+function formatNumero(valor: number) {
+  return valor.toLocaleString("pt-BR");
 }
 
-// ── Thumbnail do produto (48px com shadow leve) ─────────────────────────────
+function formatPercent(valor: number | null) {
+  if (valor == null || !Number.isFinite(valor)) return "-";
+  return `${valor.toLocaleString("pt-BR", {
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 1,
+  })}%`;
+}
+
+function exportarCSV(
+  produtos: Produto[],
+  resumoPorId: Map<string, ResumoTabelaItem>,
+) {
+  const linhas = [
+    [
+      "SKU",
+      "Nome",
+      "ASIN",
+      "Preco Amazon (R$)",
+      "Estoque vendavel",
+      "Custo unit. (R$)",
+      "Margem (%)",
+      "Vendas 30d",
+      "Ultima sync",
+      "Status",
+    ],
+    ...produtos.map((p) => {
+      const resumo = resumoPorId.get(p.id);
+      const preco = getPrecoAmazon(p);
+      const custo = getCusto(p);
+      const margem = getMargemPercent(p);
+      return [
+        p.sku,
+        p.nome,
+        p.asin ?? "",
+        preco ? (preco / 100).toFixed(2) : "",
+        String(getEstoqueVendavel(p)),
+        custo ? (custo / 100).toFixed(2) : "",
+        margem != null ? String(margem).replace(".", ",") : "",
+        String(resumo?.vendido30d ?? 0),
+        formatDataHoraCurta(getUltimaSync(p)),
+        p.ativo ? p.statusReposicao : "INATIVO",
+      ];
+    }),
+  ];
+
+  const csv = linhas
+    .map((l) => l.map((c) => `"${c.replace(/"/g, '""')}"`).join(";"))
+    .join("\n");
+  const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `produtos_${new Date().toISOString().slice(0, 10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
 
 function ProdutoThumbnail({
   src,
@@ -319,7 +414,7 @@ function ProdutoThumbnail({
 
   if (!src || erro) {
     return (
-      <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-md border bg-muted shadow-sm">
+      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md border bg-muted/60 shadow-sm">
         <ImageOff className="h-4 w-4 text-muted-foreground/60" />
       </span>
     );
@@ -331,13 +426,11 @@ function ProdutoThumbnail({
       src={src}
       alt={alt}
       onError={() => setErro(true)}
-      // Detecta o pixel-placeholder (1x1 transparente) que a Amazon serve quando
-      // o produto nao esta indexado naquele CDN publico.
       onLoad={(e) => {
         const w = (e.currentTarget as HTMLImageElement).naturalWidth;
         if (w > 0 && w < 50) setErro(true);
       }}
-      className="h-12 w-12 shrink-0 rounded-md border object-contain bg-white shadow-sm"
+      className="h-10 w-10 shrink-0 rounded-md border bg-white object-contain shadow-sm"
     />
   );
 
@@ -353,27 +446,36 @@ function ProdutoThumbnail({
   );
 }
 
-// ── ASIN com botao de copia ──────────────────────────────────────────────────
-
 function AsinCell({ asin }: { asin: string | null }) {
-  if (!asin) return <span className="text-xs text-muted-foreground">—</span>;
+  if (!asin) return <span className="text-xs text-muted-foreground">-</span>;
   return (
-    <button
-      type="button"
-      onClick={(e) => {
-        e.stopPropagation();
-        navigator.clipboard.writeText(asin);
-        toast.success(`ASIN ${asin} copiado`);
-      }}
-      className="group inline-flex items-center gap-1 rounded px-1 font-mono text-xs text-muted-foreground transition hover:bg-muted/60 hover:text-foreground"
-      title={`Copiar ${asin}`}
-    >
-      {asin}
-      <Copy className="h-3 w-3 opacity-0 transition group-hover:opacity-60" />
-    </button>
+    <div className="flex items-center gap-1.5">
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          navigator.clipboard.writeText(asin);
+          toast.success(`ASIN ${asin} copiado`);
+        }}
+        className="group inline-flex items-center gap-1 rounded px-1 font-mono text-xs text-slate-600 transition hover:bg-muted/70 hover:text-foreground"
+        title={`Copiar ${asin}`}
+      >
+        {asin}
+        <Copy className="h-3 w-3 opacity-0 transition group-hover:opacity-70" />
+      </button>
+      <a
+        href={`https://www.amazon.com.br/dp/${asin}`}
+        target="_blank"
+        rel="noreferrer"
+        className="rounded p-0.5 text-muted-foreground transition hover:bg-muted hover:text-foreground"
+        title="Abrir na Amazon"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <ExternalLink className="h-3 w-3" />
+      </a>
+    </div>
   );
 }
-
 
 function SortableHeader({
   label,
@@ -395,8 +497,8 @@ function SortableHeader({
       type="button"
       onClick={() => onToggle(sortKey)}
       className={cn(
-        "group inline-flex items-center gap-1 hover:text-foreground transition-colors",
-        align === "right" ? "ml-auto" : "",
+        "group inline-flex w-full items-center gap-1 text-[11px] font-semibold uppercase tracking-normal transition-colors hover:text-foreground",
+        align === "right" ? "justify-end" : "justify-start",
         ativo ? "text-foreground" : "text-muted-foreground",
       )}
     >
@@ -411,27 +513,183 @@ function SortableHeader({
   );
 }
 
-type SortKey =
-  | "nome"
-  | "sku"
-  | "estoqueAtual"
-  | "estoqueMinimo"
-  | "amazonEstoqueTotal"
-  | "diasEstoque"
-  | "vendido30d"
-  | "sessions30d"
-  | "trafficConversionPercent"
-  | "buyboxPercent"
-  | "reembolsoPercent"
-  | "custoUnitario";
+function StatusBadge({ produto }: { produto: Produto }) {
+  if (!produto.ativo) {
+    return (
+      <span className="inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-600">
+        Inativo
+      </span>
+    );
+  }
 
-type SortState = { key: SortKey; dir: "asc" | "desc" } | null;
+  if (produto.statusReposicao === StatusReposicao.REPOR) {
+    return (
+      <span className="inline-flex rounded-full bg-red-100 px-2 py-0.5 text-[11px] font-semibold text-red-700">
+        Repor
+      </span>
+    );
+  }
 
-type ListaProdutosProps = {
+  if (produto.statusReposicao === StatusReposicao.ATENCAO) {
+    return (
+      <span className="inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-700">
+        Atencao
+      </span>
+    );
+  }
+
+  return (
+    <span className="inline-flex rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">
+      Ativo
+    </span>
+  );
+}
+
+function EstoqueCell({ produto }: { produto: Produto }) {
+  const estoque = getEstoqueVendavel(produto);
+  const semEstoque = estoque <= 0;
+  return (
+    <div className="text-right">
+      <div
+        className={cn(
+          "font-mono text-xs font-semibold tabular-nums",
+          semEstoque ? "text-red-600" : "text-slate-700",
+        )}
+      >
+        {formatNumero(estoque)} {produto.unidade}
+      </div>
+      <div
+        className={cn(
+          "mt-0.5 text-[11px]",
+          semEstoque ? "font-semibold text-red-600" : "text-muted-foreground",
+        )}
+      >
+        {semEstoque ? "Sem estoque" : "Disponivel"}
+      </div>
+    </div>
+  );
+}
+
+function SyncCell({ produto }: { produto: Produto }) {
+  const sync = getUltimaSync(produto);
+  if (!sync) {
+    return (
+      <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+        <AlertTriangle className="h-3.5 w-3.5 text-amber-500" />
+        Sem sync
+      </span>
+    );
+  }
+
+  return (
+    <span className="inline-flex items-center gap-1.5 text-xs text-slate-600">
+      <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
+      {formatDataHoraCurta(sync)}
+    </span>
+  );
+}
+
+function PriceCell({ produto }: { produto: Produto }) {
+  const preco = getPrecoAmazon(produto);
+  if (!preco) {
+    return (
+      <div className="text-right">
+        <div className="text-xs font-semibold text-red-600">Sem preco</div>
+        <div className="text-[11px] text-muted-foreground">Amazon</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="text-right">
+      <div className="font-mono text-xs font-semibold tabular-nums">
+        {formatBRL(preco)}
+      </div>
+      <div className="text-[11px] text-muted-foreground">SP-API</div>
+    </div>
+  );
+}
+
+function CoverageHint({ cobertura }: { cobertura: ResumoTabelaCobertura }) {
+  const semTraffic = cobertura.skusComTraffic === 0;
+  const semBuybox = cobertura.skusComBuybox15d === 0;
+  if (!semTraffic && !semBuybox) return null;
+
+  return (
+    <div className="flex flex-wrap items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+      <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600" />
+      {semTraffic && <span>Metricas de trafego ocultas: sem dados recentes por SKU.</span>}
+      {semBuybox && <span>Buybox historico oculto: sem snapshots nos ultimos 15 dias.</span>}
+    </div>
+  );
+}
+
+function ColumnToggle({
+  checked,
+  label,
+  disabled,
+  onChange,
+}: {
+  checked: boolean;
+  label: string;
+  disabled?: boolean;
+  onChange: (checked: boolean) => void;
+}) {
+  return (
+    <label
+      className={cn(
+        "flex items-center justify-between gap-3 rounded-md border px-3 py-2 text-sm",
+        disabled ? "bg-muted/40 text-muted-foreground" : "bg-background",
+      )}
+    >
+      <span>{label}</span>
+      <input
+        type="checkbox"
+        checked={checked}
+        disabled={disabled}
+        onChange={(e) => onChange(e.target.checked)}
+        className="h-4 w-4 accent-primary"
+      />
+    </label>
+  );
+}
+
+function EmptyState({
+  busca,
+  filtros,
+  onLimpar,
+}: {
+  busca: string;
   filtros: ProdutoFiltrosQuery;
-  filtrosConsulta: ProdutoFiltrosQuery;
-  onFiltrosChange: Dispatch<SetStateAction<ProdutoFiltrosQuery>>;
-};
+  onLimpar: () => void;
+}) {
+  const filtrado =
+    busca ||
+    filtros.estoque !== DEFAULT_PRODUTO_FILTROS.estoque ||
+    filtros.ativo !== DEFAULT_PRODUTO_FILTROS.ativo ||
+    filtros.statusReposicao ||
+    filtros.semCusto ||
+    filtros.semSyncAmazon;
+
+  return (
+    <div className="flex flex-col items-center justify-center px-6 py-20 text-center text-muted-foreground">
+      <PackageSearch className="mb-4 h-12 w-12 opacity-30" />
+      <p className="text-base font-semibold text-foreground">Nenhum produto encontrado</p>
+      <p className="mt-1 max-w-sm text-sm">
+        {busca
+          ? `Sem resultados para "${busca}". Tente buscar por SKU, nome ou ASIN.`
+          : filtrado
+            ? "Nenhum produto nessa visao. Ajuste os filtros ou limpe a busca."
+            : "Comece criando seu primeiro produto com um SKU no formato MFS-XXXX."}
+      </p>
+      {filtrado && (
+        <Button type="button" variant="outline" size="sm" className="mt-4" onClick={onLimpar}>
+          Limpar filtros
+        </Button>
+      )}
+    </div>
+  );
+}
 
 export function ListaProdutos({
   filtros,
@@ -440,8 +698,18 @@ export function ListaProdutos({
 }: ListaProdutosProps) {
   const qc = useQueryClient();
   const [sort, setSort] = useState<SortState>(null);
-
-
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+  const [visao, setVisao] = useState<"todos" | "comEstoque" | "alertas">("todos");
+  const [columns, setColumns] = useState(DEFAULT_COLUMNS);
+  const [filtrosAberto, setFiltrosAberto] = useState(false);
+  const [custoMin, setCustoMin] = useState("");
+  const [custoMax, setCustoMax] = useState("");
+  const [margemMin, setMargemMin] = useState("");
+  const [margemMax, setMargemMax] = useState("");
+  const [vendasMin, setVendasMin] = useState("");
+  const [vendasMax, setVendasMax] = useState("");
+  const [selected, setSelected] = useState<Set<string>>(new Set());
   const [dialogProduto, setDialogProduto] = useState<{
     aberto: boolean;
     produto: Produto | null;
@@ -471,11 +739,16 @@ export function ListaProdutos({
     staleTime: 5 * 60 * 1000,
   });
 
-  const { data: resumoTabela = [] } = useQuery<ResumoTabelaItem[]>({
+  const { data: resumoTabelaRaw } = useQuery<ResumoTabelaResponse>({
     queryKey: ["produtos-resumo-tabela"],
-    queryFn: () => fetchJSON<ResumoTabelaItem[]>("/api/produtos/resumo-tabela"),
+    queryFn: () => fetchJSON<ResumoTabelaResponse>("/api/produtos/resumo-tabela"),
     staleTime: 5 * 60 * 1000,
   });
+
+  const { itens: resumoTabela, cobertura } = useMemo(
+    () => normalizeResumoResponse(resumoTabelaRaw),
+    [resumoTabelaRaw],
+  );
 
   const velocidadePorId = useMemo(
     () => new Map(velocidades.map((v) => [v.produtoId, v])),
@@ -486,78 +759,176 @@ export function ListaProdutos({
     [resumoTabela],
   );
 
-  // Ordenacao client-side. Cada coluna sortavel chama toggleSort com sua chave.
+  const filtrosNumericosAtivos = Boolean(
+    custoMin || custoMax || margemMin || margemMax || vendasMin || vendasMax,
+  );
+
+  const produtosFiltrados = useMemo(() => {
+    const minCusto = parseDecimal(custoMin);
+    const maxCusto = parseDecimal(custoMax);
+    const minMargem = parseDecimal(margemMin);
+    const maxMargem = parseDecimal(margemMax);
+    const minVendas = parseInteiro(vendasMin);
+    const maxVendas = parseInteiro(vendasMax);
+
+    return produtos.filter((p) => {
+      if (visao === "comEstoque" && getEstoqueVendavel(p) <= 0) return false;
+      if (
+        visao === "alertas" &&
+        p.statusReposicao !== StatusReposicao.REPOR &&
+        p.statusReposicao !== StatusReposicao.ATENCAO &&
+        getEstoqueVendavel(p) > 0 &&
+        getPrecoAmazon(p)
+      ) {
+        return false;
+      }
+
+      const custo = getCusto(p);
+      const margem = getMargemPercent(p);
+      const vendas = resumoPorId.get(p.id)?.vendido30d ?? 0;
+
+      if (minCusto != null && (!custo || custo < minCusto * 100)) return false;
+      if (maxCusto != null && (!custo || custo > maxCusto * 100)) return false;
+      if (minMargem != null && (margem == null || margem < minMargem)) return false;
+      if (maxMargem != null && (margem == null || margem > maxMargem)) return false;
+      if (minVendas != null && vendas < minVendas) return false;
+      if (maxVendas != null && vendas > maxVendas) return false;
+
+      return true;
+    });
+  }, [
+    custoMax,
+    custoMin,
+    margemMax,
+    margemMin,
+    produtos,
+    resumoPorId,
+    vendasMax,
+    vendasMin,
+    visao,
+  ]);
+
   const produtosOrdenados = useMemo(() => {
-    if (!sort) return produtos;
-    const arr = [...produtos];
+    if (!sort) return produtosFiltrados;
+    const arr = [...produtosFiltrados];
     const dir = sort.dir === "asc" ? 1 : -1;
-    const valorDe = (p: Produto): number | string | null => {
+    const valorDe = (p: Produto): number | string => {
       switch (sort.key) {
         case "nome":
           return p.nome.toLowerCase();
         case "sku":
           return p.sku.toLowerCase();
-        case "estoqueAtual":
-          return p.estoqueAtual ?? 0;
-        case "estoqueMinimo":
-          return p.estoqueMinimo ?? 0;
-        case "amazonEstoqueTotal":
-          return p.amazonEstoqueTotal ?? 0;
-        case "diasEstoque":
-          return velocidadePorId.get(p.id)?.diasEstoque ?? -1;
-        case "vendido30d":
-          return (
-            resumoPorId.get(p.id)?.vendido30d ??
-            velocidadePorId.get(p.id)?.vendido30d ??
-            0
-          );
-        case "sessions30d":
-          return resumoPorId.get(p.id)?.sessions30d ?? 0;
-        case "trafficConversionPercent":
-          return resumoPorId.get(p.id)?.trafficConversionPercent ?? -1;
-        case "buyboxPercent":
-          return resumoPorId.get(p.id)?.buyboxPercent ?? -1;
-        case "reembolsoPercent":
-          return resumoPorId.get(p.id)?.reembolsoPercent ?? -1;
+        case "precoAmazon":
+          return getPrecoAmazon(p) ?? -1;
+        case "estoqueVendavel":
+          return getEstoqueVendavel(p);
         case "custoUnitario":
-          return p.custoUnitario ?? 0;
+          return getCusto(p) ?? -1;
+        case "margem":
+          return getMargemPercent(p) ?? -999;
+        case "vendido30d":
+          return resumoPorId.get(p.id)?.vendido30d ?? 0;
+        case "ultimaSync": {
+          const sync = getUltimaSync(p);
+          return sync ? new Date(sync).getTime() : 0;
+        }
+        case "status":
+          return p.ativo ? p.statusReposicao : "INATIVO";
       }
     };
     arr.sort((a, b) => {
       const va = valorDe(a);
       const vb = valorDe(b);
-      if (va === null && vb === null) return 0;
-      if (va === null) return 1;
-      if (vb === null) return -1;
       if (va < vb) return -1 * dir;
       if (va > vb) return 1 * dir;
-      return 0;
+      return a.nome.localeCompare(b.nome);
     });
     return arr;
-  }, [produtos, sort, velocidadePorId, resumoPorId]);
+  }, [produtosFiltrados, resumoPorId, sort]);
+
+  const totalPages = Math.max(1, Math.ceil(produtosOrdenados.length / pageSize));
+  const paginaAtual = Math.min(page, totalPages);
+  const inicio = (paginaAtual - 1) * pageSize;
+  const produtosPaginados = produtosOrdenados.slice(inicio, inicio + pageSize);
+  const selecionadosNaPagina = produtosPaginados.filter((p) => selected.has(p.id));
+  const todosPaginaSelecionados =
+    produtosPaginados.length > 0 && selecionadosNaPagina.length === produtosPaginados.length;
+
+  useEffect(() => {
+    setPage(1);
+  }, [
+    custoMax,
+    custoMin,
+    filtrosConsulta,
+    margemMax,
+    margemMin,
+    pageSize,
+    sort,
+    vendasMax,
+    vendasMin,
+    visao,
+  ]);
+
+  useEffect(() => {
+    setSelected((prev) => {
+      const ids = new Set(produtos.map((p) => p.id));
+      const filtrados = [...prev].filter((id) => ids.has(id));
+      if (filtrados.length === prev.size) return prev;
+      return new Set(filtrados);
+    });
+  }, [produtos]);
+
+  const semCusto = produtos.filter((p) => !getCusto(p)).length;
+  const semPrecoAmazon = produtos.filter((p) => !getPrecoAmazon(p)).length;
+  const alertas = produtos.filter(
+    (p) =>
+      p.statusReposicao === StatusReposicao.REPOR ||
+      p.statusReposicao === StatusReposicao.ATENCAO ||
+      getEstoqueVendavel(p) <= 0 ||
+      !getPrecoAmazon(p),
+  ).length;
+
+  const contadores = useMemo(() => {
+    const comEstoque = produtos.filter((p) => getEstoqueVendavel(p) > 0).length;
+    return {
+      total: produtos.length,
+      comEstoque,
+      alertas,
+    };
+  }, [alertas, produtos]);
 
   const toggleSort = (key: SortKey) => {
     setSort((prev) => {
       if (!prev || prev.key !== key) return { key, dir: "asc" };
       if (prev.dir === "asc") return { key, dir: "desc" };
-      return null; // ciclo: asc -> desc -> sem ordenacao
+      return null;
     });
   };
 
-  const semCusto = filtrosConsulta.semCusto
-    ? produtos.length
-    : produtos.filter((p) => !p.custoUnitario).length;
+  const setBusca = (valor: string) => {
+    onFiltrosChange((prev) => ({ ...prev, busca: valor }));
+  };
 
-  // Chip de contagem
-  const contadores = useMemo(() => {
-    const total = produtos.length;
-    const comVendas30d = produtos.filter((p) => {
-      const v = resumoPorId.get(p.id)?.vendido30d ?? velocidadePorId.get(p.id)?.vendido30d ?? 0;
-      return v > 0;
-    }).length;
-    const alertaRepor = produtos.filter((p) => p.statusReposicao === "REPOR").length;
-    return { total, comVendas30d, alertaRepor };
-  }, [produtos, resumoPorId, velocidadePorId]);
+  const limparFiltros = () => {
+    onFiltrosChange({ ...DEFAULT_PRODUTO_FILTROS, busca: "" });
+    setVisao("todos");
+    setCustoMin("");
+    setCustoMax("");
+    setMargemMin("");
+    setMargemMax("");
+    setVendasMin("");
+    setVendasMax("");
+  };
+
+  const filtrosForaPadrao =
+    (filtros.busca ?? "") !== "" ||
+    filtros.ativo !== DEFAULT_PRODUTO_FILTROS.ativo ||
+    filtros.estoque !== DEFAULT_PRODUTO_FILTROS.estoque ||
+    filtros.statusReposicao !== DEFAULT_PRODUTO_FILTROS.statusReposicao ||
+    !!filtros.semCusto ||
+    !!filtros.semSyncAmazon ||
+    visao !== "todos" ||
+    filtrosNumericosAtivos;
 
   const desativar = useMutation({
     mutationFn: (id: string) =>
@@ -601,12 +972,12 @@ export function ListaProdutos({
     onSuccess: (res) => {
       qc.invalidateQueries({ queryKey: ["estoque-produtos"] });
       if (res.erros.length) {
-        toast.warning(`Catálogo sincronizado com erros: ${res.erros[0]}`);
+        toast.warning(`Catalogo sincronizado com erros: ${res.erros[0]}`);
       } else {
-        toast.success("Catálogo Amazon atualizado");
+        toast.success("Catalogo Amazon atualizado");
       }
     },
-    onError: () => toast.error("Erro ao buscar catálogo Amazon"),
+    onError: () => toast.error("Erro ao buscar catalogo Amazon"),
   });
 
   const syncBuybox = useMutation({
@@ -618,6 +989,7 @@ export function ListaProdutos({
       }),
     onSuccess: (res) => {
       qc.invalidateQueries({ queryKey: ["estoque-produtos"] });
+      qc.invalidateQueries({ queryKey: ["produtos-resumo-tabela"] });
       if (res.erros.length) {
         toast.warning(`Buybox com erros: ${res.erros[0]}`);
       } else {
@@ -638,7 +1010,7 @@ export function ListaProdutos({
       if (divergencias > 0) {
         toast.warning(`${divergencias} divergencia(s) encontradas no listing`);
       } else {
-        toast.success("Listing Amazon confere com o ERP");
+        toast.success("Listing Amazon confere com o cache local");
       }
     },
     onError: (err) =>
@@ -653,448 +1025,637 @@ export function ListaProdutos({
         headers: { "content-type": "application/json" },
       }),
     onSuccess: () => {
-      toast.success("Sincronização enfileirada (catálogo, buybox e estoque)");
+      toast.success("Sincronizacao enfileirada");
     },
     onError: (err) =>
-      toast.error((err as Error).message ?? "Erro ao enfileirar sincronização"),
+      toast.error((err as Error).message ?? "Erro ao enfileirar sincronizacao"),
   });
 
   const busca = filtros.busca ?? "";
-  const filtrosForaPadrao =
-    busca !== "" ||
-    filtros.ativo !== DEFAULT_PRODUTO_FILTROS.ativo ||
-    filtros.estoque !== DEFAULT_PRODUTO_FILTROS.estoque ||
-    !!filtros.semCusto ||
-    !!filtros.semSyncAmazon;
-
-  const setBusca = (valor: string) => {
-    onFiltrosChange((prev) => ({ ...prev, busca: valor }));
-  };
-
-  const toggleEstoque = (valor: EstoqueFiltroOperacional) => {
-    onFiltrosChange((prev) => ({
-      ...prev,
-      estoque: prev.estoque === valor ? undefined : valor,
-    }));
-  };
-
-  const toggleFlag = (campo: "semCusto" | "semSyncAmazon") => {
-    onFiltrosChange((prev) => ({ ...prev, [campo]: !prev[campo] }));
-  };
-
-  const toggleInativos = () => {
-    onFiltrosChange((prev) => ({
-      ...prev,
-      ativo: prev.ativo === false ? true : false,
-    }));
-  };
-
-  const limparFiltros = () => {
-    onFiltrosChange({ ...DEFAULT_PRODUTO_FILTROS, busca: "" });
-  };
-
 
   return (
-    <TooltipProvider delayDuration={400}>
+    <TooltipProvider delayDuration={350}>
       <>
-        <div className="space-y-4">
-          {/* Alerta custo ausente */}
-          {!isLoading && semCusto > 0 && (
-            <div className="flex items-center gap-2.5 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm dark:border-amber-800/50 dark:bg-amber-900/20">
-              <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600 dark:text-amber-500" />
-              <span className="text-amber-800 dark:text-amber-200">
-                <strong>{semCusto} produto(s)</strong> sem custo unitário — preencha para calcular margem corretamente.
-              </span>
+        <div className="space-y-3">
+          {(semCusto > 0 || semPrecoAmazon > 0) && !isLoading && (
+            <div className="flex flex-wrap items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm text-amber-900">
+              <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600" />
+              {semCusto > 0 && <span>{semCusto} produto(s) sem custo.</span>}
+              {semPrecoAmazon > 0 && (
+                <span>{semPrecoAmazon} produto(s) sem preco Amazon sincronizado.</span>
+              )}
             </div>
           )}
 
-          {/* Toolbar superior — chips de contagem + sync tudo */}
-          <div className="flex flex-col gap-2 rounded-lg border bg-card/50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex flex-wrap items-center gap-2 text-xs">
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-muted px-2.5 py-1 font-medium tabular-nums">
-                <PackageSearch className="h-3.5 w-3.5 text-muted-foreground" />
-                {contadores.total} produtos
-              </span>
-              <span
-                className={cn(
-                  "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 font-medium tabular-nums",
-                  contadores.comVendas30d > 0
-                    ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300"
-                    : "bg-muted text-muted-foreground",
-                )}
-              >
-                {contadores.comVendas30d} com vendas 30d
-              </span>
-              <span
-                className={cn(
-                  "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 font-medium tabular-nums",
-                  contadores.alertaRepor > 0
-                    ? "bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-300"
-                    : "bg-muted text-muted-foreground",
-                )}
-              >
-                {contadores.alertaRepor > 0 && <AlertTriangle className="h-3 w-3" />}
-                {contadores.alertaRepor} alertas REPOR
-              </span>
-            </div>
-            <Button
-              type="button"
-              size="sm"
-              className="h-8 gap-1.5"
-              disabled={syncTudo.isPending}
-              onClick={() => syncTudo.mutate()}
-            >
-              <Sparkles className={cn("h-3.5 w-3.5", syncTudo.isPending && "animate-pulse")} />
-              {syncTudo.isPending ? "Enfileirando…" : "Sincronizar tudo"}
-            </Button>
-          </div>
+          <CoverageHint cobertura={cobertura} />
 
-          {/* Filtros */}
-          <div className="flex flex-col gap-3 rounded-lg border bg-card/50 p-3 lg:flex-row lg:items-center lg:justify-between">
-            <div className="flex min-w-0 flex-1 items-center gap-2">
-              <div className="relative min-w-[14rem] flex-1 lg:max-w-sm">
-                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+          <div className="rounded-xl border bg-card shadow-sm">
+            <div className="flex flex-col gap-3 border-b p-4 xl:flex-row xl:items-center xl:justify-between">
+              <div className="flex flex-wrap items-center gap-2">
+                <SegmentButton
+                  active={visao === "todos"}
+                  label="Todos"
+                  count={contadores.total}
+                  onClick={() => setVisao("todos")}
+                />
+                <SegmentButton
+                  active={visao === "comEstoque"}
+                  label="Com estoque"
+                  count={contadores.comEstoque}
+                  tone="green"
+                  onClick={() => setVisao("comEstoque")}
+                />
+                <SegmentButton
+                  active={visao === "alertas"}
+                  label="Alertas"
+                  count={contadores.alertas}
+                  tone="amber"
+                  onClick={() => setVisao("alertas")}
+                />
+                {selected.size > 0 && (
+                  <span className="inline-flex h-9 items-center rounded-md bg-blue-50 px-3 text-xs font-semibold text-blue-700">
+                    {selected.size} selecionado(s)
+                  </span>
+                )}
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-9 gap-2"
+                  onClick={() => setFiltrosAberto(true)}
+                >
+                  <Filter className="h-4 w-4" />
+                  Filtros
+                  {filtrosForaPadrao && (
+                    <span className="ml-0.5 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-[11px] text-primary-foreground">
+                      1
+                    </span>
+                  )}
+                </Button>
+
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-9 gap-2"
+                    >
+                      <Columns3 className="h-4 w-4" />
+                      Colunas
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-72 space-y-2" align="end">
+                    <div>
+                      <p className="text-sm font-semibold">Colunas da tabela</p>
+                      <p className="text-xs text-muted-foreground">
+                        Dados sem cobertura ficam ocultos por padrao.
+                      </p>
+                    </div>
+                    {COLUMN_OPTIONS.map((column) => {
+                      const disabled =
+                        (column.key === "traffic" || column.key === "conversion") &&
+                        cobertura.skusComTraffic === 0
+                          ? true
+                          : column.key === "buybox" &&
+                            cobertura.skusComBuybox15d === 0;
+                      return (
+                        <ColumnToggle
+                          key={column.key}
+                          label={column.label}
+                          checked={columns[column.key]}
+                          disabled={disabled}
+                          onChange={(checked) =>
+                            setColumns((prev) => ({
+                              ...prev,
+                              [column.key]: checked,
+                            }))
+                          }
+                        />
+                      );
+                    })}
+                  </PopoverContent>
+                </Popover>
+
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-9 gap-2"
+                  onClick={() => exportarCSV(produtosOrdenados, resumoPorId)}
+                >
+                  <Download className="h-4 w-4" />
+                  Exportar
+                </Button>
+
+                <Button
+                  type="button"
+                  size="sm"
+                  className="h-9 gap-2"
+                  disabled={syncTudo.isPending}
+                  onClick={() => syncTudo.mutate()}
+                >
+                  <RefreshCw
+                    className={cn("h-4 w-4", syncTudo.isPending && "animate-spin")}
+                  />
+                  Sincronizar com Amazon
+                </Button>
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-3 border-b p-4 lg:flex-row lg:items-center lg:justify-between">
+              <div className="relative min-w-0 flex-1 lg:max-w-md">
+                <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
                 <Input
                   placeholder="Buscar por SKU, nome ou ASIN..."
-                  className="h-9 pl-8"
+                  className="h-10 rounded-lg pl-9"
                   value={busca}
                   onChange={(e) => setBusca(e.target.value)}
                 />
               </div>
-              <Button
-                type="button"
-                variant="outline"
-                size="icon"
-                className="h-9 w-9 shrink-0"
-                title="Exportar CSV"
-                onClick={() => exportarCSV(produtos, velocidadePorId)}
-              >
-                <Download className="h-4 w-4" />
-              </Button>
+              <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                {filtrosForaPadrao && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 gap-1.5 px-2 text-xs"
+                    onClick={limparFiltros}
+                  >
+                    <XCircle className="h-3.5 w-3.5" />
+                    Limpar
+                  </Button>
+                )}
+                <span>
+                  {produtosOrdenados.length.toLocaleString("pt-BR")} resultado(s)
+                </span>
+              </div>
             </div>
 
-            <div className="flex flex-wrap items-center gap-1.5">
-              <FiltroOperacionalChip
-                active={filtros.estoque === EstoqueFiltroOperacional.COM_ESTOQUE}
-                icon={PackageSearch}
-                label="Com estoque"
-                onClick={() => toggleEstoque(EstoqueFiltroOperacional.COM_ESTOQUE)}
-              />
-              <FiltroOperacionalChip
-                active={filtros.estoque === EstoqueFiltroOperacional.SEM_ESTOQUE}
-                icon={XCircle}
-                label="Sem estoque"
-                onClick={() => toggleEstoque(EstoqueFiltroOperacional.SEM_ESTOQUE)}
-              />
-              <FiltroOperacionalChip
-                active={!!filtros.semCusto}
-                icon={AlertTriangle}
-                label="Sem custo"
-                onClick={() => toggleFlag("semCusto")}
-              />
-              <FiltroOperacionalChip
-                active={!!filtros.semSyncAmazon}
-                icon={RefreshCw}
-                label="Sem sync Amazon"
-                onClick={() => toggleFlag("semSyncAmazon")}
-              />
-              <FiltroOperacionalChip
-                active={filtros.ativo === false}
-                icon={PowerOff}
-                label="Inativos"
-                onClick={toggleInativos}
-              />
-              {filtrosForaPadrao && (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="h-8 gap-1.5 px-2 text-xs"
-                  onClick={limparFiltros}
-                >
-                  <XCircle className="h-3.5 w-3.5" />
-                  Limpar
-                </Button>
-              )}
-            </div>
-          </div>
-
-          {/* Tabela */}
-          <div className="overflow-hidden rounded-xl border bg-card">
             {isLoading ? (
               <div className="p-4">
-                <DataTableSkeleton rows={6} columns={14} />
+                <DataTableSkeleton rows={8} columns={9} />
               </div>
-            ) : produtos.length === 0 ? (
-              <EmptyState busca={busca} filtros={filtrosConsulta} />
+            ) : produtosOrdenados.length === 0 ? (
+              <EmptyState busca={busca} filtros={filtrosConsulta} onLimpar={limparFiltros} />
             ) : (
-              <div className="max-h-[calc(100vh-22rem)] overflow-auto">
-                <Table>
-                  <TableHeader className="sticky top-0 z-10 bg-card shadow-[0_1px_0_0_hsl(var(--border))]">
-                    <TableRow className="hover:bg-transparent">
-                      <TableHead className="px-3 py-3 w-[260px]">
-                        <SortableHeader label="Produto" sortKey="nome" sort={sort} onToggle={toggleSort} />
-                      </TableHead>
-                      <TableHead className="px-3 py-3 w-[120px]">
-                        <SortableHeader label="SKU" sortKey="sku" sort={sort} onToggle={toggleSort} />
-                      </TableHead>
-                      <TableHead className="px-3 py-3 w-[130px]">ASIN</TableHead>
-                      <TableHead className="px-3 py-3 w-[90px] text-right">
-                        <SortableHeader label="Estoque" sortKey="estoqueAtual" sort={sort} onToggle={toggleSort} align="right" />
-                      </TableHead>
-                      <TableHead className="hidden px-3 py-3 w-[170px] lg:table-cell">
-                        <SortableHeader label="Amazon FBA" sortKey="amazonEstoqueTotal" sort={sort} onToggle={toggleSort} />
-                      </TableHead>
-                      <TableHead className="px-3 py-3 w-[80px] text-right">
-                        <SortableHeader label="Mín." sortKey="estoqueMinimo" sort={sort} onToggle={toggleSort} align="right" />
-                      </TableHead>
-                      <TableHead className="px-3 py-3 w-[100px]">Status</TableHead>
-                      <TableHead className="hidden px-3 py-3 w-[80px] text-right xl:table-cell">
-                        <SortableHeader label="Dias estq." sortKey="diasEstoque" sort={sort} onToggle={toggleSort} align="right" />
-                      </TableHead>
-                      <TableHead className="hidden px-3 py-3 w-[90px] text-right xl:table-cell">
-                        <SortableHeader label="Vendas 30d" sortKey="vendido30d" sort={sort} onToggle={toggleSort} align="right" />
-                      </TableHead>
-                      <TableHead className="hidden px-3 py-3 w-[110px] text-right 2xl:table-cell">
-                        <SortableHeader label="Sessoes" sortKey="sessions30d" sort={sort} onToggle={toggleSort} align="right" />
-                      </TableHead>
-                      <TableHead className="hidden px-3 py-3 w-[90px] text-right 2xl:table-cell">
-                        <SortableHeader label="Conv." sortKey="trafficConversionPercent" sort={sort} onToggle={toggleSort} align="right" />
-                      </TableHead>
-                      <TableHead className="hidden px-3 py-3 w-[110px] xl:table-cell">
-                        <SortableHeader label="Buybox" sortKey="buyboxPercent" sort={sort} onToggle={toggleSort} />
-                      </TableHead>
-                      <TableHead className="hidden px-3 py-3 w-[90px] text-right xl:table-cell">
-                        <SortableHeader label="Reembolso" sortKey="reembolsoPercent" sort={sort} onToggle={toggleSort} align="right" />
-                      </TableHead>
-                      <TableHead className="px-3 py-3 w-[110px] text-right">
-                        <SortableHeader label="Custo unit." sortKey="custoUnitario" sort={sort} onToggle={toggleSort} align="right" />
-                      </TableHead>
-                      <TableHead className="px-3 py-3 w-[60px]" />
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {produtosOrdenados.map((p) => (
-                      <TableRow
-                        key={p.id}
-                        className="border-b transition-colors even:bg-muted/10 hover:bg-muted/30"
-                      >
-                        <TableCell className="px-3 py-3">
-                          <div className="flex items-center gap-3">
-                            <ProdutoThumbnail
-                              src={
-                                p.imagemUrl
-                                  ? `/api/produtos/${p.id}/imagem`
-                                  : resolverImagemProduto(p.amazonImagemUrl, p.asin)
-                              }
-                              alt={p.nome}
-                              title={p.amazonTituloOficial}
+              <>
+                <div className="relative overflow-hidden">
+                  <Table className="table-fixed">
+                    <TableHeader className="sticky top-0 z-20 bg-card shadow-[0_1px_0_0_hsl(var(--border))]">
+                      <TableRow className="hover:bg-transparent">
+                        <TableHead className="hidden w-10 px-4 sm:table-cell">
+                          <input
+                            type="checkbox"
+                            aria-label="Selecionar pagina"
+                            checked={todosPaginaSelecionados}
+                            onChange={(e) => {
+                              const checked = e.target.checked;
+                              setSelected((prev) => {
+                                const next = new Set(prev);
+                                for (const p of produtosPaginados) {
+                                  if (checked) next.add(p.id);
+                                  else next.delete(p.id);
+                                }
+                                return next;
+                              });
+                            }}
+                            className="h-4 w-4 rounded border-input accent-primary"
+                          />
+                        </TableHead>
+                        <TableHead className="w-[146px] px-2 sm:w-[220px] lg:w-[260px]">
+                          <SortableHeader
+                            label="Produto"
+                            sortKey="nome"
+                            sort={sort}
+                            onToggle={toggleSort}
+                          />
+                        </TableHead>
+                        {columns.sku && (
+                          <TableHead className="hidden w-[110px] px-2 md:table-cell">
+                            <SortableHeader
+                              label="SKU"
+                              sortKey="sku"
+                              sort={sort}
+                              onToggle={toggleSort}
                             />
-                            <div className="min-w-0 max-w-[200px]">
-                              <div
-                                className="font-semibold leading-tight line-clamp-2"
-                                title={p.nome}
-                              >
-                                {p.nome}
-                              </div>
-                              {p.amazonTituloOficial && p.amazonTituloOficial !== p.nome && (
-                                <div
-                                  className="mt-0.5 text-[11px] text-muted-foreground line-clamp-1"
-                                  title={p.amazonTituloOficial}
-                                >
-                                  {p.amazonTituloOficial}
-                                </div>
-                              )}
-                              {!p.amazonTituloOficial && p.descricao && (
-                                <div
-                                  className="mt-0.5 text-[11px] text-muted-foreground line-clamp-1"
-                                  title={p.descricao}
-                                >
-                                  {p.descricao}
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        </TableCell>
-                        <TableCell className="px-3 py-3">
-                          <span className="rounded bg-muted/40 px-1.5 py-0.5 font-mono text-xs font-medium">
-                            {p.sku}
-                          </span>
-                        </TableCell>
-                        <TableCell className="px-3 py-3">
-                          <div className="flex items-center gap-1">
-                            <AsinCell asin={p.asin} />
-                            {p.asin && (
-                              <BuyboxPopover
-                                produto={p}
-                                onSyncBuybox={(id) => syncBuybox.mutate(id)}
-                                isSyncing={syncBuybox.isPending && syncBuybox.variables === p.id}
+                          </TableHead>
+                        )}
+                        {columns.asin && (
+                          <TableHead className="hidden w-[120px] px-2 2xl:table-cell">
+                            ASIN
+                          </TableHead>
+                        )}
+                        {columns.precoAmazon && (
+                          <TableHead className="w-[86px] px-2 text-right sm:w-[105px]">
+                            <SortableHeader
+                              label="Preco Amazon"
+                              sortKey="precoAmazon"
+                              sort={sort}
+                              align="right"
+                              onToggle={toggleSort}
+                            />
+                          </TableHead>
+                        )}
+                        {columns.estoque && (
+                          <TableHead className="hidden w-[90px] px-2 text-right sm:table-cell">
+                            <SortableHeader
+                              label="Estoque"
+                              sortKey="estoqueVendavel"
+                              sort={sort}
+                              align="right"
+                              onToggle={toggleSort}
+                            />
+                          </TableHead>
+                        )}
+                        {columns.custo && (
+                          <TableHead className="hidden w-[105px] px-2 text-right md:table-cell">
+                            <SortableHeader
+                              label="Custo"
+                              sortKey="custoUnitario"
+                              sort={sort}
+                              align="right"
+                              onToggle={toggleSort}
+                            />
+                          </TableHead>
+                        )}
+                        {columns.margem && (
+                          <TableHead className="hidden w-[78px] px-2 text-right xl:table-cell">
+                            <SortableHeader
+                              label="Margem"
+                              sortKey="margem"
+                              sort={sort}
+                              align="right"
+                              onToggle={toggleSort}
+                            />
+                          </TableHead>
+                        )}
+                        {columns.vendas30d && (
+                          <TableHead className="hidden w-[72px] px-2 text-right xl:table-cell">
+                            <SortableHeader
+                              label="Vendas 30d"
+                              sortKey="vendido30d"
+                              sort={sort}
+                              align="right"
+                              onToggle={toggleSort}
+                            />
+                          </TableHead>
+                        )}
+                        {columns.traffic && (
+                          <TableHead className="hidden w-[95px] px-3 text-right 2xl:table-cell">
+                            Sessoes
+                          </TableHead>
+                        )}
+                        {columns.conversion && (
+                          <TableHead className="hidden w-[90px] px-3 text-right 2xl:table-cell">
+                            Conv.
+                          </TableHead>
+                        )}
+                        {columns.buybox && (
+                          <TableHead className="hidden w-[95px] px-3 text-right 2xl:table-cell">
+                            Buybox
+                          </TableHead>
+                        )}
+                        {columns.ultimaSync && (
+                          <TableHead className="hidden w-[120px] px-2 2xl:table-cell">
+                            <SortableHeader
+                              label="Ultima sync"
+                              sortKey="ultimaSync"
+                              sort={sort}
+                              onToggle={toggleSort}
+                            />
+                          </TableHead>
+                        )}
+                        {columns.status && (
+                          <TableHead className="w-[64px] px-2 sm:w-[82px]">
+                            <SortableHeader
+                              label="Status"
+                              sortKey="status"
+                              sort={sort}
+                              onToggle={toggleSort}
+                            />
+                          </TableHead>
+                        )}
+                        <TableHead className="sticky right-0 z-30 w-[32px] bg-card px-1 shadow-[-1px_0_0_0_hsl(var(--border))] sm:w-[44px] sm:px-2" />
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {produtosPaginados.map((p) => {
+                        const resumo = resumoPorId.get(p.id);
+                        const precoAmazon = getPrecoAmazon(p);
+                        const custo = getCusto(p);
+                        const margem = getMargemPercent(p);
+                        const selecionado = selected.has(p.id);
+
+                        return (
+                          <TableRow
+                            key={p.id}
+                            data-state={selecionado ? "selected" : undefined}
+                            className="border-b bg-card transition-colors hover:bg-blue-50/40"
+                          >
+                            <TableCell className="hidden px-4 py-3 sm:table-cell">
+                              <input
+                                type="checkbox"
+                                aria-label={`Selecionar ${p.sku}`}
+                                checked={selecionado}
+                                onChange={(e) => {
+                                  const checked = e.target.checked;
+                                  setSelected((prev) => {
+                                    const next = new Set(prev);
+                                    if (checked) next.add(p.id);
+                                    else next.delete(p.id);
+                                    return next;
+                                  });
+                                }}
+                                className="h-4 w-4 rounded border-input accent-primary"
                               />
+                            </TableCell>
+                            <TableCell className="px-2 py-3">
+                              <div className="flex min-w-0 items-center gap-3">
+                                <ProdutoThumbnail
+                                  src={
+                                    p.imagemUrl
+                                      ? `/api/produtos/${p.id}/imagem`
+                                      : resolverImagemProduto(p.amazonImagemUrl, p.asin)
+                                  }
+                                  alt={p.nome}
+                                  title={p.amazonTituloOficial}
+                                />
+                                <div className="min-w-0">
+                                  <Link
+                                    href={`/produtos/${p.id}`}
+                                    className="line-clamp-2 text-sm font-semibold leading-tight text-slate-900 transition hover:text-primary"
+                                    title={p.nome}
+                                  >
+                                    {p.nome}
+                                  </Link>
+                                  <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
+                                    <span className="rounded bg-muted/60 px-1.5 py-0.5 font-mono">
+                                      {p.sku}
+                                    </span>
+                                    {p.amazonTituloOficial &&
+                                      p.amazonTituloOficial !== p.nome && (
+                                        <span className="line-clamp-1 max-w-[260px]">
+                                          {p.amazonTituloOficial}
+                                        </span>
+                                      )}
+                                  </div>
+                                </div>
+                              </div>
+                            </TableCell>
+                            {columns.sku && (
+                              <TableCell className="hidden px-2 py-3 md:table-cell">
+                                <span className="rounded bg-muted/60 px-1.5 py-0.5 font-mono text-xs font-medium">
+                                  {p.sku}
+                                </span>
+                              </TableCell>
                             )}
-                          </div>
-                        </TableCell>
-                        <TableCell className="px-3 py-3 text-right font-mono font-semibold tabular-nums">
-                          {p.estoqueAtual} <span className="text-xs text-muted-foreground">{p.unidade}</span>
-                        </TableCell>
-                        <TableCell className="hidden px-3 py-3 lg:table-cell">
-                          <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 text-xs">
-                            <span className="text-muted-foreground">Disp.</span>
-                            <span className="text-right font-mono">
-                              {p.amazonEstoqueDisponivel ?? "-"}
-                            </span>
-                            <span className="text-muted-foreground">Res.</span>
-                            <span className="text-right font-mono">
-                              {p.amazonEstoqueReservado ?? "-"}
-                            </span>
-                            <span className="text-muted-foreground">Inbound</span>
-                            <span className="text-right font-mono">
-                              {p.amazonEstoqueInbound ?? "-"}
-                            </span>
-                            <span className="text-muted-foreground">Total</span>
-                            <span className="text-right font-mono">
-                              {p.amazonEstoqueTotal ?? "-"}
-                            </span>
-                          </div>
-                        </TableCell>
-                        <TableCell className="px-3 py-3 text-right font-mono tabular-nums text-muted-foreground">
-                          {p.estoqueMinimo}
-                        </TableCell>
-                        <TableCell className="px-3 py-3">
-                          <BadgeReposicao status={p.statusReposicao} />
-                        </TableCell>
-                        <TableCell className="hidden px-3 py-3 text-right xl:table-cell">
-                          <DiasEstoqueCell vel={velocidadePorId.get(p.id)} />
-                        </TableCell>
-                        <TableCell className="hidden px-3 py-3 text-right xl:table-cell">
-                          <Vendas30dBadge
-                            valor={
-                              resumoPorId.get(p.id)?.vendido30d ??
-                              velocidadePorId.get(p.id)?.vendido30d ??
-                              0
-                            }
-                          />
-                        </TableCell>
-                        <TableCell className="hidden px-3 py-3 text-right 2xl:table-cell">
-                          <TrafficSessionsCell resumo={resumoPorId.get(p.id)} />
-                        </TableCell>
-                        <TableCell className="hidden px-3 py-3 text-right 2xl:table-cell">
-                          <TrafficConversionCell percent={resumoPorId.get(p.id)?.trafficConversionPercent ?? null} />
-                        </TableCell>
-                        <TableCell className="hidden px-3 py-3 xl:table-cell">
-                          <BuyboxBar percent={resumoPorId.get(p.id)?.buyboxPercent ?? null} />
-                        </TableCell>
-                        <TableCell className="hidden px-3 py-3 text-right xl:table-cell">
-                          <ReembolsoPercentCell percent={resumoPorId.get(p.id)?.reembolsoPercent ?? 0} />
-                        </TableCell>
-                        <TableCell className="px-3 py-3 text-right">
-                          <CustoUnitarioInput
-                            produtoId={p.id}
-                            custoUnitario={p.custoUnitario}
-                            disabled={atualizarCusto.isPending}
-                            onSalvar={(produtoId, custoUnitario) =>
-                              atualizarCusto.mutate({ id: produtoId, custoUnitario })
-                            }
-                          />
-                        </TableCell>
-                        <TableCell className="px-3 py-3">
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button variant="ghost" size="icon" className="h-8 w-8">
-                                <ChevronRight className="h-4 w-4" />
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                              <DropdownMenuItem asChild>
-                                <Link href={`/produtos/${p.id}`}>
-                                  Ver ficha
-                                </Link>
-                              </DropdownMenuItem>
-                              <DropdownMenuSeparator />
-                              <DropdownMenuItem
-                                onClick={() =>
-                                  setDialogMov({
-                                    aberto: true,
-                                    produtoId: p.id,
-                                    nome: p.nome,
-                                  })
-                                }
-                              >
-                                <ArrowUpCircle className="mr-2 h-4 w-4 text-success" />
-                                Registrar entrada
-                              </DropdownMenuItem>
-                              <DropdownMenuItem
-                                onClick={() =>
-                                  setDialogMov({
-                                    aberto: true,
-                                    produtoId: p.id,
-                                    nome: p.nome,
-                                  })
-                                }
-                              >
-                                <ArrowDownCircle className="mr-2 h-4 w-4 text-destructive" />
-                                Registrar saída
-                              </DropdownMenuItem>
-                              <DropdownMenuSeparator />
-                              {p.asin && (
-                                <>
-                                  <DropdownMenuItem
-                                    onClick={() => syncCatalog.mutate(p.id)}
-                                    disabled={syncCatalog.isPending}
+                            {columns.asin && (
+                              <TableCell className="hidden px-2 py-3 2xl:table-cell">
+                                <AsinCell asin={p.asin} />
+                              </TableCell>
+                            )}
+                            {columns.precoAmazon && (
+                              <TableCell className="px-2 py-3">
+                                <PriceCell produto={p} />
+                              </TableCell>
+                            )}
+                            {columns.estoque && (
+                              <TableCell className="hidden px-2 py-3 sm:table-cell">
+                                <EstoqueCell produto={p} />
+                              </TableCell>
+                            )}
+                            {columns.custo && (
+                              <TableCell className="hidden px-2 py-3 text-right md:table-cell">
+                                <CustoUnitarioInput
+                                  produtoId={p.id}
+                                  custoUnitario={custo}
+                                  disabled={atualizarCusto.isPending}
+                                  onSalvar={(produtoId, custoUnitario) =>
+                                    atualizarCusto.mutate({ id: produtoId, custoUnitario })
+                                  }
+                                />
+                              </TableCell>
+                            )}
+                            {columns.margem && (
+                              <TableCell className="hidden px-2 py-3 text-right xl:table-cell">
+                                <MarginBadge value={margem} />
+                              </TableCell>
+                            )}
+                            {columns.vendas30d && (
+                              <TableCell className="hidden px-2 py-3 text-right xl:table-cell">
+                                <span className="font-mono text-xs font-semibold tabular-nums text-slate-700">
+                                  {formatNumero(resumo?.vendido30d ?? 0)}
+                                </span>
+                              </TableCell>
+                            )}
+                            {columns.traffic && (
+                              <TableCell className="hidden px-3 py-3 text-right 2xl:table-cell">
+                                <span className="font-mono text-xs tabular-nums">
+                                  {resumo?.sessions30d
+                                    ? formatNumero(resumo.sessions30d)
+                                    : "-"}
+                                </span>
+                              </TableCell>
+                            )}
+                            {columns.conversion && (
+                              <TableCell className="hidden px-3 py-3 text-right 2xl:table-cell">
+                                <span className="text-xs font-semibold">
+                                  {formatPercent(resumo?.trafficConversionPercent ?? null)}
+                                </span>
+                              </TableCell>
+                            )}
+                            {columns.buybox && (
+                              <TableCell className="hidden px-3 py-3 text-right 2xl:table-cell">
+                                <span className="text-xs font-semibold">
+                                  {formatPercent(resumo?.buyboxPercent ?? null)}
+                                </span>
+                              </TableCell>
+                            )}
+                            {columns.ultimaSync && (
+                              <TableCell className="hidden px-2 py-3 2xl:table-cell">
+                                <SyncCell produto={p} />
+                              </TableCell>
+                            )}
+                            {columns.status && (
+                              <TableCell className="px-2 py-3">
+                                <StatusBadge produto={p} />
+                              </TableCell>
+                            )}
+                            <TableCell className="sticky right-0 z-10 bg-card px-1 py-3 shadow-[-1px_0_0_0_hsl(var(--border))] sm:px-2">
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-7 w-7 sm:h-8 sm:w-8"
+                                    aria-label={`Acoes de ${p.sku}`}
                                   >
-                                    <RefreshCw className="mr-2 h-4 w-4" />
-                                    Buscar catálogo Amazon
-                                  </DropdownMenuItem>
-                                  <DropdownMenuItem
-                                    onClick={() => syncBuybox.mutate(p.id)}
-                                    disabled={syncBuybox.isPending}
-                                  >
-                                    <ShoppingCart className="mr-2 h-4 w-4" />
-                                    Atualizar buybox
-                                  </DropdownMenuItem>
-                                  <DropdownMenuItem
-                                    onClick={() => verificarListing.mutate(p.id)}
-                                    disabled={verificarListing.isPending}
-                                  >
-                                    <PackageSearch className="mr-2 h-4 w-4" />
-                                    Verificar listing Amazon
+                                    <MoreHorizontal className="h-4 w-4" />
+                                  </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end">
+                                  <DropdownMenuItem asChild>
+                                    <Link href={`/produtos/${p.id}`}>
+                                      <Package className="mr-2 h-4 w-4" />
+                                      Ver ficha
+                                    </Link>
                                   </DropdownMenuItem>
                                   <DropdownMenuSeparator />
-                                </>
-                              )}
-                              <DropdownMenuItem
-                                onClick={() =>
-                                  setDialogCusto({ aberto: true, produtoId: p.id })
-                                }
-                              >
-                                <History className="mr-2 h-4 w-4" />
-                                Histórico de custo
-                              </DropdownMenuItem>
-                              <DropdownMenuItem
-                                onClick={() =>
-                                  setDialogProduto({ aberto: true, produto: p })
-                                }
-                              >
-                                <Pencil className="mr-2 h-4 w-4" />
-                                Editar
-                              </DropdownMenuItem>
-                              <DropdownMenuItem
-                                className="text-destructive focus:text-destructive"
-                                onClick={() => desativar.mutate(p.id)}
-                              >
-                                <PowerOff className="mr-2 h-4 w-4" />
-                                Desativar
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
+                                  <DropdownMenuItem
+                                    onClick={() =>
+                                      setDialogMov({
+                                        aberto: true,
+                                        produtoId: p.id,
+                                        nome: p.nome,
+                                      })
+                                    }
+                                  >
+                                    <ArrowUpCircle className="mr-2 h-4 w-4 text-success" />
+                                    Registrar entrada
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem
+                                    onClick={() =>
+                                      setDialogMov({
+                                        aberto: true,
+                                        produtoId: p.id,
+                                        nome: p.nome,
+                                      })
+                                    }
+                                  >
+                                    <ArrowDownCircle className="mr-2 h-4 w-4 text-destructive" />
+                                    Registrar saida
+                                  </DropdownMenuItem>
+                                  <DropdownMenuSeparator />
+                                  {p.asin && (
+                                    <>
+                                      <DropdownMenuItem
+                                        onClick={() => syncCatalog.mutate(p.id)}
+                                        disabled={syncCatalog.isPending}
+                                      >
+                                        <RefreshCw className="mr-2 h-4 w-4" />
+                                        Buscar catalogo Amazon
+                                      </DropdownMenuItem>
+                                      <DropdownMenuItem
+                                        onClick={() => syncBuybox.mutate(p.id)}
+                                        disabled={syncBuybox.isPending}
+                                      >
+                                        <ShoppingCart className="mr-2 h-4 w-4" />
+                                        Atualizar buybox
+                                      </DropdownMenuItem>
+                                      <DropdownMenuItem
+                                        onClick={() => verificarListing.mutate(p.id)}
+                                        disabled={verificarListing.isPending}
+                                      >
+                                        <PackageSearch className="mr-2 h-4 w-4" />
+                                        Verificar listing Amazon
+                                      </DropdownMenuItem>
+                                      <DropdownMenuSeparator />
+                                    </>
+                                  )}
+                                  <DropdownMenuItem
+                                    onClick={() =>
+                                      setDialogCusto({ aberto: true, produtoId: p.id })
+                                    }
+                                  >
+                                    <History className="mr-2 h-4 w-4" />
+                                    Historico de custo
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem
+                                    onClick={() =>
+                                      setDialogProduto({ aberto: true, produto: p })
+                                    }
+                                  >
+                                    <Pencil className="mr-2 h-4 w-4" />
+                                    Editar
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem
+                                    className="text-destructive focus:text-destructive"
+                                    onClick={() => desativar.mutate(p.id)}
+                                  >
+                                    <PowerOff className="mr-2 h-4 w-4" />
+                                    Desativar
+                                  </DropdownMenuItem>
+                                </DropdownMenuContent>
+                              </DropdownMenu>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </div>
+
+                <div className="flex flex-col gap-3 border-t px-4 py-3 text-sm text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    Mostrando {produtosOrdenados.length === 0 ? 0 : inicio + 1} a{" "}
+                    {Math.min(inicio + pageSize, produtosOrdenados.length)} de{" "}
+                    {produtosOrdenados.length.toLocaleString("pt-BR")} produtos
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Select
+                      value={String(pageSize)}
+                      onChange={(e) => setPageSize(Number(e.target.value))}
+                      className="h-9 w-[124px] text-xs"
+                    >
+                      {PAGE_SIZE_OPTIONS.map((size) => (
+                        <option key={size} value={size}>
+                          {size} por pagina
+                        </option>
+                      ))}
+                    </Select>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      className="h-9 w-9"
+                      disabled={paginaAtual <= 1}
+                      onClick={() => setPage((prev) => Math.max(1, prev - 1))}
+                    >
+                      <ChevronLeft className="h-4 w-4" />
+                    </Button>
+                    <span className="rounded-md border bg-background px-3 py-2 text-xs font-semibold text-foreground">
+                      {paginaAtual} / {totalPages}
+                    </span>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      className="h-9 w-9"
+                      disabled={paginaAtual >= totalPages}
+                      onClick={() => setPage((prev) => Math.min(totalPages, prev + 1))}
+                    >
+                      <ChevronRight className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              </>
             )}
           </div>
         </div>
+
+        <ProdutosFiltrosSheet
+          open={filtrosAberto}
+          onOpenChange={setFiltrosAberto}
+          filtros={filtros}
+          onFiltrosChange={onFiltrosChange}
+          custoMin={custoMin}
+          custoMax={custoMax}
+          margemMin={margemMin}
+          margemMax={margemMax}
+          vendasMin={vendasMin}
+          vendasMax={vendasMax}
+          onCustoMinChange={setCustoMin}
+          onCustoMaxChange={setCustoMax}
+          onMargemMinChange={setMargemMin}
+          onMargemMaxChange={setMargemMax}
+          onVendasMinChange={setVendasMin}
+          onVendasMaxChange={setVendasMax}
+          onLimpar={limparFiltros}
+        />
 
         <DialogProduto
           aberto={dialogProduto.aberto}
@@ -1134,328 +1695,291 @@ export function ListaProdutos({
   );
 }
 
-function ListingDiffDialog({
-  diff,
-  open,
-  onOpenChange,
-}: {
-  diff: ListingDiffResponse | null;
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-}) {
-  if (!diff) return null;
+const COLUMN_OPTIONS: Array<{ key: ColumnKey; label: string }> = [
+  { key: "sku", label: "SKU" },
+  { key: "asin", label: "ASIN" },
+  { key: "precoAmazon", label: "Preco Amazon" },
+  { key: "estoque", label: "Estoque" },
+  { key: "custo", label: "Custo" },
+  { key: "margem", label: "Margem" },
+  { key: "vendas30d", label: "Vendas 30d" },
+  { key: "ultimaSync", label: "Ultima sync" },
+  { key: "status", label: "Status" },
+  { key: "traffic", label: "Sessoes" },
+  { key: "conversion", label: "Conversao" },
+  { key: "buybox", label: "Buybox historico" },
+];
 
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl">
-        <DialogHeader>
-          <DialogTitle>Listing Amazon</DialogTitle>
-          <DialogDescription>
-            {diff.produto.sku} · Seller {diff.amazon.sellerId}
-          </DialogDescription>
-        </DialogHeader>
-
-        <div className="grid gap-3 sm:grid-cols-3">
-          <div className="rounded-md border p-3">
-            <div className="text-xs text-muted-foreground">ASIN</div>
-            <div className="mt-1 font-mono text-sm">{diff.amazon.asin ?? "-"}</div>
-          </div>
-          <div className="rounded-md border p-3">
-            <div className="text-xs text-muted-foreground">Status</div>
-            <div className="mt-1 text-sm font-medium">{diff.amazon.status ?? "-"}</div>
-          </div>
-          <div className="rounded-md border p-3">
-            <div className="text-xs text-muted-foreground">Issues</div>
-            <div className="mt-1 text-sm font-medium">{diff.amazon.issuesCount}</div>
-          </div>
-        </div>
-
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Campo</TableHead>
-              <TableHead>ERP</TableHead>
-              <TableHead>Amazon</TableHead>
-              <TableHead className="text-right">Resultado</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {diff.diffs.map((item) => (
-              <TableRow key={item.campo}>
-                <TableCell className="capitalize">{item.campo}</TableCell>
-                <TableCell className="max-w-[220px] truncate">
-                  {formatListingValue(item.campo, item.erp)}
-                </TableCell>
-                <TableCell className="max-w-[260px] truncate">
-                  {formatListingValue(item.campo, item.amazon)}
-                </TableCell>
-                <TableCell className="text-right">
-                  <span
-                    className={cn(
-                      "inline-flex rounded-full px-2 py-0.5 text-xs font-semibold",
-                      item.igual
-                        ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300"
-                        : "bg-amber-50 text-amber-700 dark:bg-amber-900/20 dark:text-amber-300",
-                    )}
-                  >
-                    {item.igual ? "OK" : "Divergente"}
-                  </span>
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-function formatListingValue(
-  campo: ListingDiffField["campo"],
-  value: string | number | null,
-) {
-  if (value == null || value === "") return "-";
-  if (campo === "preco" && typeof value === "number") return formatBRL(value);
-  return String(value);
-}
-
-function FiltroOperacionalChip({
+function SegmentButton({
   active,
-  icon: Icon,
   label,
+  count,
+  tone = "blue",
   onClick,
 }: {
   active: boolean;
-  icon: ComponentType<{ className?: string }>;
   label: string;
+  count: number;
+  tone?: "blue" | "green" | "amber";
   onClick: () => void;
 }) {
+  const countTone = {
+    blue: "bg-blue-100 text-blue-700",
+    green: "bg-emerald-100 text-emerald-700",
+    amber: "bg-amber-100 text-amber-700",
+  }[tone];
+
   return (
     <button
       type="button"
       aria-pressed={active}
       onClick={onClick}
       className={cn(
-        "inline-flex h-8 items-center gap-1.5 rounded-md border px-2.5 text-xs font-medium transition",
+        "inline-flex h-10 items-center gap-2 rounded-lg border px-3 text-sm font-semibold transition",
         active
-          ? "border-primary/30 bg-primary/10 text-primary shadow-sm"
-          : "border-transparent bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground",
+          ? "border-primary bg-primary/5 text-primary shadow-sm"
+          : "border-input bg-background text-slate-600 hover:bg-muted/60 hover:text-foreground",
       )}
     >
-      <Icon className="h-3.5 w-3.5 shrink-0" />
       {label}
+      <span className={cn("rounded-full px-2 py-0.5 text-[11px]", countTone)}>
+        {count.toLocaleString("pt-BR")}
+      </span>
     </button>
   );
 }
 
-// ── Empty state amigavel ─────────────────────────────────────────────────────
-
-function EmptyState({
-  busca,
+function ProdutosFiltrosSheet({
+  open,
+  onOpenChange,
   filtros,
+  onFiltrosChange,
+  custoMin,
+  custoMax,
+  margemMin,
+  margemMax,
+  vendasMin,
+  vendasMax,
+  onCustoMinChange,
+  onCustoMaxChange,
+  onMargemMinChange,
+  onMargemMaxChange,
+  onVendasMinChange,
+  onVendasMaxChange,
+  onLimpar,
 }: {
-  busca: string;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
   filtros: ProdutoFiltrosQuery;
+  onFiltrosChange: Dispatch<SetStateAction<ProdutoFiltrosQuery>>;
+  custoMin: string;
+  custoMax: string;
+  margemMin: string;
+  margemMax: string;
+  vendasMin: string;
+  vendasMax: string;
+  onCustoMinChange: (value: string) => void;
+  onCustoMaxChange: (value: string) => void;
+  onMargemMinChange: (value: string) => void;
+  onMargemMaxChange: (value: string) => void;
+  onVendasMinChange: (value: string) => void;
+  onVendasMaxChange: (value: string) => void;
+  onLimpar: () => void;
 }) {
-  const filtrado =
-    busca ||
-    filtros.estoque !== DEFAULT_PRODUTO_FILTROS.estoque ||
-    filtros.ativo !== DEFAULT_PRODUTO_FILTROS.ativo ||
-    filtros.semCusto ||
-    filtros.semSyncAmazon;
   return (
-    <div className="flex flex-col items-center justify-center px-6 py-20 text-center text-muted-foreground">
-      <PackageSearch className="mb-4 h-12 w-12 opacity-30" />
-      <p className="text-base font-medium text-foreground">
-        Nenhum produto encontrado
-      </p>
-      <p className="mt-1 max-w-sm text-sm">
-        {busca
-          ? `Sem resultados para "${busca}". Tente buscar por SKU, nome ou ASIN.`
-          : filtrado
-            ? "Nenhum produto nessa visão. Ajuste os filtros operacionais ou limpe a busca."
-            : "Comece criando seu primeiro produto com um SKU no formato MFS-XXXX."}
-      </p>
-      {filtrado && (
-        <p className="mt-3 text-xs text-muted-foreground/70">
-          Lembre-se: SKUs precisam começar com{" "}
-          <code className="rounded bg-muted px-1 font-mono">MFS-</code> para aparecer aqui.
-        </p>
-      )}
-    </div>
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent className="flex w-full flex-col overflow-y-auto sm:max-w-md">
+        <SheetHeader className="border-b pb-4">
+          <SheetTitle>Filtros</SheetTitle>
+          <SheetDescription>
+            Refine produtos por estoque, custo, margem e sincronizacao.
+          </SheetDescription>
+        </SheetHeader>
+
+        <div className="grid gap-5 py-4">
+          <FilterGroup label="Status">
+            <Select
+              value={filtros.statusReposicao ?? "TODOS"}
+              onChange={(e) => {
+                const value = e.target.value;
+                onFiltrosChange((prev) => ({
+                  ...prev,
+                  statusReposicao:
+                    value === "TODOS" ? undefined : (value as StatusReposicao),
+                }));
+              }}
+            >
+              <option value="TODOS">Todos</option>
+              <option value={StatusReposicao.REPOR}>Repor</option>
+              <option value={StatusReposicao.ATENCAO}>Atencao</option>
+              <option value={StatusReposicao.OK}>OK</option>
+            </Select>
+          </FilterGroup>
+
+          <FilterGroup label="Estoque">
+            <Select
+              value={filtros.estoque ?? "TODOS"}
+              onChange={(e) => {
+                const value = e.target.value;
+                onFiltrosChange((prev) => ({
+                  ...prev,
+                  estoque:
+                    value === "TODOS"
+                      ? undefined
+                      : (value as EstoqueFiltroOperacional),
+                }));
+              }}
+            >
+              <option value="TODOS">Todos</option>
+              <option value={EstoqueFiltroOperacional.COM_ESTOQUE}>
+                Com estoque
+              </option>
+              <option value={EstoqueFiltroOperacional.SEM_ESTOQUE}>
+                Sem estoque
+              </option>
+            </Select>
+          </FilterGroup>
+
+          <FilterGroup label="Custo (R$)">
+            <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
+              <Input
+                type="number"
+                min="0"
+                step="0.01"
+                placeholder="Minimo"
+                value={custoMin}
+                onChange={(e) => onCustoMinChange(e.target.value)}
+              />
+              <span className="text-muted-foreground">a</span>
+              <Input
+                type="number"
+                min="0"
+                step="0.01"
+                placeholder="Maximo"
+                value={custoMax}
+                onChange={(e) => onCustoMaxChange(e.target.value)}
+              />
+            </div>
+            <label className="mt-2 flex items-center gap-2 text-sm text-muted-foreground">
+              <input
+                type="checkbox"
+                checked={!!filtros.semCusto}
+                onChange={(e) =>
+                  onFiltrosChange((prev) => ({
+                    ...prev,
+                    semCusto: e.target.checked || undefined,
+                  }))
+                }
+                className="h-4 w-4 accent-primary"
+              />
+              Apenas sem custo
+            </label>
+          </FilterGroup>
+
+          <FilterGroup label="Margem (%)">
+            <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
+              <Input
+                type="number"
+                step="0.1"
+                placeholder="Minimo"
+                value={margemMin}
+                onChange={(e) => onMargemMinChange(e.target.value)}
+              />
+              <span className="text-muted-foreground">a</span>
+              <Input
+                type="number"
+                step="0.1"
+                placeholder="Maximo"
+                value={margemMax}
+                onChange={(e) => onMargemMaxChange(e.target.value)}
+              />
+            </div>
+          </FilterGroup>
+
+          <FilterGroup label="Vendas 30d">
+            <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
+              <Input
+                type="number"
+                min="0"
+                step="1"
+                placeholder="Minimo"
+                value={vendasMin}
+                onChange={(e) => onVendasMinChange(e.target.value)}
+              />
+              <span className="text-muted-foreground">a</span>
+              <Input
+                type="number"
+                min="0"
+                step="1"
+                placeholder="Maximo"
+                value={vendasMax}
+                onChange={(e) => onVendasMaxChange(e.target.value)}
+              />
+            </div>
+          </FilterGroup>
+
+          <FilterGroup label="Sincronizacao Amazon">
+            <Select
+              value={filtros.semSyncAmazon ? "SEM_SYNC" : "TODOS"}
+              onChange={(e) =>
+                onFiltrosChange((prev) => ({
+                  ...prev,
+                  semSyncAmazon: e.target.value === "SEM_SYNC" || undefined,
+                }))
+              }
+            >
+              <option value="TODOS">Todos</option>
+              <option value="SEM_SYNC">Sem sync Amazon</option>
+            </Select>
+          </FilterGroup>
+
+          <div className="flex items-center justify-between rounded-lg border p-3">
+            <div>
+              <div className="text-sm font-medium">Exibir inativos</div>
+              <div className="text-xs text-muted-foreground">
+                Inclui produtos desativados na lista.
+              </div>
+            </div>
+            <Switch
+              checked={filtros.ativo === undefined}
+              onCheckedChange={(checked) =>
+                onFiltrosChange((prev) => ({
+                  ...prev,
+                  ativo: checked ? undefined : true,
+                }))
+              }
+              aria-label="Exibir inativos"
+            />
+          </div>
+        </div>
+
+        <SheetFooter className="mt-auto gap-2 border-t pt-4">
+          <Button type="button" variant="outline" onClick={onLimpar}>
+            Limpar
+          </Button>
+          <Button type="button" onClick={() => onOpenChange(false)}>
+            Aplicar filtros
+          </Button>
+        </SheetFooter>
+      </SheetContent>
+    </Sheet>
   );
 }
 
-// ── Vendas 30d badge ─────────────────────────────────────────────────────────
-
-function Vendas30dBadge({ valor }: { valor: number }) {
-  if (valor === 0) {
-    return <span className="text-xs text-muted-foreground">—</span>;
-  }
-  if (valor > 10) {
-    return (
-      <span className="inline-flex min-w-[2rem] items-center justify-center rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 tabular-nums dark:bg-emerald-900/30 dark:text-emerald-300">
-        {valor}
-      </span>
-    );
-  }
-  return (
-    <span className="inline-flex min-w-[2rem] items-center justify-center rounded-full bg-muted px-2 py-0.5 text-[11px] font-semibold tabular-nums">
-      {valor}
-    </span>
-  );
-}
-
-// ── Buybox bar (mais visual que numero) ──────────────────────────────────────
-
-function TrafficSessionsCell({
-  resumo,
+function FilterGroup({
+  label,
+  children,
 }: {
-  resumo: ResumoTabelaItem | undefined;
+  label: string;
+  children: ReactNode;
 }) {
-  const sessions = resumo?.sessions30d ?? 0;
-  if (sessions === 0) {
-    return <span className="text-xs text-muted-foreground">—</span>;
-  }
-  const adsGasto = resumo?.adsGastoCentavos30d ?? 0;
-  const adsAcos = resumo?.adsAcosPercent30d ?? null;
-  const adsHint =
-    adsGasto > 0
-      ? ` · Ads R$ ${(adsGasto / 100).toFixed(2)}${adsAcos != null ? ` ACOS ${adsAcos.toFixed(1)}%` : ""}`
-      : "";
   return (
-    <div
-      className="text-right"
-      title={`${resumo?.pageViews30d ?? 0} page views nos ultimos 30 dias${adsHint}`}
-    >
-      <div className="font-mono text-xs font-semibold tabular-nums">
-        {sessions.toLocaleString("pt-BR")}
+    <div className="space-y-2">
+      <div className="text-xs font-semibold uppercase text-muted-foreground">
+        {label}
       </div>
-      <div className="text-[10px] text-muted-foreground">
-        PV {(resumo?.pageViews30d ?? 0).toLocaleString("pt-BR")}
-        {adsGasto > 0 && adsAcos != null && (
-          <span
-            className={cn(
-              "ml-2 font-semibold",
-              adsAcos >= 30
-                ? "text-red-600 dark:text-red-400"
-                : adsAcos >= 20
-                  ? "text-amber-600 dark:text-amber-400"
-                  : "text-emerald-600 dark:text-emerald-400",
-            )}
-          >
-            ACOS {adsAcos.toFixed(1)}%
-          </span>
-        )}
-      </div>
+      {children}
     </div>
-  );
-}
-
-function TrafficConversionCell({ percent }: { percent: number | null }) {
-  if (percent == null) {
-    return <span className="text-xs text-muted-foreground">—</span>;
-  }
-  const cor =
-    percent >= 12
-      ? "text-emerald-600 dark:text-emerald-400"
-      : percent >= 6
-        ? "text-amber-600 dark:text-amber-400"
-        : "text-red-600 dark:text-red-400";
-  return (
-    <span
-      className={cn("text-xs font-semibold tabular-nums", cor)}
-      title="Conversao de unidades por sessao nos ultimos 30 dias"
-    >
-      {percent.toFixed(1)}%
-    </span>
-  );
-}
-
-function BuyboxBar({ percent }: { percent: number | null }) {
-  if (percent == null) {
-    return <span className="text-xs text-muted-foreground">—</span>;
-  }
-  const pct = Math.max(0, Math.min(100, percent));
-  const cor =
-    pct >= 80
-      ? "bg-emerald-500"
-      : pct >= 40
-        ? "bg-amber-500"
-        : "bg-red-500";
-  const corTxt =
-    pct >= 80
-      ? "text-emerald-600 dark:text-emerald-400"
-      : pct >= 40
-        ? "text-amber-600 dark:text-amber-400"
-        : "text-red-600 dark:text-red-400";
-  return (
-    <div
-      className="flex flex-col gap-1"
-      title={`Buybox: ${pct.toFixed(0)}% nos ultimos 15 dias`}
-    >
-      <div className={cn("text-[11px] font-semibold tabular-nums", corTxt)}>
-        {pct.toFixed(0)}%
-      </div>
-      <div className="h-1.5 w-full rounded-full bg-muted">
-        <div
-          className={cn("h-full rounded-full transition-all", cor)}
-          style={{ width: `${pct}%` }}
-        />
-      </div>
-    </div>
-  );
-}
-
-function ReembolsoPercentCell({ percent }: { percent: number }) {
-  if (percent === 0) {
-    return (
-      <span className="inline-flex items-center justify-center rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 tabular-nums dark:bg-emerald-900/20 dark:text-emerald-400">
-        0%
-      </span>
-    );
-  }
-  const cor =
-    percent > 7
-      ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300"
-      : percent >= 3
-        ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300"
-        : "bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-400";
-  return (
-    <span
-      className={cn(
-        "inline-flex items-center justify-center rounded-full px-2 py-0.5 text-[11px] font-semibold tabular-nums",
-        cor,
-      )}
-      title="Taxa de reembolso (últimos 30 dias)"
-    >
-      {percent.toFixed(1)}%
-    </span>
-  );
-}
-
-function DiasEstoqueCell({ vel }: { vel: VelocidadeProduto | undefined }) {
-  if (!vel || vel.criticidade === "SEM_VENDAS") {
-    return <span className="text-xs text-muted-foreground">—</span>;
-  }
-
-  const dias = vel.diasEstoque;
-  if (dias == null) return <span className="text-xs text-muted-foreground">—</span>;
-
-  return (
-    <span
-      className={cn(
-        "text-xs font-semibold tabular-nums",
-        vel.criticidade === "CRITICO"
-          ? "text-red-600 dark:text-red-400"
-          : vel.criticidade === "ATENCAO"
-            ? "text-amber-600 dark:text-amber-400"
-            : "text-emerald-600 dark:text-emerald-400",
-      )}
-      title={`${vel.unidadesPorDia} un/dia (últimos 30d)`}
-    >
-      {dias}d
-    </span>
   );
 }
 
@@ -1492,15 +2016,112 @@ function CustoUnitarioInput({
       onChange={(e) => setValor(e.target.value)}
       onBlur={salvar}
       onKeyDown={(e) => {
-        if (e.key === "Enter") {
-          e.currentTarget.blur();
-        }
+        if (e.key === "Enter") e.currentTarget.blur();
       }}
-      className="ml-auto h-8 w-[104px] text-right font-mono text-xs tabular-nums"
+      className="ml-auto h-8 w-[88px] text-right font-mono text-xs tabular-nums"
       aria-label="Custo unitario"
       placeholder="0,00"
     />
   );
+}
+
+function ListingDiffDialog({
+  diff,
+  open,
+  onOpenChange,
+}: {
+  diff: ListingDiffResponse | null;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  if (!diff) return null;
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-3xl">
+        <DialogHeader>
+          <DialogTitle>Listing Amazon</DialogTitle>
+          <DialogDescription>
+            {diff.produto.sku} - Seller {diff.amazon.sellerId}
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="grid gap-3 sm:grid-cols-3">
+          <div className="rounded-md border p-3">
+            <div className="text-xs text-muted-foreground">ASIN</div>
+            <div className="mt-1 font-mono text-sm">{diff.amazon.asin ?? "-"}</div>
+          </div>
+          <div className="rounded-md border p-3">
+            <div className="text-xs text-muted-foreground">Status</div>
+            <div className="mt-1 text-sm font-medium">{diff.amazon.status ?? "-"}</div>
+          </div>
+          <div className="rounded-md border p-3">
+            <div className="text-xs text-muted-foreground">Issues</div>
+            <div className="mt-1 text-sm font-medium">{diff.amazon.issuesCount}</div>
+          </div>
+        </div>
+
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Campo</TableHead>
+              <TableHead>Atlas Seller</TableHead>
+              <TableHead>Amazon live</TableHead>
+              <TableHead className="text-right">Resultado</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {diff.diffs.map((item) => (
+              <TableRow key={item.campo}>
+                <TableCell className="capitalize">{item.campo}</TableCell>
+                <TableCell className="max-w-[220px] truncate">
+                  {formatListingValue(item.campo, item.erp)}
+                </TableCell>
+                <TableCell className="max-w-[260px] truncate">
+                  {formatListingValue(item.campo, item.amazon)}
+                </TableCell>
+                <TableCell className="text-right">
+                  <span
+                    className={cn(
+                      "inline-flex rounded-full px-2 py-0.5 text-xs font-semibold",
+                      item.igual
+                        ? "bg-emerald-50 text-emerald-700"
+                        : "bg-amber-50 text-amber-700",
+                    )}
+                  >
+                    {item.igual ? "OK" : "Divergente"}
+                  </span>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function formatListingValue(
+  campo: ListingDiffField["campo"],
+  value: string | number | null,
+) {
+  if (value == null || value === "") return "-";
+  if (campo === "preco" && typeof value === "number") return formatBRL(value);
+  return String(value);
+}
+
+function parseDecimal(value: string): number | null {
+  const normalizado = value.trim().replace(",", ".");
+  if (!normalizado) return null;
+  const parsed = Number(normalizado);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function parseInteiro(value: string): number | null {
+  const normalizado = value.trim();
+  if (!normalizado) return null;
+  const parsed = Number.parseInt(normalizado, 10);
+  return Number.isFinite(parsed) ? parsed : null;
 }
 
 function centavosParaInput(value: number | null): string {

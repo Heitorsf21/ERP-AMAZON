@@ -34,6 +34,7 @@ import {
   upsertAmazonFinanceTransactions,
 } from "@/modules/amazon/finance-materializer";
 import { extractAmazonListingEffectivePriceCentavos } from "@/modules/amazon/pricing";
+import { extractProductOfferSnapshot } from "@/modules/amazon/offers-normalizer";
 import { inferAmazonCategoriaFee } from "@/modules/produtos/amazon-fee-category-mapper";
 import {
   notificarBuyboxPerdido,
@@ -165,7 +166,14 @@ export async function runBuyboxCheck(creds: SPAPICredentials) {
     },
     orderBy: [{ buyboxUltimaSyncEm: "asc" }],
     take: BUYBOX_BATCH_SIZE,
-    select: { id: true, sku: true, asin: true, buyboxGanho: true, precoVenda: true },
+    select: {
+      id: true,
+      sku: true,
+      asin: true,
+      buyboxGanho: true,
+      precoVenda: true,
+      amazonPrecoListagemCentavos: true,
+    },
   });
 
   let checados = 0;
@@ -185,29 +193,13 @@ export async function runBuyboxCheck(creds: SPAPICredentials) {
       continue;
     }
 
-    const buyboxOffer = offers.offers?.find((o) => o.isBuyBoxWinner);
-    const buyboxPriceFromSummary = offers.summary?.buyBoxPrices?.[0];
-    const buyboxPrice =
-      buyboxOffer?.listingPrice?.amount ??
-      buyboxPriceFromSummary?.listingPrice?.amount ??
-      buyboxPriceFromSummary?.landedPrice?.amount;
-    const buyboxPriceCentavos = buyboxPrice ? Math.round(buyboxPrice * 100) : null;
-    const numeroOfertas = offers.offers?.length ?? null;
-    const sellerBuybox = buyboxOffer?.sellerId ?? null;
-
-    // Determinação de quem ganhou o buybox:
-    //  1) Preferencial: comparar sellerId do winner com o nosso `amazon_seller_id`.
-    //  2) Fallback: comparar preço (proxy fraco) — usado quando a SP-API
-    //     não retorna sellerId no offer (ocorre em algumas variações da API
-    //     ou quando a oferta vem só pelo summary `buyBoxPrices`).
-    let somosBuybox: boolean | null = null;
-    if (ourSellerId && sellerBuybox) {
-      somosBuybox = sellerBuybox === ourSellerId;
-    } else if (buyboxOffer && p.precoVenda) {
-      // Fallback de preço: tolerância de R$ 0,50.
-      somosBuybox =
-        Math.abs((buyboxOffer.listingPrice?.amount ?? 0) * 100 - p.precoVenda) <= 50;
-    }
+    const precoNosso = p.amazonPrecoListagemCentavos ?? p.precoVenda;
+    const {
+      buyboxPriceCentavos,
+      sellerBuybox,
+      numeroOfertas,
+      somosBuybox,
+    } = extractProductOfferSnapshot(offers, ourSellerId, precoNosso);
 
     await db.$transaction([
       db.produto.update({
@@ -225,7 +217,7 @@ export async function runBuyboxCheck(creds: SPAPICredentials) {
           sku: p.sku,
           asin: p.asin,
           somosBuybox: !!somosBuybox,
-          precoNosso: p.precoVenda,
+          precoNosso,
           precoBuybox: buyboxPriceCentavos,
           sellerBuybox,
           numeroOfertas,
@@ -238,7 +230,7 @@ export async function runBuyboxCheck(creds: SPAPICredentials) {
       perdidos++;
       await notificarBuyboxPerdido({
         sku: p.sku,
-        precoNosso: p.precoVenda,
+        precoNosso,
         precoBuybox: buyboxPriceCentavos,
         sellerBuybox,
       });

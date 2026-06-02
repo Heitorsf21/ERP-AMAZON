@@ -26,7 +26,6 @@ export type ProdutoFiltrosQuery = {
 
 export const DEFAULT_PRODUTO_FILTROS: ProdutoFiltrosQuery = {
   ativo: true,
-  estoque: EstoqueFiltroOperacional.COM_ESTOQUE,
 };
 
 export function produtoFiltrosToSearchParams(

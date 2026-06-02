@@ -326,17 +326,30 @@ export interface SPCatalogItem {
 
 export interface SPProductOfferListing {
   sellerId?: string;
+  SellerId?: string;
   isBuyBoxWinner?: boolean;
+  IsBuyBoxWinner?: boolean;
   listingPrice?: { amount?: number; currencyCode?: string };
+  ListingPrice?: { Amount?: number; CurrencyCode?: string; amount?: number; currencyCode?: string };
   shippingPrice?: { amount?: number; currencyCode?: string };
+  Shipping?: { Amount?: number; CurrencyCode?: string; amount?: number; currencyCode?: string };
+  landedPrice?: { amount?: number; currencyCode?: string };
+  LandedPrice?: { Amount?: number; CurrencyCode?: string; amount?: number; currencyCode?: string };
   condition?: { value?: string };
+  Condition?: string;
+  subCondition?: string;
+  SubCondition?: string;
   fulfillmentChannel?: string;
+  FulfillmentChannel?: string;
 }
 
 export interface SPProductOffersResponse {
   asin?: string;
+  ASIN?: string;
   marketplaceId?: string;
+  MarketplaceID?: string;
   offers?: SPProductOfferListing[];
+  Offers?: SPProductOfferListing[];
   summary?: {
     numberOfOffers?: Array<{
       condition?: string;
@@ -357,6 +370,40 @@ export interface SPProductOffersResponse {
       condition?: string;
       fulfillmentChannel?: string;
       listingPrice?: { amount?: number; currencyCode?: string };
+    }>;
+  };
+  Summary?: {
+    NumberOfOffers?: Array<{
+      condition?: string;
+      Condition?: string;
+      fulfillmentChannel?: string;
+      FulfillmentChannel?: string;
+      offerCount?: number;
+      OfferCount?: number;
+    }>;
+    BuyBoxEligibleOffers?: Array<{
+      condition?: string;
+      Condition?: string;
+      fulfillmentChannel?: string;
+      FulfillmentChannel?: string;
+      offerCount?: number;
+      OfferCount?: number;
+    }>;
+    BuyBoxPrices?: Array<{
+      condition?: string;
+      Condition?: string;
+      listingPrice?: { amount?: number; currencyCode?: string };
+      ListingPrice?: { Amount?: number; CurrencyCode?: string; amount?: number; currencyCode?: string };
+      landedPrice?: { amount?: number; currencyCode?: string };
+      LandedPrice?: { Amount?: number; CurrencyCode?: string; amount?: number; currencyCode?: string };
+    }>;
+    LowestPrices?: Array<{
+      condition?: string;
+      Condition?: string;
+      fulfillmentChannel?: string;
+      FulfillmentChannel?: string;
+      listingPrice?: { amount?: number; currencyCode?: string };
+      ListingPrice?: { Amount?: number; CurrencyCode?: string; amount?: number; currencyCode?: string };
     }>;
   };
 }
@@ -624,19 +671,22 @@ export async function getProductOffers(
   try {
     const result = await spApiRequest<OffersResponse>(
       creds,
-      `/products/pricing/v2022-05-01/items/${encodeURIComponent(asin)}/offers`,
+      `/products/pricing/v0/items/${encodeURIComponent(asin)}/offers`,
       {
         operation: AmazonSpApiOperation.PRODUCT_PRICING_GET_OFFERS,
         params: {
-          marketplaceId: creds.marketplaceId,
-          itemCondition: "New",
-          customerType: "Consumer",
+          MarketplaceId: creds.marketplaceId,
+          ItemCondition: "New",
+          CustomerType: "Consumer",
         },
       },
     );
     if ("payload" in result && result.payload) return result.payload;
     return result as SPProductOffersResponse;
-  } catch {
+  } catch (e) {
+    if (isAmazonSpApiQuotaError(e)) throw e;
+    const msg = e instanceof Error ? e.message : String(e);
+    console.warn(`[getProductOffers] ASIN ${asin} falhou: ${msg.slice(0, 200)}`);
     return null;
   }
 }
