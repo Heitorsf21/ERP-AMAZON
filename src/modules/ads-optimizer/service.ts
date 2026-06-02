@@ -322,7 +322,10 @@ export const adsOptimizerService = {
     const keywordIds = uniqueStrings(
       recommendations.map((rec) => rec.keywordId).filter(Boolean) as string[],
     );
-    const [campaignRows, keywordRows] = await Promise.all([
+    const skus = uniqueStrings(
+      recommendations.map((rec) => rec.sku).filter(Boolean) as string[],
+    );
+    const [campaignRows, keywordRows, produtoRows, ultimasAcoesRows] = await Promise.all([
       campaignIds.length > 0
         ? db.amazonAdsCampaignEntity.findMany({
             where: { profileId, campaignId: { in: campaignIds } },
@@ -335,6 +338,20 @@ export const adsOptimizerService = {
             select: { keywordId: true, matchType: true },
           })
         : Promise.resolve([]),
+      skus.length > 0
+        ? db.produto.findMany({
+            where: { sku: { in: skus } },
+            select: { sku: true, imagemUrl: true, amazonImagemUrl: true, asin: true },
+          })
+        : Promise.resolve([]),
+      skus.length > 0
+        ? db.adsOptimizationRecommendation.findMany({
+            where: { sku: { in: skus }, status: { not: "PROPOSED" } },
+            orderBy: { criadoEm: "desc" },
+            select: { sku: true, actionType: true, status: true, criadoEm: true },
+            take: 500,
+          })
+        : Promise.resolve([]),
     ]);
     const targetingTypeByCampaign = new Map(
       campaignRows.map((campaign) => [campaign.campaignId, campaign.targetingType]),
@@ -342,6 +359,20 @@ export const adsOptimizerService = {
     const matchTypeByKeyword = new Map(
       keywordRows.map((keyword) => [keyword.keywordId, keyword.matchType]),
     );
+    const produtoBySku = new Map(produtoRows.map((produto) => [produto.sku, produto]));
+    const ultimaAcaoBySku = new Map<
+      string,
+      { actionType: string; status: string; criadoEm: string }
+    >();
+    for (const acao of ultimasAcoesRows) {
+      if (acao.sku && !ultimaAcaoBySku.has(acao.sku)) {
+        ultimaAcaoBySku.set(acao.sku, {
+          actionType: acao.actionType,
+          status: acao.status,
+          criadoEm: acao.criadoEm.toISOString(),
+        });
+      }
+    }
 
     const items = recommendations.map((rec) => {
       const evidence = parseOptionalJson<RecommendationEvidence>(rec.evidenceJson) ?? {};
@@ -395,6 +426,9 @@ export const adsOptimizerService = {
         executadoEm: rec.executadoEm?.toISOString() ?? null,
         staleReason: rec.staleReason,
         errorMessage: rec.errorMessage,
+        imagemUrl: rec.sku ? produtoBySku.get(rec.sku)?.imagemUrl ?? null : null,
+        amazonImagemUrl: rec.sku ? produtoBySku.get(rec.sku)?.amazonImagemUrl ?? null : null,
+        ultimaAcao: rec.sku ? ultimaAcaoBySku.get(rec.sku) ?? null : null,
       };
     });
 
@@ -419,6 +453,67 @@ export const adsOptimizerService = {
       },
       coverage,
       recommendations: items,
+    };
+  },
+
+  async getHistoryBySku(sku: string, opts?: { limit?: number; offset?: number }) {
+    const take = Math.min(Math.max(opts?.limit ?? 50, 1), 100);
+    const skip = Math.max(opts?.offset ?? 0, 0);
+    const where = { sku, status: { not: "PROPOSED" } };
+    const [total, rows] = await Promise.all([
+      db.adsOptimizationRecommendation.count({ where }),
+      db.adsOptimizationRecommendation.findMany({
+        where,
+        orderBy: { criadoEm: "desc" },
+        take,
+        skip,
+        include: { execucoes: { orderBy: { executadoEm: "desc" } } },
+      }),
+    ]);
+    return {
+      sku,
+      total,
+      history: rows.map((rec) => {
+        const evidence = parseOptionalJson<RecommendationEvidence>(rec.evidenceJson) ?? {};
+        const approvedPayload = parseOptionalJson<JsonRecord>(rec.amazonPayloadJson);
+        return {
+          id: rec.id,
+          status: rec.status,
+          entityType: rec.entityType,
+          displayEntityType: evidence.displayEntityType ?? displayEntityType(rec.entityType),
+          displayLabel:
+            evidence.displayLabel ??
+            evidence.label ??
+            rec.searchTerm ??
+            rec.keywordId ??
+            rec.targetId ??
+            rec.entityId,
+          actionType: rec.actionType,
+          severity: rec.severity,
+          confianca: rec.confianca,
+          motivo: rec.motivo,
+          risco: rec.risco,
+          currentBidCentavos: rec.currentBidCentavos,
+          proposedBidCentavos: rec.proposedBidCentavos,
+          approvedBidCentavos: extractBidCentavosFromPayload(approvedPayload),
+          metrics7d: parseJson<AdsOptimizerMetrics>(rec.metrics7dJson),
+          metrics30d: parseJson<AdsOptimizerMetrics>(rec.metrics30dJson),
+          criadoEm: rec.criadoEm.toISOString(),
+          aprovadoEm: rec.aprovadoEm?.toISOString() ?? null,
+          aprovadoPorEmail: rec.aprovadoPorEmail,
+          rejeitadoEm: rec.rejeitadoEm?.toISOString() ?? null,
+          rejeitadoPorEmail: rec.rejeitadoPorEmail,
+          executadoEm: rec.executadoEm?.toISOString() ?? null,
+          staleReason: rec.staleReason,
+          errorMessage: rec.errorMessage,
+          execucoes: rec.execucoes.map((execucao) => ({
+            status: execucao.status,
+            errorMessage: execucao.errorMessage,
+            executadoEm: execucao.executadoEm.toISOString(),
+            executadoPorEmail: execucao.executadoPorEmail,
+          })),
+        };
+      }),
     };
   },
 

@@ -77,6 +77,8 @@ export type AdsCampanhaItem = AdsMetricasBase &
     asin: string | null;
     periodoInicio: Date;
     periodoFim: Date;
+    tipoCampanha: string | null;
+    estadoCampanha: string | null;
   };
 
 export type AdsTimelinePonto = AdsMetricasBase &
@@ -445,11 +447,17 @@ export async function getAdsCampanhas(
     const campanhas = campaignIds.length
       ? await db.amazonAdsCampanha.findMany({
           where: { campaignId: { in: campaignIds } },
-          select: { campaignId: true, nome: true },
+          select: { campaignId: true, nome: true, tipoTargeting: true, estado: true },
         })
       : [];
     const nomePorCampaign = new Map(
       campanhas.map((c) => [c.campaignId, c.nome] as const),
+    );
+    const tipoPorCampaign = new Map(
+      campanhas.map((c) => [c.campaignId, c.tipoTargeting] as const),
+    );
+    const estadoPorCampaign = new Map(
+      campanhas.map((c) => [c.campaignId, c.estado] as const),
     );
 
     const itens: AdsCampanhaItem[] = grupos
@@ -469,6 +477,8 @@ export async function getAdsCampanhas(
           asin: g.asin ?? null,
           periodoInicio: periodo.de,
           periodoFim: periodo.ate,
+          tipoCampanha: tipoPorCampaign.get(g.campaignId) ?? null,
+          estadoCampanha: estadoPorCampaign.get(g.campaignId) ?? null,
           ...base,
           ...calcularDerivadas(base),
         };
@@ -528,6 +538,8 @@ export async function getAdsCampanhas(
       asin: c.asin,
       periodoInicio: c.periodoInicio,
       periodoFim: c.periodoFim,
+      tipoCampanha: null,
+      estadoCampanha: null,
       ...base,
       ...calcularDerivadas(base),
     };

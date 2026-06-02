@@ -1033,9 +1033,50 @@ model Tarefa {
 
   responsavel Usuario? @relation(fields: [responsavelId], references: [id], onDelete: SetNull)
 
+  // Ocorrência de uma tarefa recorrente (null = tarefa avulsa).
+  tarefaRecorrenteId String?
+  // Dia da ocorrência (yyyy-MM-dd) — idempotência por molde.
+  chaveOcorrencia    String?
+  tarefaRecorrente   TarefaRecorrente? @relation(fields: [tarefaRecorrenteId], references: [id], onDelete: SetNull)
+
+  @@unique([tarefaRecorrenteId, chaveOcorrencia])
   @@index([status])
   @@index([prazo])
   @@index([visibilidade])
+  @@index([responsavelId])
+  @@index([tarefaRecorrenteId])
+}
+
+model TarefaRecorrente {
+  id            String  @id @default(cuid())
+  empresaId     String?
+  titulo        String
+  descricao     String?
+  // EMPRESA | PESSOAL
+  visibilidade  String  @default("EMPRESA")
+  responsavelId String?
+  // DIARIA | SEMANAL | MENSAL | PERSONALIZADA
+  tipoRecorrencia String @default("SEMANAL")
+  // JSON array de dias da semana (0=domingo..6=sabado) para SEMANAL
+  diasSemana    String?
+  // 1..31 para MENSAL (clampado ao ultimo dia do mes)
+  diaMes        Int?
+  intervalo     Int     @default(1)
+  // DIAS | SEMANAS (para PERSONALIZADA)
+  unidadeIntervalo String?
+  // NUNCA | DATA | N_VEZES
+  tipoTermino   String  @default("NUNCA")
+  terminoAte    DateTime?
+  terminoMaxVezes Int?
+  inicioEm      DateTime
+  ativa         Boolean  @default(true)
+  deletedAt     DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  ocorrencias Tarefa[]
+
+  @@index([ativa])
   @@index([responsavelId])
 }
 

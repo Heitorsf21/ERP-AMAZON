@@ -146,8 +146,13 @@ export const agendaService = {
     const tipos = params.tipos ?? [];
     const status = params.status ?? [];
 
-    // Materializa ocorrências de contas fixas no período (idempotente).
-    await contasFixasService.garantirOcorrencias({ de, ate });
+    // Materializa ocorrências de contas fixas e de tarefas recorrentes no
+    // período (idempotente). Tarefas viram registros Tarefa normais e entram
+    // na agregação abaixo sem tratamento especial.
+    await Promise.all([
+      contasFixasService.garantirOcorrencias({ de, ate }),
+      tarefasService.garantirOcorrenciasTarefas({ de, ate }),
+    ]);
 
     const [tarefas, ocorrencias] = await Promise.all([
       tarefasService.listarParaAgenda(usuarioId, de, ate),

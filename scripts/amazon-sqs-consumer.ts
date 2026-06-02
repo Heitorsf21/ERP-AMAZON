@@ -4,6 +4,7 @@ loadEnvConfig(process.cwd());
 
 import { pollSqsNotifications } from "../src/lib/amazon-sqs";
 import { db } from "../src/lib/db";
+import { runStartupChecks } from "../src/lib/startup-checks";
 import { runWithTenant } from "../src/lib/tenant-context";
 
 const once = process.argv.includes("--once");
@@ -17,6 +18,15 @@ const HEARTBEAT_KEY = "sqs_consumer_heartbeat_at";
 const SQS_EMPRESA_ID = process.env.WORKER_EMPRESA_ID || "mundofs";
 
 async function main() {
+  // Mesmo guard do web/worker: em produção, não deixa o consumer rodar com
+  // segredos críticos ausentes ou isolamento desligado em banco multi-tenant.
+  try {
+    await runStartupChecks();
+  } catch (err) {
+    console.error(err instanceof Error ? err.message : String(err));
+    process.exit(1);
+  }
+
   do {
     const result = await runWithTenant(
       { empresaId: SQS_EMPRESA_ID, isSuperAdmin: false, source: "worker" },

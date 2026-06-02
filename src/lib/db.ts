@@ -405,6 +405,18 @@ export async function applyTenantIsolation({
   return query(args);
 }
 
+// ⚠️ INVARIANTE DE SEGURANÇA — QUERIES RAW NÃO SÃO ISOLADAS POR TENANT.
+// A extensão abaixo só intercepta operações de MODELO (findMany, update, …).
+// `db.$queryRaw` / `$executeRaw` / `$queryRawUnsafe` / `$executeRawUnsafe`
+// PASSAM DIRETO ao banco, SEM injeção de `empresaId`. Regras (audit 2026-06, F10):
+//   1. NUNCA use raw para LER/ESCREVER linhas de modelos TENANT (vendas, pedidos,
+//      financeiro, PII…) em caminho de requisição web. Use o client de modelo.
+//   2. Se for inevitável, adicione você mesmo `WHERE "empresaId" = $1` com o
+//      empresaId do contexto (getEmpresaId()), parametrizado — nunca interpolado.
+//   3. NUNCA interpole input do usuário em $queryRawUnsafe (SQL injection).
+// Usos atuais auditados e considerados seguros: health (`SELECT 1`), sistema/
+// db-stats (ADMIN, métricas agregadas de banco — sem PII), e scripts manuais de
+// operador/sistema (fora do escopo de requisição).
 function buildClient() {
   const base = new PrismaClient({
     log:

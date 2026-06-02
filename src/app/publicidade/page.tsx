@@ -13,14 +13,18 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { PageHeader } from "@/components/ui/page-header";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { FiltroPeriodo, type FiltroPeriodoValue } from "@/components/ui/filtro-periodo";
 import { fetchJSON } from "@/lib/fetcher";
 import { formatBRL } from "@/lib/money";
 import { cn } from "@/lib/utils";
+import {
+  formatarDataInputPeriodo,
+  PeriodoPreset,
+  resolverPeriodo,
+} from "@/lib/periodo";
 import { AlertasAds } from "@/components/publicidade/alertas-ads";
 import {
   classificarAcos,
@@ -98,17 +102,19 @@ const BADGE_ORIGEM: Record<FonteAds, { label: string; classe: string; descricao:
   },
 };
 
-function periodoDefault() {
-  const hoje = new Date();
-  const ini = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
-  const fmt = (d: Date) =>
-    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-  return { de: fmt(ini), ate: fmt(hoje) };
-}
-
 export default function PublicidadePage() {
-  const [periodo, setPeriodo] = React.useState(periodoDefault);
+  const [filtro, setFiltro] = React.useState<FiltroPeriodoValue>({
+    preset: PeriodoPreset.MES_ATUAL,
+  });
   const [importDialogOpen, setImportDialogOpen] = React.useState(false);
+
+  const periodo = React.useMemo(() => {
+    const { de, ate } = resolverPeriodo(filtro.preset, filtro.de, filtro.ate);
+    return {
+      de: formatarDataInputPeriodo(de),
+      ate: formatarDataInputPeriodo(ate),
+    };
+  }, [filtro]);
 
   const { data, isLoading } = useQuery<DadosCampanhas>({
     queryKey: ["ads-campanhas", periodo.de, periodo.ate, "comp"],
@@ -154,31 +160,10 @@ export default function PublicidadePage() {
       </div>
 
       {/* Toolbar */}
-      <div className="flex flex-wrap items-end gap-3">
-        <div>
-          <Label className="text-xs">De</Label>
-          <Input
-            type="date"
-            value={periodo.de}
-            onChange={(e) => setPeriodo((p) => ({ ...p, de: e.target.value }))}
-            className="w-40"
-          />
-        </div>
-        <div>
-          <Label className="text-xs">Até</Label>
-          <Input
-            type="date"
-            value={periodo.ate}
-            onChange={(e) => setPeriodo((p) => ({ ...p, ate: e.target.value }))}
-            className="w-40"
-          />
-        </div>
+      <div className="flex flex-wrap items-center gap-3">
+        <FiltroPeriodo value={filtro} onChange={setFiltro} />
         <div className="ml-auto flex flex-wrap gap-2">
-          <Button
-            asChild
-            variant="outline"
-            size="sm"
-          >
+          <Button asChild variant="outline" size="sm">
             <Link href="/publicidade/otimizador">Otimizador Ads</Link>
           </Button>
           <Button

@@ -57,13 +57,11 @@ const OPERATOR_PATH_PREFIXES = [
   "/produtos",
   "/vendas",
   "/compras",
-  "/expedicao",
   "/avaliacoes",
   "/publicidade",
   "/api/estoque",
   "/api/produtos",
   "/api/dashboard-ecommerce",
-  "/api/expedicao",
   "/api/amazon/sync-catalog",
   "/api/amazon/sync-buybox",
 ];
@@ -244,6 +242,28 @@ export async function proxy(req: NextRequest) {
     return withSecurityHeaders(
       NextResponse.json({ erro: "ARQUIVO_MUITO_GRANDE" }, { status: 413 }),
     );
+  }
+
+  // Camada de PLATAFORMA (superadmin) + fluxo público de definir senha: têm auth
+  // PRÓPRIA (cookie erp_plat_session via requireSuperAdmin/getPlataformaSession;
+  // /definir-senha valida o token de convite). O proxy de TENANT (cookie
+  // erp_session) NÃO se aplica aqui — senão /plataforma/login e /api/plataforma
+  // seriam redirecionados/bloqueados pelo login do tenant. Mantemos os security
+  // headers e a defesa CSRF same-origin nas mutações.
+  if (
+    pathname === "/plataforma" ||
+    pathname.startsWith("/plataforma/") ||
+    pathname === "/definir-senha" ||
+    pathname.startsWith("/definir-senha/") ||
+    pathname.startsWith("/api/plataforma/") ||
+    pathname === "/api/definir-senha"
+  ) {
+    if (!isSameOriginMutation(req)) {
+      return withSecurityHeaders(
+        NextResponse.json({ erro: "ORIGEM_INVALIDA" }, { status: 403 }),
+      );
+    }
+    return withSecurityHeaders(NextResponse.next());
   }
 
   if (isPublic(pathname)) return withSecurityHeaders(NextResponse.next());

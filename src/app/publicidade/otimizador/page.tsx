@@ -6,6 +6,8 @@ import {
   AlertTriangle,
   CalendarClock,
   CheckCircle2,
+  ChevronDown,
+  ChevronRight,
   Eye,
   Filter,
   History,
@@ -37,6 +39,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { fetchJSON } from "@/lib/fetcher";
 import { formatBRL } from "@/lib/money";
 import { cn } from "@/lib/utils";
+import { ProductThumb } from "@/components/ui/product-thumb";
+import { resolverImagemProduto } from "@/lib/amazon-images";
 
 type OptimizerMetrics = {
   impressoes: number;
@@ -104,6 +108,9 @@ type Recommendation = {
   executadoEm: string | null;
   staleReason: string | null;
   errorMessage: string | null;
+  imagemUrl: string | null;
+  amazonImagemUrl: string | null;
+  ultimaAcao: { actionType: string; status: string; criadoEm: string } | null;
 };
 
 type Snapshot = {
@@ -152,6 +159,9 @@ type SkuGroup = {
   approvedCount: number;
   proposedCount: number;
   actionGroupCount: number;
+  imagemUrl: string | null;
+  amazonImagemUrl: string | null;
+  ultimaAcao: Recommendation["ultimaAcao"];
 };
 
 type ReportWindow = {
@@ -861,31 +871,38 @@ function SkuGroupCard({
     <Card className="overflow-hidden">
       <CardContent className="space-y-5 pt-5">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2">
-              <Badge variant="outline" className="bg-slate-50">
-                <Package className="mr-1 h-3.5 w-3.5" />
-                SKU
-              </Badge>
-              {group.criticalCount > 0 && (
-                <Badge className="border-transparent bg-red-600 text-white">
-                  {plural(group.criticalCount, "critica", "criticas")}
+          <div className="flex min-w-0 gap-3">
+            <ProductThumb
+              src={resolverImagemProduto(group.amazonImagemUrl, group.asin, group.imagemUrl)}
+              alt={group.sku}
+              size={56}
+            />
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge variant="outline" className="bg-slate-50">
+                  <Package className="mr-1 h-3.5 w-3.5" />
+                  SKU
                 </Badge>
-              )}
-              {group.approvedCount > 0 && (
-                <Badge className="border-transparent bg-blue-600 text-white">
-                  {plural(group.approvedCount, "aprovada", "aprovadas")}
-                </Badge>
-              )}
+                {group.criticalCount > 0 && (
+                  <Badge className="border-transparent bg-red-600 text-white">
+                    {plural(group.criticalCount, "critica", "criticas")}
+                  </Badge>
+                )}
+                {group.approvedCount > 0 && (
+                  <Badge className="border-transparent bg-blue-600 text-white">
+                    {plural(group.approvedCount, "aprovada", "aprovadas")}
+                  </Badge>
+                )}
+              </div>
+              <h2 className="mt-2 break-words text-xl font-semibold">{group.sku}</h2>
+              <p className="text-sm text-muted-foreground">
+                {group.asin ? `ASIN ${group.asin} | ` : ""}
+                {plural(group.actionGroupCount, "grupo de acao", "grupos de acao")}
+                {group.actionGroupCount !== group.recommendations.length
+                  ? ` | ${plural(group.recommendations.length, "item editavel", "itens editaveis")}`
+                  : ""}
+              </p>
             </div>
-            <h2 className="mt-2 break-words text-xl font-semibold">{group.sku}</h2>
-            <p className="text-sm text-muted-foreground">
-              {group.asin ? `ASIN ${group.asin} | ` : ""}
-              {plural(group.actionGroupCount, "grupo de acao", "grupos de acao")}
-              {group.actionGroupCount !== group.recommendations.length
-                ? ` | ${plural(group.recommendations.length, "item editavel", "itens editaveis")}`
-                : ""}
-            </p>
           </div>
           <div className="grid grid-cols-2 gap-3 rounded-md border bg-muted/25 p-3 text-sm sm:grid-cols-4">
             <Fact label="Gasto 30d afetado" value={formatBRL(group.totals30d.gastoCentavos)} />
@@ -895,6 +912,18 @@ function SkuGroupCard({
           </div>
         </div>
 
+        {group.ultimaAcao && (
+          <div className="flex items-center gap-2 rounded-md border border-emerald-200 bg-emerald-50/60 px-3 py-2 text-xs text-emerald-900 dark:border-emerald-900/40 dark:bg-emerald-950/20 dark:text-emerald-200">
+            <History className="h-3.5 w-3.5 shrink-0" />
+            <span>
+              Última ação neste SKU:{" "}
+              <strong>{ACTION_LABEL[group.ultimaAcao.actionType] ?? group.ultimaAcao.actionType}</strong>{" "}
+              — {STATUS_LABEL[group.ultimaAcao.status as RecommendationStatus] ?? group.ultimaAcao.status}{" "}
+              ({formatDateTime(group.ultimaAcao.criadoEm)})
+            </span>
+          </div>
+        )}
+
         <Tabs defaultValue={defaultTab}>
           <TabsList className="h-auto flex-wrap justify-start">
             <TabsTrigger value="existing">
@@ -903,6 +932,7 @@ function SkuGroupCard({
             <TabsTrigger value="opportunities">
               Oportunidades de termos ({opportunities.length})
             </TabsTrigger>
+            <TabsTrigger value="history">Histórico</TabsTrigger>
           </TabsList>
           <TabsContent value="existing" className="mt-4 grid gap-3">
             {existing.length > 0 ? (
@@ -935,6 +965,9 @@ function SkuGroupCard({
             ) : (
               <MiniEmpty text="Nenhum termo pesquisado novo para este SKU." />
             )}
+          </TabsContent>
+          <TabsContent value="history" className="mt-4">
+            <HistoricoSku sku={group.sku} />
           </TabsContent>
         </Tabs>
       </CardContent>
@@ -1247,6 +1280,183 @@ function ApprovalPanel({
   );
 }
 
+type HistoryEntry = {
+  id: string;
+  status: RecommendationStatus;
+  entityType: string;
+  displayEntityType: string;
+  displayLabel: string;
+  actionType: string;
+  severity: Recommendation["severity"];
+  confianca: number;
+  motivo: string;
+  risco: string | null;
+  currentBidCentavos: number | null;
+  proposedBidCentavos: number | null;
+  approvedBidCentavos: number | null;
+  metrics7d: OptimizerMetrics;
+  metrics30d: OptimizerMetrics;
+  criadoEm: string;
+  aprovadoEm: string | null;
+  aprovadoPorEmail: string | null;
+  rejeitadoEm: string | null;
+  rejeitadoPorEmail: string | null;
+  executadoEm: string | null;
+  staleReason: string | null;
+  errorMessage: string | null;
+  execucoes: Array<{
+    status: string;
+    errorMessage: string | null;
+    executadoEm: string;
+    executadoPorEmail: string | null;
+  }>;
+};
+
+type HistoryResponse = { sku: string; total: number; history: HistoryEntry[] };
+
+function HistoricoSku({ sku }: { sku: string }) {
+  const query = useQuery<HistoryResponse>({
+    queryKey: ["ads-optimizer-history", sku],
+    queryFn: () =>
+      fetchJSON<HistoryResponse>(
+        `/api/ads/optimizer/history?sku=${encodeURIComponent(sku)}`,
+      ),
+    staleTime: 30_000,
+  });
+
+  if (query.isLoading) return <Skeleton className="h-32 rounded-md" />;
+  const history = query.data?.history ?? [];
+  if (history.length === 0) {
+    return <MiniEmpty text="Nenhuma acao registrada para este SKU ainda." />;
+  }
+  return (
+    <ol className="relative space-y-3 border-l pl-4">
+      {history.map((entry) => (
+        <HistoricoEntry key={entry.id} entry={entry} />
+      ))}
+    </ol>
+  );
+}
+
+function HistoricoEntry({ entry }: { entry: HistoryEntry }) {
+  const [aberto, setAberto] = React.useState(false);
+  const finalBid = entry.approvedBidCentavos ?? entry.proposedBidCentavos;
+  return (
+    <li className="relative">
+      <span
+        className={cn(
+          "absolute -left-[21px] top-1.5 h-3 w-3 rounded-full border-2 border-background",
+          historyDotClass(entry.status),
+        )}
+      />
+      <button
+        type="button"
+        onClick={() => setAberto((value) => !value)}
+        className="flex w-full items-center gap-2 text-left"
+      >
+        <span className="min-w-[88px] shrink-0 text-xs text-muted-foreground">
+          {formatDateTime(entry.criadoEm)}
+        </span>
+        <span className="min-w-0 flex-1 truncate text-sm">
+          {ACTION_LABEL[entry.actionType] ?? entry.actionType} ·{" "}
+          <span className="font-medium">{entry.displayLabel}</span>
+        </span>
+        <Badge variant="outline" className={historyBadgeClass(entry.status)}>
+          {STATUS_LABEL[entry.status] ?? entry.status}
+        </Badge>
+        {aberto ? (
+          <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+        ) : (
+          <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+        )}
+      </button>
+      {aberto && (
+        <div className="mt-2 space-y-2 rounded-md border bg-muted/20 p-3 text-sm">
+          <HistFact
+            label="Proposta do sistema"
+            value={`${historyBeforeBid(entry)} → ${historyAfterBid(finalBid)} · severidade ${
+              SEVERITY_LABEL[entry.severity] ?? entry.severity
+            } · confianca ${entry.confianca}%`}
+          />
+          <HistFact label="Por que" value={entry.motivo} />
+          {entry.risco && <HistFact label="Risco" value={entry.risco} />}
+          <HistFact
+            label="Metricas no momento"
+            value={`7d: gasto ${formatBRL(entry.metrics7d.gastoCentavos)} · ACOS ${formatPct(
+              entry.metrics7d.acos,
+            )} | 30d: gasto ${formatBRL(entry.metrics30d.gastoCentavos)} · ACOS ${formatPct(
+              entry.metrics30d.acos,
+            )}`}
+          />
+          <HistFact label="Sua decisao" value={historyDecisionLabel(entry, finalBid)} />
+          <HistFact label="Resultado" value={historyResultLabel(entry)} />
+        </div>
+      )}
+    </li>
+  );
+}
+
+function HistFact({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="grid grid-cols-[120px_1fr] gap-2">
+      <span className="text-[11px] uppercase text-muted-foreground">{label}</span>
+      <span className="break-words text-foreground">{value}</span>
+    </div>
+  );
+}
+
+function historyBeforeBid(entry: HistoryEntry) {
+  return entry.currentBidCentavos != null ? `Lance ${formatBRL(entry.currentBidCentavos)}` : "-";
+}
+
+function historyAfterBid(finalBid: number | null) {
+  return finalBid != null ? `Lance ${formatBRL(finalBid)}` : "-";
+}
+
+function historyDecisionLabel(entry: HistoryEntry, finalBid: number | null) {
+  if (entry.aprovadoEm) {
+    const ajuste =
+      finalBid != null &&
+      entry.proposedBidCentavos != null &&
+      finalBid !== entry.proposedBidCentavos
+        ? ` (ajustado de ${formatBRL(entry.proposedBidCentavos)})`
+        : "";
+    return `Aprovado${finalBid != null ? ` com ${formatBRL(finalBid)}` : ""}${ajuste} · ${formatDateTime(
+      entry.aprovadoEm,
+    )}${entry.aprovadoPorEmail ? ` · ${entry.aprovadoPorEmail}` : ""}`;
+  }
+  if (entry.rejeitadoEm) {
+    return `Rejeitado · ${formatDateTime(entry.rejeitadoEm)}${
+      entry.rejeitadoPorEmail ? ` · ${entry.rejeitadoPorEmail}` : ""
+    }`;
+  }
+  return STATUS_LABEL[entry.status] ?? entry.status;
+}
+
+function historyResultLabel(entry: HistoryEntry) {
+  if (entry.executadoEm) return `Aplicada na Amazon · ${formatDateTime(entry.executadoEm)}`;
+  const erroExec = entry.execucoes.find((e) => e.errorMessage)?.errorMessage ?? entry.errorMessage;
+  if (entry.status === "FAILED") return `Falhou${erroExec ? `: ${erroExec}` : ""}`;
+  if (entry.status === "STALE") return `Obsoleta${entry.staleReason ? `: ${entry.staleReason}` : ""}`;
+  if (entry.status === "REJECTED") return "Nao aplicada (rejeitada)";
+  return "-";
+}
+
+function historyDotClass(status: RecommendationStatus) {
+  if (status === "APPLIED") return "bg-emerald-500";
+  if (status === "APPROVED") return "bg-blue-500";
+  if (status === "REJECTED") return "bg-red-500";
+  if (status === "FAILED") return "bg-orange-500";
+  return "bg-slate-400";
+}
+
+function historyBadgeClass(status: RecommendationStatus) {
+  if (status === "APPLIED") return "border-emerald-300 text-emerald-700";
+  if (status === "REJECTED") return "border-red-300 text-red-700";
+  if (status === "FAILED") return "border-orange-300 text-orange-700";
+  return "";
+}
+
 function MetricsBlock({ label, metrics }: { label: string; metrics: OptimizerMetrics }) {
   return (
     <div className="rounded-md border p-3">
@@ -1333,6 +1543,9 @@ function groupRecommendations(recommendations: Recommendation[]) {
       approvedCount: items.filter((item) => item.status === "APPROVED").length,
       proposedCount: items.filter((item) => item.status === "PROPOSED").length,
       actionGroupCount: countActionGroups(items),
+      imagemUrl: items.find((item) => item.imagemUrl)?.imagemUrl ?? null,
+      amazonImagemUrl: items.find((item) => item.amazonImagemUrl)?.amazonImagemUrl ?? null,
+      ultimaAcao: items.find((item) => item.ultimaAcao)?.ultimaAcao ?? null,
     }))
     .sort((a, b) => {
       if (b.criticalCount !== a.criticalCount) return b.criticalCount - a.criticalCount;

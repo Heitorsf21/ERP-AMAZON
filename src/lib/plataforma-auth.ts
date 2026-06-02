@@ -1,4 +1,5 @@
 import { cookies } from "next/headers";
+import { NextResponse } from "next/server";
 import { db } from "./db";
 import {
   PLATAFORMA_COOKIE_NAME, verifyPlataformaSession,
@@ -18,13 +19,17 @@ export async function getPlataformaSession(): Promise<PlataformaSessionPayload |
   return payload;
 }
 
-/** Para route handlers /api/plataforma/*. Lanca 401 se nao houver superadmin. */
-export async function requireSuperAdmin(): Promise<PlataformaSessionPayload> {
+/**
+ * Para route handlers /api/plataforma/*. RETORNA (nao lanca) — no App Router do
+ * Next, `throw new Response` vira 500 em vez de virar a resposta. O caller faz:
+ *   const su = await requireSuperAdmin();
+ *   if (su instanceof NextResponse) return su;   // 401
+ *   // su: PlataformaSessionPayload
+ */
+export async function requireSuperAdmin(): Promise<PlataformaSessionPayload | NextResponse> {
   const s = await getPlataformaSession();
   if (!s) {
-    throw new Response(JSON.stringify({ erro: "NAO_AUTENTICADO" }), {
-      status: 401, headers: { "content-type": "application/json" },
-    });
+    return NextResponse.json({ erro: "NAO_AUTENTICADO" }, { status: 401 });
   }
   return s;
 }

@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { hashTokenConvite } from "@/modules/plataforma/convite";
 import { originViolationResponse } from "@/lib/origin-check";
 import { consumeRateLimit, getClientIp } from "@/lib/auth-rate-limit";
+import { strongPasswordSchema } from "@/lib/password-policy";
 import { logger } from "@/lib/logger";
 
 export const runtime = "nodejs";
@@ -12,7 +13,9 @@ export const dynamic = "force-dynamic";
 
 const schema = z.object({
   token: z.string().min(20).max(200),
-  novaSenha: z.string().min(8).max(200),
+  // Política forte (>=12, mai/min/num/especial) — antes aceitava 8 chars sem
+  // complexidade, divergindo do reset de senha. Alinha à Amazon DPP (senha >=12).
+  novaSenha: strongPasswordSchema,
 });
 
 export async function POST(req: Request) {

@@ -1,18 +1,37 @@
 import { db } from "@/lib/db";
 import type { CriarPedidoCompraInput } from "./schemas";
 import { StatusPedidoCompra } from "@/modules/shared/domain";
+import { calcularTotaisCompras } from "./totais";
 
 export const comprasRepository = {
-  async listar(filtros: { status?: string }) {
+  async listar(filtros: {
+    status?: string;
+    de?: Date;
+    ate?: Date;
+    fornecedorId?: string;
+  }) {
     return db.pedidoCompra.findMany({
       where: {
         ...(filtros.status ? { status: filtros.status } : {}),
+        ...(filtros.fornecedorId ? { fornecedorId: filtros.fornecedorId } : {}),
+        ...(filtros.de && filtros.ate
+          ? { dataEmissao: { gte: filtros.de, lte: filtros.ate } }
+          : {}),
       },
       include: {
         fornecedor: { select: { id: true, nome: true } },
         itens: {
           include: {
-            produto: { select: { id: true, sku: true, nome: true } },
+            produto: {
+              select: {
+                id: true,
+                sku: true,
+                nome: true,
+                imagemUrl: true,
+                amazonImagemUrl: true,
+                asin: true,
+              },
+            },
           },
         },
       },
@@ -185,19 +204,15 @@ export const comprasRepository = {
     });
   },
 
-  async totais() {
-    const [rascunho, confirmado] = await Promise.all([
-      db.pedidoCompra.count({ where: { status: StatusPedidoCompra.RASCUNHO } }),
-      db.pedidoCompra.aggregate({
-        where: { status: StatusPedidoCompra.CONFIRMADO },
-        _count: true,
-        _sum: { totalCentavos: true },
-      }),
-    ]);
-    return {
-      rascunho,
-      confirmado: confirmado._count,
-      totalComprometidoCentavos: confirmado._sum.totalCentavos ?? 0,
-    };
+  async totais(periodo: { de: Date; ate: Date }) {
+    const pedidos = await db.pedidoCompra.findMany({
+      select: {
+        totalCentavos: true,
+        status: true,
+        dataEmissao: true,
+        dataRecebimento: true,
+      },
+    });
+    return calcularTotaisCompras(pedidos, periodo.de, periodo.ate);
   },
 };

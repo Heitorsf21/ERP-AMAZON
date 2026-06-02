@@ -9,6 +9,7 @@ import Link from "next/link";
 import { PageHeader } from "@/components/ui/page-header";
 import { Button } from "@/components/ui/button";
 import { BadgeStatusPedido } from "@/components/compras/badge-status-pedido";
+import { TimelinePedido } from "@/components/compras/timeline-pedido";
 import {
   Table,
   TableBody,
@@ -169,6 +170,13 @@ export default function FichaPedidoPage({
           )}
         </div>
       </PageHeader>
+
+      <TimelinePedido
+        status={pedido.status}
+        dataEmissao={pedido.dataEmissao}
+        dataPrevisao={pedido.dataPrevisao}
+        dataRecebimento={pedido.dataRecebimento}
+      />
 
       {/* Info cards */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">

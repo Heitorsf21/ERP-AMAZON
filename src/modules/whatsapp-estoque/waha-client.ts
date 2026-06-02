@@ -1,4 +1,5 @@
 import { logger } from "@/lib/logger";
+import { assertSafeHttpUrl, parseHostAllowlistEnv } from "@/lib/ssrf-guard";
 
 const log = logger.child({ modulo: "whatsapp-estoque/waha" });
 
@@ -57,6 +58,20 @@ export async function enviarTextoWaha(
   if (!urlBase) {
     return { ok: false, status: 0, erro: "URL do WAHA nao configurada" };
   }
+  // SSRF guard: a URL do WAHA vem de config (ADMIN). Em produção exigimos
+  // allowlist explícita; sem ela, um host arbitrário vira canal de SSRF.
+  try {
+    const allowedHosts = parseHostAllowlistEnv(process.env.WAHA_ALLOWED_HOSTS);
+    if (process.env.NODE_ENV === "production" && allowedHosts.length === 0) {
+      throw new Error("WAHA_ALLOWED_HOSTS obrigatório em produção");
+    }
+    assertSafeHttpUrl(urlBase, {
+      allowedHosts,
+    });
+  } catch {
+    log.error({}, "URL do WAHA bloqueada pelo guard de SSRF (esquema/host invalido)");
+    return { ok: false, status: 0, erro: "URL do WAHA invalida ou bloqueada" };
+  }
   const chatId = normalizarChatId(destino);
   const url = `${urlBase}/api/sendText`;
 
@@ -83,10 +98,13 @@ export async function enviarTextoWaha(
         { status: resp.status, destino: mascararDestino(destino) },
         "Falha ao enviar texto via WAHA",
       );
+      // NÃO refletir o corpo da resposta upstream no erro retornado ao caller
+      // (era canal de exfiltração SSRF via botão de teste). O log.warn acima já
+      // registra status + destino mascarado para diagnóstico.
       return {
         ok: false,
         status: resp.status,
-        erro: `WAHA respondeu ${resp.status}: ${corpo.slice(0, 200)}`,
+        erro: `WAHA respondeu ${resp.status}`,
       };
     }
 

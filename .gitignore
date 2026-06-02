@@ -12,6 +12,7 @@ build/
 .dev-server.current
 .dev-worker.pid
 .claude/scheduled_tasks.lock
+.claude/settings.json
 image (1).png
 
 # Segredos locais (nunca versionar credenciais reais)
@@ -22,6 +23,8 @@ image (1).png
 # Dados locais/sensÃ­veis
 prisma/*.db
 prisma/*.db-*
+prisma/**/*.db
+prisma/**/*.db-*
 uploads/
 *.ofx
 *.pdf
@@ -42,3 +45,4 @@ BusinessReport*.csv
 tmp/
 design-previews/claude-design-input/
 .superpowers/
+*.bundle

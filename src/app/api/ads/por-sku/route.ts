@@ -30,19 +30,34 @@ export const GET = handleAuth([UsuarioRole.ADMIN], async (req: Request) => {
   const skus = itens.map((i) => i.sku);
 
   // Vendas Amazon por SKU no mesmo periodo (para TACOS e vendas organicas)
-  const vendasPorSku = skus.length
-    ? await db.vendaAmazon.groupBy({
-        by: ["sku"],
-        where: whereVendaAmazonContabilizavelEstrito({
-          sku: { in: skus },
-          dataVenda: { gte: inicio, lte: fim },
-        }),
-        _sum: { liquidoMarketplaceCentavos: true },
-      })
-    : [];
+  // + imagens de produto em batch
+  const [vendasPorSku, produtosPorSku] = await Promise.all([
+    skus.length
+      ? db.vendaAmazon.groupBy({
+          by: ["sku"],
+          where: whereVendaAmazonContabilizavelEstrito({
+            sku: { in: skus },
+            dataVenda: { gte: inicio, lte: fim },
+          }),
+          _sum: { liquidoMarketplaceCentavos: true },
+        })
+      : Promise.resolve([]),
+    skus.length
+      ? db.produto.findMany({
+          where: { sku: { in: skus } },
+          select: { sku: true, imagemUrl: true, amazonImagemUrl: true },
+        })
+      : Promise.resolve([]),
+  ]);
+
   const vendasAmazonPorSku = new Map(
     vendasPorSku.map(
       (v) => [v.sku, v._sum.liquidoMarketplaceCentavos ?? 0] as const,
+    ),
+  );
+  const imagensPorSku = new Map(
+    produtosPorSku.map(
+      (p) => [p.sku, { imagemUrl: p.imagemUrl, amazonImagemUrl: p.amazonImagemUrl }] as const,
     ),
   );
 
@@ -52,6 +67,7 @@ export const GET = handleAuth([UsuarioRole.ADMIN], async (req: Request) => {
       0,
       vendasAmazonCentavos - i.vendasAtribuidasCentavos,
     );
+    const imgs = imagensPorSku.get(i.sku);
     return {
       sku: i.sku,
       asin: i.asin,
@@ -69,6 +85,8 @@ export const GET = handleAuth([UsuarioRole.ADMIN], async (req: Request) => {
       vendasAmazonCentavos,
       vendasOrganicasCentavos,
       tacos: tacosPercentual(i.gastoCentavos, vendasAmazonCentavos),
+      imagemUrl: imgs?.imagemUrl ?? null,
+      amazonImagemUrl: imgs?.amazonImagemUrl ?? null,
     };
   });
 

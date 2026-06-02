@@ -190,11 +190,12 @@ export const notificacaoService = {
     return { criadas, verificadas: candidatas.length };
   },
 
-  async listar(soNaoLidas?: boolean) {
+  async listar(soNaoLidas?: boolean, limit?: number) {
+    const take = limit && limit > 0 ? Math.min(limit, 500) : 200;
     return db.notificacao.findMany({
       where: soNaoLidas ? { lida: false } : undefined,
       orderBy: [{ lida: "asc" }, { criadaEm: "desc" }],
-      take: 200,
+      take,
     });
   },
 

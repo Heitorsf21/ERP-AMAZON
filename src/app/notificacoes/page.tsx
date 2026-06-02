@@ -61,7 +61,10 @@ export default function NotificacoesPage() {
 
   const { data: notificacoes, isLoading } = useQuery<Notificacao[]>({
     queryKey: ["notificacoes"],
-    queryFn: () => fetchJSON("/api/notificacoes"),
+    queryFn: () =>
+      fetchJSON<{ notificacoes: Notificacao[] }>("/api/notificacoes").then(
+        (r) => r.notificacoes,
+      ),
   });
 
   const gerarMut = useMutation({
