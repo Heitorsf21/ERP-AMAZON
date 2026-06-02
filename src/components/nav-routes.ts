@@ -20,8 +20,6 @@ import {
   Cog,
   Megaphone,
   Activity,
-  Truck,
-  Sparkles,
   CalendarClock,
 } from "lucide-react";
 import type { Route } from "next";
@@ -144,12 +142,6 @@ export const NAV_GROUPS: NavGroup[] = [
         keywords: ["pedido compra", "reposicao", "fornecedor", "purchase"],
       },
       {
-        href: "/expedicao" as Route,
-        label: "Expedicao",
-        icon: Truck,
-        keywords: ["fbm", "picking", "packing", "etiqueta", "despacho"],
-      },
-      {
         href: "/avaliacoes" as Route,
         label: "Avaliações",
         icon: Star,
@@ -160,12 +152,6 @@ export const NAV_GROUPS: NavGroup[] = [
         label: "Publicidade",
         icon: Megaphone,
         keywords: ["ads", "anuncios", "ppc", "acos", "tacos"],
-      },
-      {
-        href: "/genius" as Route,
-        label: "Genius Pro",
-        icon: Sparkles,
-        keywords: ["sugestoes", "oportunidades", "alertas", "buybox", "restock", "ia"],
       },
     ],
   },

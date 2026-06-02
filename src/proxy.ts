@@ -57,13 +57,11 @@ const OPERATOR_PATH_PREFIXES = [
   "/produtos",
   "/vendas",
   "/compras",
-  "/expedicao",
   "/avaliacoes",
   "/publicidade",
   "/api/estoque",
   "/api/produtos",
   "/api/dashboard-ecommerce",
-  "/api/expedicao",
   "/api/amazon/sync-catalog",
   "/api/amazon/sync-buybox",
 ];
