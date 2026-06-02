@@ -2,22 +2,9 @@
 
 import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-  Check,
-  CheckCircle2,
-  ChevronLeft,
-  ChevronRight,
-  CircleDot,
-  Inbox,
-  Pencil,
-  Plus,
-  RotateCcw,
-  Trash2,
-  Wallet,
-} from "lucide-react";
+import { ChevronLeft, ChevronRight, Inbox, Plus, Repeat, Wallet } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/ui/page-header";
-import { Badge } from "@/components/ui/badge";
 import {
   Dialog,
   DialogContent,
@@ -32,27 +19,12 @@ import { formatBRL } from "@/lib/money";
 import { fetchJSON } from "@/lib/fetcher";
 import { DialogTarefa, type TarefaEditavel } from "./dialog-tarefa";
 import { DialogContasFixas } from "./dialog-contas-fixas";
-
-type AgendaItem = {
-  tipo: "TAREFA" | "CONTA_FIXA";
-  id: string;
-  titulo: string;
-  descricao: string | null;
-  data: string | null;
-  dia: string | null;
-  status: string;
-  statusAgenda: "ABERTA" | "VENCIDA" | "CONCLUIDA" | "CANCELADA";
-  vencida: boolean;
-  visibilidade: string | null;
-  responsavel: { id: string; nome: string } | null;
-  valorCentavos: number | null;
-  contaFixaId: string | null;
-  competencia: string | null;
-  fornecedor: { id: string; nome: string } | null;
-  categoria: { id: string; nome: string } | null;
-};
+import { DialogTarefaRecorrente } from "./dialog-tarefa-recorrente";
+import { PainelAConcluir } from "./painel-a-concluir";
+import { ItemAgenda, type AgendaItem } from "./item-agenda";
 
 type AgendaResposta = { itens: AgendaItem[] };
+type Modo = "dia" | "semana" | "mes";
 
 const TIPOS: Array<{ key: string; label: string }> = [
   { key: "TAREFA_EMPRESA", label: "Empresa" },
@@ -68,22 +40,18 @@ const STATUS: Array<{ key: string; label: string }> = [
 ];
 
 const MESES = [
-  "Janeiro",
-  "Fevereiro",
-  "Março",
-  "Abril",
-  "Maio",
-  "Junho",
-  "Julho",
-  "Agosto",
-  "Setembro",
-  "Outubro",
-  "Novembro",
-  "Dezembro",
+  "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
+  "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro",
 ];
-
+const MES_CURTO = [
+  "Jan", "Fev", "Mar", "Abr", "Mai", "Jun",
+  "Jul", "Ago", "Set", "Out", "Nov", "Dez",
+];
 const DIAS_SEMANA = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
 
+function pad2(n: number): string {
+  return String(n).padStart(2, "0");
+}
 function hojeSP(): string {
   return new Intl.DateTimeFormat("en-CA", {
     timeZone: "America/Sao_Paulo",
@@ -92,41 +60,57 @@ function hojeSP(): string {
     day: "2-digit",
   }).format(new Date());
 }
-
 function diasNoMes(ano: number, mes: number): number {
   return new Date(ano, mes, 0).getDate();
 }
-
-function pad2(n: number): string {
-  return String(n).padStart(2, "0");
+function isoParaUTC(iso: string): Date {
+  const [y, m, d] = iso.split("-").map(Number);
+  return new Date(Date.UTC(y!, m! - 1, d!));
 }
-
-const STATUS_STYLE: Record<string, string> = {
-  ABERTA: "text-blue-600 dark:text-blue-400",
-  VENCIDA: "text-red-600 dark:text-red-400",
-  CONCLUIDA: "text-emerald-600 dark:text-emerald-400",
-  CANCELADA: "text-muted-foreground line-through",
-};
+function utcParaIso(dt: Date): string {
+  return dt.toISOString().slice(0, 10);
+}
+function addDiasIso(iso: string, n: number): string {
+  const dt = isoParaUTC(iso);
+  dt.setUTCDate(dt.getUTCDate() + n);
+  return utcParaIso(dt);
+}
+function weekdayIso(iso: string): number {
+  return isoParaUTC(iso).getUTCDay();
+}
+function inicioSemanaIso(iso: string): string {
+  return addDiasIso(iso, -weekdayIso(iso));
+}
 
 export function AgendaView() {
   const qc = useQueryClient();
   const hoje = React.useMemo(() => hojeSP(), []);
-  const [ano, setAno] = React.useState(() => Number(hoje.slice(0, 4)));
-  const [mes, setMes] = React.useState(() => Number(hoje.slice(5, 7)));
-  const [diaSelecionado, setDiaSelecionado] = React.useState<string>(hoje);
+  const [modo, setModo] = React.useState<Modo>("semana");
+  const [cursor, setCursor] = React.useState<string>(hoje);
   const [tipos, setTipos] = React.useState<string[]>([]);
   const [status, setStatus] = React.useState<string[]>([]);
 
   const [novaTarefa, setNovaTarefa] = React.useState(false);
   const [tarefaEdit, setTarefaEdit] = React.useState<TarefaEditavel | null>(null);
   const [prazoInicial, setPrazoInicial] = React.useState<string | null>(null);
+  const [novaRecorrente, setNovaRecorrente] = React.useState(false);
   const [gestaoContas, setGestaoContas] = React.useState(false);
   const [pagarItem, setPagarItem] = React.useState<AgendaItem | null>(null);
   const [pagoEm, setPagoEm] = React.useState<string>(hoje);
 
-  const ultimoDia = diasNoMes(ano, mes);
-  const de = `${ano}-${pad2(mes)}-01`;
-  const ate = `${ano}-${pad2(mes)}-${pad2(ultimoDia)}`;
+  // Intervalo do calendário conforme o modo.
+  const anoCursor = Number(cursor.slice(0, 4));
+  const mesCursor = Number(cursor.slice(5, 7));
+  const inicioSemana = inicioSemanaIso(cursor);
+  const { de, ate } =
+    modo === "mes"
+      ? {
+          de: `${anoCursor}-${pad2(mesCursor)}-01`,
+          ate: `${anoCursor}-${pad2(mesCursor)}-${pad2(diasNoMes(anoCursor, mesCursor))}`,
+        }
+      : modo === "semana"
+        ? { de: inicioSemana, ate: addDiasIso(inicioSemana, 6) }
+        : { de: cursor, ate: cursor };
 
   const tiposCsv = tipos.join(",");
   const statusCsv = status.join(",");
@@ -141,8 +125,24 @@ export function AgendaView() {
     },
   });
 
-  const itens = React.useMemo(() => data?.itens ?? [], [data]);
+  // Painel "A concluir": janela ampla (atrasadas até o fim desta semana) +
+  // backlog. Independe do modo/cursor do calendário.
+  const fimSemanaHoje = addDiasIso(inicioSemanaIso(hoje), 6);
+  const dePainel = addDiasIso(hoje, -90);
+  const { data: dataPainel } = useQuery<AgendaResposta>({
+    queryKey: ["agenda", "a-concluir", dePainel, fimSemanaHoje, tiposCsv],
+    queryFn: () => {
+      const params = new URLSearchParams({
+        de: dePainel,
+        ate: fimSemanaHoje,
+        status: "ABERTA,VENCIDA",
+      });
+      if (tiposCsv) params.set("tipos", tiposCsv);
+      return fetchJSON<AgendaResposta>(`/api/agenda?${params.toString()}`);
+    },
+  });
 
+  const itens = React.useMemo(() => data?.itens ?? [], [data]);
   const porDia = React.useMemo(() => {
     const mapa = new Map<string, AgendaItem[]>();
     for (const item of itens) {
@@ -152,36 +152,8 @@ export function AgendaView() {
     return mapa;
   }, [itens]);
 
-  const backlog = React.useMemo(
-    () => itens.filter((i) => i.dia == null),
-    [itens],
-  );
-
-  const itensDoDia = porDia.get(diaSelecionado) ?? [];
-
-  function irParaMes(novoAno: number, novoMes: number) {
-    setAno(novoAno);
-    setMes(novoMes);
-    const mesAtual = hoje.slice(0, 7) === `${novoAno}-${pad2(novoMes)}`;
-    setDiaSelecionado(mesAtual ? hoje : `${novoAno}-${pad2(novoMes)}-01`);
-  }
-
-  function mesAnterior() {
-    if (mes === 1) irParaMes(ano - 1, 12);
-    else irParaMes(ano, mes - 1);
-  }
-  function mesSeguinte() {
-    if (mes === 12) irParaMes(ano + 1, 1);
-    else irParaMes(ano, mes + 1);
-  }
-
-  function toggle(lista: string[], set: (v: string[]) => void, key: string) {
-    set(lista.includes(key) ? lista.filter((k) => k !== key) : [...lista, key]);
-  }
-
   const concluir = useMutation({
-    mutationFn: (id: string) =>
-      fetchJSON(`/api/tarefas/${id}/concluir`, { method: "POST" }),
+    mutationFn: (id: string) => fetchJSON(`/api/tarefas/${id}/concluir`, { method: "POST" }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["agenda"] }),
   });
   const reabrir = useMutation({
@@ -193,15 +165,14 @@ export function AgendaView() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["agenda"] }),
   });
   const excluir = useMutation({
-    mutationFn: (id: string) =>
-      fetchJSON(`/api/tarefas/${id}`, { method: "DELETE" }),
+    mutationFn: (id: string) => fetchJSON(`/api/tarefas/${id}`, { method: "DELETE" }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["agenda"] }),
   });
   const pagar = useMutation({
-    mutationFn: ({ id, data }: { id: string; data: string }) =>
+    mutationFn: ({ id, data: dataPagamento }: { id: string; data: string }) =>
       fetchJSON(`/api/contas/${id}/pagar`, {
         method: "POST",
-        body: JSON.stringify({ pagoEm: data }),
+        body: JSON.stringify({ pagoEm: dataPagamento }),
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["agenda"] });
@@ -211,14 +182,38 @@ export function AgendaView() {
     },
   });
 
-  // Grade do calendário: blanks iniciais + dias do mês.
-  const primeiroDiaSemana = new Date(ano, mes - 1, 1).getDay();
-  const celulas: Array<number | null> = [
-    ...Array.from({ length: primeiroDiaSemana }, () => null),
-    ...Array.from({ length: ultimoDia }, (_, i) => i + 1),
-  ];
+  function abrirEdicao(item: AgendaItem) {
+    setTarefaEdit(itemParaTarefa(item));
+    setPrazoInicial(null);
+    setNovaTarefa(true);
+  }
+  function abrirPagamento(item: AgendaItem) {
+    setPagoEm(hoje);
+    setPagarItem(item);
+  }
 
-  const tituloDiaSel = formatarDiaLongo(diaSelecionado);
+  function navegar(delta: number) {
+    if (modo === "mes") {
+      const dt = new Date(Date.UTC(anoCursor, mesCursor - 1 + delta, 1));
+      const ny = dt.getUTCFullYear();
+      const nm = dt.getUTCMonth() + 1;
+      const nd = Math.min(Number(cursor.slice(8, 10)), diasNoMes(ny, nm));
+      setCursor(`${ny}-${pad2(nm)}-${pad2(nd)}`);
+    } else {
+      setCursor(addDiasIso(cursor, delta * (modo === "semana" ? 7 : 1)));
+    }
+  }
+
+  function toggle(lista: string[], set: (v: string[]) => void, key: string) {
+    set(lista.includes(key) ? lista.filter((k) => k !== key) : [...lista, key]);
+  }
+
+  const titulo =
+    modo === "mes"
+      ? `${MESES[mesCursor - 1]} ${anoCursor}`
+      : modo === "semana"
+        ? `${pad2(Number(inicioSemana.slice(8, 10)))} – ${pad2(Number(addDiasIso(inicioSemana, 6).slice(8, 10)))} ${MES_CURTO[Number(addDiasIso(inicioSemana, 6).slice(5, 7)) - 1]}`
+        : formatarDiaLongo(cursor);
 
   return (
     <div className="space-y-5">
@@ -231,9 +226,19 @@ export function AgendaView() {
           Contas fixas
         </Button>
         <Button
+          variant="outline"
+          onClick={() => {
+            setPrazoInicial(cursor);
+            setNovaRecorrente(true);
+          }}
+        >
+          <Repeat className="mr-2 h-4 w-4" />
+          Recorrente
+        </Button>
+        <Button
           onClick={() => {
             setTarefaEdit(null);
-            setPrazoInicial(diaSelecionado);
+            setPrazoInicial(cursor);
             setNovaTarefa(true);
           }}
         >
@@ -279,142 +284,88 @@ export function AgendaView() {
       </div>
 
       <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_360px]">
-        {/* Calendário */}
+        {/* Calendário (peça principal) */}
         <div className="rounded-lg border bg-card p-4">
-          <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-base font-semibold">
-              {MESES[mes - 1]} {ano}
-            </h2>
-            <div className="flex items-center gap-1">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => irParaMes(Number(hoje.slice(0, 4)), Number(hoje.slice(5, 7)))}
-              >
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <h2 className="text-base font-semibold capitalize">{titulo}</h2>
+            <div className="flex items-center gap-2">
+              <div className="inline-flex rounded-md border p-0.5">
+                {(["dia", "semana", "mes"] as Modo[]).map((m) => (
+                  <button
+                    key={m}
+                    type="button"
+                    onClick={() => setModo(m)}
+                    className={cn(
+                      "rounded px-2.5 py-1 text-xs font-medium capitalize transition-colors",
+                      modo === m
+                        ? "bg-primary text-primary-foreground"
+                        : "text-muted-foreground hover:bg-muted",
+                    )}
+                  >
+                    {m === "mes" ? "Mês" : m}
+                  </button>
+                ))}
+              </div>
+              <Button variant="outline" size="sm" onClick={() => setCursor(hoje)}>
                 Hoje
               </Button>
-              <Button variant="ghost" size="icon" onClick={mesAnterior} aria-label="Mês anterior">
+              <Button variant="ghost" size="icon" onClick={() => navegar(-1)} aria-label="Anterior">
                 <ChevronLeft className="h-4 w-4" />
               </Button>
-              <Button variant="ghost" size="icon" onClick={mesSeguinte} aria-label="Próximo mês">
+              <Button variant="ghost" size="icon" onClick={() => navegar(1)} aria-label="Próximo">
                 <ChevronRight className="h-4 w-4" />
               </Button>
             </div>
           </div>
 
-          <div className="grid grid-cols-7 gap-1 text-center text-[11px] font-medium text-muted-foreground">
-            {DIAS_SEMANA.map((d) => (
-              <div key={d} className="py-1">
-                {d}
-              </div>
-            ))}
-          </div>
-          <div className="mt-1 grid grid-cols-7 gap-1">
-            {celulas.map((dia, idx) => {
-              if (dia == null) return <div key={`b${idx}`} />;
-              const iso = `${ano}-${pad2(mes)}-${pad2(dia)}`;
-              const itensDia = porDia.get(iso) ?? [];
-              const temVencida = itensDia.some((i) => i.statusAgenda === "VENCIDA");
-              const ehHoje = iso === hoje;
-              const selecionado = iso === diaSelecionado;
-              return (
-                <button
-                  key={iso}
-                  type="button"
-                  onClick={() => setDiaSelecionado(iso)}
-                  className={cn(
-                    "flex min-h-[64px] flex-col rounded-md border p-1.5 text-left transition-colors",
-                    selecionado
-                      ? "border-primary ring-1 ring-primary"
-                      : "border-transparent hover:border-border",
-                    ehHoje ? "bg-primary/5" : "bg-muted/30",
-                  )}
-                >
-                  <span
-                    className={cn(
-                      "text-xs font-medium",
-                      ehHoje ? "text-primary" : "text-foreground",
-                    )}
-                  >
-                    {dia}
-                  </span>
-                  {itensDia.length > 0 && (
-                    <span className="mt-auto flex items-center gap-1">
-                      <span
-                        className={cn(
-                          "inline-flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] font-semibold",
-                          temVencida
-                            ? "bg-red-500 text-white"
-                            : "bg-primary/15 text-primary",
-                        )}
-                      >
-                        {itensDia.length}
-                      </span>
-                    </span>
-                  )}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Lista do dia + backlog */}
-        <div className="space-y-4">
-          <div className="rounded-lg border bg-card p-4">
-            <h3 className="text-sm font-semibold capitalize">{tituloDiaSel}</h3>
-            <div className="mt-3 space-y-2">
-              {isLoading && (
-                <p className="text-sm text-muted-foreground">Carregando…</p>
-              )}
-              {!isLoading && itensDoDia.length === 0 && (
-                <p className="text-sm text-muted-foreground">
-                  Nada agendado para este dia.
-                </p>
-              )}
-              {itensDoDia.map((item) => (
-                <ItemAgenda
-                  key={`${item.tipo}-${item.id}`}
-                  item={item}
-                  onConcluir={() => concluir.mutate(item.id)}
-                  onReabrir={() => reabrir.mutate(item.id)}
-                  onEditar={() => {
-                    setTarefaEdit(itemParaTarefa(item));
-                    setNovaTarefa(true);
-                  }}
-                  onExcluir={() => excluir.mutate(item.id)}
-                  onPagar={() => {
-                    setPagoEm(hoje);
-                    setPagarItem(item);
-                  }}
-                />
-              ))}
-            </div>
-          </div>
-
-          {backlog.length > 0 && (
-            <div className="rounded-lg border bg-card p-4">
-              <h3 className="flex items-center gap-2 text-sm font-semibold">
-                <Inbox className="h-4 w-4 text-muted-foreground" />
-                Sem prazo ({backlog.length})
-              </h3>
-              <div className="mt-3 space-y-2">
-                {backlog.map((item) => (
-                  <ItemAgenda
-                    key={`${item.tipo}-${item.id}`}
-                    item={item}
-                    onConcluir={() => concluir.mutate(item.id)}
-                    onReabrir={() => reabrir.mutate(item.id)}
-                    onEditar={() => {
-                      setTarefaEdit(itemParaTarefa(item));
-                      setNovaTarefa(true);
-                    }}
-                    onExcluir={() => excluir.mutate(item.id)}
-                  />
-                ))}
-              </div>
-            </div>
+          {modo === "mes" && (
+            <VisaoMes
+              ano={anoCursor}
+              mes={mesCursor}
+              hoje={hoje}
+              porDia={porDia}
+              onSelecionarDia={(iso) => {
+                setCursor(iso);
+                setModo("dia");
+              }}
+            />
+          )}
+          {modo === "semana" && (
+            <VisaoSemana
+              inicioSemana={inicioSemana}
+              hoje={hoje}
+              porDia={porDia}
+              onSelecionarDia={(iso) => {
+                setCursor(iso);
+                setModo("dia");
+              }}
+            />
+          )}
+          {modo === "dia" && (
+            <VisaoDia
+              dia={cursor}
+              itens={porDia.get(cursor) ?? []}
+              isLoading={isLoading}
+              onConcluir={(item) => concluir.mutate(item.id)}
+              onReabrir={(item) => reabrir.mutate(item.id)}
+              onEditar={abrirEdicao}
+              onExcluir={(item) => excluir.mutate(item.id)}
+              onPagar={abrirPagamento}
+            />
           )}
         </div>
+
+        {/* Painel "A concluir" (fixo) */}
+        <PainelAConcluir
+          items={dataPainel?.itens ?? []}
+          hoje={hoje}
+          fimSemana={fimSemanaHoje}
+          onConcluir={(item) => concluir.mutate(item.id)}
+          onReabrir={(item) => reabrir.mutate(item.id)}
+          onEditar={abrirEdicao}
+          onExcluir={(item) => excluir.mutate(item.id)}
+          onPagar={abrirPagamento}
+        />
       </div>
 
       <DialogTarefa
@@ -426,14 +377,14 @@ export function AgendaView() {
         tarefa={tarefaEdit}
         prazoInicial={prazoInicial}
       />
+      <DialogTarefaRecorrente
+        aberto={novaRecorrente}
+        onOpenChange={setNovaRecorrente}
+        prazoInicial={prazoInicial}
+      />
       <DialogContasFixas aberto={gestaoContas} onOpenChange={setGestaoContas} />
 
-      <Dialog
-        open={!!pagarItem}
-        onOpenChange={(v) => {
-          if (!v) setPagarItem(null);
-        }}
-      >
+      <Dialog open={!!pagarItem} onOpenChange={(v) => { if (!v) setPagarItem(null); }}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
             <DialogTitle>Confirmar pagamento</DialogTitle>
@@ -461,9 +412,7 @@ export function AgendaView() {
                 Uma saída de caixa será gerada automaticamente com essa data.
               </p>
               {pagar.isError && (
-                <p className="text-sm text-destructive">
-                  {(pagar.error as Error).message}
-                </p>
+                <p className="text-sm text-destructive">{(pagar.error as Error).message}</p>
               )}
             </div>
           )}
@@ -482,6 +431,179 @@ export function AgendaView() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+    </div>
+  );
+}
+
+function VisaoMes({
+  ano,
+  mes,
+  hoje,
+  porDia,
+  onSelecionarDia,
+}: {
+  ano: number;
+  mes: number;
+  hoje: string;
+  porDia: Map<string, AgendaItem[]>;
+  onSelecionarDia: (iso: string) => void;
+}) {
+  const ultimoDia = diasNoMes(ano, mes);
+  const primeiroDiaSemana = new Date(ano, mes - 1, 1).getDay();
+  const celulas: Array<number | null> = [
+    ...Array.from({ length: primeiroDiaSemana }, () => null),
+    ...Array.from({ length: ultimoDia }, (_, i) => i + 1),
+  ];
+  return (
+    <>
+      <div className="grid grid-cols-7 gap-1 text-center text-[11px] font-medium text-muted-foreground">
+        {DIAS_SEMANA.map((d) => (
+          <div key={d} className="py-1">{d}</div>
+        ))}
+      </div>
+      <div className="mt-1 grid grid-cols-7 gap-1">
+        {celulas.map((dia, idx) => {
+          if (dia == null) return <div key={`b${idx}`} />;
+          const iso = `${ano}-${pad2(mes)}-${pad2(dia)}`;
+          const itensDia = porDia.get(iso) ?? [];
+          const temVencida = itensDia.some((i) => i.statusAgenda === "VENCIDA");
+          const ehHoje = iso === hoje;
+          return (
+            <button
+              key={iso}
+              type="button"
+              onClick={() => onSelecionarDia(iso)}
+              className={cn(
+                "flex min-h-[64px] flex-col rounded-md border p-1.5 text-left transition-colors hover:border-primary",
+                ehHoje ? "border-primary/60 bg-primary/5" : "border-transparent bg-muted/30",
+              )}
+            >
+              <span className={cn("text-xs font-medium", ehHoje ? "text-primary" : "text-foreground")}>
+                {dia}
+              </span>
+              {itensDia.length > 0 && (
+                <span className="mt-auto flex items-center gap-1">
+                  <span
+                    className={cn(
+                      "inline-flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] font-semibold",
+                      temVencida ? "bg-red-500 text-white" : "bg-primary/15 text-primary",
+                    )}
+                  >
+                    {itensDia.length}
+                  </span>
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+    </>
+  );
+}
+
+function VisaoSemana({
+  inicioSemana,
+  hoje,
+  porDia,
+  onSelecionarDia,
+}: {
+  inicioSemana: string;
+  hoje: string;
+  porDia: Map<string, AgendaItem[]>;
+  onSelecionarDia: (iso: string) => void;
+}) {
+  const dias = Array.from({ length: 7 }, (_, i) => addDiasIso(inicioSemana, i));
+  return (
+    <div className="grid grid-cols-7 gap-1.5">
+      {dias.map((iso) => {
+        const itensDia = porDia.get(iso) ?? [];
+        const ehHoje = iso === hoje;
+        const numeroDia = Number(iso.slice(8, 10));
+        return (
+          <button
+            key={iso}
+            type="button"
+            onClick={() => onSelecionarDia(iso)}
+            className={cn(
+              "flex min-h-[140px] flex-col rounded-md border p-1.5 text-left transition-colors hover:border-primary",
+              ehHoje ? "border-primary/60 bg-primary/5" : "border-border bg-muted/20",
+            )}
+          >
+            <div className="mb-1 text-center text-[10px] text-muted-foreground">
+              {DIAS_SEMANA[weekdayIso(iso)]}
+              <span className={cn("block text-sm font-semibold", ehHoje ? "text-primary" : "text-foreground")}>
+                {numeroDia}
+              </span>
+            </div>
+            <div className="space-y-1">
+              {itensDia.slice(0, 4).map((item) => (
+                <span
+                  key={`${item.tipo}-${item.id}`}
+                  className={cn(
+                    "block truncate rounded px-1.5 py-1 text-[10px] leading-tight",
+                    item.statusAgenda === "VENCIDA"
+                      ? "bg-red-500/15 text-red-700 dark:text-red-300"
+                      : item.statusAgenda === "CONCLUIDA"
+                        ? "bg-emerald-500/15 text-emerald-700 line-through dark:text-emerald-300"
+                        : "bg-primary/10 text-primary",
+                  )}
+                  title={item.titulo}
+                >
+                  {item.titulo}
+                </span>
+              ))}
+              {itensDia.length > 4 && (
+                <span className="block text-[10px] text-muted-foreground">
+                  +{itensDia.length - 4}
+                </span>
+              )}
+            </div>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function VisaoDia({
+  dia,
+  itens,
+  isLoading,
+  onConcluir,
+  onReabrir,
+  onEditar,
+  onExcluir,
+  onPagar,
+}: {
+  dia: string;
+  itens: AgendaItem[];
+  isLoading: boolean;
+  onConcluir: (item: AgendaItem) => void;
+  onReabrir: (item: AgendaItem) => void;
+  onEditar: (item: AgendaItem) => void;
+  onExcluir: (item: AgendaItem) => void;
+  onPagar: (item: AgendaItem) => void;
+}) {
+  return (
+    <div className="space-y-2">
+      {isLoading && <p className="text-sm text-muted-foreground">Carregando…</p>}
+      {!isLoading && itens.length === 0 && (
+        <div className="flex flex-col items-center gap-2 py-10 text-center text-muted-foreground">
+          <Inbox className="h-6 w-6 opacity-40" />
+          <p className="text-sm">Nada agendado para {formatarDiaLongo(dia)}.</p>
+        </div>
+      )}
+      {itens.map((item) => (
+        <ItemAgenda
+          key={`${item.tipo}-${item.id}`}
+          item={item}
+          onConcluir={() => onConcluir(item)}
+          onReabrir={() => onReabrir(item)}
+          onEditar={() => onEditar(item)}
+          onExcluir={() => onExcluir(item)}
+          onPagar={() => onPagar(item)}
+        />
+      ))}
     </div>
   );
 }
@@ -509,144 +631,6 @@ function ChipFiltro({
       {label}
     </button>
   );
-}
-
-function ItemAgenda({
-  item,
-  onConcluir,
-  onReabrir,
-  onEditar,
-  onExcluir,
-  onPagar,
-}: {
-  item: AgendaItem;
-  onConcluir: () => void;
-  onReabrir: () => void;
-  onEditar: () => void;
-  onExcluir: () => void;
-  onPagar?: () => void;
-}) {
-  const ehTarefa = item.tipo === "TAREFA";
-  const concluida = item.statusAgenda === "CONCLUIDA";
-
-  return (
-    <div className="flex items-start gap-2 rounded-md border p-2.5">
-      {ehTarefa ? (
-        <button
-          type="button"
-          onClick={concluida ? onReabrir : onConcluir}
-          aria-label={concluida ? "Reabrir" : "Concluir"}
-          className={cn(
-            "mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded border",
-            concluida
-              ? "border-emerald-500 bg-emerald-500 text-white"
-              : "border-muted-foreground/40 hover:border-primary",
-          )}
-        >
-          {concluida && <Check className="h-3 w-3" />}
-        </button>
-      ) : (
-        <Wallet className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
-      )}
-
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-1.5">
-          <span
-            className={cn(
-              "truncate text-sm font-medium",
-              concluida && "text-muted-foreground line-through",
-            )}
-          >
-            {item.titulo}
-          </span>
-          {ehTarefa && item.visibilidade === "PESSOAL" && (
-            <Badge variant="outline">pessoal</Badge>
-          )}
-          {!ehTarefa && <Badge variant="outline">conta fixa</Badge>}
-        </div>
-        <div className="mt-0.5 flex items-center gap-2 text-xs">
-          <span className={cn("flex items-center gap-1", STATUS_STYLE[item.statusAgenda])}>
-            <CircleDot className="h-3 w-3" />
-            {rotuloStatus(item.statusAgenda)}
-          </span>
-          {item.valorCentavos != null && (
-            <span className="font-medium text-foreground">
-              {formatBRL(item.valorCentavos)}
-            </span>
-          )}
-          {item.descricao && (
-            <span className="truncate text-muted-foreground">· {item.descricao}</span>
-          )}
-        </div>
-      </div>
-
-      {ehTarefa && (
-        <div className="flex shrink-0 gap-0.5">
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7"
-            onClick={onEditar}
-            aria-label="Editar"
-          >
-            <Pencil className="h-3.5 w-3.5" />
-          </Button>
-          {concluida ? (
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7"
-              onClick={onReabrir}
-              aria-label="Reabrir"
-            >
-              <RotateCcw className="h-3.5 w-3.5" />
-            </Button>
-          ) : null}
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7 text-destructive"
-            onClick={onExcluir}
-            aria-label="Excluir"
-          >
-            <Trash2 className="h-3.5 w-3.5" />
-          </Button>
-        </div>
-      )}
-
-      {!ehTarefa && !concluida && onPagar && (
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          className="h-7 w-7 shrink-0 text-emerald-600 hover:bg-emerald-50 hover:text-emerald-700 dark:hover:bg-emerald-950"
-          onClick={onPagar}
-          aria-label="Marcar como paga"
-          title="Marcar como paga"
-        >
-          <CheckCircle2 className="h-4 w-4" />
-        </Button>
-      )}
-    </div>
-  );
-}
-
-function rotuloStatus(status: string): string {
-  switch (status) {
-    case "ABERTA":
-      return "Aberta";
-    case "VENCIDA":
-      return "Vencida";
-    case "CONCLUIDA":
-      return "Concluída";
-    case "CANCELADA":
-      return "Cancelada";
-    default:
-      return status;
-  }
 }
 
 function itemParaTarefa(item: AgendaItem): TarefaEditavel {
