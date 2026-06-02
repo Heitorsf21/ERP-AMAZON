@@ -720,6 +720,88 @@ describe("adsOptimizerService.executeApproved", () => {
     );
   });
 
+  it("normalizes stored mutation state before creating a negative keyword", async () => {
+    mocks.api.createSponsoredProductsNegativeKeywords.mockResolvedValue({ ok: true });
+    mocks.db.adsOptimizationRecommendation.findMany.mockResolvedValue([
+      {
+        ...approvedKeywordRecommendation(),
+        entityType: "SEARCH_TERM",
+        entityId: "SEARCH_TERM:camp-1:benjamin tomada",
+        actionType: "ADD_NEGATIVE_KEYWORD",
+        searchTerm: "benjamin tomada",
+        proposedBidCentavos: null,
+        amazonPayloadJson: JSON.stringify({
+          negativeKeywords: [{
+            campaignId: "camp-1",
+            adGroupId: "ag-1",
+            keywordText: "benjamin tomada",
+            matchType: "NEGATIVE_EXACT",
+            state: "enabled",
+          }],
+        }),
+      },
+    ]);
+
+    const result = await adsOptimizerService.executeApproved(session);
+
+    expect(mocks.api.createSponsoredProductsNegativeKeywords).toHaveBeenCalledWith(
+      mocks.creds,
+      [{
+        campaignId: "camp-1",
+        adGroupId: "ag-1",
+        keywordText: "benjamin tomada",
+        matchType: "NEGATIVE_EXACT",
+        state: "ENABLED",
+      }],
+    );
+    expect(result).toMatchObject({ total: 1, applied: 1, failed: 0, stale: 0 });
+  });
+
+  it("does not mark a search-term exact harvest stale only because the source bid changed", async () => {
+    mocks.api.createSponsoredProductsKeywords.mockResolvedValue({ ok: true });
+    mocks.db.amazonAdsKeyword.findFirst.mockResolvedValue({
+      keywordId: "kw-1",
+      estado: "enabled",
+      bidCentavos: 100,
+    });
+    mocks.db.adsOptimizationRecommendation.findMany.mockResolvedValue([
+      {
+        ...approvedKeywordRecommendation(),
+        entityType: "SEARCH_TERM",
+        entityId: "SEARCH_TERM:camp-1:estojo organizador",
+        actionType: "CREATE_EXACT_KEYWORD",
+        searchTerm: "estojo organizador",
+        currentBidCentavos: 95,
+        proposedBidCentavos: 95,
+        amazonPayloadJson: JSON.stringify({
+          keywords: [{
+            campaignId: "camp-1",
+            adGroupId: "ag-1",
+            keywordText: "estojo organizador",
+            matchType: "EXACT",
+            state: "enabled",
+            bid: 0.95,
+          }],
+        }),
+      },
+    ]);
+
+    const result = await adsOptimizerService.executeApproved(session);
+
+    expect(mocks.api.createSponsoredProductsKeywords).toHaveBeenCalledWith(
+      mocks.creds,
+      [{
+        campaignId: "camp-1",
+        adGroupId: "ag-1",
+        keywordText: "estojo organizador",
+        matchType: "EXACT",
+        state: "ENABLED",
+        bid: 0.95,
+      }],
+    );
+    expect(result).toMatchObject({ total: 1, applied: 1, failed: 0, stale: 0 });
+  });
+
   it("dry-runs an approved recommendation without calling Amazon or consuming approval", async () => {
     const result = await adsOptimizerService.executeApproved(session, { dryRun: true });
 

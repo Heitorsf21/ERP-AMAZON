@@ -1823,7 +1823,14 @@ async function validateRecommendationFresh(
   const blockedReason = getEvidenceBlockedReason(evidence, rec);
   if (blockedReason) return blockedReason;
 
-  if (rec.entityType === "KEYWORD" || rec.keywordId) {
+  const mutatesKeyword =
+    rec.actionType === "PAUSE_KEYWORD" ||
+    (isBidAction(rec.actionType) && Boolean(rec.keywordId));
+  const mutatesTarget =
+    rec.actionType === "PAUSE_TARGET" ||
+    (isBidAction(rec.actionType) && Boolean(rec.targetId));
+
+  if (mutatesKeyword) {
     const keyword = await db.amazonAdsKeyword.findFirst({
       where: { profileId: rec.profileId, keywordId: rec.keywordId ?? rec.entityId },
     });
@@ -1832,6 +1839,7 @@ async function validateRecommendationFresh(
       return `Keyword nÃ£o estÃ¡ ativa (${keyword.estado ?? "sem estado"})`;
     }
     if (
+      isBidAction(rec.actionType) &&
       rec.currentBidCentavos != null &&
       keyword.bidCentavos != null &&
       rec.currentBidCentavos !== keyword.bidCentavos
@@ -1839,7 +1847,7 @@ async function validateRecommendationFresh(
       return `Bid atual mudou de ${rec.currentBidCentavos} para ${keyword.bidCentavos}`;
     }
   }
-  if (rec.entityType === "TARGET" || rec.targetId) {
+  if (mutatesTarget) {
     const target = await db.amazonAdsTarget.findFirst({
       where: { profileId: rec.profileId, targetId: rec.targetId ?? rec.entityId },
     });
@@ -1848,6 +1856,7 @@ async function validateRecommendationFresh(
       return `Target nÃ£o estÃ¡ ativo (${target.estado ?? "sem estado"})`;
     }
     if (
+      isBidAction(rec.actionType) &&
       rec.currentBidCentavos != null &&
       target.bidCentavos != null &&
       rec.currentBidCentavos !== target.bidCentavos
@@ -1966,10 +1975,10 @@ function buildAmazonActionPayload(
     }
   }
   if (rec.actionType === "PAUSE_KEYWORD") {
-    return { keywords: [{ keywordId: rec.keywordId ?? rec.entityId, state: "paused" }] };
+    return { keywords: [{ keywordId: rec.keywordId ?? rec.entityId, state: "PAUSED" }] };
   }
   if (rec.actionType === "PAUSE_TARGET") {
-    return { targetingClauses: [{ targetId: rec.targetId ?? rec.entityId, state: "paused" }] };
+    return { targetingClauses: [{ targetId: rec.targetId ?? rec.entityId, state: "PAUSED" }] };
   }
   if (rec.actionType === "ADD_NEGATIVE_KEYWORD") {
     return {
@@ -1978,7 +1987,7 @@ function buildAmazonActionPayload(
         adGroupId: rec.adGroupId ?? undefined,
         keywordText: rec.searchTerm ?? rec.entityId,
         matchType: "NEGATIVE_EXACT",
-        state: "enabled",
+        state: "ENABLED",
       }],
     };
   }
@@ -1989,7 +1998,7 @@ function buildAmazonActionPayload(
         adGroupId: rec.adGroupId ?? undefined,
         expression: [{ type: "ASIN_SAME_AS", value: rec.searchTerm ?? rec.entityId }],
         expressionType: "MANUAL",
-        state: "enabled",
+        state: "ENABLED",
       }],
     };
   }
@@ -2000,7 +2009,7 @@ function buildAmazonActionPayload(
         adGroupId: rec.adGroupId,
         keywordText: rec.searchTerm ?? rec.entityId,
         matchType: "EXACT",
-        state: "enabled",
+        state: "ENABLED",
         bid: (approvedBidCentavos ?? rec.currentBidCentavos ?? 50) / 100,
       }],
     };
@@ -2012,8 +2021,27 @@ function getApprovedAmazonActionPayload(
   rec: Awaited<ReturnType<typeof db.adsOptimizationRecommendation.findMany>>[number],
 ) {
   const approvedPayload = parseOptionalJson<JsonRecord>(rec.amazonPayloadJson);
-  if (approvedPayload) return approvedPayload;
-  return buildAmazonActionPayload(rec);
+  return normalizeAmazonActionPayload(approvedPayload ?? buildAmazonActionPayload(rec));
+}
+
+function normalizeAmazonActionPayload(payload: JsonRecord) {
+  const normalized: JsonRecord = { ...payload };
+  for (const key of [
+    "keywords",
+    "targetingClauses",
+    "negativeKeywords",
+    "negativeTargetingClauses",
+  ]) {
+    const value = normalized[key];
+    if (!Array.isArray(value)) continue;
+    normalized[key] = value.map((item) => {
+      if (!item || typeof item !== "object" || Array.isArray(item)) return item;
+      const record = item as JsonRecord;
+      if (typeof record.state !== "string") return item;
+      return { ...record, state: record.state.toUpperCase() };
+    });
+  }
+  return normalized;
 }
 
 function normalizeApprovalInput(
@@ -2035,6 +2063,10 @@ function normalizeApprovalInput(
 
 function isDryRunMode() {
   return process.env.ADS_OPTIMIZER_EXECUTION_MODE?.toLowerCase() === "dry_run";
+}
+
+function isBidAction(actionType: string) {
+  return actionType === "INCREASE_BID" || actionType === "DECREASE_BID";
 }
 
 async function dispatchAmazonAction(
