@@ -2,10 +2,22 @@ import { z } from "zod";
 import { handleAuth, ok, erro } from "@/lib/api";
 import { UsuarioRole } from "@/lib/auth";
 import { db } from "@/lib/db";
+import { logger } from "@/lib/logger";
 
 export const dynamic = "force-dynamic";
 
 type Params = { params: Promise<{ id: string }> };
+
+async function sincronizarCustoAusenteSemFalharRequest() {
+  try {
+    const { sincronizarCustoAusente } = await import(
+      "@/modules/notificacoes/service"
+    );
+    await sincronizarCustoAusente();
+  } catch (err) {
+    logger.warn({ err }, "falha ao sincronizar notificacao CUSTO_AUSENTE");
+  }
+}
 
 /**
  * GET /api/produtos/:id/custo-historico
@@ -98,6 +110,7 @@ export const POST = handleAuth(
   }
 
   const r = await reaplicarCustoEmVendas({ produtoId: id });
+  await sincronizarCustoAusenteSemFalharRequest();
   return ok({ ok: true, vendasAtualizadas: r.atualizadas });
 },
 );
@@ -128,6 +141,7 @@ export const DELETE = handleAuth(
     "@/modules/produtos/custo-historico"
   );
   const r = await reaplicarCustoEmVendas({ produtoId: id });
+  await sincronizarCustoAusenteSemFalharRequest();
   return ok({ ok: true, vendasAtualizadas: r.atualizadas });
 },
 );

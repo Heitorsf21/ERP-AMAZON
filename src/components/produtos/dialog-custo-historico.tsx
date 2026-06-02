@@ -55,9 +55,17 @@ type Props = {
   produtoId: string | null;
   aberto: boolean;
   onOpenChange: (open: boolean) => void;
+  valorInicialCentavos?: number | null;
+  onAplicado?: (resultado: { vendasAtualizadas: number }) => void;
 };
 
-export function DialogCustoHistorico({ produtoId, aberto, onOpenChange }: Props) {
+export function DialogCustoHistorico({
+  produtoId,
+  aberto,
+  onOpenChange,
+  valorInicialCentavos,
+  onAplicado,
+}: Props) {
   const qc = useQueryClient();
   const [modo, setModo] = React.useState<Modo>("A_PARTIR_DE_HOJE");
   const [valor, setValor] = React.useState("");
@@ -68,16 +76,30 @@ export function DialogCustoHistorico({ produtoId, aberto, onOpenChange }: Props)
   React.useEffect(() => {
     if (aberto) {
       setModo("A_PARTIR_DE_HOJE");
-      setValor("");
+      setValor(centavosParaInput(valorInicialCentavos ?? null));
       setObservacao("");
     }
-  }, [aberto]);
+  }, [aberto, valorInicialCentavos]);
 
   const { data, isLoading } = useQuery<Resp>({
     queryKey: ["custo-historico", produtoId],
     queryFn: () => fetchJSON<Resp>(`/api/produtos/${produtoId}/custo-historico`),
     enabled: !!produtoId && aberto,
   });
+
+  function invalidarCachesCusto() {
+    qc.invalidateQueries({ queryKey: ["custo-historico", produtoId] });
+    qc.invalidateQueries({ queryKey: ["estoque-produtos"] });
+    qc.invalidateQueries({ queryKey: ["estoque-totais"] });
+    qc.invalidateQueries({ queryKey: ["produtos-resumo-tabela"] });
+    qc.invalidateQueries({ queryKey: ["dashboard-ecommerce-kpis"] });
+    qc.invalidateQueries({ queryKey: ["dashboard-ecommerce-timeline"] });
+    qc.invalidateQueries({ queryKey: ["dashboard-ecommerce-top-produtos"] });
+    qc.invalidateQueries({ queryKey: ["notificacoes"] });
+    qc.invalidateQueries({ queryKey: ["notificacoes-count"] });
+    qc.invalidateQueries({ queryKey: ["notificacoes-popover"] });
+    qc.invalidateQueries({ queryKey: ["alertas"] });
+  }
 
   const aplicar = useMutation({
     mutationFn: async () => {
@@ -105,8 +127,8 @@ export function DialogCustoHistorico({ produtoId, aberto, onOpenChange }: Props)
       toast.success(
         `Vigência aplicada. ${resp.vendasAtualizadas} venda(s) atualizada(s).`,
       );
-      qc.invalidateQueries({ queryKey: ["custo-historico", produtoId] });
-      qc.invalidateQueries({ queryKey: ["produtos"] });
+      invalidarCachesCusto();
+      onAplicado?.(resp);
       setValor("");
       setObservacao("");
     },
@@ -125,8 +147,7 @@ export function DialogCustoHistorico({ produtoId, aberto, onOpenChange }: Props)
     },
     onSuccess: () => {
       toast.success("Vigência removida.");
-      qc.invalidateQueries({ queryKey: ["custo-historico", produtoId] });
-      qc.invalidateQueries({ queryKey: ["produtos"] });
+      invalidarCachesCusto();
     },
   });
 
@@ -330,4 +351,9 @@ export function DialogCustoHistorico({ produtoId, aberto, onOpenChange }: Props)
       </DialogContent>
     </Dialog>
   );
+}
+
+function centavosParaInput(value: number | null): string {
+  if (!value || value <= 0) return "";
+  return (value / 100).toFixed(2);
 }

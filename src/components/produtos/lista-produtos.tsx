@@ -722,7 +722,8 @@ export function ListaProdutos({
   const [dialogCusto, setDialogCusto] = useState<{
     aberto: boolean;
     produtoId: string | null;
-  }>({ aberto: false, produtoId: null });
+    valorInicialCentavos: number | null;
+  }>({ aberto: false, produtoId: null, valorInicialCentavos: null });
   const [listingDiff, setListingDiff] = useState<ListingDiffResponse | null>(null);
 
   const qs = produtoFiltrosToSearchParams(filtrosConsulta).toString();
@@ -961,6 +962,19 @@ export function ListaProdutos({
     onError: (err) =>
       toast.error((err as Error).message ?? "Erro ao atualizar custo"),
   });
+
+  function salvarCustoInline(produtoId: string, custoUnitario: number | null) {
+    if (custoUnitario != null && custoUnitario > 0) {
+      setDialogCusto({
+        aberto: true,
+        produtoId,
+        valorInicialCentavos: custoUnitario,
+      });
+      return;
+    }
+
+    atualizarCusto.mutate({ id: produtoId, custoUnitario: null });
+  }
 
   const syncCatalog = useMutation({
     mutationFn: (produtoId: string) =>
@@ -1434,9 +1448,7 @@ export function ListaProdutos({
                                   produtoId={p.id}
                                   custoUnitario={custo}
                                   disabled={atualizarCusto.isPending}
-                                  onSalvar={(produtoId, custoUnitario) =>
-                                    atualizarCusto.mutate({ id: produtoId, custoUnitario })
-                                  }
+                                  onSalvar={salvarCustoInline}
                                 />
                               </TableCell>
                             )}
@@ -1558,7 +1570,11 @@ export function ListaProdutos({
                                   )}
                                   <DropdownMenuItem
                                     onClick={() =>
-                                      setDialogCusto({ aberto: true, produtoId: p.id })
+                                      setDialogCusto({
+                                        aberto: true,
+                                        produtoId: p.id,
+                                        valorInicialCentavos: null,
+                                      })
                                     }
                                   >
                                     <History className="mr-2 h-4 w-4" />
@@ -1678,8 +1694,15 @@ export function ListaProdutos({
         <DialogCustoHistorico
           aberto={dialogCusto.aberto}
           produtoId={dialogCusto.produtoId}
+          valorInicialCentavos={dialogCusto.valorInicialCentavos}
           onOpenChange={(v) => {
-            if (!v) setDialogCusto({ aberto: false, produtoId: null });
+            if (!v) {
+              setDialogCusto({
+                aberto: false,
+                produtoId: null,
+                valorInicialCentavos: null,
+              });
+            }
           }}
         />
 
@@ -2004,6 +2027,9 @@ function CustoUnitarioInput({
     const proximo = inputParaCentavos(valor);
     if (proximo === custoUnitario) return;
     onSalvar(produtoId, proximo);
+    if (proximo != null && proximo > 0) {
+      setValor(centavosParaInput(custoUnitario));
+    }
   }
 
   return (
