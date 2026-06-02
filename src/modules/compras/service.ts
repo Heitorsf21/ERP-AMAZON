@@ -11,13 +11,19 @@ import {
 } from "./schemas";
 import { StatusPedidoCompra, StatusReposicao } from "@/modules/shared/domain";
 import { whereVendaAmazonContabilizavelEstrito } from "@/modules/vendas/filtros";
+import { resolverPeriodo, PeriodoPreset } from "@/lib/periodo";
 import { addDays, subDays } from "date-fns";
 
 const COBERTURA_DIAS = 60;
 const URGENTE_DIAS = 15;
 
 export const comprasService = {
-  async listar(filtros: { status?: string }) {
+  async listar(filtros: {
+    status?: string;
+    de?: Date;
+    ate?: Date;
+    fornecedorId?: string;
+  }) {
     return comprasRepository.listar(filtros);
   },
 
@@ -225,7 +231,8 @@ export const comprasService = {
     });
   },
 
-  async totais() {
-    return comprasRepository.totais();
+  async totais(periodo?: { de: Date; ate: Date }) {
+    const intervalo = periodo ?? resolverPeriodo(PeriodoPreset.TRINTA_DIAS);
+    return comprasRepository.totais(intervalo);
   },
 };

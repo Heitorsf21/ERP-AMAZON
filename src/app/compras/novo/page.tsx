@@ -24,6 +24,7 @@ import {
 } from "@/components/ui/table";
 import { fetchJSON } from "@/lib/fetcher";
 import { formatBRL } from "@/lib/money";
+import { SugestorReposicao } from "@/components/compras/sugestor-reposicao";
 
 const itemSchema = z.object({
   produtoId: z.string().min(1, "Produto obrigatório"),
@@ -166,6 +167,10 @@ export default function NovoPedidoPage() {
             </div>
           </div>
         </div>
+
+        <SugestorReposicao
+          onAdicionar={(novos) => novos.forEach((item) => append(item))}
+        />
 
         {/* Itens */}
         <div className="rounded-xl border bg-card p-5">
