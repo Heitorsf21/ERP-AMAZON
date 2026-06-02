@@ -87,4 +87,20 @@ describe("orderItemsFromOrderSummary — ItemPrice como total da linha", () => {
 
     expect(items[0]?.ItemPrice?.Amount).toBe("100.00");
   });
+  it("preserva quantityOrdered=0 sem inventar venda unitaria", () => {
+    const items = orderItemsFromOrderSummary({
+      orderItems: [
+        {
+          sellerSku: "MFS-0039",
+          quantityOrdered: 0,
+          product: {
+            price: { unitPrice: { amount: "71.97", currencyCode: "BRL" } },
+          },
+        },
+      ],
+    } as never);
+
+    expect(items[0]?.QuantityOrdered).toBe(0);
+    expect(items[0]?.ItemPrice).toBeUndefined();
+  });
 });

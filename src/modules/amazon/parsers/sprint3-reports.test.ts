@@ -22,6 +22,23 @@ describe("Sprint 3 Amazon report parsers", () => {
     });
   });
 
+  it("preserva quantity=0 no ALL_ORDERS para a ingestao ignorar a linha", () => {
+    const rows = parseAllOrdersTsv(
+      [
+        "amazon-order-id\tpurchase-date\torder-status\tsales-channel\tfulfillment-channel\tsku\tquantity\titem-price",
+        "701-0000000-0000000\t2026-06-02T17:54:25Z\tPending\tAmazon.com.br\tAFN\tMFS-0039\t0\t71.97",
+      ].join("\n"),
+    );
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      amazonOrderId: "701-0000000-0000000",
+      sku: "MFS-0039",
+      quantity: 0,
+      itemPriceCentavos: 7197,
+    });
+  });
+
   it("parses FBA reimbursements TSV with normalized headers and money", () => {
     const input = [
       "reimbursement-id\tcase-id\tapproval-date\tsku\tfnsku\tasin\treason\tamount-total\tquantity-reimbursed-total\tcurrency-unit",

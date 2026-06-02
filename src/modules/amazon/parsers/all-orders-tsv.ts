@@ -43,6 +43,14 @@ function parseDateOrNull(value: string | undefined): Date | null {
   return Number.isFinite(t) ? new Date(t) : null;
 }
 
+function parseQuantity(value: string | undefined): number {
+  if (value == null || value.trim() === "") return 1;
+  const n = Number(value.trim().replace(",", "."));
+  if (!Number.isFinite(n)) return 0;
+  const quantity = Math.trunc(n);
+  return quantity > 0 ? quantity : 0;
+}
+
 export function parseAllOrdersTsv(input: Buffer | string): AllOrdersTsvRow[] {
   // Remove BOM se presente.
   let text = typeof input === "string" ? input : input.toString("utf8");
@@ -93,7 +101,7 @@ export function parseAllOrdersTsv(input: Buffer | string): AllOrdersTsvRow[] {
       sku,
       asin: (cols[I.asin] ?? "").trim() || null,
       productName: (cols[I.productName] ?? "").trim() || null,
-      quantity: Math.max(1, Number((cols[I.quantity] ?? "1").trim()) || 1),
+      quantity: parseQuantity(cols[I.quantity]),
       itemPriceCentavos: parseAmountCentavos(cols[I.itemPrice]),
       itemTaxCentavos: parseAmountCentavos(cols[I.itemTax]),
       shippingPriceCentavos: parseAmountCentavos(cols[I.shippingPrice]),
