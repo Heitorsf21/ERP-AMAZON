@@ -12,8 +12,10 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { ProductThumb } from "@/components/ui/product-thumb";
 import { fetchJSON } from "@/lib/fetcher";
 import { formatBRL } from "@/lib/money";
+import { resolverImagemProduto } from "@/lib/amazon-images";
 import { cn } from "@/lib/utils";
 import { classificarAcos } from "./classificacao-acos";
 
@@ -34,6 +36,8 @@ type LinhaSku = {
   vendasAmazonCentavos: number;
   vendasOrganicasCentavos: number;
   tacos: number | null;
+  imagemUrl: string | null;
+  amazonImagemUrl: string | null;
 };
 
 type ColunaSort =
@@ -135,13 +139,19 @@ export function TabelaPorSku({ de, ate }: { de: string; ate: string }) {
         <TableBody>
           {ordenadas.map((l) => {
             const classif = classificarAcos(l.acos);
+            const imgSrc = resolverImagemProduto(l.amazonImagemUrl, l.asin, l.imagemUrl);
             return (
               <TableRow key={l.sku}>
                 <TableCell>
-                  <div className="text-sm font-medium">{l.sku}</div>
-                  {l.asin && (
-                    <div className="text-xs text-muted-foreground">{l.asin}</div>
-                  )}
+                  <div className="flex items-center gap-2.5">
+                    <ProductThumb src={imgSrc} alt={l.sku} size={40} />
+                    <div>
+                      <div className="text-sm font-medium">{l.sku}</div>
+                      {l.asin && (
+                        <div className="text-xs text-muted-foreground">{l.asin}</div>
+                      )}
+                    </div>
+                  </div>
                 </TableCell>
                 <TableCell className="text-right text-sm tabular-nums">
                   {formatBRL(l.gastoCentavos)}
