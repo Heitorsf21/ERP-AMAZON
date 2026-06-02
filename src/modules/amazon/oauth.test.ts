@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { assinarState, montarAuthorizationUrl, verificarState } from "./oauth";
+import {
+  assinarState,
+  montarAuthorizationUrl,
+  trocarCodePorRefreshToken,
+  verificarState,
+} from "./oauth";
 
 const SECRET = "x".repeat(48);
 
@@ -44,5 +49,27 @@ describe("montarAuthorizationUrl", () => {
       draft: false,
     });
     expect(url).not.toContain("version=beta");
+  });
+});
+
+describe("trocarCodePorRefreshToken", () => {
+  const creds = { clientId: "cid", clientSecret: "sec", redirectUri: "https://app/cb" };
+
+  it("retorna refresh/access token no sucesso", async () => {
+    const fakeFetch = async () =>
+      new Response(JSON.stringify({ refresh_token: "RT", access_token: "AT", expires_in: 3600 }), { status: 200 });
+    const r = await trocarCodePorRefreshToken("CODE", creds, fakeFetch as typeof fetch);
+    expect(r).toEqual({ refreshToken: "RT", accessToken: "AT", expiresIn: 3600 });
+  });
+
+  it("lança quando a Amazon responde erro", async () => {
+    const fakeFetch = async () =>
+      new Response(JSON.stringify({ error: "invalid_grant" }), { status: 400 });
+    await expect(trocarCodePorRefreshToken("CODE", creds, fakeFetch as typeof fetch)).rejects.toThrow();
+  });
+
+  it("lança quando falta refresh_token na resposta", async () => {
+    const fakeFetch = async () => new Response(JSON.stringify({ access_token: "AT" }), { status: 200 });
+    await expect(trocarCodePorRefreshToken("CODE", creds, fakeFetch as typeof fetch)).rejects.toThrow();
   });
 });

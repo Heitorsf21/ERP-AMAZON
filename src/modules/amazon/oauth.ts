@@ -66,3 +66,40 @@ export function montarAuthorizationUrl(opts: {
   if (opts.draft) url.searchParams.set("version", "beta");
   return url.toString();
 }
+
+const LWA_TOKEN_URL = "https://api.amazon.com/auth/o2/token";
+
+/**
+ * Troca o `spapi_oauth_code` recebido no callback por um refresh_token (LWA,
+ * grant_type=authorization_code). `fetchImpl` é injetável para teste. Lança em
+ * 4xx/5xx ou quando a resposta não traz refresh_token/access_token.
+ */
+export async function trocarCodePorRefreshToken(
+  code: string,
+  creds: { clientId: string; clientSecret: string; redirectUri: string },
+  fetchImpl: typeof fetch = fetch,
+): Promise<{ refreshToken: string; accessToken: string; expiresIn: number }> {
+  const resp = await fetchImpl(LWA_TOKEN_URL, {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded;charset=UTF-8" },
+    body: new URLSearchParams({
+      grant_type: "authorization_code",
+      code,
+      redirect_uri: creds.redirectUri,
+      client_id: creds.clientId,
+      client_secret: creds.clientSecret,
+    }),
+  });
+  const payload = (await resp.json().catch(() => ({}))) as Record<string, unknown>;
+  if (!resp.ok) {
+    throw new Error(`LWA authorization_code error ${resp.status}: ${String(payload.error ?? "")}`);
+  }
+  if (typeof payload.refresh_token !== "string" || typeof payload.access_token !== "string") {
+    throw new Error("LWA: resposta sem refresh_token/access_token");
+  }
+  return {
+    refreshToken: payload.refresh_token,
+    accessToken: payload.access_token,
+    expiresIn: typeof payload.expires_in === "number" ? payload.expires_in : 3600,
+  };
+}
