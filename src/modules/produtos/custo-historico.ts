@@ -59,7 +59,7 @@ export async function resolverCustoUnitario(
   // Fallback: Produto.custoUnitario atual
   const produto = await client.produto.findUnique({
     where: { id: produtoId },
-    select: { custoUnitario: true },
+    select: { empresaId: true, custoUnitario: true },
   });
   return produto?.custoUnitario && produto.custoUnitario > 0
     ? produto.custoUnitario
@@ -369,7 +369,7 @@ export async function reaplicarCustoEmVendas(opts?: {
 async function skusDoProduto(produtoId: string): Promise<string[]> {
   const produto = await db.produto.findUnique({
     where: { id: produtoId },
-    select: { sku: true },
+    select: { empresaId: true, sku: true },
   });
   return produto ? [produto.sku] : [];
 }

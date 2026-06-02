@@ -11,16 +11,109 @@ export type TipoNotificacao =
   | "LIQUIDACAO_ATRASADA"
   | "CUSTO_AUSENTE";
 
+type NovaNotif = {
+  tipo: string;
+  titulo: string;
+  descricao: string;
+  linkRef?: string;
+  dedupeKey: string;
+};
+
+type ResultadoSincronizacaoCustoAusente = {
+  pendentes: number;
+  criada: boolean;
+  atualizada: boolean;
+  resolvida: boolean;
+};
+
+const CUSTO_AUSENTE_TIPO = "CUSTO_AUSENTE";
+
+async function upsertNotificacaoPorDedupe(
+  n: NovaNotif,
+): Promise<"criada" | "atualizada"> {
+  const existente = await db.notificacao.findFirst({
+    where: { dedupeKey: n.dedupeKey },
+  });
+
+  if (existente) {
+    await db.notificacao.update({
+      where: { id: existente.id },
+      data: {
+        titulo: n.titulo,
+        descricao: n.descricao,
+        linkRef: n.linkRef,
+        lida: false,
+      },
+    });
+    return "atualizada";
+  }
+
+  await db.notificacao.create({ data: n });
+  return "criada";
+}
+
+async function listarSkusComVendasSemCusto(desde: Date): Promise<string[]> {
+  const grupos = await db.vendaAmazon.groupBy({
+    by: ["sku"],
+    where: whereVendaAmazonContabilizavelEstrito({
+      dataVenda: { gte: desde },
+      OR: [
+        { custoUnitarioCentavos: null },
+        { custoUnitarioCentavos: { lte: 0 } },
+      ],
+    }),
+    _count: { id: true },
+  });
+
+  return grupos
+    .slice()
+    .sort((a, b) => (b._count.id ?? 0) - (a._count.id ?? 0))
+    .map((g) => g.sku);
+}
+
+export async function sincronizarCustoAusente(
+  desde = subDays(new Date(), 30),
+): Promise<ResultadoSincronizacaoCustoAusente> {
+  const skusSemCusto = await listarSkusComVendasSemCusto(desde);
+
+  await db.notificacao.updateMany({
+    where: { tipo: CUSTO_AUSENTE_TIPO, lida: false },
+    data: { lida: true },
+  });
+
+  if (skusSemCusto.length === 0) {
+    return { pendentes: 0, criada: false, atualizada: false, resolvida: true };
+  }
+
+  const produtos = await db.produto.findMany({
+    where: { sku: { in: skusSemCusto } },
+    select: { sku: true, nome: true },
+  });
+  const produtoPorSku = new Map(produtos.map((p) => [p.sku, p]));
+  const listaSkus = skusSemCusto
+    .slice(0, 5)
+    .map((sku) => produtoPorSku.get(sku)?.sku ?? sku)
+    .join(", ");
+
+  const resultado = await upsertNotificacaoPorDedupe({
+    tipo: CUSTO_AUSENTE_TIPO,
+    titulo: `${skusSemCusto.length} produto${skusSemCusto.length > 1 ? "s" : ""} sem custo cadastrado`,
+    descricao: `Margem e lucro nao calculados para: ${listaSkus}`,
+    linkRef: "/produtos",
+    dedupeKey: `${CUSTO_AUSENTE_TIPO}:${format(startOfDay(new Date()), "yyyy-MM-dd")}`,
+  });
+
+  return {
+    pendentes: skusSemCusto.length,
+    criada: resultado === "criada",
+    atualizada: resultado === "atualizada",
+    resolvida: false,
+  };
+}
+
 export const notificacaoService = {
   async gerarNotificacoes(): Promise<{ criadas: number; verificadas: number }> {
     const hoje = format(new Date(), "yyyy-MM-dd");
-    type NovaNotif = {
-      tipo: string;
-      titulo: string;
-      descricao: string;
-      linkRef?: string;
-      dedupeKey: string;
-    };
     const candidatas: NovaNotif[] = [];
 
     // 1. Estoque crítico (< 15 dias de vendas)
@@ -131,27 +224,7 @@ export const notificacaoService = {
     }
 
     // 5. Produtos com vendas mas sem custo unitário
-    const skusComVendas = [...vendasPorSku.keys()];
-    const semCusto = await db.produto.findMany({
-      where: {
-        sku: { in: skusComVendas },
-        custoUnitario: null,
-        ativo: true,
-      },
-      select: { sku: true, nome: true },
-      take: 5,
-    });
-
-    if (semCusto.length > 0) {
-      const listaSkus = semCusto.map((p) => p.sku).join(", ");
-      candidatas.push({
-        tipo: "CUSTO_AUSENTE",
-        titulo: `${semCusto.length} produto${semCusto.length > 1 ? "s" : ""} sem custo cadastrado`,
-        descricao: `Margem e lucro não calculados para: ${listaSkus}`,
-        linkRef: "/produtos",
-        dedupeKey: `CUSTO_AUSENTE:${format(startOfDay(new Date()), "yyyy-MM-dd")}`,
-      });
-    }
+    const custoAusente = await sincronizarCustoAusente(desde30d);
 
     // 6. Campanha de Ads com ACoS > 30%
     const inicioSemana = subDays(new Date(), 7);
@@ -187,7 +260,14 @@ export const notificacaoService = {
       }
     }
 
-    return { criadas, verificadas: candidatas.length };
+    if (custoAusente.criada) {
+      criadas++;
+    }
+
+    return {
+      criadas,
+      verificadas: candidatas.length + (custoAusente.pendentes > 0 ? 1 : 0),
+    };
   },
 
   async listar(soNaoLidas?: boolean, limit?: number) {
