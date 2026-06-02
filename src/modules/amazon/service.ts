@@ -278,7 +278,10 @@ export function montarCredenciais(
 /** App-level creds (client_id/secret) — globais, do app no Developer Console. */
 export async function getAppCredentials(): Promise<{ clientId: string; clientSecret: string }> {
   const cfg = await getAmazonConfig();
-  return { clientId: cfg.amazon_client_id, clientSecret: cfg.amazon_client_secret };
+  return {
+    clientId: cfg.amazon_client_id ?? "",
+    clientSecret: cfg.amazon_client_secret ?? "",
+  };
 }
 
 /**
