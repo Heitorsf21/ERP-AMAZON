@@ -284,6 +284,24 @@ export async function getAppCredentials(): Promise<{ clientId: string; clientSec
   };
 }
 
+export async function getOAuthAppCredentials(): Promise<{
+  clientId: string;
+  clientSecret: string;
+}> {
+  const oauthClientId = process.env.AMAZON_OAUTH_LWA_CLIENT_ID?.trim();
+  const oauthClientSecret = process.env.AMAZON_OAUTH_LWA_CLIENT_SECRET?.trim();
+  if (oauthClientId || oauthClientSecret) {
+    if (!oauthClientId || !oauthClientSecret) {
+      throw new Error(
+        "AMAZON_OAUTH_LWA_CLIENT_ID e AMAZON_OAUTH_LWA_CLIENT_SECRET devem ser definidos juntos.",
+      );
+    }
+    return { clientId: oauthClientId, clientSecret: oauthClientSecret };
+  }
+
+  return getAppCredentials();
+}
+
 /**
  * Resolve as credenciais SP-API da conta ATIVA de uma empresa (filtro explícito
  * de empresaId — AmazonAccount é GLOBAL_MODEL, não auto-filtrado). Decifra o
@@ -296,7 +314,7 @@ export async function resolverCredenciaisDaConta(empresaId: string): Promise<SPA
   if (!conta?.refreshTokenEnc) {
     throw new Error(`[amazon] empresa ${empresaId} sem conta Amazon conectada`);
   }
-  const app = await getAppCredentials();
+  const app = await getOAuthAppCredentials();
   return montarCredenciais(app, {
     refreshToken: decryptConfigValue(conta.refreshTokenEnc) ?? "",
     marketplaceId: conta.marketplaceId,

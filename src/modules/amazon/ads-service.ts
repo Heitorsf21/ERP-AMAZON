@@ -15,6 +15,7 @@
  */
 
 import { db } from "@/lib/db";
+import { getEmpresaId } from "@/lib/tenant-context";
 import {
   decryptConfigValue,
   encryptConfigValue,
@@ -38,6 +39,15 @@ export const ADS_REQUIRED_CONFIG_KEYS = [
   "amazon_ads_refresh_token",
 ] as const;
 
+export type AmazonAdsCredentialsOptions = {
+  requireProfile?: boolean;
+};
+
+export function canUseLegacyAdsFallback(empresaId?: string | null): boolean {
+  if (!empresaId) return true;
+  return empresaId === (process.env.WORKER_EMPRESA_ID || "mundofs");
+}
+
 export async function getAmazonAdsConfig(): Promise<Record<string, string>> {
   const registros = await db.configuracaoSistema.findMany({
     where: { chave: { in: [...ADS_CONFIG_KEYS] } },
@@ -54,6 +64,45 @@ export async function getAmazonAdsConfig(): Promise<Record<string, string>> {
   config.amazon_ads_endpoint ||= process.env.AMAZON_ADS_ENDPOINT ?? "";
 
   return config;
+}
+
+export async function getAmazonAdsAppCredentials(config?: Record<string, string>): Promise<{
+  clientId: string;
+  clientSecret: string;
+}> {
+  const cfg = config ?? (await getAmazonAdsConfig());
+  const oauthClientId = process.env.AMAZON_ADS_OAUTH_CLIENT_ID?.trim();
+  const oauthClientSecret = process.env.AMAZON_ADS_OAUTH_CLIENT_SECRET?.trim();
+  if (oauthClientId || oauthClientSecret) {
+    if (!oauthClientId || !oauthClientSecret) {
+      throw new Error(
+        "AMAZON_ADS_OAUTH_CLIENT_ID e AMAZON_ADS_OAUTH_CLIENT_SECRET devem ser definidos juntos.",
+      );
+    }
+    return { clientId: oauthClientId, clientSecret: oauthClientSecret };
+  }
+
+  const envClientId = process.env.AMAZON_ADS_CLIENT_ID?.trim();
+  const envClientSecret = process.env.AMAZON_ADS_CLIENT_SECRET?.trim();
+  if (envClientId || envClientSecret) {
+    if (!envClientId || !envClientSecret) {
+      throw new Error(
+        "AMAZON_ADS_CLIENT_ID e AMAZON_ADS_CLIENT_SECRET devem ser definidos juntos.",
+      );
+    }
+    return { clientId: envClientId, clientSecret: envClientSecret };
+  }
+
+  const clientId = cfg.amazon_ads_client_id || "";
+  const clientSecret = cfg.amazon_ads_client_secret || "";
+
+  if (!clientId || !clientSecret) {
+    throw new Error(
+      "Credenciais do app Amazon Ads ausentes (clientId/clientSecret).",
+    );
+  }
+
+  return { clientId, clientSecret };
 }
 
 export function isAmazonAdsConfigured(config: Record<string, string>) {
@@ -86,8 +135,10 @@ export async function saveAmazonAdsConfig(
 
 export function buildAdsCredentials(
   config: Record<string, string>,
+  options: AmazonAdsCredentialsOptions = {},
 ): AdsAPICredentials | null {
   if (!isAmazonAdsConfigured(config)) return null;
+  if (options.requireProfile && !config.amazon_ads_profile_id) return null;
   return {
     clientId: config.amazon_ads_client_id as string,
     clientSecret: config.amazon_ads_client_secret as string,
@@ -97,7 +148,45 @@ export function buildAdsCredentials(
   };
 }
 
-export async function getAmazonAdsCredentials(): Promise<AdsAPICredentials | null> {
+export async function resolverAdsCredenciaisDaConta(
+  empresaId: string,
+  options: AmazonAdsCredentialsOptions = {},
+): Promise<AdsAPICredentials | null> {
+  const conta = await db.amazonAccount.findFirst({
+    where: { empresaId, ativa: true },
+    orderBy: { updatedAt: "desc" },
+  });
+  if (!conta?.adsRefreshTokenEnc) return null;
+  if (options.requireProfile && !conta.adsProfileId) return null;
+
+  const refreshToken = decryptConfigValue(conta.adsRefreshTokenEnc) ?? "";
+  if (!refreshToken) return null;
+
   const config = await getAmazonAdsConfig();
-  return buildAdsCredentials(config);
+  const app = await getAmazonAdsAppCredentials(config);
+  return {
+    clientId: app.clientId,
+    clientSecret: app.clientSecret,
+    refreshToken,
+    profileId: conta.adsProfileId || undefined,
+    endpoint:
+      conta.adsEndpoint ||
+      config.amazon_ads_endpoint ||
+      process.env.AMAZON_ADS_ENDPOINT ||
+      undefined,
+  };
+}
+
+export async function getAmazonAdsCredentials(
+  options: AmazonAdsCredentialsOptions = {},
+): Promise<AdsAPICredentials | null> {
+  const empresaId = getEmpresaId();
+  if (empresaId) {
+    const contaCreds = await resolverAdsCredenciaisDaConta(empresaId, options);
+    if (contaCreds) return contaCreds;
+    if (!canUseLegacyAdsFallback(empresaId)) return null;
+  }
+
+  const config = await getAmazonAdsConfig();
+  return buildAdsCredentials(config, options);
 }

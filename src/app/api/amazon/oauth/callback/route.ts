@@ -5,7 +5,7 @@ import { erro, handle } from "@/lib/api";
 import { requireRole, UsuarioRole } from "@/lib/auth";
 import { encryptConfigValue } from "@/lib/crypto";
 import { trocarCodePorRefreshToken, verificarState } from "@/modules/amazon/oauth";
-import { getAppCredentials } from "@/modules/amazon/service";
+import { getOAuthAppCredentials } from "@/modules/amazon/service";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -32,7 +32,7 @@ export const GET = handle(async (req: Request) => {
   }
 
   try {
-    const app = await getAppCredentials();
+    const app = await getOAuthAppCredentials();
     const redirectUri = `${process.env.APP_URL ?? ""}/api/amazon/oauth/callback`;
     const { refreshToken } = await trocarCodePorRefreshToken(code, {
       clientId: app.clientId,

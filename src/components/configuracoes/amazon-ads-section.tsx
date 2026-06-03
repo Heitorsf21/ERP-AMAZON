@@ -9,6 +9,7 @@ import {
   Megaphone,
   RefreshCw,
   ShieldCheck,
+  Unplug,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
@@ -28,6 +29,15 @@ import { fetchJSON } from "@/lib/fetcher";
 type ConfigResponse = {
   config: Record<string, string>;
   configurado: boolean;
+  modoManualPermitido: boolean;
+  conta: {
+    configurado: boolean;
+    oauthConectado: boolean;
+    status: string;
+    profileId: string | null;
+    endpoint: string | null;
+    conectadoEm: string | null;
+  } | null;
 };
 
 type Profile = {
@@ -121,6 +131,35 @@ export function AmazonAdsSection() {
       toast.error(err instanceof Error ? err.message : "Erro ao listar profiles."),
   });
 
+  const selecionarProfile = useMutation({
+    mutationFn: (profileId: string) =>
+      fetchJSON("/api/amazon/ads/profile", {
+        method: "POST",
+        body: JSON.stringify({ profileId }),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["amazon-ads-config"] });
+      toast.success("Profile Ads selecionado.");
+    },
+    onError: (err) =>
+      toast.error(
+        err instanceof Error ? err.message : "Erro ao selecionar profile Ads.",
+      ),
+  });
+
+  const desconectarOAuth = useMutation({
+    mutationFn: () =>
+      fetchJSON("/api/amazon/ads/oauth/desconectar", { method: "POST" }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["amazon-ads-config"] });
+      toast.success("OAuth Ads desconectado.");
+    },
+    onError: (err) =>
+      toast.error(
+        err instanceof Error ? err.message : "Erro ao desconectar OAuth Ads.",
+      ),
+  });
+
   function toggleVisivel(key: string) {
     setVisiveis((prev) => {
       const next = new Set(prev);
@@ -129,6 +168,14 @@ export function AmazonAdsSection() {
       return next;
     });
   }
+
+  const oauthConectado = !!configData?.conta?.oauthConectado;
+  const profileAtivo =
+    configData?.conta?.profileId || formValues.amazon_ads_profile_id || "";
+  const podeListarProfiles =
+    oauthConectado ||
+    (!!formValues.amazon_ads_client_id && !!formValues.amazon_ads_refresh_token);
+  const modoManualPermitido = configData?.modoManualPermitido ?? true;
 
   return (
     <Card>
@@ -172,6 +219,42 @@ export function AmazonAdsSection() {
           </ol>
         </div>
 
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-background p-3">
+          <div className="space-y-1">
+            <p className="text-sm font-medium text-foreground">OAuth Ads</p>
+            <p className="text-xs text-muted-foreground">
+              Status: {configData?.conta?.status ?? "PENDENTE"}
+              {configData?.conta?.profileId
+                ? ` · Profile ${configData.conta.profileId}`
+                : ""}
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant={oauthConectado ? "outline" : "default"}
+              onClick={() => window.location.assign("/api/amazon/ads/oauth/iniciar")}
+              disabled={isLoading}
+            >
+              <ShieldCheck className="mr-2 h-4 w-4" />
+              {oauthConectado ? "Reconectar OAuth" : "Conectar OAuth"}
+            </Button>
+            {oauthConectado && (
+              <Button
+                variant="outline"
+                onClick={() => desconectarOAuth.mutate()}
+                disabled={desconectarOAuth.isPending || isLoading}
+              >
+                {desconectarOAuth.isPending ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Unplug className="mr-2 h-4 w-4" />
+                )}
+                Desconectar Ads
+              </Button>
+            )}
+          </div>
+        </div>
+
         {isLoading ? (
           <div className="space-y-3">
             {Array.from({ length: 5 }).map((_, i) => (
@@ -196,6 +279,7 @@ export function AmazonAdsSection() {
                         [campo.key]: e.target.value,
                       }))
                     }
+                    disabled={!modoManualPermitido}
                   />
                   {campo.secret && (
                     <button
@@ -229,17 +313,22 @@ export function AmazonAdsSection() {
             <div className="flex flex-wrap gap-2">
               {profiles.map((p) => {
                 const ativo =
-                  String(p.profileId) === formValues.amazon_ads_profile_id;
+                  String(p.profileId) === profileAtivo;
                 return (
                   <button
                     key={p.profileId}
                     type="button"
-                    onClick={() =>
-                      setFormValues((prev) => ({
-                        ...prev,
-                        amazon_ads_profile_id: String(p.profileId),
-                      }))
-                    }
+                    onClick={() => {
+                      const id = String(p.profileId);
+                      if (oauthConectado) selecionarProfile.mutate(id);
+                      else {
+                        setFormValues((prev) => ({
+                          ...prev,
+                          amazon_ads_profile_id: id,
+                        }));
+                      }
+                    }}
+                    disabled={selecionarProfile.isPending}
                     className={`rounded-md border px-3 py-1.5 text-xs transition ${
                       ativo
                         ? "border-primary bg-primary/10 text-primary"
@@ -266,7 +355,7 @@ export function AmazonAdsSection() {
         <div className="flex flex-wrap gap-3">
           <Button
             onClick={() => salvar.mutate(formValues)}
-            disabled={salvar.isPending || isLoading}
+            disabled={salvar.isPending || isLoading || !modoManualPermitido}
           >
             {salvar.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
             Salvar credenciais Ads
@@ -277,8 +366,7 @@ export function AmazonAdsSection() {
             disabled={
               carregarProfiles.isPending ||
               isLoading ||
-              !formValues.amazon_ads_client_id ||
-              !formValues.amazon_ads_refresh_token
+              !podeListarProfiles
             }
           >
             {carregarProfiles.isPending ? (

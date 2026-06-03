@@ -10,6 +10,7 @@
  */
 
 import { db } from "@/lib/db";
+import { currentEmpresaIdOrDefault } from "@/lib/tenant-context";
 import {
   createSpAdvertisedProductReport,
   downloadAdsReport,
@@ -72,6 +73,36 @@ function startOfUTCDay(date: Date): Date {
   const d = new Date(date);
   d.setUTCHours(0, 0, 0, 0);
   return d;
+}
+
+function requireAdsProfileId(creds: AdsAPICredentials): string {
+  if (!creds.profileId) {
+    throw new Error("Amazon Ads profileId ausente para report sync.");
+  }
+  return String(creds.profileId);
+}
+
+function scopedAdsCfgKey(base: string, profileId: string): string {
+  return `${base}:${currentEmpresaIdOrDefault()}:${profileId}`;
+}
+
+function adsReportKeys(creds: AdsAPICredentials) {
+  const profileId = requireAdsProfileId(creds);
+  return {
+    pending: scopedAdsCfgKey(ADS_REPORT_PENDING_KEY, profileId),
+    start: scopedAdsCfgKey(ADS_REPORT_PENDING_START_KEY, profileId),
+    end: scopedAdsCfgKey(ADS_REPORT_PENDING_END_KEY, profileId),
+  };
+}
+
+function adsBackfillKeys(creds: AdsAPICredentials) {
+  const profileId = requireAdsProfileId(creds);
+  return {
+    pending: scopedAdsCfgKey(ADS_BACKFILL_PENDING_KEY, profileId),
+    cursor: scopedAdsCfgKey(ADS_BACKFILL_CURSOR_KEY, profileId),
+    start: scopedAdsCfgKey(ADS_BACKFILL_PENDING_START_KEY, profileId),
+    end: scopedAdsCfgKey(ADS_BACKFILL_PENDING_END_KEY, profileId),
+  };
 }
 
 // ── Lifecycle generico ─────────────────────────────────────────────────────
@@ -138,6 +169,7 @@ async function stepAdsReportLifecycle(
 
 async function purgeHourlyForCoveredDays(
   rows: ReturnType<typeof parseSpAdvertisedProductRows>,
+  profileId: string,
 ): Promise<number> {
   if (rows.length === 0) return 0;
   // Daily report representa verdade T-1+. Purgamos hourly nos dias que o report
@@ -148,7 +180,7 @@ async function purgeHourlyForCoveredDays(
     const inicio = new Date(`${diaIso}T00:00:00.000Z`);
     const fim = new Date(`${diaIso}T23:59:59.999Z`);
     const res = await db.amazonAdsMetricaHoraria.deleteMany({
-      where: { horaInicio: { gte: inicio, lte: fim } },
+      where: { profileId, horaInicio: { gte: inicio, lte: fim } },
     });
     purgadas += res.count;
   }
@@ -158,9 +190,12 @@ async function purgeHourlyForCoveredDays(
 async function upsertAdsRows(
   rows: ReturnType<typeof parseSpAdvertisedProductRows>,
   syncedAt: Date,
+  creds: AdsAPICredentials,
 ) {
   let novas = 0;
   let atualizadas = 0;
+  const profileId = requireAdsProfileId(creds);
+  const empresaId = currentEmpresaIdOrDefault();
 
   // 1) Garante AmazonAdsCampanha (uma por campaignId vista no batch).
   const campanhasMap = new Map<
@@ -176,21 +211,35 @@ async function upsertAdsRows(
     }
   }
 
+  const campanhaIdByCampaign = new Map<string, string>();
   for (const c of campanhasMap.values()) {
-    await db.amazonAdsCampanha.upsert({
-      where: { campaignId: c.campaignId },
-      create: {
-        campaignId: c.campaignId,
-        profileId: "", // preenchido por sync separado /sp/campaigns/list (futuro)
-        nome: c.nome,
-        ultimaSync: syncedAt,
-        payloadJson: JSON.stringify({ derivedFromReport: true }),
-      },
-      update: {
-        nome: c.nome,
-        ultimaSync: syncedAt,
-      },
+    const existing = await db.amazonAdsCampanha.findFirst({
+      where: { empresaId, profileId, campaignId: c.campaignId },
+      select: { id: true },
     });
+    if (!existing) {
+      const created = await db.amazonAdsCampanha.create({
+        data: {
+          empresaId,
+          profileId,
+          campaignId: c.campaignId,
+          nome: c.nome,
+          ultimaSync: syncedAt,
+          payloadJson: JSON.stringify({ derivedFromReport: true }),
+        },
+        select: { id: true },
+      });
+      campanhaIdByCampaign.set(c.campaignId, created.id);
+    } else {
+      await db.amazonAdsCampanha.update({
+        where: { id: existing.id },
+        data: {
+          nome: c.nome,
+          ultimaSync: syncedAt,
+        },
+      });
+      campanhaIdByCampaign.set(c.campaignId, existing.id);
+    }
   }
 
   // 2) Resolve produtoId por SKU (single round-trip).
@@ -208,16 +257,11 @@ async function upsertAdsRows(
   // 3) Upsert metricas diarias.
   for (const r of rows) {
     const produtoId = r.sku ? produtoIdBySku.get(r.sku) ?? null : null;
-    const where = {
-      data_campaignId_adGroupId_asin_sku: {
-        data: r.data,
-        campaignId: r.campaignId,
-        adGroupId: r.adGroupId,
-        asin: r.asin,
-        sku: r.sku,
-      },
-    };
+    const campanhaId = campanhaIdByCampaign.get(r.campaignId) ?? null;
     const data = {
+      empresaId,
+      profileId,
+      campanhaId,
       data: r.data,
       campaignId: r.campaignId,
       adGroupId: r.adGroupId,
@@ -234,8 +278,17 @@ async function upsertAdsRows(
       payloadJson: JSON.stringify(r.payload),
     };
     try {
-      const existing = await db.amazonAdsMetricaDiaria.findUnique({
-        where: where as never,
+      const existing = await db.amazonAdsMetricaDiaria.findFirst({
+        where: {
+          empresaId,
+          profileId,
+          data: r.data,
+          campaignId: r.campaignId,
+          adGroupId: r.adGroupId,
+          asin: r.asin,
+          sku: r.sku,
+        },
+        select: { id: true },
       });
       if (!existing) {
         await db.amazonAdsMetricaDiaria.create({ data });
@@ -252,7 +305,7 @@ async function upsertAdsRows(
     }
   }
 
-  const horariasPurgadas = await purgeHourlyForCoveredDays(rows);
+  const horariasPurgadas = await purgeHourlyForCoveredDays(rows, profileId);
   return { criadas: novas, atualizadas, horariasPurgadas };
 }
 
@@ -294,10 +347,11 @@ export async function runAmazonAdsReportSync(
   creds: AdsAPICredentials,
   payload: AdsSyncPayload = {},
 ) {
+  const keys = adsReportKeys(creds);
   const end = startOfUTCDay(addDays(new Date(), -1)); // ate ontem (Amazon nao tem hoje fechado)
   const start = startOfUTCDay(addDays(end, -(payload.diasAtras ?? 30) + 1));
 
-  const pendingId = await getCfg(ADS_REPORT_PENDING_KEY);
+  const pendingId = await getCfg(keys.pending);
 
   let lifecycle: LifecycleResult;
   try {
@@ -314,9 +368,9 @@ export async function runAmazonAdsReportSync(
   }
 
   if (lifecycle.status === "PENDING_NEW") {
-    await setCfg(ADS_REPORT_PENDING_KEY, lifecycle.reportId);
-    await setCfg(ADS_REPORT_PENDING_START_KEY, start.toISOString());
-    await setCfg(ADS_REPORT_PENDING_END_KEY, end.toISOString());
+    await setCfg(keys.pending, lifecycle.reportId);
+    await setCfg(keys.start, start.toISOString());
+    await setCfg(keys.end, end.toISOString());
     return {
       ok: true,
       pending: true,
@@ -335,9 +389,9 @@ export async function runAmazonAdsReportSync(
   }
 
   if (lifecycle.status === "FAILED") {
-    await delCfg(ADS_REPORT_PENDING_KEY);
-    await delCfg(ADS_REPORT_PENDING_START_KEY);
-    await delCfg(ADS_REPORT_PENDING_END_KEY);
+    await delCfg(keys.pending);
+    await delCfg(keys.start);
+    await delCfg(keys.end);
     return {
       ok: false,
       reportId: lifecycle.reportId,
@@ -346,11 +400,11 @@ export async function runAmazonAdsReportSync(
     };
   }
 
-  const stats = await upsertAdsRows(lifecycle.rows, new Date());
+  const stats = await upsertAdsRows(lifecycle.rows, new Date(), creds);
   const alertas = await dispararAlertasAcos(new Date());
-  await delCfg(ADS_REPORT_PENDING_KEY);
-  await delCfg(ADS_REPORT_PENDING_START_KEY);
-  await delCfg(ADS_REPORT_PENDING_END_KEY);
+  await delCfg(keys.pending);
+  await delCfg(keys.start);
+  await delCfg(keys.end);
   return {
     ok: true,
     reportId: lifecycle.reportId,
@@ -361,11 +415,12 @@ export async function runAmazonAdsReportSync(
 }
 
 export async function runAmazonAdsBackfill(creds: AdsAPICredentials) {
+  const keys = adsBackfillKeys(creds);
   const today = startOfUTCDay(new Date());
   const earliestEnd = addDays(today, -1);
 
   // Cursor representa o INICIO da proxima janela a buscar (ja processei daqui pra frente).
-  const cursorIso = await getCfg(ADS_BACKFILL_CURSOR_KEY);
+  const cursorIso = await getCfg(keys.cursor);
   const cursor = cursorIso
     ? new Date(cursorIso)
     : addDays(today, -ADS_BACKFILL_DEFAULT_HISTORY_DAYS);
@@ -379,9 +434,9 @@ export async function runAmazonAdsBackfill(creds: AdsAPICredentials) {
     };
   }
 
-  const pendingId = await getCfg(ADS_BACKFILL_PENDING_KEY);
-  const pendingStartIso = await getCfg(ADS_BACKFILL_PENDING_START_KEY);
-  const pendingEndIso = await getCfg(ADS_BACKFILL_PENDING_END_KEY);
+  const pendingId = await getCfg(keys.pending);
+  const pendingStartIso = await getCfg(keys.start);
+  const pendingEndIso = await getCfg(keys.end);
 
   // Janela: do cursor (inicio) ate cursor+window, capando em earliestEnd.
   const start = pendingStartIso ? new Date(pendingStartIso) : startOfUTCDay(cursor);
@@ -399,9 +454,9 @@ export async function runAmazonAdsBackfill(creds: AdsAPICredentials) {
   });
 
   if (lifecycle.status === "PENDING_NEW") {
-    await setCfg(ADS_BACKFILL_PENDING_KEY, lifecycle.reportId);
-    await setCfg(ADS_BACKFILL_PENDING_START_KEY, start.toISOString());
-    await setCfg(ADS_BACKFILL_PENDING_END_KEY, end.toISOString());
+    await setCfg(keys.pending, lifecycle.reportId);
+    await setCfg(keys.start, start.toISOString());
+    await setCfg(keys.end, end.toISOString());
     return {
       ok: true,
       pending: true,
@@ -421,9 +476,9 @@ export async function runAmazonAdsBackfill(creds: AdsAPICredentials) {
   }
 
   if (lifecycle.status === "FAILED") {
-    await delCfg(ADS_BACKFILL_PENDING_KEY);
-    await delCfg(ADS_BACKFILL_PENDING_START_KEY);
-    await delCfg(ADS_BACKFILL_PENDING_END_KEY);
+    await delCfg(keys.pending);
+    await delCfg(keys.start);
+    await delCfg(keys.end);
     return {
       ok: false,
       reportId: lifecycle.reportId,
@@ -432,14 +487,14 @@ export async function runAmazonAdsBackfill(creds: AdsAPICredentials) {
     };
   }
 
-  const stats = await upsertAdsRows(lifecycle.rows, new Date());
+  const stats = await upsertAdsRows(lifecycle.rows, new Date(), creds);
 
   // Avanca cursor para o dia seguinte ao fim da janela processada.
   const novoCursor = addDays(end, 1);
-  await setCfg(ADS_BACKFILL_CURSOR_KEY, novoCursor.toISOString());
-  await delCfg(ADS_BACKFILL_PENDING_KEY);
-  await delCfg(ADS_BACKFILL_PENDING_START_KEY);
-  await delCfg(ADS_BACKFILL_PENDING_END_KEY);
+  await setCfg(keys.cursor, novoCursor.toISOString());
+  await delCfg(keys.pending);
+  await delCfg(keys.start);
+  await delCfg(keys.end);
 
   return {
     ok: true,

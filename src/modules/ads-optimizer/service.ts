@@ -594,7 +594,7 @@ export const adsOptimizerService = {
 };
 
 async function requireAdsCredentials() {
-  const creds = await getAmazonAdsCredentials();
+  const creds = await getAmazonAdsCredentials({ requireProfile: true });
   if (!creds?.profileId) {
     throw new Error("Amazon Ads nÃ£o estÃ¡ configurado com profileId");
   }

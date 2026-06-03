@@ -17,6 +17,7 @@
  */
 
 import { db } from "@/lib/db";
+import { currentEmpresaIdOrDefault } from "@/lib/tenant-context";
 import {
   parseMarketingStreamMessage,
   type MarketingStreamParsedRow,
@@ -67,6 +68,7 @@ function extractNotification(payload: StreamIngestPayload): AmazonSqsNotificatio
 async function upsertMarketingStreamRows(rows: MarketingStreamParsedRow[]) {
   let novas = 0;
   let atualizadas = 0;
+  const empresaId = currentEmpresaIdOrDefault();
 
   const skus = Array.from(
     new Set(rows.map((r) => r.sku).filter((s): s is string => !!s)),
@@ -84,6 +86,7 @@ async function upsertMarketingStreamRows(rows: MarketingStreamParsedRow[]) {
     const eventTime = r.eventoTime;
 
     const data = {
+      empresaId,
       horaInicio: r.horaInicio,
       dataset: r.dataset,
       profileId: r.profileId,
@@ -113,6 +116,8 @@ async function upsertMarketingStreamRows(rows: MarketingStreamParsedRow[]) {
       // aceita null e o indice unico SQL tolera null != null em multiplas rows.
       const existing = await db.amazonAdsMetricaHoraria.findFirst({
         where: {
+          empresaId,
+          profileId: r.profileId,
           horaInicio: r.horaInicio,
           dataset: r.dataset,
           campaignId: r.campaignId,

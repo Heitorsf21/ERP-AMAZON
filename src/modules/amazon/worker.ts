@@ -361,7 +361,7 @@ async function processJob(
     case TipoAmazonSyncJob.TRAFFIC_SYNC:
       return runTrafficSync(sp!, payload);
     case TipoAmazonSyncJob.AMAZON_ADS_REPORT_SYNC: {
-      const adsCreds = await getAmazonAdsCredentials();
+      const adsCreds = await getAmazonAdsCredentials({ requireProfile: true });
       if (!adsCreds) {
         return {
           ok: false,
@@ -375,7 +375,7 @@ async function processJob(
     case TipoAmazonSyncJob.AMAZON_ADS_STREAM_INGEST:
       return runMarketingStreamIngest(payload);
     case TipoAmazonSyncJob.AMAZON_ADS_BACKFILL: {
-      const adsCreds = await getAmazonAdsCredentials();
+      const adsCreds = await getAmazonAdsCredentials({ requireProfile: true });
       if (!adsCreds) {
         return {
           ok: false,

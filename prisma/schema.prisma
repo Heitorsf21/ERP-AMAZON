@@ -51,6 +51,16 @@ model AmazonAccount {
   tokenExpiresAt  DateTime?
   lwaScopes       String?
   conectadoEm     DateTime?
+  // Amazon Ads OAuth por seller. App credential (client_id/secret) continua
+  // global; estes campos armazenam o grant individual do anunciante.
+  adsRefreshTokenEnc String?
+  adsAccessTokenEnc  String?
+  adsTokenExpiresAt  DateTime?
+  adsProfileId       String?
+  adsEndpoint        String?
+  adsConectadoEm     DateTime?
+  // PENDENTE | PROFILE_REQUIRED | ATIVA | ERRO.
+  adsStatus          String   @default("PENDENTE")
   ativa         Boolean  @default(true)
   // PENDENTE | ATIVA | ERRO — gate do worker (só itera contas ATIVA com credenciais).
   status        String   @default("PENDENTE")
@@ -1413,7 +1423,7 @@ model AmazonSkuTrafficDaily {
 model AmazonAdsCampanha {
   id             String   @id @default(cuid())
   empresaId      String?
-  campaignId     String   @unique
+  campaignId     String
   profileId      String
   nome           String
   estado         String?
@@ -1426,6 +1436,7 @@ model AmazonAdsCampanha {
 
   metricasDiarias AmazonAdsMetricaDiaria[]
 
+  @@unique([empresaId, profileId, campaignId], map: "AmazonAdsCampanha_empresa_profile_campaign_key")
   @@index([profileId])
   @@index([estado])
 }
@@ -1433,6 +1444,8 @@ model AmazonAdsCampanha {
 model AmazonAdsMetricaDiaria {
   id             String   @id @default(cuid())
   empresaId      String?
+  profileId      String?
+  campanhaId     String?
   data           DateTime
   campaignId     String
   adGroupId      String?
@@ -1450,10 +1463,12 @@ model AmazonAdsMetricaDiaria {
   criadoEm       DateTime @default(now())
   atualizadoEm   DateTime @updatedAt
 
-  campanha AmazonAdsCampanha @relation(fields: [campaignId], references: [campaignId], onDelete: Cascade)
+  campanha AmazonAdsCampanha? @relation(fields: [campanhaId], references: [id], onDelete: Cascade)
   produto  Produto?          @relation(fields: [produtoId], references: [id], onDelete: SetNull)
 
-  @@unique([data, campaignId, adGroupId, asin, sku])
+  @@unique([empresaId, profileId, data, campaignId, adGroupId, asin, sku], map: "AmazonAdsDaily_empresa_profile_key")
+  @@index([profileId, data], map: "AmazonAdsDaily_profile_data_idx")
+  @@index([campanhaId], map: "AmazonAdsDaily_campanha_idx")
   @@index([sku, data])
   @@index([asin, data])
   @@index([data])
@@ -1493,7 +1508,7 @@ model AmazonAdsMetricaHoraria {
 
   produto Produto? @relation(fields: [produtoId], references: [id], onDelete: SetNull)
 
-  @@unique([horaInicio, dataset, campaignId, adGroupId, adId, asin, sku])
+  @@unique([empresaId, profileId, horaInicio, dataset, campaignId, adGroupId, adId, asin, sku], map: "AmazonAdsHourly_empresa_profile_key")
   @@index([horaInicio])
   @@index([profileId, horaInicio])
   @@index([sku, horaInicio])
