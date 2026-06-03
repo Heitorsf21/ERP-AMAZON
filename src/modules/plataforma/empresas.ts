@@ -9,13 +9,15 @@ import { gerarTokenConvite, expiracaoConvite } from "./convite";
 export type CriarEmpresaInput = {
   nome: string;
   slug: string;
-  admin: { nome: string; email: string };
+  admin: { nome: string; email: string; senha?: string };
 };
 
 export type CriarEmpresaResult = {
   empresaId: string;
   adminId: string;
-  rawToken: string;
+  // null quando a senha foi definida direto pelo superadmin (sem convite).
+  rawToken: string | null;
+  definiuSenha: boolean;
 };
 
 /** Hash bcrypt de bytes aleatórios — senha inutilizável até o admin definir a real. */
@@ -32,8 +34,12 @@ export async function criarEmpresa(input: CriarEmpresaInput): Promise<CriarEmpre
   if (!slugCheck.ok) throw new Error(`SLUG_INVALIDO: ${slugCheck.motivo}`);
 
   const email = input.admin.email.toLowerCase().trim();
+  const senha = input.admin.senha?.trim();
+  const definiuSenha = !!senha;
   const { rawToken, tokenHash } = gerarTokenConvite();
-  const senhaHash = await hashAleatorio();
+  // Senha definida pelo superadmin → admin entra direto. Senão, hash aleatório
+  // inutilizável + convite por e-mail para o admin definir a própria senha.
+  const senhaHash = senha ? await bcrypt.hash(senha, 10) : await hashAleatorio();
 
   return db.$transaction(async (tx) => {
     // Empresa: model GLOBAL — nao precisa de contexto de tenant.
@@ -58,11 +64,18 @@ export async function criarEmpresa(input: CriarEmpresaInput): Promise<CriarEmpre
           },
         });
 
-        await tx.conviteUsuario.create({
-          data: { usuarioId: admin.id, tokenHash, expiresAt: expiracaoConvite() },
-        });
+        if (!definiuSenha) {
+          await tx.conviteUsuario.create({
+            data: { usuarioId: admin.id, tokenHash, expiresAt: expiracaoConvite() },
+          });
+        }
 
-        return { empresaId: empresa.id, adminId: admin.id, rawToken };
+        return {
+          empresaId: empresa.id,
+          adminId: admin.id,
+          rawToken: definiuSenha ? null : rawToken,
+          definiuSenha,
+        };
       },
     );
   });
