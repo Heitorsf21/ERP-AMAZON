@@ -14,6 +14,8 @@ const PUBLIC_PATHS = [
   "/login",
   "/esqueci-senha",
   "/redefinir-senha",
+  // Politica de privacidade publica (URL exigida na submissao do app Amazon/DPP).
+  "/privacidade",
   "/api/auth/login",
   "/api/auth/logout",
   "/api/auth/2fa/verificar",
