@@ -710,12 +710,26 @@ function resumirCategoriasTaxaEstimada(vendas: VendaDashboard[]) {
 // settled ainda), aplica a estimativa Comissao+FBA. Quando settle, taxa real
 // vem do FINANCES_SYNC e sobrescreve no banco — nao mexemos no banco aqui.
 // Parcelamento NAO e estimado — vem do real quando aplicavel.
+// Vendas que ainda NÃO liquidaram na Amazon (taxa real ausente, taxas<=0) e que
+// portanto recebem estimativa de taxas IN-MEMORY no dashboard: PENDENTE e DEFERRED.
+// RELEASED já liquidou (taxa final); REEMBOLSADO não leva estimativa de fee.
+// (Antes só PENDENTE era estimado → vendas DEFERRED sem taxa entravam com ZERO
+// taxa de marketplace, inflando lucro/margem do dashboard vs o card da venda.)
+const STATUS_TAXA_NAO_LIQUIDADA = new Set(["PENDENTE", "DEFERRED"]);
+export function precisaEstimativaTaxas(v: {
+  taxasCentavos: number;
+  statusFinanceiro?: string;
+}): boolean {
+  return (
+    v.taxasCentavos <= 0 &&
+    STATUS_TAXA_NAO_LIQUIDADA.has(v.statusFinanceiro ?? "")
+  );
+}
+
 async function enriquecerComEstimativas(
   vendas: VendaDashboard[],
 ): Promise<VendaDashboard[]> {
-  const candidatas = vendas.filter(
-    (v) => v.taxasCentavos <= 0 && v.statusFinanceiro === "PENDENTE",
-  );
+  const candidatas = vendas.filter(precisaEstimativaTaxas);
   if (candidatas.length === 0) return vendas;
 
   const skusSet = new Set(candidatas.map((v) => v.sku));
@@ -734,7 +748,7 @@ async function enriquecerComEstimativas(
 
   return Promise.all(
     vendas.map(async (v) => {
-      if (v.taxasCentavos > 0 || v.statusFinanceiro !== "PENDENTE") return v;
+      if (!precisaEstimativaTaxas(v)) return v;
       const produto = produtoBySku.get(v.sku);
       if (!produto) return v;
       const bruto = v.valorBrutoCentavos ?? v.precoUnitarioCentavos * v.quantidade;
