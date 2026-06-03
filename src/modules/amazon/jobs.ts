@@ -316,6 +316,16 @@ const SCHEDULES: Array<{
     dedupeKeyOverride: (now) =>
       `${TipoAmazonSyncJob.WHATSAPP_ESTOQUE_RESUMO}:${dataLocalSP(now)}`,
   },
+  // DPP #12 — purga de PII (payload bruto de pedido) 1x/dia. Handler roda global
+  // (superadmin), então 1 execução já cobre todas as empresas; dedupe por data
+  // local evita reprocessar no mesmo dia.
+  {
+    tipo: TipoAmazonSyncJob.PII_RETENTION_PURGE,
+    intervalMs: 24 * 60 * 60_000,
+    priority: 3,
+    dedupeKeyOverride: (now) =>
+      `${TipoAmazonSyncJob.PII_RETENTION_PURGE}:${dataLocalSP(now)}`,
+  },
 ];
 
 export async function enqueueAmazonSyncJob(

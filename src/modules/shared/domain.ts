@@ -216,6 +216,8 @@ export const TipoAmazonSyncJob = {
   AMAZON_FBA_PROMO_EXPIRY_CHECK: "AMAZON_FBA_PROMO_EXPIRY_CHECK",
   // Resumo diario de estoque via WhatsApp (WAHA) — gate por data local 10:00
   WHATSAPP_ESTOQUE_RESUMO: "WHATSAPP_ESTOQUE_RESUMO",
+  // DPP #12 — purga de PII: esvazia payload bruto de pedido apos N dias (default 30)
+  PII_RETENTION_PURGE: "PII_RETENTION_PURGE",
 } as const;
 export type TipoAmazonSyncJob =
   (typeof TipoAmazonSyncJob)[keyof typeof TipoAmazonSyncJob];

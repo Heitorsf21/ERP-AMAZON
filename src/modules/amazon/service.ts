@@ -1544,6 +1544,25 @@ function getOrderFulfillmentChannel(order: SPOrder): string | null {
   );
 }
 
+// DPP #1 (F15/F43): antes de persistir o payload bruto do pedido, remove os
+// containers documentados de PII de comprador da Orders API. Hoje a Orders API é
+// chamada SEM esses dados (minimização já forte — F48), então isto é defesa em
+// profundidade: garante que, mesmo se a resposta passar a incluí-los, nunca caem
+// em AmazonOrderRaw.payloadJson. (A purga PII_RETENTION_PURGE complementa, ≤30d.)
+const PII_ORDER_KEYS = [
+  "BuyerInfo",
+  "ShippingAddress",
+  "DefaultShipFromLocationAddress",
+  "BuyerTaxInformation",
+] as const;
+
+function stripBuyerPII<T>(order: T): T {
+  if (!order || typeof order !== "object") return order;
+  const clone: Record<string, unknown> = { ...(order as Record<string, unknown>) };
+  for (const k of PII_ORDER_KEYS) delete clone[k];
+  return clone as T;
+}
+
 async function upsertAmazonOrderRaw(
   creds: SPAPICredentials,
   order: SPOrder,
@@ -1558,7 +1577,7 @@ async function upsertAmazonOrderRaw(
     lastUpdatedTime: getOrderLastUpdatedTime(order),
     marketplaceId: getOrderMarketplace(order, creds.marketplaceId),
     fulfillmentChannel: getOrderFulfillmentChannel(order),
-    payloadJson: asJson(order) ?? "{}",
+    payloadJson: asJson(stripBuyerPII(order)) ?? "{}",
     ultimaSyncEm: new Date(),
   };
 

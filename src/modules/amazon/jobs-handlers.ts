@@ -8,7 +8,7 @@
  * Cada handler é chamado pelo worker em src/modules/amazon/worker.ts.
  */
 import { db } from "@/lib/db";
-import { cursorKeyParaEmpresa } from "@/lib/tenant-context";
+import { cursorKeyParaEmpresa, runWithTenant } from "@/lib/tenant-context";
 import {
   getCatalogItem,
   getInventorySummaries,
@@ -463,6 +463,37 @@ async function delCfg(chaveRaw: string): Promise<void> {
   await db.configuracaoSistema
     .delete({ where: { chave } })
     .catch(() => undefined);
+}
+
+// DPP #12 (F14/F43): purga de PII. Esvazia o payloadJson BRUTO de pedidos com mais
+// de N dias (default 30, config `pii_retention_days`). O dado de negócio permanece
+// nos modelos normalizados (VendaAmazon) — só o payload cru, que PODERIA conter PII
+// de comprador, é descartado. Roda sob SUPERADMIN (sem filtro de tenant) para cobrir
+// TODAS as empresas + linhas legadas (empresaId null) numa só passada. Idempotente.
+const PII_RETENTION_DEFAULT_DAYS = 30;
+
+export async function runPiiRetentionPurge() {
+  const cfg = await getCfg("pii_retention_days");
+  const dias = Number(cfg) > 0 ? Number(cfg) : PII_RETENTION_DEFAULT_DAYS;
+  const cutoff = addDays(new Date(), -dias);
+  const vazio = (process.env.DATABASE_URL ?? "").startsWith("postgres") ? {} : "{}";
+
+  const res = await runWithTenant(
+    { empresaId: null, isSuperAdmin: true, source: "system" },
+    () =>
+      db.amazonOrderRaw.updateMany({
+        where: {
+          itensProcessados: true,
+          OR: [
+            { lastUpdatedTime: { lt: cutoff } },
+            { lastUpdatedTime: null, criadoEm: { lt: cutoff } },
+          ],
+        },
+        data: { payloadJson: vazio as never },
+      }),
+  );
+
+  return { ok: true, dias, purgados: res.count };
 }
 
 export async function syncOrdersHistoryReport(creds: SPAPICredentials) {

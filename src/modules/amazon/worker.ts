@@ -38,6 +38,7 @@ import {
   syncOrdersHistoryReport,
   syncSettlementReports,
   reconciliarRecebimentosAmazon,
+  runPiiRetentionPurge,
 } from "@/modules/amazon/jobs-handlers";
 import { subDays } from "date-fns";
 import {
@@ -279,7 +280,8 @@ async function processJob(
     tipo !== TipoAmazonSyncJob.REVIEWS_DISCOVERY &&
     tipo !== TipoAmazonSyncJob.REVIEWS_SEND &&
     tipo !== TipoAmazonSyncJob.AMAZON_ADS_STREAM_INGEST &&
-    tipo !== TipoAmazonSyncJob.WHATSAPP_ESTOQUE_RESUMO;
+    tipo !== TipoAmazonSyncJob.WHATSAPP_ESTOQUE_RESUMO &&
+    tipo !== TipoAmazonSyncJob.PII_RETENTION_PURGE;
 
   // F02: resolve as credenciais SP-API pela CONTA da empresa do contexto (grant
   // OAuth cifrado por seller). Fallback para a config global enquanto a conta não
@@ -408,6 +410,8 @@ async function processJob(
       return runAmazonFbaPromoExpiryCheck();
     case TipoAmazonSyncJob.WHATSAPP_ESTOQUE_RESUMO:
       return runWhatsappEstoqueResumo({ tipo: "DIARIO" });
+    case TipoAmazonSyncJob.PII_RETENTION_PURGE:
+      return runPiiRetentionPurge();
     default:
       throw new Error(`Tipo de job Amazon desconhecido: ${tipo}`);
   }

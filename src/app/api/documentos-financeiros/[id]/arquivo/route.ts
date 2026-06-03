@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { logger } from "@/lib/logger";
 import { requireRole, UsuarioRole } from "@/lib/auth";
 import { resolveFileServeHeaders } from "@/lib/file-serving";
+import { auditLog } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
 
@@ -76,6 +77,16 @@ export async function GET(req: Request, { params }: Params) {
       doc.nomeArquivo,
       download,
     );
+
+    // DPP #7 (F16): trilha de acesso a documento financeiro (PII/fiscal — NF/boleto
+    // com CNPJ/dados de fornecedor). Registra quem leu o quê. Nunca lança.
+    await auditLog({
+      session,
+      req,
+      acao: download ? "DOWNLOAD" : "VIEW",
+      entidade: "DocumentoFinanceiro",
+      entidadeId: id,
+    });
 
     // Cria uma cópia em ArrayBuffer "puro" (sem SharedArrayBuffer) para o
     // tipo BodyInit aceitar — evita warnings com Buffer/Uint8Array<ArrayBufferLike>.
