@@ -168,7 +168,7 @@ export function ListaContas() {
       qc.invalidateQueries({ queryKey: ["saldo"] });
       toast.success("Conta removida");
     },
-    onError: () => toast.error("Erro ao remover conta"),
+    onError: (err) => toast.error((err as Error).message ?? "Erro ao remover conta"),
   });
 
   const reverter = useMutation({
@@ -179,7 +179,8 @@ export function ListaContas() {
       qc.invalidateQueries({ queryKey: ["saldo"] });
       toast.success("Pagamento revertido");
     },
-    onError: () => toast.error("Erro ao reverter pagamento"),
+    onError: (err) =>
+      toast.error((err as Error).message ?? "Erro ao reverter pagamento"),
   });
 
   const abas: Aba[] = ["ABERTA", "VENCIDA", "PAGA", "TODAS"];

@@ -10,11 +10,19 @@ import {
   Inbox,
   RotateCw,
   Trash2,
+  Undo2,
   X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
@@ -45,6 +53,14 @@ type Movimentacao = {
   origem: string;
   motivoAjuste: string | null;
   categoria: { id: string; nome: string; cor: string | null };
+  contaPaga: {
+    id: string;
+    descricao: string;
+    status: string;
+    vencimento: string;
+    pagoEm: string | null;
+    valor: number;
+  } | null;
 };
 
 type Filtros = {
@@ -89,6 +105,8 @@ export function ListaMovimentacoes() {
   const [filtros, setFiltros] = React.useState<Filtros>(filtrosIniciais);
   const [expandidos, setExpandidos] = React.useState<Set<string>>(new Set());
   const [colapsado, setColapsado] = React.useState(false);
+  const [movimentacaoContaParaRemover, setMovimentacaoContaParaRemover] =
+    React.useState<Movimentacao | null>(null);
 
   const params = new URLSearchParams();
   for (const [k, v] of Object.entries(filtros)) if (v) params.set(k, v);
@@ -121,7 +139,37 @@ export function ListaMovimentacoes() {
       qc.invalidateQueries({ queryKey: ["saldo"] });
       toast.success("Movimentação removida");
     },
-    onError: () => toast.error("Erro ao remover movimentação"),
+    onError: (err) =>
+      toast.error((err as Error).message ?? "Erro ao remover movimentação"),
+  });
+
+  const reverterContaPaga = useMutation({
+    mutationFn: (contaId: string) =>
+      fetchJSON(`/api/contas/${contaId}/reverter`, { method: "POST" }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["movimentacoes"] });
+      qc.invalidateQueries({ queryKey: ["saldo"] });
+      qc.invalidateQueries({ queryKey: ["contas"] });
+      qc.invalidateQueries({ queryKey: ["contas-totais-mes"] });
+      toast.success("Pagamento revertido");
+    },
+    onError: (err) =>
+      toast.error((err as Error).message ?? "Erro ao reverter pagamento"),
+  });
+
+  const removerContaPaga = useMutation({
+    mutationFn: (contaId: string) =>
+      fetchJSON(`/api/contas/${contaId}`, { method: "DELETE" }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["movimentacoes"] });
+      qc.invalidateQueries({ queryKey: ["saldo"] });
+      qc.invalidateQueries({ queryKey: ["contas"] });
+      qc.invalidateQueries({ queryKey: ["contas-totais-mes"] });
+      setMovimentacaoContaParaRemover(null);
+      toast.success("Conta paga removida");
+    },
+    onError: (err) =>
+      toast.error((err as Error).message ?? "Erro ao remover conta paga"),
   });
 
   const filtrosAtivos = React.useMemo(() => {
@@ -342,11 +390,47 @@ export function ListaMovimentacoes() {
                       {formatBRL(m.valor)}
                     </TableCell>
                     <TableCell onClick={(e) => e.stopPropagation()}>
-                      {m.origem !== OrigemMovimentacao.CONTA_PAGA && (
+                      {m.origem === OrigemMovimentacao.CONTA_PAGA ? (
+                        <div className="flex items-center justify-end gap-1">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            title={
+                              m.contaPaga
+                                ? "Reverter pagamento"
+                                : "Conta vinculada nao encontrada"
+                            }
+                            disabled={!m.contaPaga || reverterContaPaga.isPending}
+                            onClick={() => {
+                              if (m.contaPaga) {
+                                reverterContaPaga.mutate(m.contaPaga.id);
+                              }
+                            }}
+                            className="text-warning hover:bg-warning/10"
+                          >
+                            <Undo2 className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            title={
+                              m.contaPaga
+                                ? "Remover conta paga"
+                                : "Conta vinculada nao encontrada"
+                            }
+                            disabled={!m.contaPaga || removerContaPaga.isPending}
+                            onClick={() => setMovimentacaoContaParaRemover(m)}
+                            className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      ) : (
                         <Button
                           variant="ghost"
                           size="icon"
                           onClick={() => remover.mutate(m.id)}
+                          disabled={remover.isPending}
                         >
                           <Trash2 className="h-4 w-4" />
                         </Button>
@@ -374,6 +458,12 @@ export function ListaMovimentacoes() {
                               {m.motivoAjuste}
                             </div>
                           )}
+                          {m.contaPaga && (
+                            <div>
+                              <span className="font-medium text-foreground">Conta:</span>{" "}
+                              {m.contaPaga.descricao} ({formatBRL(m.contaPaga.valor)})
+                            </div>
+                          )}
                           <div>
                             <span className="font-medium text-foreground">ID:</span>{" "}
                             <span className="font-mono">{m.id}</span>
@@ -390,6 +480,52 @@ export function ListaMovimentacoes() {
           </div>
         </>
       )}
+      <Dialog
+        open={!!movimentacaoContaParaRemover}
+        onOpenChange={(open) => {
+          if (!open) setMovimentacaoContaParaRemover(null);
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Remover conta paga</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2 text-sm text-muted-foreground">
+            <p>
+              Esta movimentacao foi gerada por uma conta paga. A remocao sera
+              feita pela conta vinculada e tambem removera a saida do caixa.
+            </p>
+            {movimentacaoContaParaRemover?.contaPaga && (
+              <p className="font-medium text-foreground">
+                {movimentacaoContaParaRemover.contaPaga.descricao} -{" "}
+                {formatBRL(movimentacaoContaParaRemover.contaPaga.valor)}
+              </p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setMovimentacaoContaParaRemover(null)}
+              disabled={removerContaPaga.isPending}
+            >
+              Cancelar
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={
+                !movimentacaoContaParaRemover?.contaPaga ||
+                removerContaPaga.isPending
+              }
+              onClick={() => {
+                const contaId = movimentacaoContaParaRemover?.contaPaga?.id;
+                if (contaId) removerContaPaga.mutate(contaId);
+              }}
+            >
+              {removerContaPaga.isPending ? "Removendo..." : "Remover"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </section>
   );
 }

@@ -32,7 +32,19 @@ export const movimentacaoRepository = {
   async listar(filtros: FiltrosMovimentacao) {
     return db.movimentacao.findMany({
       where: construirWhere(filtros),
-      include: { categoria: true },
+      include: {
+        categoria: true,
+        contaPaga: {
+          select: {
+            id: true,
+            descricao: true,
+            status: true,
+            vencimento: true,
+            pagoEm: true,
+            valor: true,
+          },
+        },
+      },
       orderBy: [{ dataCaixa: "desc" }, { createdAt: "desc" }],
     });
   },
