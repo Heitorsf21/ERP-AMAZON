@@ -40,8 +40,9 @@ Chave de cifragem em variável de ambiente, separada do banco. ⚠️ Provisiona
 ## 5. Autenticação forte (MFA)
 Sessão HMAC com revogação por `sessionVersion`; política de senha forte (≥12 +
 complexidade) em todos os fluxos de definição de senha; rate-limit/lockout no login.
-⚠️ **MFA**: hoje há 2FA por e-mail; **TOTP** (fator aprovado) está planejado (A5) e
-será habilitado para contas de operadores (C5).
+**MFA TOTP (RFC 6238) implementado** — operadores ativam em `/perfil` → Segurança
+→ "App autenticador" (QR; segredo cifrado AES-256; código exigido no login). 2FA por
+e-mail também disponível. ⚠️ Ação: habilitar TOTP nas contas dos operadores (C5).
 
 ## 6. Segurança de rede
 ⚠️ Documentar **firewall** do VPS (portas mínimas expostas: 443), **IDS/IPS** e
