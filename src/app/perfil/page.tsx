@@ -24,6 +24,7 @@ import { EncerrarSessaoButton } from "./encerrar-sessao-button";
 import { EncerrarTodasSessoesButton } from "./encerrar-todas-sessoes-button";
 import { DadosForm } from "./dados-form";
 import { Toggle2FA } from "./toggle-2fa";
+import { Totp2FA } from "./totp-2fa";
 import { UploadAvatar } from "@/components/perfil/upload-avatar";
 
 export const dynamic = "force-dynamic";
@@ -45,6 +46,7 @@ export default async function PerfilPage() {
       ultimoAcesso: true,
       createdAt: true,
       twoFactorEnabled: true,
+      twoFactorMethod: true,
     },
   });
 
@@ -190,11 +192,17 @@ export default async function PerfilPage() {
                 </div>
                 <CardTitle className="text-base">Verificação 2FA</CardTitle>
                 <CardDescription>
-                  Adiciona um código por email a cada login.
+                  Código por email a cada login. Para MFA mais forte, use o app
+                  autenticador (TOTP) abaixo.
                 </CardDescription>
               </CardHeader>
-              <CardContent>
-                <Toggle2FA inicialAtivo={usuario.twoFactorEnabled} />
+              <CardContent className="space-y-3">
+                <Toggle2FA inicialAtivo={usuario.twoFactorEnabled && usuario.twoFactorMethod !== "TOTP"} />
+                <Totp2FA
+                  inicialAtivo={
+                    usuario.twoFactorEnabled && usuario.twoFactorMethod === "TOTP"
+                  }
+                />
               </CardContent>
             </Card>
           </div>

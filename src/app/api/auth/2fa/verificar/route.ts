@@ -3,6 +3,8 @@ import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { auditLog } from "@/lib/audit";
+import { decryptConfigValue } from "@/lib/crypto";
+import { verificarTotp } from "@/lib/totp";
 import { originViolationResponse } from "@/lib/origin-check";
 import {
   SESSION_COOKIE_NAME,
@@ -79,7 +81,10 @@ export async function POST(req: Request) {
     );
   }
 
-  const codigoOk = await bcrypt.compare(codigo, challenge.codigoHash);
+  const codigoOk =
+    challenge.metodo === "TOTP"
+      ? verificarTotp(codigo, decryptConfigValue(challenge.usuario.totpSecretEnc) ?? "")
+      : await bcrypt.compare(codigo, challenge.codigoHash);
   if (!codigoOk) {
     const novaTentativa = challenge.tentativas + 1;
     const limiteAtingido = novaTentativa >= MAX_TENTATIVAS_POR_CHALLENGE;

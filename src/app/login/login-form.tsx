@@ -21,7 +21,12 @@ import { safeNextPath } from "@/lib/safe-redirect";
 
 type LoginResponse =
   | { usuario: { id: string; email: string; nome: string; role: string } }
-  | { requires2FA: true; challengeId: string; lembrar: boolean };
+  | {
+      requires2FA: true;
+      challengeId: string;
+      lembrar: boolean;
+      metodo?: "EMAIL" | "TOTP";
+    };
 
 function LoginFormInner({ nextPath }: { nextPath?: string }) {
   const router = useRouter();
@@ -39,6 +44,7 @@ function LoginFormInner({ nextPath }: { nextPath?: string }) {
   const [challenge, setChallenge] = useState<{
     challengeId: string;
     lembrar: boolean;
+    metodo?: "EMAIL" | "TOTP";
   } | null>(null);
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
@@ -72,7 +78,11 @@ function LoginFormInner({ nextPath }: { nextPath?: string }) {
 
       if ("requires2FA" in data) {
         // Entra no fluxo de 2FA
-        setChallenge({ challengeId: data.challengeId, lembrar: data.lembrar });
+        setChallenge({
+          challengeId: data.challengeId,
+          lembrar: data.lembrar,
+          metodo: data.metodo,
+        });
         setEnviando(false);
         return;
       }
@@ -166,6 +176,7 @@ function LoginFormInner({ nextPath }: { nextPath?: string }) {
               challengeId={challenge.challengeId}
               lembrar={challenge.lembrar}
               email={email}
+              metodo={challenge.metodo}
               onVerificado={onVerificado}
               onCancelar={() => setChallenge(null)}
             />

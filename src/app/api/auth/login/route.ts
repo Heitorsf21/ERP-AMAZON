@@ -144,6 +144,27 @@ export async function POST(req: Request) {
     });
   }
 
+  // 2FA por TOTP (app autenticador): cria um challenge SEM enviar email. O código
+  // vem do app do usuário; o verificador valida contra o segredo cifrado.
+  if (user.twoFactorEnabled && user.twoFactorMethod === "TOTP") {
+    const challengeId = crypto.randomBytes(16).toString("hex");
+    await db.codigoVerificacao2FA.create({
+      data: {
+        usuarioId: user.id,
+        codigoHash: "-", // não usado no TOTP (validação é contra o segredo)
+        metodo: "TOTP",
+        challengeId,
+        expiresAt: new Date(Date.now() + 5 * 60_000),
+      },
+    });
+    return NextResponse.json({
+      requires2FA: true,
+      challengeId,
+      lembrar,
+      metodo: "TOTP",
+    });
+  }
+
   // Sem 2FA: cria sessão direto.
   await db.usuario.update({
     where: { id: user.id },

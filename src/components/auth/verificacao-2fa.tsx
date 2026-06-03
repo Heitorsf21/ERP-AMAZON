@@ -8,6 +8,7 @@ type Props = {
   challengeId: string;
   lembrar: boolean;
   email: string;
+  metodo?: "EMAIL" | "TOTP";
   onVerificado: () => void;
   onCancelar: () => void;
 };
@@ -16,9 +17,11 @@ export function Verificacao2FA({
   challengeId,
   lembrar,
   email,
+  metodo = "EMAIL",
   onVerificado,
   onCancelar,
 }: Props) {
+  const isTotp = metodo === "TOTP";
   const [digitos, setDigitos] = useState<string[]>(["", "", "", "", "", ""]);
   const [enviando, setEnviando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
@@ -114,8 +117,17 @@ export function Verificacao2FA({
         Verificação de duas etapas
       </h1>
       <p className="mt-1.5 text-sm text-muted-foreground">
-        Enviamos um código de 6 dígitos para <strong>{email}</strong>. Cole ou
-        digite abaixo (expira em 5 min).
+        {isTotp ? (
+          <>
+            Digite o código de 6 dígitos do seu app autenticador (Google
+            Authenticator, Authy, etc.).
+          </>
+        ) : (
+          <>
+            Enviamos um código de 6 dígitos para <strong>{email}</strong>. Cole ou
+            digite abaixo (expira em 5 min).
+          </>
+        )}
       </p>
 
       <div className="mt-6 flex gap-2 justify-center">
@@ -161,7 +173,9 @@ export function Verificacao2FA({
       </Button>
 
       <p className="mt-4 text-center text-xs text-muted-foreground">
-        Não chegou? Confira o spam ou volte ao login para tentar novamente.
+        {isTotp
+          ? "Abra seu app autenticador para ver o código atual."
+          : "Não chegou? Confira o spam ou volte ao login para tentar novamente."}
       </p>
     </div>
   );

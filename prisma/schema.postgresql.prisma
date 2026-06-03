@@ -100,7 +100,8 @@ model Usuario {
   avatarUrl        String?
   ultimoAcesso     DateTime?
   twoFactorEnabled Boolean   @default(false)
-  twoFactorMethod  String?
+  twoFactorMethod  String? // "EMAIL" | "TOTP"
+  totpSecretEnc    String? // segredo TOTP cifrado (AES-256-GCM), set no enrolamento
   // Incrementado a cada troca de senha ou "encerrar todas as sessoes".
   sessionVersion   Int       @default(0)
   empresaId        String
@@ -176,6 +177,7 @@ model CodigoVerificacao2FA {
   id          String    @id @default(cuid())
   usuarioId   String
   codigoHash  String
+  metodo      String    @default("EMAIL") // "EMAIL" | "TOTP"
   challengeId String    @unique
   expiresAt   DateTime
   usadoEm     DateTime?

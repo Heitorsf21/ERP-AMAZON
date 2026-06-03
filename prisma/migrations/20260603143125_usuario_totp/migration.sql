@@ -1,0 +1,2 @@
+ALTER TABLE "Usuario" ADD COLUMN "totpSecretEnc" TEXT;
+ALTER TABLE "CodigoVerificacao2FA" ADD COLUMN "metodo" TEXT NOT NULL DEFAULT 'EMAIL';
