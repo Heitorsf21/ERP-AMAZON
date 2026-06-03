@@ -92,9 +92,12 @@ export function AlertasCriticos() {
     queryFn: () => fetchJSON<SyncLog[]>("/api/amazon/status"),
   });
 
-  const notifQuery = useQuery<Notificacao[]>({
+  // /api/notificacoes retorna { notificacoes } (objeto), NÃO um array cru.
+  // Tratar como array aqui causava ".filter is not a function" → crash do /home.
+  const notifQuery = useQuery<{ notificacoes: Notificacao[] }>({
     queryKey: ["alertas", "notificacoes-nao-lidas"],
-    queryFn: () => fetchJSON<Notificacao[]>("/api/notificacoes?naoLidas=true"),
+    queryFn: () =>
+      fetchJSON<{ notificacoes: Notificacao[] }>("/api/notificacoes?naoLidas=true"),
   });
 
   const isLoading =
@@ -187,7 +190,7 @@ export function AlertasCriticos() {
     }
 
     // 4) Notificações não lidas (top 2 mais recentes)
-    const notifs = (notifQuery.data ?? [])
+    const notifs = (notifQuery.data?.notificacoes ?? [])
       .filter((n) => !n.lida)
       .sort(
         (a, b) =>
