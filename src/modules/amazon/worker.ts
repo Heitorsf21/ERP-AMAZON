@@ -295,6 +295,20 @@ async function processJob(
       }
     }
     if (!sp) {
+      // Fallback para a config global SÓ é permitido para a empresa primária
+      // (WORKER_EMPRESA_ID). Para qualquer outro seller sem conta conectada,
+      // NUNCA cair na credencial global — isso usaria a conta Amazon da mundofs
+      // para sincronizar dados sob o empresaId de outro tenant (contaminação
+      // cross-tenant). Mesmo gate do Ads (canUseLegacyAdsFallback).
+      const empresaId = getEmpresaId();
+      if (empresaId && empresaId !== WORKER_EMPRESA_ID) {
+        return {
+          ok: false,
+          skipped: true,
+          mensagem:
+            "Conta Amazon nao conectada para esta empresa — job pulado (sem fallback global).",
+        };
+      }
       const config = await getAmazonConfig();
       if (!isAmazonConfigured(config)) {
         return {

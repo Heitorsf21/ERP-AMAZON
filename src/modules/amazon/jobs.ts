@@ -1,7 +1,7 @@
 import { format } from "date-fns";
 import { toZonedTime } from "date-fns-tz";
 import { db } from "@/lib/db";
-import { runWithTenant } from "@/lib/tenant-context";
+import { cursorKeyParaEmpresa, runWithTenant } from "@/lib/tenant-context";
 import { TIMEZONE } from "@/lib/date";
 import { getReviewAutomationConfig } from "@/modules/amazon/service";
 import { getWhatsappEstoqueScheduleConfig } from "@/modules/whatsapp-estoque/config";
@@ -96,7 +96,7 @@ const FINANCES_SYNC_COVERAGE_DAYS = 13;
 // (reset manual via scripts/force-finances-backfill.ts), backfill volta sozinho.
 async function isFinancesBackfillComplete(): Promise<boolean> {
   const cfg = await db.configuracaoSistema.findUnique({
-    where: { chave: FINANCES_BACKFILL_CURSOR_KEY_INTERNAL },
+    where: { chave: cursorKeyParaEmpresa(FINANCES_BACKFILL_CURSOR_KEY_INTERNAL) },
   });
   if (!cfg?.valor) return false;
   const cursor = new Date(cfg.valor);

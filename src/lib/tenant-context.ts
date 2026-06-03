@@ -53,6 +53,21 @@ export function getEmpresaId(): string | null {
 }
 
 /**
+ * Escopa uma chave de CURSOR de sincronização por empresa (multi-seller F02).
+ * A empresa primária (WORKER_EMPRESA_ID) mantém a chave NUA — preserva os
+ * cursores já existentes em produção e garante zero mudança de comportamento
+ * para a mundofs. Demais sellers usam `chave::empresaId` para não colidir no
+ * mesmo cursor global de ConfiguracaoSistema (backfills/sync de um seller
+ * sobrescrevendo os do outro). Use SOMENTE em chaves de cursor.
+ */
+export function cursorKeyParaEmpresa(baseKey: string): string {
+  const empresaId = getEmpresaId();
+  const primary = process.env.WORKER_EMPRESA_ID || "mundofs";
+  if (!empresaId || empresaId === primary) return baseKey;
+  return `${baseKey}::${empresaId}`;
+}
+
+/**
  * Popula o contexto de tenant para o RESTANTE da execução assíncrona corrente,
  * sem envolver um callback (ao contrário de runWithTenant). Usado em getSession
  * (auth.ts) para cobrir as rotas que chamam requireSession/requireRole direto,

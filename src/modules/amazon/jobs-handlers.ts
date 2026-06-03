@@ -8,6 +8,7 @@
  * Cada handler é chamado pelo worker em src/modules/amazon/worker.ts.
  */
 import { db } from "@/lib/db";
+import { cursorKeyParaEmpresa } from "@/lib/tenant-context";
 import {
   getCatalogItem,
   getInventorySummaries,
@@ -421,12 +422,35 @@ const ORDERS_HISTORY_WINDOW_DAYS = 30;
 const ORDERS_HISTORY_END_OFFSET_DAYS = 2;
 const ORDERS_HISTORY_PENDING_TIMEOUT_MS = 24 * 60 * 60 * 1000;
 
-async function getCfg(chave: string): Promise<string | null> {
+// F02 multi-seller: estado de sync/backfill (cursor + report pendente +
+// lifecycle) é POR SELLER. Sem escopar, dois sellers colidiriam no mesmo cursor
+// global E — pior — um job poderia baixar o report pendente do outro (vazamento
+// cross-tenant). Escopamos por empresa via cursorKeyParaEmpresa (mundofs mantém
+// a chave nua). NÃO escopamos chaves de config geral (ex: amazon_loja_aberta_em).
+const PER_SELLER_SYNC_KEY_PREFIXES = [
+  "amazon_orders_history_",
+  "amazon_finances_backfill_",
+  "amazon_settlement_backfill_",
+  "amazon_fba_reimbursements_",
+  "amazon_returns_",
+  "amazon_storage_",
+  "amazon_traffic_",
+];
+
+function scopeSyncKey(chave: string): string {
+  return PER_SELLER_SYNC_KEY_PREFIXES.some((p) => chave.startsWith(p))
+    ? cursorKeyParaEmpresa(chave)
+    : chave;
+}
+
+async function getCfg(chaveRaw: string): Promise<string | null> {
+  const chave = scopeSyncKey(chaveRaw);
   const row = await db.configuracaoSistema.findUnique({ where: { chave } });
   return row?.valor ?? null;
 }
 
-async function setCfg(chave: string, valor: string): Promise<void> {
+async function setCfg(chaveRaw: string, valor: string): Promise<void> {
+  const chave = scopeSyncKey(chaveRaw);
   await db.configuracaoSistema.upsert({
     where: { chave },
     create: { chave, valor },
@@ -434,7 +458,8 @@ async function setCfg(chave: string, valor: string): Promise<void> {
   });
 }
 
-async function delCfg(chave: string): Promise<void> {
+async function delCfg(chaveRaw: string): Promise<void> {
+  const chave = scopeSyncKey(chaveRaw);
   await db.configuracaoSistema
     .delete({ where: { chave } })
     .catch(() => undefined);

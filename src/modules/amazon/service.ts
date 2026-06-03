@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { cursorKeyParaEmpresa } from "@/lib/tenant-context";
 import {
   decryptConfigValue,
   encryptConfigValue,
@@ -424,7 +425,9 @@ export async function syncBackfillOrders(): Promise<
 > {
   const inicioPadrao = new Date(AMAZON_LOJA_ABERTA_EM);
   const fim = subDays(new Date(), 2);
-  const cursor = await getSystemConfig(BACKFILL_CURSOR_KEY);
+  // F02: cursor de backfill escopado por empresa (mundofs mantém a chave nua).
+  const backfillCursorKey = cursorKeyParaEmpresa(BACKFILL_CURSOR_KEY);
+  const cursor = await getSystemConfig(backfillCursorKey);
   const inicio = cursor ? new Date(cursor) : inicioPadrao;
   const ate = new Date(Math.min(addDays(inicio, 14).getTime(), fim.getTime()));
 
@@ -451,7 +454,7 @@ export async function syncBackfillOrders(): Promise<
     overlapMinutes: 0,
   });
 
-  await setSystemConfig(BACKFILL_CURSOR_KEY, ate.toISOString());
+  await setSystemConfig(backfillCursorKey, ate.toISOString());
 
   return {
     ...resultado,
@@ -624,7 +627,8 @@ async function syncOrdersInternal(
   const tipo = options.tipo ?? TipoAmazonSync.ORDERS;
   const logId = (await createLog(tipo, StatusAmazonSync.PROCESSANDO)).id;
   const creds = await getCredentialsOrThrow();
-  const cursorKey = options.cursorKey ?? ORDERS_CURSOR_KEY;
+  // F02: cursor escopado por empresa (mundofs mantém a chave nua).
+  const cursorKey = cursorKeyParaEmpresa(options.cursorKey ?? ORDERS_CURSOR_KEY);
   const overlapMinutes = options.overlapMinutes ?? 15;
   const orderIds = normalizeOrderIds(options.orderIds);
 
