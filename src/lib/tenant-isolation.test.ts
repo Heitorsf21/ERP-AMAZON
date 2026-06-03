@@ -350,7 +350,65 @@ describe("applyTenantIsolation — modo ENFORCE", () => {
       expect(out).toBeNull();
     });
 
-    it("FAIL-CLOSED quando o select esconde empresaId (não dá pra validar)", async () => {
+    it("AUGMENTA o select com empresaId, valida o tenant e remove o campo do retorno", async () => {
+      const seen: unknown[] = [];
+      const query = vi.fn(async (a: unknown) => {
+        seen.push(a);
+        return { id: "1", sku: "X", empresaId: "emp_1" };
+      });
+      const out = await runWithTenant(ctx("emp_1"), () =>
+        applyTenantIsolation({
+          model: "Produto",
+          operation: "findUnique",
+          args: { where: { id: "1" }, select: { id: true, sku: true } },
+          query,
+        }),
+      );
+      // O select foi augmentado com empresaId: true para permitir a validação.
+      expect(seen[0]).toEqual({
+        where: { id: "1" },
+        select: { id: true, sku: true, empresaId: true },
+      });
+      // empresaId é removido do retorno — shape original do caller preservado.
+      expect(out).toEqual({ id: "1", sku: "X" });
+    });
+
+    it("com select sem empresaId, registro de outra empresa retorna null", async () => {
+      const query = vi.fn(async () => ({ id: "1", sku: "X", empresaId: "emp_OUTRA" }));
+      const out = await runWithTenant(ctx("emp_1"), () =>
+        applyTenantIsolation({
+          model: "Produto",
+          operation: "findUnique",
+          args: { where: { id: "1" }, select: { id: true, sku: true } },
+          query,
+        }),
+      );
+      expect(out).toBeNull();
+    });
+
+    it("não altera o select quando empresaId já foi pedido (mantém no retorno)", async () => {
+      const seen: unknown[] = [];
+      const query = vi.fn(async (a: unknown) => {
+        seen.push(a);
+        return { id: "1", empresaId: "emp_1" };
+      });
+      const out = await runWithTenant(ctx("emp_1"), () =>
+        applyTenantIsolation({
+          model: "Produto",
+          operation: "findUnique",
+          args: { where: { id: "1" }, select: { id: true, empresaId: true } },
+          query,
+        }),
+      );
+      expect(seen[0]).toEqual({
+        where: { id: "1" },
+        select: { id: true, empresaId: true },
+      });
+      expect(out).toEqual({ id: "1", empresaId: "emp_1" });
+    });
+
+    it("FAIL-CLOSED patológico: se mesmo após augment o empresaId não vier, lança", async () => {
+      // Banco devolve objeto sem empresaId mesmo tendo sido pedido (caso raro).
       const query = vi.fn(async () => ({ id: "1", sku: "X" }));
       await runWithTenant(ctx("emp_1"), async () => {
         await expect(

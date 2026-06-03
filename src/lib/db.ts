@@ -370,11 +370,36 @@ export async function applyTenantIsolation({
   // outra empresa, devolvemos null. Isso mantém o isolamento sem quebrar a
   // tipagem do Prisma.
   if (operation === "findUnique" || operation === "findUniqueOrThrow") {
-    const result = (await query(args)) as { empresaId?: string | null } | null;
+    // Quando o caller usa `select` SEM empresaId, o Prisma não retornaria o
+    // campo e não conseguiríamos validar o tenant pós-fetch. Em vez de ABORTAR
+    // (o que quebrava qualquer findUnique com `select` em modelo tenant — ex:
+    // produto.findUnique({ select: { sku: true } }) nas telas de produto),
+    // AUGMENTAMOS o `select` com empresaId, validamos, e removemos o campo extra
+    // do resultado para preservar o shape esperado pelo caller. Isolamento
+    // mantido: continuamos exigindo empresaId === tenant e retornando null em
+    // divergência. (Com `include` ou sem `select`, o Prisma já traz empresaId.)
+    const rawArgs = (args ?? {}) as {
+      select?: Record<string, unknown>;
+      [k: string]: unknown;
+    };
+    let empresaIdInjetadoNoSelect = false;
+    let argsEfetivos: unknown = args;
+    if (
+      rawArgs.select &&
+      typeof rawArgs.select === "object" &&
+      !("empresaId" in rawArgs.select)
+    ) {
+      empresaIdInjetadoNoSelect = true;
+      argsEfetivos = { ...rawArgs, select: { ...rawArgs.select, empresaId: true } };
+    }
+
+    const result = (await query(argsEfetivos)) as
+      | (Record<string, unknown> & { empresaId?: string | null })
+      | null;
     if (result == null) return result;
-    // Se o registro não expõe empresaId (caller restringiu o `select`), não
-    // temos como validar pós-fetch — fail-closed para não vazar.
-    if (!("empresaId" in (result as object))) {
+    // Após o augment, empresaId deve estar presente. Se ainda assim faltar
+    // (caso patológico), fail-closed para não vazar entre tenants.
+    if (!("empresaId" in result)) {
       throw new Error(
         `[tenant-isolation] ${model}.${operation}: não foi possível validar ` +
           `empresaId pós-fetch (campo ausente no resultado — verifique o select). ` +
@@ -383,6 +408,12 @@ export async function applyTenantIsolation({
     }
     if (result.empresaId !== empresaId) {
       return null;
+    }
+    if (empresaIdInjetadoNoSelect) {
+      // Remove o campo que injetamos para não alterar o shape do retorno.
+      const { empresaId: _empresaIdOmitido, ...semEmpresaId } = result;
+      void _empresaIdOmitido;
+      return semEmpresaId;
     }
     return result;
   }

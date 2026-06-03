@@ -1,5 +1,14 @@
 import { z } from "zod";
 
+// Campos opcionais vindos de <Select>/<Input> chegam como "" quando vazios.
+// "" passaria pelo `?? null` do repositório (nullish só pega null/undefined) e
+// um fornecedorId="" viola a FK (PedidoCompra_fornecedorId_fkey). Normalizamos
+// string vazia -> undefined na borda para todos os opcionais.
+const stringOpcional = z.preprocess(
+  (v) => (typeof v === "string" && v.trim() === "" ? undefined : v),
+  z.string().optional(),
+);
+
 export const itemPedidoSchema = z.object({
   produtoId: z.string().min(1, "Produto obrigatório"),
   quantidade: z.number().int().positive("Quantidade deve ser maior que zero"),
@@ -10,11 +19,11 @@ export const itemPedidoSchema = z.object({
 });
 
 export const criarPedidoCompraSchema = z.object({
-  numero: z.string().optional(),
-  fornecedorId: z.string().optional(),
+  numero: stringOpcional,
+  fornecedorId: stringOpcional,
   dataEmissao: z.string(), // ISO date string
-  dataPrevisao: z.string().optional(),
-  observacoes: z.string().optional(),
+  dataPrevisao: stringOpcional,
+  observacoes: stringOpcional,
   itens: z
     .array(itemPedidoSchema)
     .min(1, "Adicione pelo menos 1 item ao pedido"),
