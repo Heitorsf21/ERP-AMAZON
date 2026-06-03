@@ -12,10 +12,19 @@ import {
 import { StatusPedidoCompra, StatusReposicao } from "@/modules/shared/domain";
 import { whereVendaAmazonContabilizavelEstrito } from "@/modules/vendas/filtros";
 import { resolverPeriodo, PeriodoPreset } from "@/lib/periodo";
+import { getEmpresaId } from "@/lib/tenant-context";
 import { addDays, subDays } from "date-fns";
 
 const COBERTURA_DIAS = 60;
 const URGENTE_DIAS = 15;
+
+function requireEmpresaId() {
+  const empresaId = getEmpresaId();
+  if (!empresaId) {
+    throw new Error("empresa da sessão não encontrada");
+  }
+  return empresaId;
+}
 
 export const comprasService = {
   async listar(filtros: {
@@ -34,26 +43,41 @@ export const comprasService = {
   },
 
   async criar(raw: unknown) {
+    const empresaId = requireEmpresaId();
     const input = criarPedidoCompraSchema.parse(raw);
+    if (input.fornecedorId) {
+      const fornecedor = await db.fornecedor.findFirst({
+        where: { id: input.fornecedorId, empresaId },
+        select: { id: true },
+      });
+      if (!fornecedor) {
+        throw new Error("fornecedor não encontrado");
+      }
+    }
     // Valida que todos os produtos existem
     for (const item of input.itens) {
-      const produto = await db.produto.findUnique({ where: { id: item.produtoId } });
+      const produto = await db.produto.findFirst({
+        where: { id: item.produtoId, empresaId },
+        select: { id: true },
+      });
       if (!produto) throw new Error(`Produto ${item.produtoId} não encontrado`);
     }
-    return comprasRepository.criar(input);
+    return comprasRepository.criar(input, empresaId);
   },
 
   async atualizar(id: string, raw: unknown) {
+    const empresaId = requireEmpresaId();
     const pedido = await comprasRepository.buscarPorId(id);
     if (!pedido) throw new Error("Pedido não encontrado");
     if (pedido.status !== StatusPedidoCompra.RASCUNHO) {
       throw new Error("Apenas pedidos em rascunho podem ser editados");
     }
     const input = atualizarPedidoCompraSchema.parse(raw);
-    return comprasRepository.atualizar(id, input);
+    return comprasRepository.atualizar(id, input, empresaId);
   },
 
   async confirmar(id: string, raw: unknown) {
+    const empresaId = requireEmpresaId();
     const input = confirmarPedidoSchema.parse(raw);
     const pedido = await comprasRepository.buscarPorId(id);
     if (!pedido) throw new Error("Pedido não encontrado");
@@ -65,12 +89,12 @@ export const comprasService = {
 
     if (input.criarContaPagar && pedido.totalCentavos > 0) {
       const categorias = await db.categoria.findMany({
-        where: { tipo: { in: ["DESPESA", "AMBAS"] } },
+        where: { empresaId, tipo: { in: ["DESPESA", "AMBAS"] } },
         take: 1,
         orderBy: { nome: "asc" },
       });
       const categoriaMercadoria = await db.categoria.findFirst({
-        where: { nome: { contains: "mercadoria" } },
+        where: { empresaId, nome: { contains: "mercadoria" } },
       });
       const categoriaId =
         categoriaMercadoria?.id ?? categorias[0]?.id;
@@ -80,13 +104,13 @@ export const comprasService = {
         let fornecedorId = pedido.fornecedorId;
         if (!fornecedorId) {
           const fornecedorGenerico = await db.fornecedor.findFirst({
-            where: { nome: "Fornecedor Genérico" },
+            where: { empresaId, nome: "Fornecedor Genérico" },
           });
           if (fornecedorGenerico) {
             fornecedorId = fornecedorGenerico.id;
           } else {
             const novoFornecedor = await db.fornecedor.create({
-              data: { nome: "Fornecedor Genérico" },
+              data: { empresaId, nome: "Fornecedor Genérico" },
             });
             fornecedorId = novoFornecedor.id;
           }
@@ -98,6 +122,7 @@ export const comprasService = {
 
         const conta = await db.contaPagar.create({
           data: {
+            empresaId,
             fornecedorId,
             categoriaId,
             descricao: `Compra #${pedido.numero ?? pedido.id.slice(0, 8)}`,
@@ -114,6 +139,7 @@ export const comprasService = {
   },
 
   async receber(id: string, raw: unknown) {
+    const empresaId = requireEmpresaId();
     const input = receberPedidoSchema.parse(raw);
     const pedido = await comprasRepository.buscarPorId(id);
     if (!pedido) throw new Error("Pedido não encontrado");
@@ -128,7 +154,7 @@ export const comprasService = {
       custoUnitario: item.custoUnitario,
     }));
 
-    return comprasRepository.receber(id, dataRecebimento, itens);
+    return comprasRepository.receber(id, dataRecebimento, itens, empresaId);
   },
 
   async cancelar(id: string) {

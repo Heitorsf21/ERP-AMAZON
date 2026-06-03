@@ -57,7 +57,7 @@ export const comprasRepository = {
     });
   },
 
-  async criar(input: CriarPedidoCompraInput) {
+  async criar(input: CriarPedidoCompraInput, empresaId: string) {
     const totalCentavos = input.itens.reduce(
       (sum, item) => sum + item.quantidade * item.custoUnitario,
       0,
@@ -65,6 +65,7 @@ export const comprasRepository = {
 
     return db.pedidoCompra.create({
       data: {
+        empresaId,
         numero: input.numero ?? null,
         fornecedorId: input.fornecedorId ?? null,
         dataEmissao: new Date(input.dataEmissao),
@@ -73,6 +74,7 @@ export const comprasRepository = {
         totalCentavos,
         itens: {
           create: input.itens.map((item) => ({
+            empresaId,
             produtoId: item.produtoId,
             quantidade: item.quantidade,
             custoUnitario: item.custoUnitario,
@@ -86,7 +88,11 @@ export const comprasRepository = {
     });
   },
 
-  async atualizar(id: string, input: Partial<CriarPedidoCompraInput>) {
+  async atualizar(
+    id: string,
+    input: Partial<CriarPedidoCompraInput>,
+    empresaId: string,
+  ) {
     const totalCentavos = input.itens
       ? input.itens.reduce((sum, i) => sum + i.quantidade * i.custoUnitario, 0)
       : undefined;
@@ -116,6 +122,7 @@ export const comprasRepository = {
           ...(input.itens && {
             itens: {
               create: input.itens.map((item) => ({
+                empresaId,
                 produtoId: item.produtoId,
                 quantidade: item.quantidade,
                 custoUnitario: item.custoUnitario,
@@ -147,6 +154,7 @@ export const comprasRepository = {
     id: string,
     dataRecebimento: Date,
     itens: Array<{ produtoId: string; quantidade: number; custoUnitario: number }>,
+    empresaId: string,
   ) {
     return db.$transaction(async (tx) => {
       await tx.pedidoCompra.update({
@@ -160,6 +168,7 @@ export const comprasRepository = {
       for (const item of itens) {
         await tx.movimentacaoEstoque.create({
           data: {
+            empresaId,
             produtoId: item.produtoId,
             tipo: "ENTRADA",
             quantidade: item.quantidade,
