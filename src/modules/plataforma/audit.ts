@@ -3,7 +3,7 @@ import { logger } from "@/lib/logger";
 
 export type AcaoPlataforma =
   | "EMPRESA_CRIADA" | "ADMIN_CONVIDADO" | "CONVITE_REENVIADO"
-  | "EMPRESA_DESATIVADA" | "EMPRESA_REATIVADA" | "LOGIN_PLATAFORMA";
+  | "EMPRESA_DESATIVADA" | "EMPRESA_REATIVADA" | "EMPRESA_EXCLUIDA" | "LOGIN_PLATAFORMA";
 
 export async function auditPlataforma(input: {
   plataformaUsuarioId?: string | null;

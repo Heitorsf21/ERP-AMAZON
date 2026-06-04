@@ -12,6 +12,8 @@ import {
   Check,
   MessageCircle,
   X,
+  Trash2,
+  AlertTriangle,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -52,6 +54,7 @@ export function EmpresasTable({ empresas }: { empresas: EmpresaRow[] }) {
   const [feedback, setFeedback] = useState<Feedback>(null);
   const [convite, setConvite] = useState<Convite | null>(null);
   const [copiado, setCopiado] = useState<"link" | "whatsapp" | null>(null);
+  const [confirmExcluir, setConfirmExcluir] = useState<{ id: string; nome: string } | null>(null);
 
   async function acao(id: string, rota: string, ok: string) {
     setPendente(`${id}:${rota}`);
@@ -63,6 +66,32 @@ export function EmpresasTable({ empresas }: { empresas: EmpresaRow[] }) {
       router.refresh();
     } catch {
       setFeedback({ tipo: "erro", texto: "Não foi possível concluir a ação." });
+    } finally {
+      setPendente(null);
+    }
+  }
+
+  async function excluir(id: string) {
+    setPendente(`${id}:excluir`);
+    setFeedback(null);
+    try {
+      const res = await fetch(`/api/plataforma/empresas/${id}/excluir`, { method: "POST" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(String(data?.erro ?? ""));
+      setConfirmExcluir(null);
+      setFeedback({
+        tipo: "ok",
+        texto: `Empresa excluída definitivamente (${data.total ?? 0} registro(s) removido(s)).`,
+      });
+      router.refresh();
+    } catch (e) {
+      const msg = (e as Error).message;
+      setFeedback({
+        tipo: "erro",
+        texto: msg.startsWith("EMPRESA_ATIVA")
+          ? "Desative a empresa antes de excluir."
+          : "Não foi possível excluir a empresa.",
+      });
     } finally {
       setPendente(null);
     }
@@ -175,6 +204,47 @@ export function EmpresasTable({ empresas }: { empresas: EmpresaRow[] }) {
         </div>
       )}
 
+      {confirmExcluir && (
+        <div className="space-y-3 rounded-lg border border-destructive/40 bg-destructive/5 p-4">
+          <div className="flex items-start gap-2">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
+            <div className="space-y-1">
+              <p className="text-sm font-medium text-destructive">
+                Excluir definitivamente “{confirmExcluir.nome}”?
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Ação <strong>IRREVERSÍVEL</strong>: remove a empresa e TODOS os seus dados
+                (vendas, produtos, financeiro, usuários e integrações). Não há como desfazer.
+              </p>
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <Button
+              type="button"
+              variant="destructive"
+              size="sm"
+              disabled={pendente === `${confirmExcluir.id}:excluir`}
+              onClick={() => excluir(confirmExcluir.id)}
+            >
+              {pendente === `${confirmExcluir.id}:excluir` ? (
+                <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+              )}
+              Excluir definitivamente
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => setConfirmExcluir(null)}
+            >
+              Cancelar
+            </Button>
+          </div>
+        </div>
+      )}
+
       <Table>
         <TableHeader>
           <TableRow>
@@ -258,6 +328,21 @@ export function EmpresasTable({ empresas }: { empresas: EmpresaRow[] }) {
                           <Power className="mr-1.5 h-3.5 w-3.5" />
                         )}
                         Reativar
+                      </Button>
+                    )}
+                    {!e.ativa && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                        onClick={() => {
+                          setFeedback(null);
+                          setConvite(null);
+                          setConfirmExcluir({ id: e.id, nome: e.nome });
+                        }}
+                      >
+                        <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+                        Excluir
                       </Button>
                     )}
                   </div>

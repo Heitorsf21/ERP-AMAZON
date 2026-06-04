@@ -103,6 +103,87 @@ export async function reativarEmpresa(empresaId: string): Promise<boolean> {
   return r.count > 0;
 }
 
+export type ExcluirEmpresaResult = {
+  ok: boolean;
+  removidos: Record<string, number>;
+  total: number;
+};
+
+/**
+ * EXCLUSÃO DEFINITIVA de uma empresa e TODOS os seus dados (hard delete).
+ * Irreversível. Só permite excluir empresa INATIVA — trava de segurança contra
+ * exclusão acidental de empresa em uso (o caller deve desativar antes).
+ *
+ * Estratégia: as tabelas tenant guardam `empresaId` como coluna simples (sem FK
+ * para Empresa), então não há cascade no banco. Descobrimos via information_schema
+ * todas as tabelas com coluna `empresaId` e apagamos cada uma escopada por
+ * empresaId. A ORDEM entre tabelas tenant é resolvida por um loop com retry: FKs
+ * Restrict entre elas (ex: Movimentacao→Categoria) falham numa passada e passam
+ * na seguinte, depois que os filhos saem. Por fim apagamos a Empresa (cascateia
+ * AmazonAccount; Usuario e seus filhos 2FA/Convite/Token já saíram pelo loop).
+ *
+ * Raw SQL é intencional (manutenção superadmin cross-tenant) e empresaId é sempre
+ * parametrizado. NÃO é transação única porque o Postgres aborta a transação
+ * inteira no 1º erro de FK, inviabilizando o retry — a operação é idempotente e
+ * re-executável.
+ */
+export async function excluirEmpresa(empresaId: string): Promise<ExcluirEmpresaResult> {
+  const empresa = await db.empresa.findUnique({
+    where: { id: empresaId },
+    select: { id: true, ativa: true },
+  });
+  if (!empresa) return { ok: false, removidos: {}, total: 0 };
+  if (empresa.ativa) {
+    throw new Error("EMPRESA_ATIVA: desative a empresa antes de excluir");
+  }
+
+  const colunas = await db.$queryRaw<{ table_name: string }[]>`
+    SELECT table_name FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND column_name = 'empresaId'
+      AND table_name <> 'Empresa'
+    ORDER BY table_name
+  `;
+  // Defesa em profundidade: só aceitamos identificadores simples (a fonte é o
+  // catálogo do banco, mas validamos antes de interpolar no SQL).
+  const tabelas = colunas
+    .map((c) => c.table_name)
+    .filter((t) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(t));
+
+  const removidos: Record<string, number> = {};
+  let restantes = [...tabelas];
+  for (let passada = 0; passada < 20 && restantes.length > 0; passada++) {
+    const aindaFalhando: string[] = [];
+    let progrediu = false;
+    for (const t of restantes) {
+      try {
+        const n = await db.$executeRawUnsafe(
+          `DELETE FROM "${t}" WHERE "empresaId" = $1`,
+          empresaId,
+        );
+        removidos[t] = Number(n);
+        progrediu = true;
+      } catch {
+        // Provável FK restrict (filhos ainda não apagados) — tenta na próxima passada.
+        aindaFalhando.push(t);
+      }
+    }
+    if (!progrediu) {
+      throw new Error(`FALHA_DEPENDENCIAS: não consegui apagar ${aindaFalhando.join(", ")}`);
+    }
+    restantes = aindaFalhando;
+  }
+  if (restantes.length > 0) {
+    throw new Error(`FALHA_DEPENDENCIAS: restaram ${restantes.join(", ")}`);
+  }
+
+  // Empresa por último: cascateia AmazonAccount (onDelete: Cascade).
+  await db.$executeRawUnsafe(`DELETE FROM "Empresa" WHERE id = $1`, empresaId);
+
+  const total = Object.values(removidos).reduce((a, b) => a + b, 0);
+  return { ok: true, removidos, total };
+}
+
 export async function reenviarConvite(empresaId: string): Promise<{
   ok: boolean; rawToken?: string; admin?: { nome: string; email: string }; empresaNome?: string; slug?: string;
 }> {
