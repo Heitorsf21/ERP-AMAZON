@@ -36,6 +36,10 @@ import {
 } from "@/modules/amazon/finance-materializer";
 import { extractAmazonListingEffectivePriceCentavos } from "@/modules/amazon/pricing";
 import { extractProductOfferSnapshot } from "@/modules/amazon/offers-normalizer";
+import {
+  marcarVendasAmazonQuantidadeZeroComoCanceladas,
+  skusSomenteComQuantidadeZero,
+} from "@/modules/amazon/zero-quantity-cancellation";
 import { inferAmazonCategoriaFee } from "@/modules/produtos/amazon-fee-category-mapper";
 import {
   notificarBuyboxPerdido,
@@ -617,6 +621,7 @@ async function upsertOrdersHistoryRows(
     rows,
     marketplaceFallback,
   );
+  atualizadas += await cancelarLinhasOrdersHistoryComQuantidadeZero(rows);
 
   // Pré-carrega produtos por SKU pra pegar custoUnitario e asin.
   const skus = Array.from(new Set(rows.map((r) => r.sku))).filter(Boolean);
@@ -756,6 +761,32 @@ async function upsertRawOrdersHistoryRows(
   }
 
   return porPedido.size;
+}
+
+async function cancelarLinhasOrdersHistoryComQuantidadeZero(
+  rows: Awaited<ReturnType<typeof parseAllOrdersTsv>>,
+): Promise<number> {
+  const porPedido = new Map<string, typeof rows>();
+
+  for (const row of rows) {
+    if (!row.amazonOrderId || !row.sku) continue;
+    const group = porPedido.get(row.amazonOrderId) ?? [];
+    group.push(row);
+    porPedido.set(row.amazonOrderId, group);
+  }
+
+  let atualizadas = 0;
+  for (const [amazonOrderId, group] of porPedido) {
+    const skus = skusSomenteComQuantidadeZero(
+      group.map((row) => ({ sku: row.sku, quantidade: row.quantity })),
+    );
+    atualizadas += await marcarVendasAmazonQuantidadeZeroComoCanceladas({
+      amazonOrderId,
+      skus,
+    });
+  }
+
+  return atualizadas;
 }
 
 const FINANCES_BACKFILL_CURSOR_KEY = "amazon_finances_backfill_cursor";
