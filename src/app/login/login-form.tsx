@@ -31,7 +31,6 @@ type LoginResponse =
 function LoginFormInner({ nextPath }: { nextPath?: string }) {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [empresa, setEmpresa] = useState(searchParams.get("empresa") ?? "");
   const [email, setEmail] = useState(searchParams.get("email") ?? "");
   const [senha, setSenha] = useState("");
   const [lembrar, setLembrar] = useState(false);
@@ -57,7 +56,7 @@ function LoginFormInner({ nextPath }: { nextPath?: string }) {
       const res = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ empresa, email, senha, lembrar }),
+        body: JSON.stringify({ email, senha, lembrar }),
       });
 
       if (!res.ok) {
@@ -192,24 +191,6 @@ function LoginFormInner({ nextPath }: { nextPath?: string }) {
               </div>
 
               <form onSubmit={onSubmit} className="mt-7 space-y-4" noValidate>
-                <div className="space-y-1.5">
-                  <Label htmlFor="empresa">Empresa</Label>
-                  <div className="relative">
-                    <Building2 className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                    <Input
-                      id="empresa"
-                      type="text"
-                      autoComplete="organization"
-                      placeholder="ex: lojax"
-                      className="pl-9"
-                      value={empresa}
-                      onChange={(e) => setEmpresa(e.target.value)}
-                      required
-                      disabled={enviando}
-                    />
-                  </div>
-                </div>
-
                 <div className="space-y-1.5">
                   <Label htmlFor="email">E-mail</Label>
                   <div className="relative">

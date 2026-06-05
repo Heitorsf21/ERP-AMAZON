@@ -17,7 +17,6 @@ export const dynamic = "force-dynamic";
 
 const schema = z.object({
   email: z.string().email().max(200),
-  empresa: z.string().min(1).max(40),
 });
 
 function sha256(s: string): string {
@@ -41,7 +40,6 @@ export async function POST(req: Request) {
   }
 
   const email = parsed.data.email.toLowerCase().trim();
-  const slug = parsed.data.empresa.toLowerCase().trim();
 
   const ip = getClientIp(req.headers);
   const rl = await consumeRateLimit(
@@ -54,10 +52,8 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true });
   }
 
-  const empresa = await db.empresa.findUnique({ where: { slug }, select: { id: true } });
-  const user = empresa
-    ? await db.usuario.findUnique({ where: { empresaId_email: { empresaId: empresa.id, email } } })
-    : null;
+  // email e unico GLOBAL — resolve o usuario sem precisar da empresa.
+  const user = await db.usuario.findUnique({ where: { email } });
 
   // Sempre retorna 200 — não vaza se email existe ou não.
   if (!user || !user.ativo) {

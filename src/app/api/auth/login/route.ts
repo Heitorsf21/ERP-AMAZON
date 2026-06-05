@@ -14,7 +14,7 @@ import { enviarEmail, escapeHtml } from "@/lib/email";
 import {
   recordLoginFailureByKey,
   resetLoginFailuresByKey,
-  getLoginFailureKeyComEmpresa,
+  getLoginFailureKey,
 } from "@/lib/auth-rate-limit";
 import { originViolationResponse } from "@/lib/origin-check";
 import { TipoAuditLog } from "@/modules/shared/domain";
@@ -23,7 +23,6 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const schema = z.object({
-  empresa: z.string().min(1).max(40),
   email: z.string().email().max(200),
   senha: z.string().min(1).max(200),
   lembrar: z.boolean().optional(),
@@ -50,16 +49,15 @@ export async function POST(req: Request) {
     return NextResponse.json({ erro: "DADOS_INVALIDOS" }, { status: 400 });
   }
 
-  const slug = parsed.data.empresa.toLowerCase().trim();
   const email = parsed.data.email.toLowerCase().trim();
   const lembrar = parsed.data.lembrar === true;
 
-  const empresa = await db.empresa.findUnique({ where: { slug }, select: { id: true, ativa: true } });
-  const user = empresa
-    ? await db.usuario.findUnique({
-        where: { empresaId_email: { empresaId: empresa.id, email } },
-      })
-    : null;
+  // email e unico GLOBAL (1 email = 1 empresa). Usuario e GLOBAL_MODEL, entao a
+  // extensao de tenant nao auto-filtra esta query (login roda pre-contexto).
+  const user = await db.usuario.findUnique({
+    where: { email },
+    include: { empresa: { select: { ativa: true } } },
+  });
 
   // Dummy bcrypt SEMPRE quando nao ha user: tempo uniforme (anti-enumeracao).
   let senhaOk = false;
@@ -69,11 +67,11 @@ export async function POST(req: Request) {
     await bcrypt.compare(parsed.data.senha, DUMMY_HASH); // descarta resultado, so p/ uniformizar tempo
   }
 
-  const empresaInativa = empresa != null && empresa.ativa === false;
+  const empresaInativa = user != null && user.empresa.ativa === false;
 
-  if (!empresa || !user || !user.ativo || empresaInativa || !senhaOk) {
+  if (!user || !user.ativo || empresaInativa || !senhaOk) {
     const failureLimit = await recordLoginFailureByKey(
-      getLoginFailureKeyComEmpresa(req.headers, slug, email),
+      getLoginFailureKey(req.headers, email),
     );
 
     await auditLog({
@@ -81,7 +79,7 @@ export async function POST(req: Request) {
       acao: TipoAuditLog.LOGIN_FALHA,
       entidade: "Usuario",
       entidadeId: user?.id ?? null,
-      metadata: { email, slug },
+      metadata: { email },
     });
 
     if (failureLimit.limited) {
@@ -105,7 +103,7 @@ export async function POST(req: Request) {
     );
   }
 
-  await resetLoginFailuresByKey(getLoginFailureKeyComEmpresa(req.headers, slug, email));
+  await resetLoginFailuresByKey(getLoginFailureKey(req.headers, email));
 
   // Se 2FA habilitado, gera challenge e envia código por email — NÃO cria sessão.
   if (user.twoFactorEnabled && user.twoFactorMethod === "EMAIL") {

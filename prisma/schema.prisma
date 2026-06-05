@@ -91,7 +91,7 @@ model PlataformaUsuario {
 
 model Usuario {
   id               String    @id @default(cuid())
-  email            String
+  email            String    @unique
   senhaHash        String
   nome             String
   // ADMIN | OPERADOR | FINANCEIRO | LEITURA

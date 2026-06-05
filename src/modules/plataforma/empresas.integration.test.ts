@@ -15,7 +15,10 @@ async function limpar(slug: string) {
   await prisma.empresa.delete({ where: { id: emp.id } });
 }
 
-afterEach(async () => { await limpar("loja-itest"); });
+afterEach(async () => {
+  await limpar("loja-itest");
+  await limpar("loja-itest-2");
+});
 
 describe("criarEmpresa", () => {
   it("cria empresa + seed + admin + convite atomicamente", async () => {
@@ -40,6 +43,19 @@ describe("criarEmpresa", () => {
     await criarEmpresa({ nome: "L1", slug: "loja-itest", admin: { nome: "A", email: "a@x.com" } });
     await expect(
       criarEmpresa({ nome: "L2", slug: "loja-itest", admin: { nome: "B", email: "b@x.com" } }),
+    ).rejects.toThrow();
+  });
+
+  it("rejeita email ja usado em OUTRA empresa (1 email = 1 empresa)", async () => {
+    await criarEmpresa({
+      nome: "Loja 1", slug: "loja-itest",
+      admin: { nome: "Admin", email: "dup@itest.com" },
+    });
+    await expect(
+      criarEmpresa({
+        nome: "Loja 2", slug: "loja-itest-2",
+        admin: { nome: "Admin", email: "dup@itest.com" },
+      }),
     ).rejects.toThrow();
   });
 
