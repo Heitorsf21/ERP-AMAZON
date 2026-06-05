@@ -40,6 +40,11 @@ import {
   extractAmazonListingEffectivePriceCentavos,
   mergeAmazonOrderItemsWithSummary,
 } from "@/modules/amazon/pricing";
+import {
+  isStatusPedidoCancelado,
+  marcarVendasAmazonQuantidadeZeroComoCanceladas,
+  skusSomenteComQuantidadeZero,
+} from "@/modules/amazon/zero-quantity-cancellation";
 import { inferAmazonCategoriaFee } from "@/modules/produtos/amazon-fee-category-mapper";
 import {
   OrigemAmazonReviewSolicitation,
@@ -766,16 +771,26 @@ async function syncOrdersInternal(
       }
 
       const itensDetalhados = itemsPorOrderId.get(amazonOrderId) ?? [];
-      await upsertAmazonOrderRaw(creds, order, {
-        itensProcessados: itensDetalhados.some(
-          (item) => !!item.SellerSKU && getOrderItemQuantityOrdered(item) > 0,
-        ),
+      const itensComSkuRaw = itensDetalhados.filter((item) => !!item.SellerSKU);
+      const skusComQuantidadeZero = skusSomenteComQuantidadeZero(
+        itensComSkuRaw.map((item) => ({
+          sku: item.SellerSKU,
+          quantidade: getOrderItemQuantityOrdered(item),
+        })),
+      );
+      atualizadas += await marcarVendasAmazonQuantidadeZeroComoCanceladas({
+        amazonOrderId,
+        skus: skusComQuantidadeZero,
       });
 
-      const itensComSku = itensDetalhados.filter(
-        (item) => !!item.SellerSKU && getOrderItemQuantityOrdered(item) > 0,
+      await upsertAmazonOrderRaw(creds, order, {
+        itensProcessados: itensComSkuRaw.length > 0,
+      });
+
+      const itensComSku = itensComSkuRaw.filter(
+        (item) => getOrderItemQuantityOrdered(item) > 0,
       );
-      ignoradas += itensDetalhados.length - itensComSku.length;
+      ignoradas += itensDetalhados.length - itensComSkuRaw.length;
       const itensAgrupados = agruparLinhasVendaAmazon(
         itensComSku.map((item) => {
           const quantidade = getOrderItemQuantityOrdered(item);
@@ -809,7 +824,11 @@ async function syncOrdersInternal(
           },
         };
         const existente = await db.vendaAmazon.findUnique({ where });
-        const statusPedido = getOrderStatus(order, existente?.statusPedido ?? "UNKNOWN");
+        const statusFallback =
+          existente && !isStatusPedidoCancelado(existente.statusPedido)
+            ? existente.statusPedido
+            : "UNKNOWN";
+        const statusPedido = getOrderStatus(order, statusFallback);
         const createdAt = getOrderCreatedTime(order) ?? new Date();
         const lastUpdatedAt = getOrderLastUpdatedTime(order);
 
