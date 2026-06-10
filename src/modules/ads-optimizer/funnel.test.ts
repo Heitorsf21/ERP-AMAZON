@@ -144,6 +144,42 @@ describe("evaluateAdsOptimizerFunnel — passo 4: feedback da otimizacao", () =>
     );
     expect(result).toEqual([]);
   });
+
+  it("melhora de exatamente 10pp conta como melhora (sem poeira de float)", () => {
+    const result = evaluateAdsOptimizerFunnel(
+      input({
+        lastAction: lastAction({
+          diasDesdeMudanca: 9,
+          baselineAcos30d: 0.3,
+          // pos: ACOS 0.20 → melhora de exatamente 10pp (0.3 - 0.2 = 0.0999... em float)
+          postChange: m({ cliques: 12, gastoCentavos: 1000, vendasCentavos: 5000 }),
+        }),
+        metrics7d: m({ cliques: 12, gastoCentavos: 1000, vendasCentavos: 5000 }),
+        metrics30d: m({ cliques: 40, gastoCentavos: 6000, vendasCentavos: 30000 }),
+        metrics65d: m({ cliques: 80, gastoCentavos: 12000, vendasCentavos: 60000 }),
+        metricsLifetime: m({ cliques: 100, gastoCentavos: 15000, vendasCentavos: 75000 }),
+      }),
+    );
+    expect(result).toEqual([]);
+  });
+
+  it("baseline ausente nao condena: sem como julgar, segue o funil normal", () => {
+    const result = evaluateAdsOptimizerFunnel(
+      input({
+        lastAction: lastAction({
+          diasDesdeMudanca: 9,
+          baselineAcos30d: null,
+          postChange: m({ cliques: 12, gastoCentavos: 1800, vendasCentavos: 5000 }),
+        }),
+        // funil normal com metricas neutras → nenhuma acao
+        metrics7d: m({ cliques: 12, gastoCentavos: 1800, vendasCentavos: 5000 }),
+        metrics30d: m({ cliques: 40, gastoCentavos: 6000, vendasCentavos: 16000 }),
+        metrics65d: m({ cliques: 80, gastoCentavos: 12000, vendasCentavos: 30000 }),
+        metricsLifetime: m({ cliques: 100, gastoCentavos: 15000, vendasCentavos: 40000 }),
+      }),
+    );
+    expect(result).toEqual([]);
+  });
 });
 
 describe("evaluateAdsOptimizerFunnel — passo 1: recencia", () => {

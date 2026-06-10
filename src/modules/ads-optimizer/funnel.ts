@@ -92,12 +92,20 @@ export function evaluateAdsOptimizerFunnel(
   if (input.lastAction && input.lastAction.actionType === "DECREASE_BID") {
     const baseline = input.lastAction.baselineAcos30d;
     const postAcos = input.lastAction.postChange.acos;
-    const improved =
-      baseline != null && postAcos != null && baseline - postAcos >= FUNNEL_IMPROVEMENT_MIN_PP;
-    if (!improved) {
-      return [cut(input, "FUNNEL_FEEDBACK_NO_IMPROVEMENT", "HIGH", 88,
-        `${input.label} foi otimizada ha ${input.lastAction.diasDesdeMudanca} dias e o ACOS pos-mudanca (${pct(postAcos)}) nao melhorou 10pp sobre o baseline (${pct(baseline)}). Reduzir R$0,05 nao resolveu — e gasto sem conserto barato.`,
-        "Conversoes atribuidas tardiamente ainda podem entrar; o dado ja descontou os dias provisorios.")];
+    // Sem baseline ou sem ACOS pos-mudanca nao ha como julgar o feedback —
+    // ausencia de informacao NAO e prova de fracasso; segue o funil normal
+    // (o passo 2 corta com prova propria se continuar sem vendas).
+    if (baseline != null && postAcos != null) {
+      // Epsilon contra poeira de float: 0.30 - 0.20 === 0.0999... em IEEE-754.
+      const improved = baseline - postAcos >= FUNNEL_IMPROVEMENT_MIN_PP - 1e-9;
+      if (!improved) {
+        return [cut(input, "FUNNEL_FEEDBACK_NO_IMPROVEMENT", "HIGH", 88,
+          `${input.label} foi otimizada ha ${input.lastAction.diasDesdeMudanca} dias e o ACOS pos-mudanca (${pct(postAcos)}) nao melhorou 10pp sobre o baseline (${pct(baseline)}). Reduzir R$0,05 nao resolveu — e gasto sem conserto barato.`,
+          "Conversoes atribuidas tardiamente ainda podem entrar; o dado ja descontou os dias provisorios.")];
+      }
+      // Melhorou: segue o funil normal. Se o ACOS 7d ainda estiver disparado,
+      // um novo trim de R$0,05 no mesmo ciclo e INTENCIONAL (descida gradual
+      // com observacao de 7 dias entre cada passo).
     }
   }
 
