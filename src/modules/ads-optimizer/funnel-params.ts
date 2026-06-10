@@ -17,7 +17,10 @@ export const FUNNEL_OBSERVATION_MIN_CLICKS = 10;
 /** Ultimos N dias descontados do julgamento (conversoes ainda entrando). */
 export const FUNNEL_PROVISIONAL_RECENT_DAYS = 2;
 
-/** Dormente = ate este numero de cliques em 7d (0 = nenhum clique). */
+/**
+ * Dormente = ate este numero de cliques em 7d. O "~0" do spec foi implementado
+ * como exatamente 0 (nenhum clique registrado na janela) — decisao deliberada.
+ */
 export const FUNNEL_DORMANT_MAX_CLICKS_7D = 0;
 
 /** "Caindo materialmente" = cliques 7d abaixo de (ritmo 30d * este fator). */
@@ -26,7 +29,11 @@ export const FUNNEL_DECLINE_PACE_RATIO = 0.7;
 /** Gatilho de corte: cliques sem nenhuma venda, em qualquer janela. */
 export const FUNNEL_ZERO_SALES_CLICKS = 25;
 
-/** "Historico bom" que veta o corte: ACOS de vida abaixo disso (e com vendas). */
+/**
+ * "Historico bom" que veta o corte: ACOS de vida abaixo disso (e com vendas).
+ * Coincide com FUNNEL_COMFORT_ACOS hoje, mas e conceitualmente independente
+ * (piso de clemencia vs meta de premiacao) — calibrar separadamente.
+ */
 export const FUNNEL_GOOD_LIFETIME_ACOS = 0.15;
 
 /** Meta de conforto — ACOS "otimo". */
