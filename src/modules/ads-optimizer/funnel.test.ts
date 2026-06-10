@@ -222,6 +222,19 @@ describe("evaluateAdsOptimizerFunnel — passo 1: recencia", () => {
     });
   });
 
+  it("keyword sem nenhum historico (nunca clicou em 65d) → SEGURAR (sem acao)", () => {
+    const result = evaluateAdsOptimizerFunnel(
+      input({
+        currentBidCentavos: 100,
+        metrics7d: emptyMetrics(),
+        metrics30d: emptyMetrics(),
+        metrics65d: emptyMetrics(),
+        metricsLifetime: emptyMetrics(),
+      }),
+    );
+    expect(result).toEqual([]);
+  });
+
   // Caso-teste 4 do spec: eficiencia crescente.
   it("cliques caindo + ACOS melhorando → SEGURAR (sem acao)", () => {
     const result = evaluateAdsOptimizerFunnel(

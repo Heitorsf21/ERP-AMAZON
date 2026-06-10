@@ -87,6 +87,14 @@ type RecommendationEvidence = {
   skuAttributionSource?: SkuAttributionSource;
   skuAttributionCandidates?: Array<{ adId: string; sku: string; asin: string | null }>;
   blockedReason?: string | null;
+  metrics65d?: AdsOptimizerMetrics;
+  lastAction?: {
+    actionType: string;
+    executadoEm: string;
+    diasDesdeMudanca: number;
+    baselineAcos30d: number | null;
+    postChange: AdsOptimizerMetrics;
+  } | null;
 };
 
 type MetricAccumulator = {
@@ -1188,7 +1196,7 @@ async function gerarRecomendacoes(profileId: string, actor: OptimizerActor) {
       profileId,
       iniciadoPorId: actor.uid,
       iniciadoPorEmail: actor.email,
-      payloadJson: json({ triggeredBy: "manual" }),
+      payloadJson: json({ triggeredBy: actor.uid === "system" ? "worker" : "manual" }),
     },
   });
 
@@ -1350,6 +1358,8 @@ async function buildOptimizationSnapshot(profileId: string) {
       executadoEm: true,
       metrics30dJson: true,
     },
+    // Cap deliberado: contas com >2000 acoes APLICADAS perdem memoria das
+    // entidades tocadas ha mais tempo — degrada para "sem lastAction" (sem risco).
     take: 2000,
   });
   const lastActionByEntity = new Map<string, (typeof appliedActions)[number]>();
@@ -1681,6 +1691,9 @@ function buildFunnelLastAction(
   today: Date,
 ): FunnelLastAction | null {
   if (!applied.executadoEm) return null;
+  // O dia da acao entra INTEIRO na janela pos-mudanca (linhas diarias nao tem
+  // hora). O ruido maximo e ~1 dia pre-mudanca e ele DILUI a melhora medida —
+  // direcao conservadora, aceita deliberadamente.
   const inicio = startOfAdsDay(applied.executadoEm);
   const fimMaduro = addDays(today, -FUNNEL_PROVISIONAL_RECENT_DAYS);
   const baseline = parseOptionalJson<AdsOptimizerMetrics>(applied.metrics30dJson);

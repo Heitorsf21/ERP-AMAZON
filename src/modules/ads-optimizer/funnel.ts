@@ -116,7 +116,9 @@ export function evaluateAdsOptimizerFunnel(
         `${input.label} esta dormente (sem cliques em 7d) e o ACOS de 65 dias (${pct(m65.acos)}) esta acima de 50%. Caso comprovadamente ruim — nao vale ressuscitar.`,
         "Se houve ruptura de estoque ou teste de listing no periodo, a pausa corta aprendizado.")];
     }
-    if (input.currentBidCentavos != null) {
+    // Revive exige atividade previa: dormente = "ficou quieta", nao "nunca rodou".
+    // Keyword sem nenhum clique em 65d nao tem evidencia para acao — segura.
+    if (m65.cliques > 0 && input.currentBidCentavos != null) {
       return [bid(input, +1, "FUNNEL_DORMANT_REVIVE", "LOW", 78,
         `${input.label} esta sem cliques ha 7 dias — provavelmente perdeu impressao por lance baixo. Subir R$0,05 tenta reativar; o historico nao condena a palavra (ACOS 65d ${pct(m65.acos)}).`,
         "Subir lance pode trazer trafego de volta com CPC maior; o ciclo de observacao mede o efeito.")];
