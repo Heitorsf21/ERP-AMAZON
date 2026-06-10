@@ -30,14 +30,14 @@ import {
   type AdsOptimizerSearchTermRow,
 } from "@/modules/amazon/parsers/sp-optimizer-reports";
 import type { SessionPayload } from "@/lib/session";
+import { deriveMetrics, emptyMetrics, type AdsOptimizerMetrics } from "./metrics";
 import {
-  deriveMetrics,
-  emptyMetrics,
-  evaluateAdsOptimizerRules,
+  evaluateAdsOptimizerFunnel,
   type AdsOptimizerActionType,
   type AdsOptimizerEntityType,
-  type AdsOptimizerMetrics,
-} from "./rules";
+  type FunnelLastAction,
+} from "./funnel";
+import { FUNNEL_LONG_WINDOW_DAYS, FUNNEL_PROVISIONAL_RECENT_DAYS } from "./funnel-params";
 import {
   resolveSkuAttribution,
   type ProductAdForSkuAttribution,
@@ -125,6 +125,10 @@ export type AdsOptimizerExecutionOptions = {
   dryRun?: boolean;
 };
 
+/** Quem disparou a rodada — sessao humana ou o worker automatico. */
+export type OptimizerActor = { uid: string; email: string };
+// SYSTEM_ACTOR adicionado na Task 5
+
 export const adsOptimizerService = {
   async syncBaseData() {
     const creds = await requireAdsCredentials();
@@ -144,6 +148,14 @@ export const adsOptimizerService = {
   },
 
   async runOptimization(session: SessionPayload) {
+    return this.runCycle({ uid: session.uid, email: session.email });
+  },
+
+  /**
+   * Ciclo completo: sync de entidades + relatorios (quota-aware) + recalculo.
+   * Usado pela rota manual (com ator da sessao) e pelo worker (SYSTEM_ACTOR).
+   */
+  async runCycle(actor: OptimizerActor) {
     const creds = await requireAdsCredentials();
     const profileId = requireProfileId(creds);
     await syncEditableAdsEntities(creds);
@@ -177,114 +189,7 @@ export const adsOptimizerService = {
       };
     }
 
-    const run = await db.adsOptimizationRun.create({
-      data: {
-        profileId,
-        iniciadoPorId: session.uid,
-        iniciadoPorEmail: session.email,
-        payloadJson: json({ triggeredBy: "manual" }),
-      },
-    });
-
-    try {
-      await db.adsOptimizationRecommendation.updateMany({
-        where: { profileId, status: "PROPOSED" },
-        data: { status: "STALE", staleReason: "Nova rodada de otimizaÃ§Ã£o gerada" },
-      });
-
-      const snapshot = await buildOptimizationSnapshot(profileId);
-      let total = 0;
-      const seenRecommendationKeys = new Set<string>();
-
-      for (const item of snapshot.items) {
-        const recommendations = evaluateAdsOptimizerRules({
-          entityType: item.entity.entityType,
-          entityId: item.entity.entityId,
-          label: item.entity.label,
-          campaignId: item.entity.campaignId,
-          adGroupId: item.entity.adGroupId,
-          keywordId: item.entity.keywordId,
-          targetId: item.entity.targetId,
-          searchTerm: item.entity.searchTerm,
-          matchType: item.entity.matchType,
-          estado: item.entity.estado,
-          currentBidCentavos: item.entity.currentBidCentavos,
-          metrics7d: item.metrics7d,
-          metricsPrev7d: item.metricsPrev7d,
-          metrics30d: item.metrics30d,
-          metricsLifetime: item.metricsLifetime,
-        });
-
-        for (const rec of recommendations) {
-          if (
-            shouldSkipRecommendation(
-              item.entity,
-              rec.actionType,
-              snapshot.ruleContext,
-              seenRecommendationKeys,
-            )
-          ) {
-            continue;
-          }
-          await db.adsOptimizationRecommendation.create({
-            data: {
-              runId: run.id,
-              profileId,
-              entityType: item.entity.entityType,
-              entityId: item.entity.entityId,
-              campaignId: item.entity.campaignId,
-              campaignName: item.entity.campaignName,
-              portfolioId: item.entity.portfolioId,
-              portfolioName: item.entity.portfolioName,
-              adGroupId: item.entity.adGroupId,
-              adGroupName: item.entity.adGroupName,
-              keywordId: item.entity.keywordId,
-              targetId: item.entity.targetId,
-              searchTerm: item.entity.searchTerm,
-              sku: item.entity.sku,
-              asin: item.entity.asin,
-              actionType: rec.actionType,
-              severity: rec.severity,
-              ruleId: rec.ruleId,
-              motivo: rec.motivo,
-              risco: rec.risco,
-              confianca: rec.confianca,
-              currentBidCentavos: item.entity.currentBidCentavos,
-              proposedBidCentavos: rec.proposedBidCentavos,
-              beforeState: item.entity.estado,
-              proposedState: rec.proposedState,
-              metrics7dJson: json(item.metrics7d),
-              metrics30dJson: json(item.metrics30d),
-              metricsLifetimeJson: json(item.metricsLifetime),
-              evidenceJson: json(buildRecommendationEvidence(item.entity, item.metricsPrev7d)),
-            },
-          });
-          total += 1;
-        }
-      }
-
-      await db.adsOptimizationRun.update({
-        where: { id: run.id },
-        data: {
-          status: "DONE",
-          finalizadoEm: new Date(),
-          totalEntidades: snapshot.items.length,
-          totalRecomendacoes: total,
-        },
-      });
-
-      return { runId: run.id, totalEntidades: snapshot.items.length, totalRecomendacoes: total };
-    } catch (error) {
-      await db.adsOptimizationRun.update({
-        where: { id: run.id },
-        data: {
-          status: "FAILED",
-          finalizadoEm: new Date(),
-          erro: error instanceof Error ? error.message : String(error),
-        },
-      });
-      throw error;
-    }
+    return gerarRecomendacoes(profileId, actor);
   },
 
   async getSnapshot() {
@@ -1277,12 +1182,144 @@ function metricIdentityWhere(profileId: string, row: AdsOptimizerMetricRow) {
   };
 }
 
+async function gerarRecomendacoes(profileId: string, actor: OptimizerActor) {
+  const run = await db.adsOptimizationRun.create({
+    data: {
+      profileId,
+      iniciadoPorId: actor.uid,
+      iniciadoPorEmail: actor.email,
+      payloadJson: json({ triggeredBy: "manual" }),
+    },
+  });
+
+  try {
+    await db.adsOptimizationRecommendation.updateMany({
+      where: { profileId, status: "PROPOSED" },
+      data: { status: "STALE", staleReason: "Nova rodada de otimizaÃ§Ã£o gerada" },
+    });
+
+    const snapshot = await buildOptimizationSnapshot(profileId);
+    let total = 0;
+    const seenRecommendationKeys = new Set<string>();
+
+    for (const item of snapshot.items) {
+      const recommendations = evaluateAdsOptimizerFunnel({
+        entityType: item.entity.entityType,
+        entityId: item.entity.entityId,
+        label: item.entity.label,
+        keywordId: item.entity.keywordId,
+        targetId: item.entity.targetId,
+        searchTerm: item.entity.searchTerm,
+        matchType: item.entity.matchType,
+        estado: item.entity.estado,
+        currentBidCentavos: item.entity.currentBidCentavos,
+        metrics7d: item.metrics7d,
+        metrics30d: item.metrics30d,
+        metrics65d: item.metrics65d,
+        metricsLifetime: item.metricsLifetime,
+        lastAction: item.lastAction,
+      });
+
+      for (const rec of recommendations) {
+        // Revisao de qualidade do funil: proposta de lance identica ao atual
+        // (DECREASE no piso de 5 centavos) e ruido — nao vira recomendacao.
+        if (
+          (rec.actionType === "DECREASE_BID" || rec.actionType === "INCREASE_BID") &&
+          rec.proposedBidCentavos != null &&
+          rec.proposedBidCentavos === item.entity.currentBidCentavos
+        ) {
+          continue;
+        }
+        if (
+          shouldSkipRecommendation(
+            item.entity,
+            rec.actionType,
+            snapshot.ruleContext,
+            seenRecommendationKeys,
+          )
+        ) {
+          continue;
+        }
+        await db.adsOptimizationRecommendation.create({
+          data: {
+            runId: run.id,
+            profileId,
+            entityType: item.entity.entityType,
+            entityId: item.entity.entityId,
+            campaignId: item.entity.campaignId,
+            campaignName: item.entity.campaignName,
+            portfolioId: item.entity.portfolioId,
+            portfolioName: item.entity.portfolioName,
+            adGroupId: item.entity.adGroupId,
+            adGroupName: item.entity.adGroupName,
+            keywordId: item.entity.keywordId,
+            targetId: item.entity.targetId,
+            searchTerm: item.entity.searchTerm,
+            sku: item.entity.sku,
+            asin: item.entity.asin,
+            actionType: rec.actionType,
+            severity: rec.severity,
+            ruleId: rec.ruleId,
+            motivo: rec.motivo,
+            risco: rec.risco,
+            confianca: rec.confianca,
+            currentBidCentavos: item.entity.currentBidCentavos,
+            proposedBidCentavos: rec.proposedBidCentavos,
+            beforeState: item.entity.estado,
+            proposedState: rec.proposedState,
+            metrics7dJson: json(item.metrics7d),
+            metrics30dJson: json(item.metrics30d),
+            metricsLifetimeJson: json(item.metricsLifetime),
+            evidenceJson: json({
+              ...buildRecommendationEvidence(item.entity, item.metricsPrev7d),
+              metrics65d: item.metrics65d,
+              lastAction: item.lastAction
+                ? {
+                    actionType: item.lastAction.actionType,
+                    executadoEm: item.lastAction.executadoEm.toISOString(),
+                    diasDesdeMudanca: item.lastAction.diasDesdeMudanca,
+                    baselineAcos30d: item.lastAction.baselineAcos30d,
+                    postChange: item.lastAction.postChange,
+                  }
+                : null,
+            }),
+          },
+        });
+        total += 1;
+      }
+    }
+
+    await db.adsOptimizationRun.update({
+      where: { id: run.id },
+      data: {
+        status: "DONE",
+        finalizadoEm: new Date(),
+        totalEntidades: snapshot.items.length,
+        totalRecomendacoes: total,
+      },
+    });
+
+    return { runId: run.id, totalEntidades: snapshot.items.length, totalRecomendacoes: total };
+  } catch (error) {
+    await db.adsOptimizationRun.update({
+      where: { id: run.id },
+      data: {
+        status: "FAILED",
+        finalizadoEm: new Date(),
+        erro: error instanceof Error ? error.message : String(error),
+      },
+    });
+    throw error;
+  }
+}
+
 async function buildOptimizationSnapshot(profileId: string) {
   const today = startOfAdsDay(new Date());
   const last7Start = addDays(today, -7);
   const prev7Start = addDays(today, -14);
   const prev7End = addDays(last7Start, -1);
   const last30Start = addDays(today, -30);
+  const long65Start = addDays(today, -FUNNEL_LONG_WINDOW_DAYS);
 
   const [
     keywords,
@@ -1303,6 +1340,24 @@ async function buildOptimizationSnapshot(profileId: string) {
     db.amazonAdsNegativeKeyword.findMany({ where: { profileId } }),
     db.amazonAdsNegativeTarget.findMany({ where: { profileId } }),
   ]);
+  const appliedActions = await db.adsOptimizationRecommendation.findMany({
+    where: { profileId, status: "APPLIED", executadoEm: { not: null } },
+    orderBy: { executadoEm: "desc" },
+    select: {
+      entityType: true,
+      entityId: true,
+      actionType: true,
+      executadoEm: true,
+      metrics30dJson: true,
+    },
+    take: 2000,
+  });
+  const lastActionByEntity = new Map<string, (typeof appliedActions)[number]>();
+  for (const action of appliedActions) {
+    const key = `${action.entityType}:${action.entityId}`;
+    if (!lastActionByEntity.has(key)) lastActionByEntity.set(key, action);
+  }
+
   const portfolioNameById = new Map(portfolios.map((p) => [p.portfolioId, p.nome]));
   const productAdsForAttribution: ProductAdForSkuAttribution[] = productAds.map((ad) => ({
     campaignId: ad.campaignId,
@@ -1374,13 +1429,20 @@ async function buildOptimizationSnapshot(profileId: string) {
 
   return {
     ruleContext: buildRuleContext(keywords, negativeKeywords, negativeTargets),
-    items: allEntities.map((entity) => ({
-      entity,
-      metrics7d: aggregateMetrics(targetingRows, searchRows, entity, last7Start, today),
-      metricsPrev7d: aggregateMetrics(targetingRows, searchRows, entity, prev7Start, prev7End),
-      metrics30d: aggregateMetrics(targetingRows, searchRows, entity, last30Start, today),
-      metricsLifetime: aggregateMetrics(targetingRows, searchRows, entity, null, null),
-    })),
+    items: allEntities.map((entity) => {
+      const applied = lastActionByEntity.get(`${entity.entityType}:${entity.entityId}`);
+      return {
+        entity,
+        metrics7d: aggregateMetrics(targetingRows, searchRows, entity, last7Start, today),
+        metricsPrev7d: aggregateMetrics(targetingRows, searchRows, entity, prev7Start, prev7End),
+        metrics30d: aggregateMetrics(targetingRows, searchRows, entity, last30Start, today),
+        metrics65d: aggregateMetrics(targetingRows, searchRows, entity, long65Start, today),
+        metricsLifetime: aggregateMetrics(targetingRows, searchRows, entity, null, null),
+        lastAction: applied
+          ? buildFunnelLastAction(applied, entity, targetingRows, searchRows, today)
+          : null,
+      };
+    }),
   };
 }
 
@@ -1605,6 +1667,30 @@ function campaignAdGroupTextKey(
 
 function normalizeText(value: string) {
   return value.trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+function buildFunnelLastAction(
+  applied: {
+    actionType: string;
+    executadoEm: Date | null;
+    metrics30dJson: string;
+  },
+  entity: OptimizerEntity,
+  targetingRows: Parameters<typeof aggregateMetrics>[0],
+  searchRows: Parameters<typeof aggregateMetrics>[1],
+  today: Date,
+): FunnelLastAction | null {
+  if (!applied.executadoEm) return null;
+  const inicio = startOfAdsDay(applied.executadoEm);
+  const fimMaduro = addDays(today, -FUNNEL_PROVISIONAL_RECENT_DAYS);
+  const baseline = parseOptionalJson<AdsOptimizerMetrics>(applied.metrics30dJson);
+  return {
+    actionType: applied.actionType,
+    executadoEm: applied.executadoEm,
+    diasDesdeMudanca: Math.max(0, differenceInCalendarDays(today, inicio)),
+    baselineAcos30d: baseline?.acos ?? null,
+    postChange: aggregateMetrics(targetingRows, searchRows, entity, inicio, fimMaduro),
+  };
 }
 
 function aggregateMetrics(
