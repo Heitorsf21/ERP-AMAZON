@@ -39,6 +39,8 @@ function input(over: Partial<AdsOptimizerFunnelInput> = {}): AdsOptimizerFunnelI
   };
 }
 
+// Default: reducao de lance madura (9 dias, 15 cliques) com baseline ACOS 40%
+// e pos-mudanca ACOS 30% (1500/5000) — melhora de 10pp, exatamente no limiar.
 function lastAction(over: Partial<FunnelLastAction> = {}): FunnelLastAction {
   return {
     actionType: "DECREASE_BID",
@@ -123,6 +125,25 @@ describe("evaluateAdsOptimizerFunnel — passo 4: feedback da otimizacao", () =>
     );
     expect(result).toEqual([]);
   });
+
+  it("nao aplica o feedback a acoes que nao sao reducao de lance (INCREASE_BID)", () => {
+    const result = evaluateAdsOptimizerFunnel(
+      input({
+        lastAction: lastAction({
+          actionType: "INCREASE_BID",
+          diasDesdeMudanca: 8,
+          baselineAcos30d: 0.4,
+          // "nao melhorou 10pp" — mas isso so condena reducoes; aumento segue o funil
+          postChange: m({ cliques: 12, gastoCentavos: 1800, vendasCentavos: 5000 }),
+        }),
+        metrics7d: m({ cliques: 12, gastoCentavos: 1800, vendasCentavos: 5000 }),
+        metrics30d: m({ cliques: 40, gastoCentavos: 6000, vendasCentavos: 16000 }),
+        metrics65d: m({ cliques: 80, gastoCentavos: 12000, vendasCentavos: 30000 }),
+        metricsLifetime: m({ cliques: 100, gastoCentavos: 15000, vendasCentavos: 40000 }),
+      }),
+    );
+    expect(result).toEqual([]);
+  });
 });
 
 describe("evaluateAdsOptimizerFunnel — passo 1: recencia", () => {
@@ -132,6 +153,9 @@ describe("evaluateAdsOptimizerFunnel — passo 1: recencia", () => {
       input({
         currentBidCentavos: 80,
         metrics7d: emptyMetrics(),
+        // 30d com 31c/0p tambem satisfaz o gatilho do passo 2 — DE PROPOSITO:
+        // este e o caso real "almofada ortopedica"; o passo 1 (dormente) DEVE
+        // vencer o passo 2 e revive, nunca pausar.
         metrics30d: m({ cliques: 31, gastoCentavos: 2890, vendasCentavos: 0, pedidos: 0 }),
         // vida: 68 cliques, 2 pedidos, ACOS 38%
         metrics65d: m({ cliques: 68, gastoCentavos: 3800, vendasCentavos: 10000, pedidos: 2 }),
@@ -385,7 +409,9 @@ describe("evaluateAdsOptimizerFunnel — termos de busca (SEARCH_TERM)", () => {
     const result = evaluateAdsOptimizerFunnel(
       searchTermInput({
         metrics7d: m({ cliques: 26, gastoCentavos: 2600, vendasCentavos: 0, pedidos: 0 }),
-        metrics30d: m({ cliques: 40, gastoCentavos: 4000, vendasCentavos: 30000, pedidos: 3 }),
+        // 30d ACOS ~23% (> 15%) de proposito: impede o ramo de harvest de disparar,
+        // isolando o teste no veto de negativacao por historico bom.
+        metrics30d: m({ cliques: 40, gastoCentavos: 7000, vendasCentavos: 30000, pedidos: 3 }),
         metrics65d: m({ cliques: 90, gastoCentavos: 8000, vendasCentavos: 60000, pedidos: 8 }),
         metricsLifetime: m({ cliques: 150, gastoCentavos: 10000, vendasCentavos: 80000, pedidos: 12 }),
       }),
