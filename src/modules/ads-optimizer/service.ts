@@ -37,7 +37,13 @@ import {
   type AdsOptimizerEntityType,
   type FunnelLastAction,
 } from "./funnel";
-import { FUNNEL_LONG_WINDOW_DAYS, FUNNEL_PROVISIONAL_RECENT_DAYS } from "./funnel-params";
+import {
+  FUNNEL_LONG_WINDOW_DAYS,
+  FUNNEL_OBSERVATION_HIGH_CONFIDENCE_DAYS,
+  FUNNEL_OBSERVATION_MIN_CLICKS,
+  FUNNEL_OBSERVATION_MIN_DAYS,
+  FUNNEL_PROVISIONAL_RECENT_DAYS,
+} from "./funnel-params";
 import {
   resolveSkuAttribution,
   type ProductAdForSkuAttribution,
@@ -135,7 +141,8 @@ export type AdsOptimizerExecutionOptions = {
 
 /** Quem disparou a rodada — sessao humana ou o worker automatico. */
 export type OptimizerActor = { uid: string; email: string };
-// SYSTEM_ACTOR adicionado na Task 5
+
+const SYSTEM_ACTOR: OptimizerActor = { uid: "system", email: "ads-optimizer@worker" };
 
 export const adsOptimizerService = {
   async syncBaseData() {
@@ -198,6 +205,32 @@ export const adsOptimizerService = {
     }
 
     return gerarRecomendacoes(profileId, actor);
+  },
+
+  /**
+   * Handler do job ADS_OPTIMIZER_CYCLE (worker, a cada ~6h).
+   * Nunca depende de sessao. Alem do ciclo, avanca o backfill quando incompleto
+   * e invalida APPROVED que ficaram obsoletas (usuario resolveu na mao).
+   */
+  async runWorkerCycle() {
+    const creds = await getAmazonAdsCredentials({ requireProfile: true });
+    if (!creds?.profileId) {
+      return {
+        ok: false,
+        skipped: true,
+        mensagem: "Amazon Ads nao configurado — ciclo do otimizador pulado.",
+      };
+    }
+    const profileId = String(creds.profileId);
+
+    const coverage = await getOptimizerCoverage(profileId);
+    if (!coverage.backfill.complete) {
+      await backfillOptimizerReportsWithCooldown(creds);
+    }
+
+    const cycle = await this.runCycle(SYSTEM_ACTOR);
+    const invalidadas = await invalidateStaleApproved(profileId);
+    return { ok: true, ...cycle, approvedInvalidadas: invalidadas };
   },
 
   async getSnapshot() {
@@ -345,6 +378,22 @@ export const adsOptimizerService = {
       };
     });
 
+    const observationCutoff = addDays(
+      startOfAdsDay(new Date()),
+      -FUNNEL_OBSERVATION_HIGH_CONFIDENCE_DAYS,
+    );
+    const observedRecs = profileId
+      ? await db.adsOptimizationRecommendation.findMany({
+          where: {
+            profileId,
+            status: "APPLIED",
+            executadoEm: { gte: observationCutoff },
+          },
+          orderBy: { executadoEm: "desc" },
+        })
+      : [];
+    const observations = await buildObservations(profileId, observedRecs);
+
     return {
       profileId,
       lastRun: lastRun
@@ -366,6 +415,7 @@ export const adsOptimizerService = {
       },
       coverage,
       recommendations: items,
+      observations,
     };
   },
 
@@ -442,7 +492,7 @@ export const adsOptimizerService = {
     }
     const blocked = await validateRecommendationFresh(rec);
     if (blocked) {
-      await markRecommendationStale(rec.id, blocked, session);
+      await markRecommendationStale(rec.id, blocked, { uid: session.uid, email: session.email });
       throw new Error(blocked);
     }
     const request = buildAmazonActionPayload(rec, normalizeApprovalInput(rec.actionType, input));
@@ -1706,6 +1756,76 @@ function buildFunnelLastAction(
   };
 }
 
+/** Efeito diario acumulado das acoes aplicadas recentemente (spec §5.1). */
+async function buildObservations(
+  profileId: string,
+  recs: Array<{
+    id: string;
+    entityType: string;
+    entityId: string;
+    actionType: string;
+    sku: string | null;
+    searchTerm: string | null;
+    keywordId: string | null;
+    targetId: string | null;
+    campaignId: string;
+    adGroupId: string | null;
+    executadoEm: Date | null;
+    metrics30dJson: string;
+    evidenceJson: string;
+  }>,
+) {
+  if (recs.length === 0) return [];
+  const today = startOfAdsDay(new Date());
+  const earliest = recs.reduce(
+    (min, rec) => (rec.executadoEm && rec.executadoEm < min ? rec.executadoEm : min),
+    today,
+  );
+  const [targetingRows, searchRows] = await Promise.all([
+    db.amazonAdsTargetingMetricDaily.findMany({
+      where: { profileId, data: { gte: startOfAdsDay(earliest) } },
+    }),
+    db.amazonAdsSearchTermMetricDaily.findMany({
+      where: { profileId, data: { gte: startOfAdsDay(earliest) } },
+    }),
+  ]);
+
+  return recs.flatMap((rec) => {
+    if (!rec.executadoEm) return [];
+    const evidence = parseOptionalJson<RecommendationEvidence>(rec.evidenceJson) ?? {};
+    // aggregateMetrics so usa os campos de identidade da entidade; os campos
+    // visuais ausentes nao participam do match — cast proposital.
+    const entity = {
+      entityType: rec.entityType as AdsOptimizerEntityType,
+      entityId: rec.entityId,
+      campaignId: rec.campaignId,
+      adGroupId: rec.adGroupId,
+      keywordId: rec.keywordId,
+      targetId: rec.targetId,
+      searchTerm: rec.searchTerm,
+      matchType: evidence.matchType ?? null,
+    } as OptimizerEntity;
+    const inicio = startOfAdsDay(rec.executadoEm);
+    const dias = Math.max(0, differenceInCalendarDays(today, inicio));
+    const postChange = aggregateMetrics(targetingRows, searchRows, entity, inicio, today);
+    const baseline = parseOptionalJson<AdsOptimizerMetrics>(rec.metrics30dJson);
+    return [{
+      recommendationId: rec.id,
+      sku: rec.sku,
+      displayLabel: evidence.displayLabel ?? evidence.label ?? rec.searchTerm ?? rec.entityId,
+      actionType: rec.actionType,
+      executadoEm: rec.executadoEm.toISOString(),
+      diasDesdeMudanca: dias,
+      cliquesPosMudanca: postChange.cliques,
+      baselineAcos: baseline?.acos ?? null,
+      postChange,
+      madura:
+        dias >= FUNNEL_OBSERVATION_MIN_DAYS &&
+        postChange.cliques >= FUNNEL_OBSERVATION_MIN_CLICKS,
+    }];
+  });
+}
+
 function aggregateMetrics(
   targetingRows: Array<{
     data: Date;
@@ -1854,7 +1974,7 @@ async function executeRecommendation(
 ) {
   const stale = await validateRecommendationFresh(rec);
   if (stale) {
-    await markRecommendationStale(rec.id, stale, session);
+    await markRecommendationStale(rec.id, stale, { uid: session.uid, email: session.email });
     return { id: rec.id, status: "STALE", message: stale };
   }
 
@@ -1915,6 +2035,25 @@ async function executeRecommendation(
   }
 }
 
+/**
+ * Recomendacoes APROVADAS cuja condicao mudou (lance alterado na mao, entidade
+ * pausada, negativa ja criada) viram STALE — nunca aparecem obsoletas na tela.
+ */
+async function invalidateStaleApproved(profileId: string) {
+  const approved = await db.adsOptimizationRecommendation.findMany({
+    where: { profileId, status: "APPROVED" },
+  });
+  let total = 0;
+  for (const rec of approved) {
+    const reason = await validateRecommendationFresh(rec);
+    if (reason) {
+      await markRecommendationStale(rec.id, reason, SYSTEM_ACTOR);
+      total += 1;
+    }
+  }
+  return total;
+}
+
 async function validateRecommendationFresh(
   rec: Awaited<ReturnType<typeof db.adsOptimizationRecommendation.findMany>>[number],
 ) {
@@ -1971,15 +2110,15 @@ async function validateRecommendationFresh(
 async function markRecommendationStale(
   id: string,
   staleReason: string,
-  session: SessionPayload,
+  actor: OptimizerActor,
 ) {
   await db.adsOptimizationExecutionLog.create({
     data: {
       recommendationId: id,
       status: "STALE",
       errorMessage: staleReason,
-      executadoPorId: session.uid,
-      executadoPorEmail: session.email,
+      executadoPorId: actor.uid,
+      executadoPorEmail: actor.email,
     },
   });
   await db.adsOptimizationRecommendation.update({
