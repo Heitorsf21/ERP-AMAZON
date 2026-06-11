@@ -573,7 +573,7 @@ function ObservationPanel({ observations }: { observations: Observation[] }) {
                   {obs.madura ? "Dado maduro" : "Provisório"}
                 </Badge>
               </div>
-              <div className="mt-3 grid grid-cols-4 gap-2 text-xs">
+              <div className="mt-3 grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
                 <Fact label="Gasto desde" value={formatBRL(obs.postChange.gastoCentavos)} />
                 <Fact label="Vendas desde" value={formatBRL(obs.postChange.vendasCentavos)} />
                 <Fact label="Cliques" value={String(obs.cliquesPosMudanca)} />
@@ -1274,7 +1274,7 @@ function EmptyState({ hasData }: { hasData: boolean }) {
     <Card>
       <CardContent className="py-10 text-center">
         <p className="text-sm font-medium">
-          {hasData ? "Nenhuma acao nos filtros atuais." : "Nenhuma ação pendente — tudo otimizado."}
+          {hasData ? "Nenhuma ação nos filtros atuais." : "Nenhuma ação pendente — tudo otimizado."}
         </p>
         <p className="mt-1 text-sm text-muted-foreground">
           {hasData
