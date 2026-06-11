@@ -1482,12 +1482,6 @@ function formatDateTime(value: string) {
   }).format(new Date(value));
 }
 
-function formatDate(value: string) {
-  return new Intl.DateTimeFormat("pt-BR", {
-    dateStyle: "short",
-  }).format(new Date(`${value}T00:00:00`));
-}
-
 function plural(count: number, singular: string, pluralValue: string) {
   return `${count} ${count === 1 ? singular : pluralValue}`;
 }

@@ -77,7 +77,7 @@ Removidas em `feat/melhorias-ux-6-frentes`: código, item de menu (`nav-routes.t
 
 ### Ads (fonte única)
 `src/modules/amazon/ads-aggregation.ts` centraliza tudo. Precedência: **SYNC** (AmazonAdsMetricaDiaria > 0) > **LEGACY+MANUAL** (AdsCampanha CSV + AdsGastoManual) > **VAZIO**. Helpers puros (ACOS/ROAS/CTR/CPC/conv). Endpoints `/api/ads/*` e service dashboard consomem essa camada.
-- **Otimizador** (`/publicidade/otimizador`, `src/modules/ads-optimizer/`): cada `SkuGroupCard` mostra imagem do produto (resolvida por SKU no snapshot) + faixa "última ação" + aba **Histórico** por SKU (decisões passadas, status≠PROPOSED) via `GET /api/ads/optimizer/history?sku=`. O histórico já é gravado em `AdsOptimizationRecommendation` (+ `AdsOptimizationExecutionLog`).
+- **Otimizador** (`/publicidade/otimizador`, `src/modules/ads-optimizer/`): motor de decisão em **funil stateful** (`funnel.ts`, parâmetros travados em `funnel-params.ts`) — ordem: observação (ação aplicada há <7d ou <10 cliques pós-mudança → não mexe) → feedback (DECREASE_BID madura sem melhora ≥10pp de ACOS → corta) → recência (dormente em 7d: revive com +R$0,05 se já teve clique em 65d, pausa se ACOS 65d >50%; cliques caindo + ACOS melhorando → segura) → conversão (25 cliques/0 venda corta, vetado por ACOS de vida <15% → reduz e observa) → multi-janela (sobe lance se ACOS <15% em 7d+30d+65d, ou 7d ótimo + 30d <25%; segura "bom momento" 7d ótimo + 30d >25%; reduz spike 7d ≥50% com vida saudável). SEARCH_TERM: corte = negativar; harvest de exato mantido. Job `ADS_OPTIMIZER_CYCLE` (6h) roda tudo sozinho via `runWorkerCycle` (avança backfill, recalcula, invalida APPROVED obsoletas) — aprovação/execução continuam humanas. UI sem coverage/contadores; painel "Em observação" mostra efeito acumulado desde cada ação aplicada (`observations` no snapshot). Histórico por SKU via `GET /api/ads/optimizer/history?sku=`. Janela pós-mudança desconta 2 dias provisórios (atribuição Amazon ~7d). Spec: `docs/superpowers/specs/2026-06-10-otimizador-ads-redesign-design.md`.
 
 ### Buybox
 `runBuyboxCheck` lê `amazon_seller_id` (Seller Central → Settings → Merchant Token). Set via `npx tsx scripts/sync-seller-id.ts --set <ID>`. Sem ID, fallback heurístico (50¢ tolerância).
@@ -115,6 +115,7 @@ Módulo isolado `src/modules/whatsapp-estoque/` (`service.ts` cálculo · `messa
 | AMAZON_FEE_ESTIMATE_SYNC | 1h | batch 5 SKUs com delay 3s. Gate `isProductFeesQuotaSaturated` pula quando cooldown >5min. |
 | AMAZON_FBA_PROMO_EXPIRY_CHECK | 24h | dispara Notificação CONFIG_REVIEW quando promo FBA expirar |
 | WHATSAPP_ESTOQUE_RESUMO | 5min | gate `isWhatsappEstoqueResumoSkip` (pula se `!ativo` ou hora local < `horario`); `dedupeKeyOverride` por data SP → 1 envio/dia mesmo após SUCESSO |
+| ADS_OPTIMIZER_CYCLE | 6h | funil do otimizador: relatórios próprios + recálculo + limpeza de obsoletas. Em prod, subir `AMAZON_RUNNING_JOB_STALE_MINUTES` para 60 (ciclo longo em contas grandes pode passar dos 30min do stale-lock). |
 
 ### SP-API & rate limit
 LWA OAuth2 (refresh_token → access_token, header `x-amz-access-token`). Sem AWS SigV4. Defaults em `src/lib/amazon-rate-limit.ts`; `adoptObservedRateLimit()` calibra via `x-amzn-RateLimit-Limit`. Cooldown em `AmazonApiQuota.nextAllowedAt`. 429 → `markAmazonOperationRateLimited()` respeita `retry-after`; lança `AmazonQuotaCooldownError` (retry).
