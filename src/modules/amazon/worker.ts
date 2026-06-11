@@ -47,6 +47,7 @@ import {
 } from "@/modules/amazon/ads-handlers";
 import { getAmazonAdsCredentials } from "@/modules/amazon/ads-service";
 import { runMarketingStreamIngest } from "@/modules/amazon/marketing-stream-handlers";
+import { adsOptimizerService } from "@/modules/ads-optimizer/service";
 import { runWhatsappEstoqueResumo } from "@/modules/whatsapp-estoque/jobs";
 import { StatusAmazonSyncJob, TipoAmazonSyncJob } from "@/modules/shared/domain";
 
@@ -270,7 +271,8 @@ async function processJob(
   // Jobs Ads usam outras credenciais (advertising LWA scope) — tratados a parte.
   const isAdsJob =
     tipo === TipoAmazonSyncJob.AMAZON_ADS_REPORT_SYNC ||
-    tipo === TipoAmazonSyncJob.AMAZON_ADS_BACKFILL;
+    tipo === TipoAmazonSyncJob.AMAZON_ADS_BACKFILL ||
+    tipo === TipoAmazonSyncJob.ADS_OPTIMIZER_CYCLE;
 
   // Para jobs que precisam de credenciais SP-API, busca-as uma única vez.
   // REVIEWS_DISCOVERY/SEND buscam suas próprias creds via getCredentialsOrThrow.
@@ -412,6 +414,8 @@ async function processJob(
       return runWhatsappEstoqueResumo({ tipo: "DIARIO" });
     case TipoAmazonSyncJob.PII_RETENTION_PURGE:
       return runPiiRetentionPurge();
+    case TipoAmazonSyncJob.ADS_OPTIMIZER_CYCLE:
+      return adsOptimizerService.runWorkerCycle();
     default:
       throw new Error(`Tipo de job Amazon desconhecido: ${tipo}`);
   }

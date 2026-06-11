@@ -326,6 +326,14 @@ const SCHEDULES: Array<{
     dedupeKeyOverride: (now) =>
       `${TipoAmazonSyncJob.PII_RETENTION_PURGE}:${dataLocalSP(now)}`,
   },
+  // Otimizador de Ads (funil stateful): sincroniza relatorios proprios do
+  // otimizador, recalcula recomendacoes e limpa obsoletas. Relatorio Amazon e
+  // diario — 6h serve para manter o quadro limpo, nao para inventar dado novo.
+  {
+    tipo: TipoAmazonSyncJob.ADS_OPTIMIZER_CYCLE,
+    intervalMs: 6 * 60 * 60_000,
+    priority: 9,
+  },
 ];
 
 export async function enqueueAmazonSyncJob(
