@@ -390,6 +390,22 @@ export const adsOptimizerService = {
             executadoEm: { gte: observationCutoff },
           },
           orderBy: { executadoEm: "desc" },
+          take: 500,
+          select: {
+            id: true,
+            entityType: true,
+            entityId: true,
+            actionType: true,
+            sku: true,
+            searchTerm: true,
+            keywordId: true,
+            targetId: true,
+            campaignId: true,
+            adGroupId: true,
+            executadoEm: true,
+            metrics30dJson: true,
+            evidenceJson: true,
+          },
         })
       : [];
     const observations = await buildObservations(profileId, observedRecs);
@@ -1776,21 +1792,67 @@ async function buildObservations(
   }>,
 ) {
   if (recs.length === 0) return [];
+
+  // Mesma semantica do motor: vale a acao MAIS RECENTE por entidade — duas
+  // acoes na mesma keyword em 14d gerariam janelas sobrepostas (cliques contados 2x).
+  const latestByEntity = new Map<string, (typeof recs)[number]>();
+  for (const rec of recs) {
+    const key = `${rec.entityType}:${rec.entityId}`;
+    if (!latestByEntity.has(key)) latestByEntity.set(key, rec);
+  }
+  const dedupedRecs = [...latestByEntity.values()];
+
   const today = startOfAdsDay(new Date());
-  const earliest = recs.reduce(
+  const fimMaduro = addDays(today, -FUNNEL_PROVISIONAL_RECENT_DAYS);
+  const earliest = dedupedRecs.reduce(
     (min, rec) => (rec.executadoEm && rec.executadoEm < min ? rec.executadoEm : min),
     today,
   );
   const [targetingRows, searchRows] = await Promise.all([
     db.amazonAdsTargetingMetricDaily.findMany({
       where: { profileId, data: { gte: startOfAdsDay(earliest) } },
+      select: {
+        data: true,
+        campaignId: true,
+        adGroupId: true,
+        entityType: true,
+        entityId: true,
+        keywordId: true,
+        targetId: true,
+        matchType: true,
+        atualizadoEm: true,
+        impressoes: true,
+        cliques: true,
+        gastoCentavos: true,
+        vendasCentavos: true,
+        pedidos: true,
+        unidades: true,
+      },
     }),
     db.amazonAdsSearchTermMetricDaily.findMany({
       where: { profileId, data: { gte: startOfAdsDay(earliest) } },
+      select: {
+        data: true,
+        campaignId: true,
+        adGroupId: true,
+        entityType: true,
+        entityId: true,
+        keywordId: true,
+        targetId: true,
+        searchTerm: true,
+        matchType: true,
+        atualizadoEm: true,
+        impressoes: true,
+        cliques: true,
+        gastoCentavos: true,
+        vendasCentavos: true,
+        pedidos: true,
+        unidades: true,
+      },
     }),
   ]);
 
-  return recs.flatMap((rec) => {
+  return dedupedRecs.flatMap((rec) => {
     if (!rec.executadoEm) return [];
     const evidence = parseOptionalJson<RecommendationEvidence>(rec.evidenceJson) ?? {};
     // aggregateMetrics so usa os campos de identidade da entidade; os campos
@@ -1808,6 +1870,9 @@ async function buildObservations(
     const inicio = startOfAdsDay(rec.executadoEm);
     const dias = Math.max(0, differenceInCalendarDays(today, inicio));
     const postChange = aggregateMetrics(targetingRows, searchRows, entity, inicio, today);
+    // Exibicao acumula tudo; o gate de maturidade usa a MESMA janela do motor
+    // (desconta os dias provisorios) para a UI nunca dizer "maduro" antes do funil.
+    const postChangeMaduro = aggregateMetrics(targetingRows, searchRows, entity, inicio, fimMaduro);
     const baseline = parseOptionalJson<AdsOptimizerMetrics>(rec.metrics30dJson);
     return [{
       recommendationId: rec.id,
@@ -1821,7 +1886,7 @@ async function buildObservations(
       postChange,
       madura:
         dias >= FUNNEL_OBSERVATION_MIN_DAYS &&
-        postChange.cliques >= FUNNEL_OBSERVATION_MIN_CLICKS,
+        postChangeMaduro.cliques >= FUNNEL_OBSERVATION_MIN_CLICKS,
     }];
   });
 }
@@ -2042,6 +2107,9 @@ async function executeRecommendation(
 async function invalidateStaleApproved(profileId: string) {
   const approved = await db.adsOptimizationRecommendation.findMany({
     where: { profileId, status: "APPROVED" },
+    // Espelha o cap do executeApproved: um backlog anormal nao trava o ciclo de 6h.
+    orderBy: { aprovadoEm: "asc" },
+    take: 50,
   });
   let total = 0;
   for (const rec of approved) {
