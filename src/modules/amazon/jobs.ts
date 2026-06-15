@@ -1,7 +1,11 @@
 import { format } from "date-fns";
 import { toZonedTime } from "date-fns-tz";
 import { db } from "@/lib/db";
-import { cursorKeyParaEmpresa, runWithTenant } from "@/lib/tenant-context";
+import {
+  currentEmpresaIdOrDefault,
+  cursorKeyParaEmpresa,
+  runWithTenant,
+} from "@/lib/tenant-context";
 import { TIMEZONE } from "@/lib/date";
 import { getReviewAutomationConfig } from "@/modules/amazon/service";
 import { getWhatsappEstoqueScheduleConfig } from "@/modules/whatsapp-estoque/config";
@@ -17,9 +21,11 @@ type EnqueueOptions = {
   maxAttempts?: number;
   dedupeKey?: string;
   dedupeAnyStatus?: boolean;
-  // F02: empresa dona do job (multi-seller). null = legado/global (adotado pela
-  // empresa primária no worker). Setado explicitamente para funcionar tanto em
-  // TENANT_ISOLATION=off quanto enforce (a extensão só injeta quando ausente).
+  // F02: empresa dona do job (multi-seller). Quando ausente, o enqueue resolve a
+  // empresa do contexto de tenant corrente (ou a primária de background). A coluna
+  // é NOT NULL no banco e a extensão só injeta `data.empresaId` quando a CHAVE está
+  // ausente — passar `null` explícito a suprimiria e o INSERT quebraria. Por isso
+  // nunca emitimos null: ver `enqueueAmazonSyncJob`.
   empresaId?: string | null;
 };
 
@@ -342,7 +348,11 @@ export async function enqueueAmazonSyncJob(
   options: EnqueueOptions = {},
 ) {
   const dedupeKey = options.dedupeKey;
-  const empresaId = options.empresaId ?? null;
+  // NUNCA null: a coluna é NOT NULL e a extensão de tenant só injeta empresaId
+  // quando a chave está AUSENTE no `data` (db.ts). Como sempre incluímos a chave,
+  // resolvemos aqui — contexto de tenant corrente (SQS/rotas/worker) ou a empresa
+  // primária de background. Callers com empresa explícita (agendamento) a passam.
+  const empresaId = options.empresaId ?? currentEmpresaIdOrDefault();
 
   if (dedupeKey) {
     const existing = await db.amazonSyncJob.findFirst({
