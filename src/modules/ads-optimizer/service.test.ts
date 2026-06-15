@@ -854,6 +854,46 @@ describe("adsOptimizerService.executeApproved", () => {
     expect(result).toMatchObject({ total: 1, applied: 0, failed: 0, stale: 1 });
   });
 
+  it("waits out the per-operation cooldown instead of failing the batch", async () => {
+    const cooldownError = Object.assign(
+      new Error("Amazon SP-API operation ADS_KEYWORDS_MUTATE em cooldown ate 2026-06-15T13:05:43.549Z"),
+      { name: "AmazonQuotaCooldownError", nextAllowedAt: new Date(Date.now() + 15) },
+    );
+    mocks.isAmazonQuotaCooldownError.mockImplementation(
+      (error: unknown) => error === cooldownError,
+    );
+    mocks.api.updateSponsoredProductsKeywords.mockReset();
+    mocks.api.updateSponsoredProductsKeywords
+      .mockRejectedValueOnce(cooldownError)
+      .mockResolvedValue({ ok: true });
+
+    const result = await adsOptimizerService.executeApproved(session);
+
+    expect(mocks.api.updateSponsoredProductsKeywords).toHaveBeenCalledTimes(2);
+    expect(mocks.db.adsOptimizationRecommendation.update).toHaveBeenCalledWith({
+      where: { id: "rec-1" },
+      data: expect.objectContaining({ status: "APPLIED" }),
+    });
+    expect(result).toMatchObject({ total: 1, applied: 1, failed: 0, stale: 0 });
+  });
+
+  it("does not retry forever when the cooldown is longer than the batch budget", async () => {
+    const cooldownError = Object.assign(
+      new Error("Amazon SP-API operation ADS_KEYWORDS_MUTATE em cooldown ate 2026-06-15T14:00:00.000Z"),
+      { name: "AmazonQuotaCooldownError", nextAllowedAt: new Date(Date.now() + 3_600_000) },
+    );
+    mocks.isAmazonQuotaCooldownError.mockImplementation(
+      (error: unknown) => error === cooldownError,
+    );
+    mocks.api.updateSponsoredProductsKeywords.mockReset();
+    mocks.api.updateSponsoredProductsKeywords.mockRejectedValue(cooldownError);
+
+    const result = await adsOptimizerService.executeApproved(session);
+
+    expect(mocks.api.updateSponsoredProductsKeywords).toHaveBeenCalledTimes(1);
+    expect(result).toMatchObject({ total: 1, applied: 0, failed: 1, stale: 0 });
+  });
+
   it("records failed Amazon writes without applying the recommendation", async () => {
     mocks.api.updateSponsoredProductsKeywords.mockRejectedValue(
       new Error("QuotaExceeded"),

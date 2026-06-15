@@ -1,6 +1,7 @@
 import { addDays, differenceInCalendarDays } from "date-fns";
 import { db } from "@/lib/db";
 import { isAmazonQuotaCooldownError } from "@/lib/amazon-rate-limit";
+import { withAmazonRateLimitRetry } from "@/lib/rate-limit-retry";
 import {
   createSpSearchTermReport,
   createSpTargetingReport,
@@ -2060,7 +2061,10 @@ async function executeRecommendation(
       return { id: rec.id, status: "DRY_RUN" };
     }
 
-    const response = await dispatchAmazonAction(creds, rec.actionType, request);
+    const actionPayload = request;
+    const response = await withAmazonRateLimitRetry(() =>
+      dispatchAmazonAction(creds, rec.actionType, actionPayload),
+    );
     await db.adsOptimizationExecutionLog.create({
       data: {
         recommendationId: rec.id,
