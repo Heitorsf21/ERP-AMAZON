@@ -218,6 +218,8 @@ export const TipoAmazonSyncJob = {
   WHATSAPP_ESTOQUE_RESUMO: "WHATSAPP_ESTOQUE_RESUMO",
   // DPP #12 — purga de PII: esvazia payload bruto de pedido apos N dias (default 30)
   PII_RETENTION_PURGE: "PII_RETENTION_PURGE",
+  // Ciclo automatico do otimizador de Ads (funil): sync + recalculo + limpeza
+  ADS_OPTIMIZER_CYCLE: "ADS_OPTIMIZER_CYCLE",
 } as const;
 export type TipoAmazonSyncJob =
   (typeof TipoAmazonSyncJob)[keyof typeof TipoAmazonSyncJob];

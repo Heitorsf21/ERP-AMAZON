@@ -4,14 +4,12 @@ import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle,
-  CalendarClock,
   CheckCircle2,
   ChevronDown,
   ChevronRight,
   Eye,
   Filter,
   History,
-  Layers3,
   Package,
   Play,
   RefreshCw,
@@ -113,6 +111,19 @@ type Recommendation = {
   ultimaAcao: { actionType: string; status: string; criadoEm: string } | null;
 };
 
+type Observation = {
+  recommendationId: string;
+  sku: string | null;
+  displayLabel: string;
+  actionType: string;
+  executadoEm: string;
+  diasDesdeMudanca: number;
+  cliquesPosMudanca: number;
+  baselineAcos: number | null;
+  postChange: OptimizerMetrics;
+  madura: boolean;
+};
+
 type Snapshot = {
   profileId: string;
   lastRun: {
@@ -130,7 +141,8 @@ type Snapshot = {
     failed: number;
     stale: number;
   };
-  coverage: OptimizerCoverage | null;
+  coverage: unknown;
+  observations: Observation[];
   recommendations: Recommendation[];
 };
 
@@ -164,68 +176,6 @@ type SkuGroup = {
   ultimaAcao: Recommendation["ultimaAcao"];
 };
 
-type ReportWindow = {
-  startDate: string;
-  endDate: string;
-};
-
-type BackfillReportResult = {
-  status: "PENDING_NEW" | "PENDING_PROCESSING" | "FAILED" | "DONE" | "COMPLETE";
-  reportId?: string;
-  processingStatus?: string;
-  window?: ReportWindow;
-  rows?: number;
-  saved?: number;
-  cursor?: string | null;
-  complete?: boolean;
-};
-
-type OptimizerCoverage = {
-  earliestAvailable: string;
-  latestClosed: string;
-  expectedDays: number;
-  historyStartDate: string | null;
-  historyEndDate: string | null;
-  targeting: MetricCoverage;
-  searchTerms: MetricCoverage;
-  backfill: {
-    targeting: BackfillState;
-    searchTerms: BackfillState;
-    pending: boolean;
-    complete: boolean;
-  };
-};
-
-type MetricCoverage = {
-  minDate: string | null;
-  maxDate: string | null;
-  rows: number;
-  daysWithData: number;
-  expectedDays: number;
-};
-
-type BackfillState = {
-  status: "PENDING" | "READY" | "COMPLETE";
-  pendingId: string | null;
-  window: ReportWindow | null;
-  cursor: string | null;
-  progressPct: number;
-  lastCompletedAt: string | null;
-};
-
-type BackfillResult = {
-  reports:
-    | {
-        status: "COOLDOWN";
-        operation: string;
-        retryAt: string;
-      }
-    | {
-        targeting: BackfillReportResult;
-        searchTerms: BackfillReportResult;
-      };
-  coverage: OptimizerCoverage;
-};
 
 const STATUS_LABEL: Record<RecommendationStatus, string> = {
   PROPOSED: "Pendente",
@@ -300,38 +250,6 @@ export default function AdsOptimizerPage() {
     onError: (error: Error) => toast.error(error.message),
   });
 
-  const backfillMutation = useMutation({
-    mutationFn: () =>
-      fetchJSON<BackfillResult>("/api/ads/optimizer/backfill", { method: "POST" }),
-    onSuccess: (data) => {
-      if ("status" in data.reports && data.reports.status === "COOLDOWN") {
-        toast.warning(
-          `Amazon em cooldown. Tente novamente apos ${formatDateTime(data.reports.retryAt)}.`,
-        );
-        invalidate();
-        return;
-      }
-      const reports = "targeting" in data.reports
-        ? [data.reports.targeting, data.reports.searchTerms]
-        : [];
-      const completed = reports.filter((report) => report.status === "DONE").length;
-      const pending = reports.filter((report) =>
-        report.status === "PENDING_NEW" || report.status === "PENDING_PROCESSING",
-      ).length;
-      if (data.coverage.backfill.complete) {
-        toast.success("Historico maximo da Amazon Ads ja esta coberto.");
-      } else if (completed > 0) {
-        toast.success(`${completed} janela historica importada`);
-      } else if (pending > 0) {
-        toast.info("Reports historicos solicitados. Aguarde alguns minutos e clique novamente.");
-      } else {
-        toast.info("Backfill historico atualizado.");
-      }
-      invalidate();
-    },
-    onError: (error: Error) => toast.error(error.message),
-  });
-
   const executeMutation = useMutation({
     mutationFn: () =>
       fetchJSON<MutationResult>("/api/ads/optimizer/execute-approved", {
@@ -376,10 +294,7 @@ export default function AdsOptimizerPage() {
   });
 
   const recommendations = query.data?.recommendations ?? [];
-  const coverage = query.data?.coverage ?? null;
-  const historyLabel = coverage?.historyStartDate
-    ? `Historico desde ${formatDate(coverage.historyStartDate)}`
-    : "Historico disponivel";
+  const historyLabel = "Historico disponivel";
   const filtered = recommendations.filter((rec) => {
     if (statusFilter !== "ALL" && rec.status !== statusFilter) return false;
     if (actionFilter !== "ALL" && rec.actionType !== actionFilter) return false;
@@ -414,15 +329,8 @@ export default function AdsOptimizerPage() {
     recommendations.map((rec) => rec.matchType).filter(Boolean) as string[],
   );
   const grouped = React.useMemo(() => groupRecommendations(filtered), [filtered]);
-  const pendingRecommendations = recommendations.filter((rec) => rec.status === "PROPOSED");
-  const approvedRecommendations = recommendations.filter((rec) => rec.status === "APPROVED");
-  const blockedPending = pendingRecommendations.filter((rec) => !rec.isExecutable);
-  const pendingGroupCount = countActionGroups(pendingRecommendations);
-  const approvedGroupCount = countActionGroups(approvedRecommendations);
-  const blockedPendingCount = countActionGroups(blockedPending);
   const isBusy =
     runMutation.isPending ||
-    backfillMutation.isPending ||
     executeMutation.isPending ||
     approveMutation.isPending ||
     rejectMutation.isPending;
@@ -437,22 +345,13 @@ export default function AdsOptimizerPage() {
         description="Acoes por SKU para ajustar lances, pausar desperdicio e transformar bons termos em campanhas mais controladas."
       >
         <Button
-          variant="outline"
-          size="sm"
-          onClick={() => backfillMutation.mutate()}
-          disabled={isBusy}
-        >
-          <History className={cn("mr-2 h-4 w-4", backfillMutation.isPending && "animate-spin")} />
-          Buscar historico
-        </Button>
-        <Button
-          variant="outline"
+          variant="ghost"
           size="sm"
           onClick={() => runMutation.mutate()}
           disabled={isBusy}
         >
           <RefreshCw className={cn("mr-2 h-4 w-4", runMutation.isPending && "animate-spin")} />
-          Sincronizar e analisar
+          Atualizar agora
         </Button>
         <Button
           size="sm"
@@ -464,29 +363,7 @@ export default function AdsOptimizerPage() {
         </Button>
       </PageHeader>
 
-      <CoveragePanel
-        coverage={coverage}
-        loading={query.isLoading}
-        busy={isBusy}
-        onBackfill={() => backfillMutation.mutate()}
-      />
-
-      <div className="grid gap-3 md:grid-cols-4">
-        <SummaryCard
-          label="Pendentes"
-          value={pendingGroupCount}
-          sub={summarySub(pendingGroupCount, query.data?.totals.proposed ?? 0)}
-          tone="amber"
-        />
-        <SummaryCard
-          label="Aprovadas"
-          value={approvedGroupCount}
-          sub={summarySub(approvedGroupCount, query.data?.totals.approved ?? 0)}
-          tone="blue"
-        />
-        <SummaryCard label="Bloqueadas" value={blockedPendingCount} tone="red" />
-        <SummaryCard label="Obsoletas" value={query.data?.totals.stale ?? 0} tone="slate" />
-      </div>
+      <ObservationPanel observations={query.data?.observations ?? []} />
 
       <SkuSummaryRail groups={grouped.resolvedGroups} unresolvedCount={grouped.unresolved.length} />
 
@@ -610,33 +487,6 @@ export default function AdsOptimizerPage() {
   );
 }
 
-function SummaryCard({
-  label,
-  value,
-  sub,
-  tone,
-}: {
-  label: string;
-  value: number;
-  sub?: string;
-  tone: "amber" | "blue" | "red" | "slate";
-}) {
-  const toneClass = {
-    amber: "border-l-amber-500",
-    blue: "border-l-blue-500",
-    red: "border-l-red-500",
-    slate: "border-l-slate-400",
-  }[tone];
-  return (
-    <Card className={cn("border-l-4", toneClass)}>
-      <CardContent className="pt-5">
-        <p className="text-xs font-medium uppercase text-muted-foreground">{label}</p>
-        <p className="mt-2 text-2xl font-semibold">{value}</p>
-        {sub && <p className="mt-1 text-xs text-muted-foreground">{sub}</p>}
-      </CardContent>
-    </Card>
-  );
-}
 
 function SkuSummaryRail({
   groups,
@@ -692,137 +542,57 @@ function SkuSummaryRail({
   );
 }
 
-function CoveragePanel({
-  coverage,
-  loading,
-  busy,
-  onBackfill,
-}: {
-  coverage: OptimizerCoverage | null;
-  loading: boolean;
-  busy: boolean;
-  onBackfill: () => void;
-}) {
-  if (loading) return <Skeleton className="h-44 rounded-lg" />;
-  if (!coverage) {
-    return (
-      <Card className="border-dashed">
-        <CardContent className="flex flex-col gap-3 py-5 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <p className="text-sm font-semibold">Historico Ads nao carregado</p>
-            <p className="text-sm text-muted-foreground">
-              Configure o profile de Amazon Ads e rode uma sincronizacao.
-            </p>
-          </div>
-          <Button size="sm" variant="outline" onClick={onBackfill} disabled={busy}>
-            <History className="mr-2 h-4 w-4" />
-            Buscar historico
-          </Button>
-        </CardContent>
-      </Card>
-    );
-  }
-
-  const periodLabel = `${formatDate(coverage.earliestAvailable)} a ${formatDate(coverage.latestClosed)}`;
-  const historyLabel = coverage.historyStartDate
-    ? `${formatDate(coverage.historyStartDate)} a ${coverage.historyEndDate ? formatDate(coverage.historyEndDate) : "-"}`
-    : "Sem metricas granulares salvas";
-
+function ObservationPanel({ observations }: { observations: Observation[] }) {
+  if (observations.length === 0) return null;
   return (
-    <Card className="overflow-hidden border-l-4 border-l-amber-500">
-      <CardContent className="space-y-5 pt-5">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-          <div className="space-y-2">
-            <div className="flex flex-wrap items-center gap-2">
-              <Badge variant="outline" className="bg-amber-50 text-amber-800">
-                <CalendarClock className="mr-1 h-3.5 w-3.5" />
-                Limite Amazon: {periodLabel}
-              </Badge>
-              <Badge variant="outline">
-                {coverage.backfill.complete ? "Backfill completo" : "Backfill em andamento"}
-              </Badge>
-            </div>
-            <div>
-              <p className="text-sm font-semibold">Historico granular disponivel</p>
-              <p className="text-sm text-muted-foreground">
-                {historyLabel}. Este periodo alimenta as decisoes de keyword, segmentacao
-                e termos pesquisados.
-              </p>
-            </div>
-          </div>
-          <Button size="sm" variant="outline" onClick={onBackfill} disabled={busy}>
-            <History className="mr-2 h-4 w-4" />
-            Continuar backfill
-          </Button>
+    <Card className="border-l-4 border-l-blue-500">
+      <CardContent className="space-y-3 pt-5">
+        <div>
+          <p className="text-sm font-semibold">Em observação</p>
+          <p className="text-sm text-muted-foreground">
+            Ações aplicadas recentemente. O sistema acompanha o efeito dia a dia e
+            só decide o próximo passo com dado maduro (7+ dias e 10+ cliques).
+          </p>
         </div>
-
-        <div className="grid gap-3 lg:grid-cols-2">
-          <CoverageTile
-            title="Segmentacoes e palavras-chave"
-            coverage={coverage.targeting}
-            state={coverage.backfill.targeting}
-          />
-          <CoverageTile
-            title="Termos pesquisados"
-            coverage={coverage.searchTerms}
-            state={coverage.backfill.searchTerms}
-          />
+        <div className="grid gap-2 md:grid-cols-2">
+          {observations.map((obs) => (
+            <div key={obs.recommendationId} className="rounded-md border bg-muted/20 p-3">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-semibold">{obs.displayLabel}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {obs.sku ? `${obs.sku} | ` : ""}
+                    {ACTION_LABEL[obs.actionType] ?? obs.actionType} ·{" "}
+                    {plural(obs.diasDesdeMudanca, "dia", "dias")} desde a mudança
+                  </p>
+                </div>
+                <Badge
+                  variant="outline"
+                  className={obs.madura ? "border-emerald-300 text-emerald-700" : "border-blue-300 text-blue-700"}
+                >
+                  {obs.madura ? "Dado maduro" : "Provisório"}
+                </Badge>
+              </div>
+              <div className="mt-3 grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
+                <Fact label="Gasto desde" value={formatBRL(obs.postChange.gastoCentavos)} />
+                <Fact label="Vendas desde" value={formatBRL(obs.postChange.vendasCentavos)} />
+                <Fact label="Cliques" value={String(obs.cliquesPosMudanca)} />
+                <Fact
+                  label="ACOS antes → agora"
+                  value={`${formatPct(obs.baselineAcos)} → ${formatPct(obs.postChange.acos)}`}
+                />
+              </div>
+              {!obs.madura && (
+                <p className="mt-2 text-[11px] text-muted-foreground">
+                  Conversões da Amazon ainda entrando (janela de atribuição de 7 dias).
+                </p>
+              )}
+            </div>
+          ))}
         </div>
       </CardContent>
     </Card>
   );
-}
-
-function CoverageTile({
-  title,
-  coverage,
-  state,
-}: {
-  title: string;
-  coverage: MetricCoverage;
-  state: BackfillState;
-}) {
-  const range = coverage.minDate
-    ? `${formatDate(coverage.minDate)} a ${coverage.maxDate ? formatDate(coverage.maxDate) : "-"}`
-    : "Sem dados";
-  return (
-    <div className="rounded-md border bg-muted/20 p-4">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <p className="text-sm font-semibold">{title}</p>
-          <p className="mt-1 text-xs text-muted-foreground">{range}</p>
-        </div>
-        <BackfillBadge state={state.status} />
-      </div>
-      <div className="mt-4 h-2 overflow-hidden rounded-full bg-slate-200">
-        <div
-          className="h-full rounded-full bg-amber-500 transition-all"
-          style={{ width: `${Math.max(4, state.progressPct)}%` }}
-        />
-      </div>
-      <div className="mt-3 grid grid-cols-3 gap-2 text-sm">
-        <Fact label="Linhas" value={String(coverage.rows)} />
-        <Fact label="Dias c/ dados" value={String(coverage.daysWithData)} />
-        <Fact label="Progresso" value={`${state.progressPct}%`} />
-      </div>
-      {state.window && (
-        <p className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-          Janela pendente: {formatDate(state.window.startDate)} a{" "}
-          {formatDate(state.window.endDate)}
-        </p>
-      )}
-    </div>
-  );
-}
-
-function BackfillBadge({ state }: { state: BackfillState["status"] }) {
-  if (state === "COMPLETE") {
-    return <Badge className="border-transparent bg-emerald-600 text-white">Completo</Badge>;
-  }
-  if (state === "PENDING") {
-    return <Badge className="border-transparent bg-amber-500 text-white">Pendente</Badge>;
-  }
-  return <Badge variant="outline">Pronto</Badge>;
 }
 
 function FilterSelect({
@@ -1504,10 +1274,12 @@ function EmptyState({ hasData }: { hasData: boolean }) {
     <Card>
       <CardContent className="py-10 text-center">
         <p className="text-sm font-medium">
-          {hasData ? "Nenhuma acao nos filtros atuais." : "Nenhuma acao gerada."}
+          {hasData ? "Nenhuma ação nos filtros atuais." : "Nenhuma ação pendente — tudo otimizado."}
         </p>
         <p className="mt-1 text-sm text-muted-foreground">
-          Execute uma rodada para sincronizar entidades editaveis e gerar sugestoes.
+          {hasData
+            ? "Ajuste os filtros para ver outras ações."
+            : "O ciclo automático roda a cada 6 horas. Quando houver algo a decidir, aparece aqui."}
         </p>
       </CardContent>
     </Card>
@@ -1604,12 +1376,6 @@ function actionGroupKey(rec: Recommendation) {
 
 function normalizeDisplayText(value: string) {
   return value.trim().toLowerCase().replace(/\s+/g, " ");
-}
-
-function summarySub(groupCount: number, itemCount: number) {
-  if (itemCount === 0) return "nenhum item";
-  if (groupCount === itemCount) return "grupos de acao";
-  return `${plural(itemCount, "item editavel", "itens editaveis")}`;
 }
 
 function aggregateMetrics(values: OptimizerMetrics[]): OptimizerMetrics {
@@ -1714,12 +1480,6 @@ function formatDateTime(value: string) {
     dateStyle: "short",
     timeStyle: "short",
   }).format(new Date(value));
-}
-
-function formatDate(value: string) {
-  return new Intl.DateTimeFormat("pt-BR", {
-    dateStyle: "short",
-  }).format(new Date(`${value}T00:00:00`));
 }
 
 function plural(count: number, singular: string, pluralValue: string) {
