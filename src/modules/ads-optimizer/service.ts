@@ -2065,6 +2065,7 @@ async function executeRecommendation(
     const response = await withAmazonRateLimitRetry(() =>
       dispatchAmazonAction(creds, rec.actionType, actionPayload),
     );
+    assertNoMutationItemErrors(response);
     await db.adsOptimizationExecutionLog.create({
       data: {
         recommendationId: rec.id,
@@ -2406,6 +2407,33 @@ async function dispatchAmazonAction(
     return createSponsoredProductsKeywords(creds, request.keywords as never);
   }
   throw new Error(`aÃ§Ã£o nÃ£o suportada: ${actionType}`);
+}
+
+/**
+ * As mutations v3 da Ads API podem responder 207/200 com erros POR ITEM no
+ * formato `{ <container>: { success: [...], error: [...] } }`. Como `response.ok`
+ * abrange 2xx (inclui 207), uma rejeicao por item passaria como sucesso e a acao
+ * seria marcada APPLIED indevidamente. Aqui inspecionamos os containers e
+ * lancamos se houver qualquer item em `error[]` — virando FALHA com o detalhe.
+ */
+function assertNoMutationItemErrors(response: unknown) {
+  if (!response || typeof response !== "object") return;
+  const containers = [
+    "keywords",
+    "targetingClauses",
+    "negativeKeywords",
+    "negativeTargetingClauses",
+  ];
+  for (const key of containers) {
+    const container = (response as JsonRecord)[key];
+    if (!container || typeof container !== "object") continue;
+    const errors = (container as JsonRecord).error;
+    if (Array.isArray(errors) && errors.length > 0) {
+      throw new Error(
+        `Amazon rejeitou ${errors.length} item(ns) em ${key}: ${JSON.stringify(errors).slice(0, 400)}`,
+      );
+    }
+  }
 }
 
 async function collectPages<T>(

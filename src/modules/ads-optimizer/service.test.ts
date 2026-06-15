@@ -917,4 +917,33 @@ describe("adsOptimizerService.executeApproved", () => {
     });
     expect(result).toMatchObject({ total: 1, applied: 0, failed: 1, stale: 0 });
   });
+
+  it("fails the action when a 207 response carries item-level errors", async () => {
+    mocks.api.updateSponsoredProductsKeywords.mockReset();
+    mocks.api.updateSponsoredProductsKeywords.mockResolvedValue({
+      keywords: {
+        success: [],
+        error: [{ index: 0, code: "INVALID_ARGUMENT", details: "bid below minimum" }],
+      },
+    });
+
+    const result = await adsOptimizerService.executeApproved(session);
+
+    expect(mocks.db.adsOptimizationRecommendation.update).toHaveBeenCalledWith({
+      where: { id: "rec-1" },
+      data: expect.objectContaining({ status: "FAILED" }),
+    });
+    expect(result).toMatchObject({ total: 1, applied: 0, failed: 1, stale: 0 });
+  });
+
+  it("still applies when a 207 response has only successes", async () => {
+    mocks.api.updateSponsoredProductsKeywords.mockReset();
+    mocks.api.updateSponsoredProductsKeywords.mockResolvedValue({
+      keywords: { success: [{ index: 0, keywordId: "kw-1" }], error: [] },
+    });
+
+    const result = await adsOptimizerService.executeApproved(session);
+
+    expect(result).toMatchObject({ total: 1, applied: 1, failed: 0, stale: 0 });
+  });
 });
