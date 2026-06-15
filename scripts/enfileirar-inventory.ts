@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { enqueueAmazonSyncJob } from "@/modules/amazon/jobs";
 import { TipoAmazonSyncJob } from "@/modules/shared/domain";
 
 async function main() {
@@ -10,16 +11,13 @@ async function main() {
     })
     .catch(() => null);
 
-  const job = await db.amazonSyncJob.create({
-    data: {
-      tipo: TipoAmazonSyncJob.INVENTORY_SYNC,
-      status: "QUEUED",
-      priority: 100, // alta prioridade pra worker pegar primeiro
-      payload: JSON.stringify({}),
-      runAfter: new Date(),
-      maxAttempts: 3,
-    },
-  });
+  // Usa o enqueue oficial: resolve empresaId (contexto/background), respeita
+  // dedupe e encoda o payload conforme o banco. priority alta pra worker pegar 1o.
+  const job = await enqueueAmazonSyncJob(
+    TipoAmazonSyncJob.INVENTORY_SYNC,
+    {},
+    { priority: 100, maxAttempts: 3 },
+  );
   console.log(`Job INVENTORY_SYNC enfileirado: ${job.id}`);
   process.exit(0);
 }

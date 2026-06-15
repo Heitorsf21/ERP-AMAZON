@@ -743,7 +743,10 @@ model AmazonSyncLog {
 
 model AmazonSyncJob {
   id          String    @id @default(cuid())
-  empresaId   String?
+  // NOT NULL: todo job pertence a uma empresa (resolvido no enqueue). A coluna ja
+  // e NOT NULL no banco — o schema estava defasado como String? (gerava o bug do
+  // SQS criando empresaId null que o Postgres rejeitava).
+  empresaId   String
   tipo        String
   // QUEUED | RUNNING | SUCCESS | FAILED | CANCELLED
   status      String    @default("QUEUED")

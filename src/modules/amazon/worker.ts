@@ -102,10 +102,10 @@ async function processAmazonSyncJobsInner(options: WorkerOptions = {}) {
   const limit = options.limit ?? 10;
   const results: Array<Record<string, unknown>> = [];
 
-  // Manutenção global sob superadmin (sem filtro): adota jobs órfãos (empresaId
-  // null — legados/SQS) para a empresa primária e libera RUNNING presos de todas.
+  // Manutenção global sob superadmin (sem filtro): libera RUNNING presos de todas.
+  // (Adoção de órfãos empresaId=null foi removida: a coluna é NOT NULL e o enqueue
+  // sempre resolve a empresa, então órfãos null não existem mais.)
   await runWithTenant(SUPERADMIN_WORKER, async () => {
-    await adoptOrphanJobs();
     await releaseStaleRunningJobs(workerId);
   });
 
@@ -197,20 +197,6 @@ async function processAmazonSyncJobsInner(options: WorkerOptions = {}) {
   );
 
   return { processed: results.length, results };
-}
-
-// Adota jobs órfãos (empresaId null — enfileirados por SQS/rotas/legado antes do
-// F02) para a empresa primária, para que o claim por tenant os alcance. Roda sob
-// superadmin (sem filtro). No-op após o primeiro loop (nada mais fica null).
-async function adoptOrphanJobs() {
-  try {
-    await db.amazonSyncJob.updateMany({
-      where: { empresaId: null },
-      data: { empresaId: WORKER_EMPRESA_ID },
-    });
-  } catch (e) {
-    console.warn("adoptOrphanJobs erro:", e);
-  }
 }
 
 async function writeHeartbeat() {
