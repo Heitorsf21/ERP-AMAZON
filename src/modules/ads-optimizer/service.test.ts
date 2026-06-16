@@ -308,6 +308,49 @@ describe("adsOptimizerService.getSnapshot", () => {
       stale: 25,
     });
   });
+
+  it("exposes the 65-day window from evidence so the UI can show the basis of the decision", async () => {
+    const rec = {
+      ...approvedKeywordRecommendation(),
+      id: "rec-65",
+      status: "PROPOSED",
+      campaignName: "Campanha",
+      portfolioId: null,
+      portfolioName: null,
+      adGroupName: "Grupo",
+      searchTerm: null,
+      asin: "ASIN-1",
+      severity: "HIGH",
+      ruleId: "FUNNEL_DORMANT_BAD_HISTORY",
+      motivo: "dormente, ACOS 65d alto",
+      risco: null,
+      confianca: 85,
+      beforeState: "enabled",
+      proposedState: "paused",
+      metrics7dJson: JSON.stringify({ acos: null }),
+      metrics30dJson: JSON.stringify({ acos: 0.4 }),
+      metricsLifetimeJson: JSON.stringify({ acos: 0.32 }),
+      evidenceJson: JSON.stringify({
+        metrics65d: { acos: 0.53, cliques: 0, gastoCentavos: 5000, vendasCentavos: 9400 },
+      }),
+      amazonPayloadJson: null,
+      criadoEm: new Date("2026-06-01T12:00:00.000Z"),
+      aprovadoEm: null,
+      executadoEm: null,
+      staleReason: null,
+      errorMessage: null,
+    };
+    mocks.db.adsOptimizationRecommendation.findMany.mockResolvedValue([rec]);
+    mocks.db.adsOptimizationRecommendation.count.mockResolvedValue(0);
+    mocks.db.adsOptimizationRun.findFirst.mockResolvedValue(null);
+
+    const snapshot = await adsOptimizerService.getSnapshot();
+
+    // A janela de 65d (base da decisao de pausa) e exposta ao lado do historico
+    // completo — antes a UI so via metricsLifetime (vida toda), gerando divergencia.
+    expect(snapshot.recommendations[0]?.metrics65d?.acos).toBe(0.53);
+    expect(snapshot.recommendations[0]?.metricsLifetime?.acos).toBe(0.32);
+  });
 });
 
 describe("adsOptimizerService.runOptimization", () => {

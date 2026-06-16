@@ -100,6 +100,7 @@ type Recommendation = {
   proposedState: string | null;
   metrics7d: OptimizerMetrics;
   metrics30d: OptimizerMetrics;
+  metrics65d: OptimizerMetrics | null;
   metricsLifetime: OptimizerMetrics;
   criadoEm: string;
   aprovadoEm: string | null;
@@ -933,9 +934,15 @@ function RecommendationDetailsDialog({
             </p>
           </div>
 
-          <div className="grid gap-2 sm:grid-cols-3">
+          <div
+            className={cn(
+              "grid gap-2",
+              rec.metrics65d ? "sm:grid-cols-2 lg:grid-cols-4" : "sm:grid-cols-3",
+            )}
+          >
             <MetricsBlock label="7 dias" metrics={rec.metrics7d} />
             <MetricsBlock label="30 dias" metrics={rec.metrics30d} />
+            {rec.metrics65d && <MetricsBlock label="65 dias" metrics={rec.metrics65d} />}
             <MetricsBlock label={historyLabel} metrics={rec.metricsLifetime} />
           </div>
 
