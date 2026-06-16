@@ -367,6 +367,7 @@ export const adsOptimizerService = {
         proposedState: rec.proposedState,
         metrics7d: parseJson<AdsOptimizerMetrics>(rec.metrics7dJson),
         metrics30d: parseJson<AdsOptimizerMetrics>(rec.metrics30dJson),
+        metrics65d: evidence.metrics65d ?? null,
         metricsLifetime: parseJson<AdsOptimizerMetrics>(rec.metricsLifetimeJson),
         criadoEm: rec.criadoEm.toISOString(),
         aprovadoEm: rec.aprovadoEm?.toISOString() ?? null,
