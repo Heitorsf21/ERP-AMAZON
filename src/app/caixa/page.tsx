@@ -57,12 +57,14 @@ export default function CaixaPage() {
           value={isLoading ? "—" : formatBRL(entradas)}
           icon={TrendingUp}
           color="green"
+          accent
         />
         <KpiCard
           label="Saídas no mês"
           value={isLoading ? "—" : formatBRL(saidas)}
           icon={TrendingDown}
           color="red"
+          accent
         />
         <KpiCard
           label="Variação líquida"
@@ -73,6 +75,7 @@ export default function CaixaPage() {
           }
           icon={Wallet}
           color={variacaoPositiva ? "green" : "red"}
+          accent
           valueClassName={
             variacaoPositiva ? "text-emerald-600 dark:text-emerald-400" : "text-destructive"
           }

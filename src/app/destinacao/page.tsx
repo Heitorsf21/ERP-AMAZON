@@ -138,6 +138,7 @@ export default function DestinacaoPage() {
           value={formatBRL(data.saldoAtual)}
           icon={Wallet}
           color="blue"
+          accent
         />
         <KpiCard
           label="Comprometido"
@@ -145,6 +146,7 @@ export default function DestinacaoPage() {
           sub={`${data.contasAbertasCount} contas + ${data.comprometidoComprasCount} pedidos`}
           icon={TrendingDown}
           color="red"
+          accent
         />
         <KpiCard
           label="A Receber Amazon"
@@ -152,6 +154,7 @@ export default function DestinacaoPage() {
           sub={`${data.aReceberCount} liquidação(ões)`}
           icon={Clock}
           color="green"
+          accent
         />
         <KpiCard
           label="Saldo Livre Projetado"
@@ -159,6 +162,7 @@ export default function DestinacaoPage() {
           sub="Livre + a receber"
           icon={TrendingUp}
           color={data.saldoProjetado >= 0 ? "green" : "red"}
+          accent
           highlight
         />
       </div>

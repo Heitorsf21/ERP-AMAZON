@@ -47,24 +47,28 @@ export default function NotasFiscaisPage() {
           value={fmt(totais?.total)}
           icon={FileText}
           color="blue"
+          accent
         />
         <KpiCard
           label="Boletos"
           value={fmt(totais?.boletos)}
           icon={FileText}
           color="orange"
+          accent
         />
         <KpiCard
           label="Notas fiscais"
           value={fmt(totais?.notasFiscais)}
           icon={FileCheck}
           color="green"
+          accent
         />
         <KpiCard
           label="Sem conta vinculada"
           value={fmt(totais?.semConta)}
           icon={AlertCircle}
           color="slate"
+          accent
         />
       </div>
 

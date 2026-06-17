@@ -367,6 +367,7 @@ export default function ContasAReceberPage() {
         <KpiCard
           label="A receber"
           color="orange"
+          accent
           icon={Clock}
           value={totais ? formatBRL(totais.totalPendenteCentavos) : "—"}
           sub={
@@ -378,6 +379,7 @@ export default function ContasAReceberPage() {
         <KpiCard
           label="Já recebido"
           color="green"
+          accent
           icon={CheckCircle2}
           value={totais ? formatBRL(totais.totalRecebidaCentavos) : "—"}
           sub={
@@ -389,6 +391,7 @@ export default function ContasAReceberPage() {
         <KpiCard
           label="Total Amazon"
           color="blue"
+          accent
           icon={ArrowDownToLine}
           value={totais ? formatBRL(totais.totalCentavos) : "—"}
           sub={
