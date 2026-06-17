@@ -40,7 +40,10 @@ export default function CaixaPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Caixa" description="Movimentações de entrada e saída.">
+      <PageHeader
+        title="Caixa"
+        description="Movimentações de entrada e saída — valores por regime de caixa (o que de fato entrou e saiu)."
+      >
         <Button variant="outline" onClick={() => setModalImportar(true)}>
           <Upload className="mr-2 h-4 w-4" /> Importar
         </Button>
@@ -57,12 +60,14 @@ export default function CaixaPage() {
           value={isLoading ? "—" : formatBRL(entradas)}
           icon={TrendingUp}
           color="green"
+          accent
         />
         <KpiCard
           label="Saídas no mês"
           value={isLoading ? "—" : formatBRL(saidas)}
           icon={TrendingDown}
           color="red"
+          accent
         />
         <KpiCard
           label="Variação líquida"
@@ -73,6 +78,7 @@ export default function CaixaPage() {
           }
           icon={Wallet}
           color={variacaoPositiva ? "green" : "red"}
+          accent
           valueClassName={
             variacaoPositiva ? "text-emerald-600 dark:text-emerald-400" : "text-destructive"
           }

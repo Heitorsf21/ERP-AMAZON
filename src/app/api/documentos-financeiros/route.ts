@@ -41,7 +41,7 @@ export async function GET(req: Request) {
       return NextResponse.json(dossies);
     }
 
-    const where: Prisma.DossieFinanceiroWhereInput = {};
+    const where: Prisma.DossieFinanceiroWhereInput = { deletedAt: null };
 
     if (statusRaw && STATUS_VALIDOS.has(statusRaw)) {
       where.status = statusRaw;
@@ -87,7 +87,7 @@ export async function GET(req: Request) {
     const dossies = await db.dossieFinanceiro.findMany({
       where,
       include: {
-        documentos: { orderBy: { createdAt: "desc" } },
+        documentos: { where: { deletedAt: null }, orderBy: { createdAt: "desc" } },
         contaPagar: {
           include: {
             fornecedor: { select: { id: true, nome: true, documento: true } },

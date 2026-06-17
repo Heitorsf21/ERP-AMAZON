@@ -55,7 +55,7 @@ export default function ContasAPagarPage() {
     <div className="space-y-6">
       <PageHeader
         title="Contas a Pagar"
-        description="Gerencie obrigações financeiras, pagamentos e fornecedores."
+        description="Obrigações por competência (data de vencimento), não por caixa."
       >
         {/* Grupo compacto de ações secundárias (somente ícone + tooltip),
             separado por divisórias — espelha o mockup do redesign. */}

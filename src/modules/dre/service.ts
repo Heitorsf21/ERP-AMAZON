@@ -604,28 +604,41 @@ export async function calcularDreCaixa(de: Date, ate: Date) {
     porCategoria[nome] = (porCategoria[nome] ?? 0) + cp.valor;
   }
 
-  const taxasPlataforma = porCategoria["Taxas de plataformas/pagamentos"] ?? 0;
-  const fretes = porCategoria["Fretes e entregas"] ?? 0;
+  // Soma por nome de categoria NORMALIZADO (com/sem espaço ao redor da barra).
+  // Os nomes do seed têm espaços ("Taxas de plataformas / pagamentos"); o lookup
+  // exato sem espaço falhava e zerava deduções/CMV no regime de caixa (bug
+  // pré-existente corrigido na Onda 2).
+  const somaCategoria = (alvo: string) => {
+    const alvoNorm = normalizarNomeCategoria(alvo);
+    return Object.entries(porCategoria).reduce(
+      (s, [nome, v]) => (normalizarNomeCategoria(nome) === alvoNorm ? s + v : s),
+      0,
+    );
+  };
+
+  const taxasPlataforma = somaCategoria("Taxas de plataformas / pagamentos");
+  const fretes = somaCategoria("Fretes e entregas");
   const totalDeducoes = taxasPlataforma + fretes + returnsEstimados;
   const receitaLiquida = totalReceitas - totalDeducoes;
 
-  const custoMercadoriasBase =
-    porCategoria["Compra de mercadorias/produtos"] ?? 0;
+  const custoMercadoriasBase = somaCategoria("Compra de mercadorias / produtos");
   const custoMercadorias = custoMercadoriasBase + storageFees;
   const margemBruta = receitaLiquida - custoMercadorias;
   const percentualMargemBruta =
     receitaLiquida > 0 ? (margemBruta / receitaLiquida) * 100 : 0;
 
-  const excluirDoBelowLine = new Set([
-    "Compra de mercadorias/produtos",
-    "Taxas de plataformas/pagamentos",
-    "Fretes e entregas",
-  ]);
+  const excluirNorm = new Set(
+    [
+      "Compra de mercadorias / produtos",
+      "Taxas de plataformas / pagamentos",
+      "Fretes e entregas",
+    ].map(normalizarNomeCategoria),
+  );
 
-  const despesaMarketing = porCategoria["Marketing"] ?? 0;
+  const despesaMarketing = somaCategoria("Marketing");
 
   const despesasOperacionais = Object.entries(porCategoria)
-    .filter(([cat]) => !excluirDoBelowLine.has(cat))
+    .filter(([cat]) => !excluirNorm.has(normalizarNomeCategoria(cat)))
     .map(([categoria, valor]) => ({ categoria, valor }))
     .sort((a, b) => b.valor - a.valor);
 

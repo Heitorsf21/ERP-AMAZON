@@ -12,6 +12,7 @@ export const comprasRepository = {
   }) {
     return db.pedidoCompra.findMany({
       where: {
+        deletedAt: null,
         ...(filtros.status ? { status: filtros.status } : {}),
         ...(filtros.fornecedorId ? { fornecedorId: filtros.fornecedorId } : {}),
         ...(filtros.de && filtros.ate
@@ -215,6 +216,7 @@ export const comprasRepository = {
 
   async totais(periodo: { de: Date; ate: Date }) {
     const pedidos = await db.pedidoCompra.findMany({
+      where: { deletedAt: null },
       select: {
         totalCentavos: true,
         status: true,

@@ -134,10 +134,11 @@ export default function DestinacaoPage() {
       {/* Topo: 4 KPIs */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <KpiCard
-          label="Saldo Atual em Caixa"
+          label="Saldo em caixa"
           value={formatBRL(data.saldoAtual)}
           icon={Wallet}
           color="blue"
+          accent
         />
         <KpiCard
           label="Comprometido"
@@ -145,20 +146,23 @@ export default function DestinacaoPage() {
           sub={`${data.contasAbertasCount} contas + ${data.comprometidoComprasCount} pedidos`}
           icon={TrendingDown}
           color="red"
+          accent
         />
         <KpiCard
-          label="A Receber Amazon"
+          label="A receber"
           value={formatBRL(data.aReceber)}
           sub={`${data.aReceberCount} liquidação(ões)`}
           icon={Clock}
           color="green"
+          accent
         />
         <KpiCard
-          label="Saldo Livre Projetado"
+          label="Saldo projetado"
           value={formatBRL(data.saldoProjetado)}
           sub="Livre + a receber"
           icon={TrendingUp}
           color={data.saldoProjetado >= 0 ? "green" : "red"}
+          accent
           highlight
         />
       </div>
@@ -228,7 +232,7 @@ export default function DestinacaoPage() {
           />
           <DetailRow
             icon={Clock}
-            label="A receber Amazon"
+            label="A receber"
             value={formatBRL(data.aReceber)}
             sub={`${data.aReceberCount} liquidação(ões)`}
             tone="green"

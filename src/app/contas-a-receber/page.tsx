@@ -2,7 +2,7 @@
 
 import { useState, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { CheckCircle2, Upload, X, ChevronDown, ChevronRight, TrendingDown, Clock, ArrowDownToLine, Check } from "lucide-react";
+import { CheckCircle2, Upload, X, ChevronDown, ChevronRight, TrendingDown, Clock, ArrowDownToLine, Check, Percent } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -41,6 +41,9 @@ type Totais = {
   totalRecebidaCentavos: number;
   quantidadeRecebida: number;
   totalCentavos: number;
+  percentualRecebido: number;
+  amazon: { pendenteCentavos: number; recebidaCentavos: number };
+  outros: { pendenteCentavos: number; recebidaCentavos: number };
 };
 
 type ResumoImportacao = {
@@ -281,7 +284,7 @@ export default function ContasAReceberPage() {
     <div className="space-y-6">
       <PageHeader
         title="Contas a Receber"
-        description="Recebíveis da Amazon — importe o relatório Unified Transaction para atualizar."
+        description="Recebíveis por competência (data de previsão), não por caixa — importe o relatório Unified Transaction para atualizar."
       >
         <input
           ref={fileRef}
@@ -363,32 +366,43 @@ export default function ContasAReceberPage() {
       )}
 
       {/* Cards de resumo */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <KpiCard
           label="A receber"
           color="orange"
+          accent
           icon={Clock}
           value={totais ? formatBRL(totais.totalPendenteCentavos) : "—"}
           sub={
             totais
-              ? `${totais.quantidadePendente} liquidação${totais.quantidadePendente !== 1 ? "ões" : ""}`
+              ? `Amazon ${formatBRL(totais.amazon.pendenteCentavos)}${totais.outros.pendenteCentavos > 0 ? ` · Outros ${formatBRL(totais.outros.pendenteCentavos)}` : ""}`
               : undefined
           }
         />
         <KpiCard
           label="Já recebido"
           color="green"
+          accent
           icon={CheckCircle2}
           value={totais ? formatBRL(totais.totalRecebidaCentavos) : "—"}
           sub={
             totais
-              ? `${totais.quantidadeRecebida} liquidação${totais.quantidadeRecebida !== 1 ? "ões" : ""}`
+              ? `Amazon ${formatBRL(totais.amazon.recebidaCentavos)}${totais.outros.recebidaCentavos > 0 ? ` · Outros ${formatBRL(totais.outros.recebidaCentavos)}` : ""}`
               : undefined
           }
         />
         <KpiCard
-          label="Total Amazon"
+          label="% Recebido"
+          color="violet"
+          accent
+          icon={Percent}
+          value={totais ? `${totais.percentualRecebido.toFixed(0)}%` : "—"}
+          sub="do previsto + recebido"
+        />
+        <KpiCard
+          label="Total"
           color="blue"
+          accent
           icon={ArrowDownToLine}
           value={totais ? formatBRL(totais.totalCentavos) : "—"}
           sub={

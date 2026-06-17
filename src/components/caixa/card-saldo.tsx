@@ -2,6 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { formatBRL } from "@/lib/money";
 
 type PontoProjecao = {
@@ -58,9 +59,17 @@ export function CardSaldo() {
     <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
       <Card>
         <CardHeader className="pb-2">
-          <CardTitle className="text-sm font-medium text-muted-foreground">
-            Saldo atual
-          </CardTitle>
+          <div className="flex items-center justify-between gap-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">
+              Saldo em caixa
+            </CardTitle>
+            <Badge
+              variant="outline"
+              className="shrink-0 text-[10px] font-normal text-muted-foreground"
+            >
+              Regime de caixa
+            </Badge>
+          </div>
         </CardHeader>
         <CardContent>
           <p className="text-2xl font-semibold">

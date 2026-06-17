@@ -2,7 +2,10 @@ import { db } from "@/lib/db";
 import { somarDias } from "@/lib/date";
 import {
   OrigemContaReceber,
+  OrigemMovimentacao,
   StatusContaReceber,
+  TipoCategoria,
+  TipoMovimentacao,
 } from "@/modules/shared/domain";
 import {
   parseAmazonCSV,
@@ -13,6 +16,24 @@ import { dashboardEcommerceService } from "@/modules/dashboard-ecommerce/service
 
 // Ciclo médio observado nos relatórios: ~14 dias do pedido até transferência.
 const CICLO_LIQUIDACAO_DIAS = 14;
+
+/**
+ * Resolve (find-or-create) a categoria de RECEITA usada na entrada de caixa
+ * gerada ao marcar uma conta a receber como recebida. AMAZON → "Pagamento
+ * Amazon"; MANUAL → "Outras receitas". A extensão multi-tenant injeta empresaId.
+ */
+async function resolverCategoriaReceitaId(origem: string): Promise<string> {
+  const nome =
+    origem === OrigemContaReceber.AMAZON
+      ? "Pagamento Amazon"
+      : "Outras receitas";
+  const existente = await db.categoria.findFirst({ where: { nome } });
+  if (existente) return existente.id;
+  const criada = await db.categoria.create({
+    data: { nome, tipo: TipoCategoria.RECEITA },
+  });
+  return criada.id;
+}
 
 export const contasReceberService = {
   /**
@@ -114,42 +135,97 @@ export const contasReceberService = {
     });
   },
 
-  /** Retorna totais agregados por status (PENDENTE + RECEBIDA). */
+  /**
+   * Totais agregados por status (PENDENTE + RECEBIDA), com "% recebido" e
+   * separação por origem (Amazon × Outros). Campos antigos preservados.
+   */
   async totais() {
     const [pendentes, recebidas] = await Promise.all([
       db.contaReceber.findMany({
         where: { status: StatusContaReceber.PENDENTE, deletedAt: null },
-        select: { valor: true },
+        select: { valor: true, origem: true },
       }),
       db.contaReceber.findMany({
         where: { status: StatusContaReceber.RECEBIDA, deletedAt: null },
-        select: { valor: true },
+        select: { valor: true, origem: true },
       }),
     ]);
 
-    const totalPendenteCentavos = pendentes.reduce((s, c) => s + c.valor, 0);
-    const totalRecebidaCentavos = recebidas.reduce((s, c) => s + c.valor, 0);
+    const soma = (
+      arr: Array<{ valor: number; origem: string }>,
+      origem?: string,
+    ) =>
+      arr
+        .filter((c) => !origem || c.origem === origem)
+        .reduce((s, c) => s + c.valor, 0);
+
+    const totalPendenteCentavos = soma(pendentes);
+    const totalRecebidaCentavos = soma(recebidas);
+    const totalCentavos = totalPendenteCentavos + totalRecebidaCentavos;
+    const percentualRecebido =
+      totalCentavos > 0 ? (totalRecebidaCentavos / totalCentavos) * 100 : 0;
 
     return {
       totalPendenteCentavos,
       quantidadePendente: pendentes.length,
       totalRecebidaCentavos,
       quantidadeRecebida: recebidas.length,
-      totalCentavos: totalPendenteCentavos + totalRecebidaCentavos,
+      totalCentavos,
+      percentualRecebido,
+      amazon: {
+        pendenteCentavos: soma(pendentes, OrigemContaReceber.AMAZON),
+        recebidaCentavos: soma(recebidas, OrigemContaReceber.AMAZON),
+      },
+      outros: {
+        pendenteCentavos: soma(pendentes, OrigemContaReceber.MANUAL),
+        recebidaCentavos: soma(recebidas, OrigemContaReceber.MANUAL),
+      },
     };
   },
 
-  /** Soft-delete: marca a conta como deletada preservando auditoria. */
+  /**
+   * Soft-delete: marca a conta como deletada preservando auditoria. Se a conta
+   * havia gerado uma entrada de caixa ao ser recebida manualmente (origem
+   * CONTA_RECEBIDA), reverte também a movimentação para não deixar saldo
+   * fantasma. NÃO toca em movimentação de extrato (IMPORTACAO) vinculada por
+   * reconciliação — essa reflete dinheiro real do banco.
+   */
   async deletar(id: string) {
-    const conta = await db.contaReceber.findUnique({ where: { id } });
-    if (!conta) throw new Error("conta a receber não encontrada");
-    return db.contaReceber.update({
+    const conta = await db.contaReceber.findUnique({
       where: { id },
-      data: { deletedAt: new Date() },
+      include: { movimentacao: true },
+    });
+    if (!conta) throw new Error("conta a receber não encontrada");
+
+    const movSintetica =
+      conta.movimentacao?.origem === OrigemMovimentacao.CONTA_RECEBIDA
+        ? conta.movimentacao
+        : null;
+
+    return db.$transaction(async (tx) => {
+      if (movSintetica) {
+        await tx.movimentacao.update({
+          where: { id: movSintetica.id },
+          data: { deletedAt: new Date() },
+        });
+      }
+      return tx.contaReceber.update({
+        where: { id },
+        data: { deletedAt: new Date() },
+      });
     });
   },
 
-  /** Marca uma conta como recebida manualmente. */
+  /**
+   * Marca uma conta como recebida E lança a ENTRADA no caixa (espelha
+   * `marcarComoPaga` das contas a pagar), para o saldo refletir o recebimento
+   * sem precisar importar o extrato.
+   *
+   * Anti dupla-contagem: se JÁ existe uma entrada de extrato ("Amazon",
+   * IMPORTACAO) ainda não vinculada e de valor compatível, vincula ELA em vez
+   * de criar uma sintética. No caminho inverso (marcar e só depois importar), a
+   * reconciliação substitui a sintética pela entrada bancária real.
+   */
   async marcarRecebida(id: string) {
     const conta = await db.contaReceber.findUnique({ where: { id } });
     if (!conta) throw new Error("conta a receber não encontrada");
@@ -157,12 +233,70 @@ export const contasReceberService = {
       throw new Error("apenas contas pendentes podem ser marcadas como recebidas");
     }
 
-    return db.contaReceber.update({
-      where: { id },
-      data: {
-        status: StatusContaReceber.RECEBIDA,
-        dataRecebimento: new Date(),
+    const agora = new Date();
+    const tolerancia = Math.max(500, Math.round(conta.valor * 0.005));
+    // Só vincula uma entrada de extrato existente se houver match ÚNICO e —
+    // quando a conta tem previsão — dentro de ±3 dias dela (alinha com a
+    // reconciliação automática). Valores de liquidações Amazon se repetem mês a
+    // mês; sem essa guarda, poderíamos vincular o depósito de OUTRA liquidação.
+    // Ambíguo (0 ou 2+ candidatas) → cai na sintética; a reconciliação resolve.
+    const janelaPrevisao =
+      conta.dataPrevisao != null
+        ? {
+            gte: somarDias(conta.dataPrevisao, -3),
+            lte: somarDias(conta.dataPrevisao, 3),
+          }
+        : undefined;
+    const candidatasBancarias = await db.movimentacao.findMany({
+      where: {
+        tipo: TipoMovimentacao.ENTRADA,
+        origem: OrigemMovimentacao.IMPORTACAO,
+        descricao: { contains: "Amazon" },
+        contaReceber: { is: null },
+        deletedAt: null,
+        valor: { gte: conta.valor - tolerancia, lte: conta.valor + tolerancia },
+        ...(janelaPrevisao ? { dataCaixa: janelaPrevisao } : {}),
       },
+      orderBy: { dataCaixa: "desc" },
+      take: 2,
+    });
+    const bancaria =
+      candidatasBancarias.length === 1 ? candidatasBancarias[0]! : null;
+
+    if (bancaria) {
+      // Vincula a entrada bancária real (sem criar sintética).
+      return db.contaReceber.update({
+        where: { id },
+        data: {
+          status: StatusContaReceber.RECEBIDA,
+          dataRecebimento: bancaria.dataCaixa,
+          movimentacaoId: bancaria.id,
+        },
+      });
+    }
+
+    const categoriaId = await resolverCategoriaReceitaId(conta.origem);
+    return db.$transaction(async (tx) => {
+      const mov = await tx.movimentacao.create({
+        data: {
+          tipo: TipoMovimentacao.ENTRADA,
+          valor: conta.valor,
+          dataCaixa: agora,
+          dataCompetencia: agora,
+          descricao: conta.descricao,
+          categoriaId,
+          origem: OrigemMovimentacao.CONTA_RECEBIDA,
+          referenciaId: conta.id,
+        },
+      });
+      return tx.contaReceber.update({
+        where: { id },
+        data: {
+          status: StatusContaReceber.RECEBIDA,
+          dataRecebimento: agora,
+          movimentacaoId: mov.id,
+        },
+      });
     });
   },
 };

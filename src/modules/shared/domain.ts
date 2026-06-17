@@ -17,6 +17,7 @@ export type TipoMovimentacao = (typeof TipoMovimentacao)[keyof typeof TipoMovime
 export const OrigemMovimentacao = {
   MANUAL: "MANUAL",
   CONTA_PAGA: "CONTA_PAGA",
+  CONTA_RECEBIDA: "CONTA_RECEBIDA",
   IMPORTACAO: "IMPORTACAO",
   AJUSTE: "AJUSTE",
 } as const;
