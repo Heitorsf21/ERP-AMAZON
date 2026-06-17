@@ -10,6 +10,17 @@ const colorMap = {
   slate: "text-slate-600 bg-slate-500/10 dark:text-slate-300",
 } as const;
 
+// Cor da barra lateral (accent) por categoria — espelha o padrão do Dashboard
+// E-commerce. Só aparece quando `accent` é passado (opt-in, backward-compat).
+const barMap = {
+  blue: "bg-blue-500",
+  green: "bg-emerald-500",
+  red: "bg-destructive",
+  orange: "bg-amber-500",
+  violet: "bg-violet-500",
+  slate: "bg-slate-400",
+} as const;
+
 export type KpiColor = keyof typeof colorMap;
 
 type Props = {
@@ -19,6 +30,8 @@ type Props = {
   icon?: React.ComponentType<{ className?: string }>;
   color?: KpiColor;
   highlight?: boolean;
+  /** Quando true, exibe a barra lateral colorida (por `color`) + hover de sombra. */
+  accent?: boolean;
   className?: string;
   valueClassName?: string;
 };
@@ -30,6 +43,7 @@ export function KpiCard({
   icon: Icon,
   color = "blue",
   highlight,
+  accent,
   className,
   valueClassName,
 }: Props) {
@@ -37,10 +51,17 @@ export function KpiCard({
     <div
       className={cn(
         "rounded-xl border bg-card p-4 transition-colors",
+        accent && "relative overflow-hidden transition-shadow hover:shadow-md",
         highlight && "ring-1 ring-primary/30",
         className,
       )}
     >
+      {accent && (
+        <span
+          aria-hidden
+          className={cn("absolute inset-y-0 left-0 w-1", barMap[color])}
+        />
+      )}
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
           <p

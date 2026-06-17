@@ -16,7 +16,7 @@ import { KpiStrip } from "./kpi-strip";
 
 export default function DashboardFinanceiroPage() {
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       <PageHeader
         title="Dashboard Financeiro"
         description="Visão geral financeira e operacional."
@@ -25,12 +25,12 @@ export default function DashboardFinanceiroPage() {
       {/* Stat strip — KPIs do dia */}
       <KpiStrip />
 
-      {/* Seção Financeiro */}
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between space-y-0">
+      {/* Seção Financeiro — Saldo & Projeção de caixa */}
+      <Card className="overflow-hidden">
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 border-b py-3.5">
           <CardTitle className="flex items-center gap-2 text-base">
-            <Wallet className="h-4 w-4 text-primary" />
-            Financeiro
+            <Wallet className="h-4 w-4 text-muted-foreground" />
+            Saldo &amp; Projeção de caixa
           </CardTitle>
           <Button variant="ghost" size="sm" asChild className="gap-1 text-xs">
             <Link href="/financeiro">
@@ -38,47 +38,50 @@ export default function DashboardFinanceiroPage() {
             </Link>
           </Button>
         </CardHeader>
-        <CardContent className="space-y-4">
+        <CardContent className="space-y-5 pt-5">
           <CardSaldo />
           <GraficoProjecao />
         </CardContent>
       </Card>
 
-      {/* Seção Produtos */}
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between space-y-0">
-          <CardTitle className="flex items-center gap-2 text-base">
-            <Package className="h-4 w-4 text-primary" />
-            Produtos
-          </CardTitle>
-          <Button variant="ghost" size="sm" asChild className="gap-1 text-xs">
-            <Link href="/produtos">
-              Ver produtos <ArrowRight className="h-3 w-3" />
-            </Link>
-          </Button>
-        </CardHeader>
-        <CardContent>
-          <CardResumoEstoque />
-        </CardContent>
-      </Card>
+      {/* Seções Produtos & Compras lado a lado */}
+      <div className="grid gap-6 lg:grid-cols-2">
+        {/* Seção Produtos */}
+        <Card className="overflow-hidden">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 border-b py-3.5">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Package className="h-4 w-4 text-muted-foreground" />
+              Produtos &amp; Estoque
+            </CardTitle>
+            <Button variant="ghost" size="sm" asChild className="gap-1 text-xs">
+              <Link href="/produtos">
+                Ver produtos <ArrowRight className="h-3 w-3" />
+              </Link>
+            </Button>
+          </CardHeader>
+          <CardContent className="pt-5">
+            <CardResumoEstoque />
+          </CardContent>
+        </Card>
 
-      {/* Seção Compras */}
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between space-y-0">
-          <CardTitle className="flex items-center gap-2 text-base">
-            <ShoppingCart className="h-4 w-4 text-primary" />
-            Compras
-          </CardTitle>
-          <Button variant="ghost" size="sm" asChild className="gap-1 text-xs">
-            <Link href="/compras">
-              Ver compras <ArrowRight className="h-3 w-3" />
-            </Link>
-          </Button>
-        </CardHeader>
-        <CardContent>
-          <CardResumoCompras />
-        </CardContent>
-      </Card>
+        {/* Seção Compras */}
+        <Card className="overflow-hidden">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 border-b py-3.5">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <ShoppingCart className="h-4 w-4 text-muted-foreground" />
+              Compras
+            </CardTitle>
+            <Button variant="ghost" size="sm" asChild className="gap-1 text-xs">
+              <Link href="/compras">
+                Ver compras <ArrowRight className="h-3 w-3" />
+              </Link>
+            </Button>
+          </CardHeader>
+          <CardContent className="pt-5">
+            <CardResumoCompras />
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 }

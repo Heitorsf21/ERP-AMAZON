@@ -19,9 +19,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { DataTableSkeleton } from "@/components/ui/data-table-skeleton";
@@ -47,6 +45,10 @@ type Conta = {
   } | null;
 };
 
+type TotaisMes = {
+  qtdVencidas: number;
+};
+
 type Aba = "ABERTA" | "VENCIDA" | "PAGA" | "TODAS";
 type PeriodoRapido = "HOJE" | "ONTEM" | "7_DIAS" | "30_DIAS" | "VITALICIO";
 
@@ -65,18 +67,33 @@ const periodoLabel: Record<PeriodoRapido, string> = {
   VITALICIO: "Vitalício",
 };
 
-function badgeStatus(status: string) {
+// Cor do ponto de status no início da linha — substitui a poluição de badges.
+// vermelho = vencida · âmbar = aberta/a vencer · verde = paga · slate = outros.
+function corDotStatus(status: string) {
   switch (status) {
-    case StatusConta.ABERTA:
-      return <Badge variant="secondary">aberta</Badge>;
     case StatusConta.VENCIDA:
-      return <Badge variant="destructive">vencida</Badge>;
+      return "bg-destructive";
+    case StatusConta.ABERTA:
+      return "bg-amber-500";
     case StatusConta.PAGA:
-      return <Badge variant="success">paga</Badge>;
-    case StatusConta.CANCELADA:
-      return <Badge variant="outline">cancelada</Badge>;
+      return "bg-emerald-500";
     default:
-      return <Badge variant="outline">{status.toLowerCase()}</Badge>;
+      return "bg-slate-400";
+  }
+}
+
+function rotuloStatus(status: string) {
+  switch (status) {
+    case StatusConta.VENCIDA:
+      return "vencida";
+    case StatusConta.ABERTA:
+      return "aberta";
+    case StatusConta.PAGA:
+      return "paga";
+    case StatusConta.CANCELADA:
+      return "cancelada";
+    default:
+      return status.toLowerCase();
   }
 }
 
@@ -145,6 +162,13 @@ export function ListaContas() {
     queryFn: () => fetchJSON<Conta[]>(urlContas),
   });
 
+  // Mesma queryKey usada pelo header da página — react-query deduplica
+  // (sem requisição extra). Usado apenas para o contador da aba "Vencidas".
+  const { data: totais } = useQuery<TotaisMes>({
+    queryKey: ["contas-totais-mes"],
+    queryFn: () => fetchJSON<TotaisMes>("/api/contas/totais"),
+  });
+
   const pagar = useMutation({
     mutationFn: ({ id, pagoEm }: { id: string; pagoEm: string }) =>
       fetchJSON(`/api/contas/${id}/pagar`, {
@@ -194,61 +218,82 @@ export function ListaContas() {
 
   return (
     <div className="space-y-3">
-      <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
-        <Tabs value={aba} onValueChange={(v) => setAba(v as Aba)}>
-          <TabsList>
-            {abas.map((a) => (
-              <TabsTrigger key={a} value={a}>{abaLabel[a]}</TabsTrigger>
-            ))}
-          </TabsList>
-        </Tabs>
-
-        <div className="flex flex-col gap-1.5 sm:flex-row sm:items-center">
-          <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-            <CalendarDays className="h-3.5 w-3.5" />
-            Vencimento
+      <div className="rounded-xl border">
+        {/* Toolbar: abas + chips de período (limpos, como no mockup) */}
+        <div className="flex flex-col gap-3 border-b px-4 py-3 lg:flex-row lg:items-center lg:justify-between">
+          <div className="inline-flex w-fit gap-0.5 rounded-lg border bg-muted/40 p-0.5 text-sm">
+            {abas.map((a) => {
+              const ativo = aba === a;
+              const mostrarContador =
+                a === "VENCIDA" && !!totais && totais.qtdVencidas > 0;
+              return (
+                <button
+                  key={a}
+                  type="button"
+                  onClick={() => setAba(a)}
+                  className={cn(
+                    "inline-flex items-center gap-1.5 rounded-md px-3 py-1 font-medium transition",
+                    ativo
+                      ? "bg-background text-foreground shadow-sm"
+                      : "text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  {abaLabel[a]}
+                  {mostrarContador && (
+                    <span className="rounded-full bg-destructive/15 px-1.5 text-[10px] font-semibold text-destructive">
+                      {totais.qtdVencidas}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
           </div>
-          <div className="flex w-fit gap-1 rounded-lg border bg-muted/30 p-1">
-            {periodos.map((p) => (
-              <button
-                key={p}
-                type="button"
-                onClick={() => setPeriodo(p)}
-                className={cn(
-                  "rounded-md px-3 py-1.5 text-sm font-medium transition",
-                  periodo === p
-                    ? "bg-background text-foreground shadow-sm"
-                    : "text-muted-foreground hover:text-foreground",
-                )}
-              >
-                {periodoLabel[p]}
-              </button>
-            ))}
+
+          <div className="flex flex-col gap-1.5 sm:flex-row sm:items-center">
+            <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+              <CalendarDays className="h-3.5 w-3.5" />
+              Vencimento
+            </div>
+            <div className="inline-flex w-fit gap-0.5 rounded-lg border bg-muted/40 p-0.5 text-xs">
+              {periodos.map((p) => (
+                <button
+                  key={p}
+                  type="button"
+                  onClick={() => setPeriodo(p)}
+                  className={cn(
+                    "rounded-md px-2.5 py-1 font-medium transition",
+                    periodo === p
+                      ? "bg-background text-foreground shadow-sm"
+                      : "text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  {periodoLabel[p]}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
-      </div>
 
-      <div className="rounded-xl border">
         {isLoading ? (
           <div className="p-4">
             <DataTableSkeleton rows={5} columns={6} />
           </div>
         ) : (
-        <Table>
+        <div className="overflow-x-auto">
+        <Table className="min-w-[640px]">
           <TableHeader>
             <TableRow>
-              <TableHead className="w-[110px]">Vencimento</TableHead>
+              <TableHead className="w-[130px] pl-5">Vencimento</TableHead>
               <TableHead>Descrição / Fornecedor</TableHead>
               <TableHead className="w-[160px]">Categoria</TableHead>
-              <TableHead className="w-[100px]">Status</TableHead>
               <TableHead className="w-[140px] text-right">Valor</TableHead>
-              <TableHead className="w-[80px]" />
+              <TableHead className="w-[100px] pr-5 text-right">Ações</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {contas.length === 0 && (
               <TableRow>
-                <TableCell colSpan={6} className="py-12 text-center text-muted-foreground">
+                <TableCell colSpan={5} className="py-12 text-center text-muted-foreground">
                   nenhuma conta{aba !== "TODAS" ? ` ${abaLabel[aba].toLowerCase()}` : ""}
                   {periodo !== "VITALICIO"
                     ? ` com vencimento em ${periodoLabel[periodo].toLowerCase()}`
@@ -257,50 +302,61 @@ export function ListaContas() {
               </TableRow>
             )}
             {contas.map((c) => (
-              <TableRow key={c.id} className="even:bg-muted/30">
+              <TableRow key={c.id} className="hover:bg-muted/30">
                 <TableCell
                   className={cn(
-                    "whitespace-nowrap text-sm",
+                    "whitespace-nowrap py-4 pl-5 text-sm",
                     c.status === StatusConta.VENCIDA
                       ? "text-destructive font-medium"
                       : "text-muted-foreground",
                   )}
                 >
-                  {formatData(c.vencimento)}
+                  <div className="flex items-center gap-2.5">
+                    <span
+                      aria-hidden
+                      className={cn(
+                        "h-2 w-2 shrink-0 rounded-full",
+                        corDotStatus(c.status),
+                      )}
+                    />
+                    <span className="sr-only">{rotuloStatus(c.status)}</span>
+                    {formatData(c.vencimento)}
+                  </div>
                 </TableCell>
-                <TableCell>
+                <TableCell className="py-4">
                   <div className="font-medium">{c.descricao}</div>
-                  <div className="text-xs text-muted-foreground flex items-center gap-1.5">
+                  <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
                     {c.fornecedor.nome}
                     {c.recorrencia === "MENSAL" && (
-                      <span className="rounded bg-muted px-1 py-0.5 text-[10px] uppercase tracking-wide">
+                      <span className="rounded bg-muted px-1 py-0.5 text-[10px] font-medium uppercase tracking-wide">
                         mensal
                       </span>
                     )}
                     {c.contaFixaId && (
-                      <span className="rounded bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300 px-1 py-0.5 text-[10px] uppercase tracking-wide">
+                      <span className="rounded bg-amber-100 px-1 py-0.5 text-[10px] font-medium uppercase tracking-wide text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">
                         fixa
                       </span>
                     )}
                     {c.nfNome && (
-                      <span className="rounded bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 px-1 py-0.5 text-[10px]">
+                      <span className="rounded bg-blue-100 px-1 py-0.5 text-[10px] font-medium text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">
                         NF
                       </span>
                     )}
                     {c.dossieFinanceiro?.documentos.length ? (
-                      <span className="rounded bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300 px-1 py-0.5 text-[10px]">
+                      <span className="rounded bg-emerald-100 px-1 py-0.5 text-[10px] font-medium text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">
                         {c.dossieFinanceiro.documentos.length} doc
                       </span>
                     ) : null}
                   </div>
                 </TableCell>
-                <TableCell className="text-sm">{c.categoria.nome}</TableCell>
-                <TableCell>{badgeStatus(c.status)}</TableCell>
-                <TableCell className="text-right font-mono tabular-nums text-sm">
+                <TableCell className="py-4 text-sm text-muted-foreground">
+                  {c.categoria.nome}
+                </TableCell>
+                <TableCell className="py-4 text-right font-mono text-sm tabular-nums">
                   {formatBRL(c.valor)}
                 </TableCell>
-                <TableCell>
-                  <div className="flex items-center gap-1">
+                <TableCell className="py-4 pr-5">
+                  <div className="flex items-center justify-end gap-1">
                     {(c.status === StatusConta.ABERTA ||
                       c.status === StatusConta.VENCIDA) && (
                       <Button
@@ -343,6 +399,7 @@ export function ListaContas() {
             ))}
           </TableBody>
         </Table>
+        </div>
         )}
       </div>
 
