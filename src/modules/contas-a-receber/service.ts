@@ -235,7 +235,19 @@ export const contasReceberService = {
 
     const agora = new Date();
     const tolerancia = Math.max(500, Math.round(conta.valor * 0.005));
-    const bancaria = await db.movimentacao.findFirst({
+    // Só vincula uma entrada de extrato existente se houver match ÚNICO e —
+    // quando a conta tem previsão — dentro de ±3 dias dela (alinha com a
+    // reconciliação automática). Valores de liquidações Amazon se repetem mês a
+    // mês; sem essa guarda, poderíamos vincular o depósito de OUTRA liquidação.
+    // Ambíguo (0 ou 2+ candidatas) → cai na sintética; a reconciliação resolve.
+    const janelaPrevisao =
+      conta.dataPrevisao != null
+        ? {
+            gte: somarDias(conta.dataPrevisao, -3),
+            lte: somarDias(conta.dataPrevisao, 3),
+          }
+        : undefined;
+    const candidatasBancarias = await db.movimentacao.findMany({
       where: {
         tipo: TipoMovimentacao.ENTRADA,
         origem: OrigemMovimentacao.IMPORTACAO,
@@ -243,9 +255,13 @@ export const contasReceberService = {
         contaReceber: { is: null },
         deletedAt: null,
         valor: { gte: conta.valor - tolerancia, lte: conta.valor + tolerancia },
+        ...(janelaPrevisao ? { dataCaixa: janelaPrevisao } : {}),
       },
       orderBy: { dataCaixa: "desc" },
+      take: 2,
     });
+    const bancaria =
+      candidatasBancarias.length === 1 ? candidatasBancarias[0]! : null;
 
     if (bancaria) {
       // Vincula a entrada bancária real (sem criar sintética).

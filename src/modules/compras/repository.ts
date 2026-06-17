@@ -216,6 +216,7 @@ export const comprasRepository = {
 
   async totais(periodo: { de: Date; ate: Date }) {
     const pedidos = await db.pedidoCompra.findMany({
+      where: { deletedAt: null },
       select: {
         totalCentavos: true,
         status: true,

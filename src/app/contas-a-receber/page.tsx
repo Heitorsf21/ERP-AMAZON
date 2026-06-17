@@ -375,7 +375,7 @@ export default function ContasAReceberPage() {
           value={totais ? formatBRL(totais.totalPendenteCentavos) : "—"}
           sub={
             totais
-              ? `Amazon ${formatBRL(totais.amazon.pendenteCentavos)} · Outros ${formatBRL(totais.outros.pendenteCentavos)}`
+              ? `Amazon ${formatBRL(totais.amazon.pendenteCentavos)}${totais.outros.pendenteCentavos > 0 ? ` · Outros ${formatBRL(totais.outros.pendenteCentavos)}` : ""}`
               : undefined
           }
         />
@@ -387,7 +387,7 @@ export default function ContasAReceberPage() {
           value={totais ? formatBRL(totais.totalRecebidaCentavos) : "—"}
           sub={
             totais
-              ? `Amazon ${formatBRL(totais.amazon.recebidaCentavos)} · Outros ${formatBRL(totais.outros.recebidaCentavos)}`
+              ? `Amazon ${formatBRL(totais.amazon.recebidaCentavos)}${totais.outros.recebidaCentavos > 0 ? ` · Outros ${formatBRL(totais.outros.recebidaCentavos)}` : ""}`
               : undefined
           }
         />

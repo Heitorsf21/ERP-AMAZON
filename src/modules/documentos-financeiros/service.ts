@@ -994,8 +994,9 @@ async function vincularMelhorDossieAConta(contaId: string) {
 export const documentosFinanceirosService = {
   async listarDossies() {
     return db.dossieFinanceiro.findMany({
+      where: { deletedAt: null },
       include: {
-        documentos: { orderBy: { createdAt: "desc" } },
+        documentos: { where: { deletedAt: null }, orderBy: { createdAt: "desc" } },
         contaPagar: {
           include: {
             fornecedor: { select: { id: true, nome: true, documento: true } },

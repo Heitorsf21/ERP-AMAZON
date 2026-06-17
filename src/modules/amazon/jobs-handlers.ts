@@ -393,6 +393,10 @@ export async function reconciliarRecebimentosAmazon() {
         where: {
           status: StatusContaReceber.RECEBIDA,
           valor: { gte: lo, lte: hi },
+          // Mesma janela temporal do ramo PENDENTE (±3d sobre a previsão) — sem
+          // ela, um depósito poderia revincular-se a uma conta recebida-manual
+          // de valor parecido em qualquer data, corrompendo o vínculo.
+          dataPrevisao: { gte: dataMin, lte: dataMax },
           deletedAt: null,
           movimentacao: {
             is: { origem: OrigemMovimentacao.CONTA_RECEBIDA, deletedAt: null },
