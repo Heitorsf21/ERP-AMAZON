@@ -70,7 +70,7 @@ export function CardResumoEstoque({ filtros = DEFAULT_PRODUTO_FILTROS }: Props) 
 
   if (isLoading) {
     return (
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
         {Array.from({ length: 5 }).map((_, i) => (
           <CardSkeleton key={i} />
         ))}
@@ -120,11 +120,16 @@ export function CardResumoEstoque({ filtros = DEFAULT_PRODUTO_FILTROS }: Props) 
   ];
 
   return (
-    <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
-      {cards.map((c) => {
+    <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+      {cards.map((c, i) => {
         const Icon = c.icon;
+        // Card ímpar (5º) ocupa a linha inteira no breakpoint de 2 colunas.
+        const isUltimoImpar = i === cards.length - 1 && cards.length % 2 !== 0;
         return (
-          <Card key={c.label} className="overflow-hidden">
+          <Card
+            key={c.label}
+            className={`overflow-hidden${isUltimoImpar ? " col-span-2 sm:col-span-1" : ""}`}
+          >
             <CardContent className="pt-5 pb-5">
               <div className="flex items-start justify-between">
                 <div>

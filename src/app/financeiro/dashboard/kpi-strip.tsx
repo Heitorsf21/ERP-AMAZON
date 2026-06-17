@@ -161,93 +161,115 @@ export function KpiStrip() {
   const acosPct = ads?.syncAcos != null ? `${(ads.syncAcos * 100).toFixed(1)}%` : "—";
   const adsValor = ads?.sync && ads.sync > 0 ? ads.sync : ads?.total ?? 0;
 
+  // Destaca "A pagar" quando há contas vencidas (ação necessária) — espelha o
+  // ring de alerta do mockup.
+  const aPagarAlerta = !carregando && aPagarVencidas.length > 0;
+
   return (
-    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-      <KpiCard
-        label="Saldo em caixa"
-        value={carregando ? "—" : formatBRL(saldoCaixa)}
-        icon={Wallet}
-        color="blue"
-      />
-      <KpiCard
-        label="A pagar (próx. 7d)"
-        value={carregando ? "—" : formatBRL(aPagarTotalCent)}
-        sub={
-          carregando
-            ? undefined
-            : aPagarCount > 0
-              ? `${aPagarCount} conta${aPagarCount !== 1 ? "s" : ""}`
-              : "nada para pagar"
-        }
-        icon={TrendingDown}
-        color="orange"
-      />
-      <KpiCard
-        label="A receber (próx. 7d)"
-        value={carregando ? "—" : formatBRL(aReceber7dCent)}
-        sub={
-          carregando
-            ? undefined
-            : aReceber7dList.length > 0
-              ? `${aReceber7dList.length} liquidaç${aReceber7dList.length !== 1 ? "ões" : "ão"}`
-              : "sem previsões"
-        }
-        icon={ArrowDownToLine}
-        color="green"
-      />
-      <KpiCard
-        label="Saldo projetado 30d"
-        value={carregando ? "—" : formatBRL(saldoProjetado)}
-        sub="atual − comprometido + a receber"
-        icon={TrendingUp}
-        color="violet"
-      />
-      <KpiCard
-        label="FBA Reimbursements"
-        value={carregando ? "—" : formatBRL(amazon?.reimbursementsFba ?? 0)}
-        sub={
-          carregando
-            ? undefined
-            : `${amazon?.quantidadeReimbursementsFba ?? 0} lancamento${(amazon?.quantidadeReimbursementsFba ?? 0) !== 1 ? "s" : ""} no mes`
-        }
-        icon={ReceiptText}
-        color="green"
-      />
-      <KpiCard
-        label="Returns estimados"
-        value={carregando ? "—" : formatBRL(amazon?.returnsEstimados ?? 0)}
-        sub={
-          carregando
-            ? undefined
-            : `${amazon?.unidadesReturns ?? 0} unidade${(amazon?.unidadesReturns ?? 0) !== 1 ? "s" : ""} devolvida${(amazon?.unidadesReturns ?? 0) !== 1 ? "s" : ""}`
-        }
-        icon={RotateCcw}
-        color="orange"
-      />
-      <KpiCard
-        label="Storage fees FBA"
-        value={carregando ? "—" : formatBRL(amazon?.storageFees ?? 0)}
-        sub={
-          carregando
-            ? undefined
-            : `${amazon?.quantidadeStorageFees ?? 0} linha${(amazon?.quantidadeStorageFees ?? 0) !== 1 ? "s" : ""} no mes`
-        }
-        icon={Archive}
-        color="slate"
-      />
-      <KpiCard
-        label="Amazon Ads (mes)"
-        value={carregando ? "—" : formatBRL(adsValor)}
-        sub={
-          carregando
-            ? undefined
-            : ads?.origem === "SYNC"
-              ? `ACOS ${acosPct} · sync API`
-              : "manual"
-        }
-        icon={Megaphone}
-        color="violet"
-      />
+    <div className="space-y-4">
+      {/* KPIs primários — barra lateral colorida por categoria (accent) */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <KpiCard
+          label="Saldo em caixa"
+          value={carregando ? "—" : formatBRL(saldoCaixa)}
+          icon={Wallet}
+          color="blue"
+          accent
+        />
+        <KpiCard
+          label="A receber (próx. 7d)"
+          value={carregando ? "—" : formatBRL(aReceber7dCent)}
+          sub={
+            carregando
+              ? undefined
+              : aReceber7dList.length > 0
+                ? `${aReceber7dList.length} liquidaç${aReceber7dList.length !== 1 ? "ões" : "ão"}`
+                : "sem previsões"
+          }
+          icon={ArrowDownToLine}
+          color="green"
+          accent
+        />
+        <KpiCard
+          label="A pagar (próx. 7d)"
+          value={carregando ? "—" : formatBRL(aPagarTotalCent)}
+          sub={
+            carregando
+              ? undefined
+              : aPagarVencidas.length > 0
+                ? `${aPagarVencidas.length} vencida${aPagarVencidas.length !== 1 ? "s" : ""} · ação necessária`
+                : aPagarCount > 0
+                  ? `${aPagarCount} conta${aPagarCount !== 1 ? "s" : ""}`
+                  : "nada para pagar"
+          }
+          icon={TrendingDown}
+          color="red"
+          accent
+          highlight={aPagarAlerta}
+        />
+        <KpiCard
+          label="Saldo projetado 30d"
+          value={carregando ? "—" : formatBRL(saldoProjetado)}
+          sub="atual − comprometido + a receber"
+          icon={TrendingUp}
+          color="blue"
+          accent
+        />
+      </div>
+
+      {/* KPIs Amazon (secundários) — compactos com accent */}
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <KpiCard
+          label="FBA Reimbursements"
+          value={carregando ? "—" : formatBRL(amazon?.reimbursementsFba ?? 0)}
+          sub={
+            carregando
+              ? undefined
+              : `${amazon?.quantidadeReimbursementsFba ?? 0} lancamento${(amazon?.quantidadeReimbursementsFba ?? 0) !== 1 ? "s" : ""} no mes`
+          }
+          icon={ReceiptText}
+          color="green"
+          accent
+        />
+        <KpiCard
+          label="Returns estimados"
+          value={carregando ? "—" : formatBRL(amazon?.returnsEstimados ?? 0)}
+          sub={
+            carregando
+              ? undefined
+              : `${amazon?.unidadesReturns ?? 0} unidade${(amazon?.unidadesReturns ?? 0) !== 1 ? "s" : ""} devolvida${(amazon?.unidadesReturns ?? 0) !== 1 ? "s" : ""}`
+          }
+          icon={RotateCcw}
+          color="red"
+          accent
+        />
+        <KpiCard
+          label="Storage fees FBA"
+          value={carregando ? "—" : formatBRL(amazon?.storageFees ?? 0)}
+          sub={
+            carregando
+              ? undefined
+              : `${amazon?.quantidadeStorageFees ?? 0} linha${(amazon?.quantidadeStorageFees ?? 0) !== 1 ? "s" : ""} no mes`
+          }
+          icon={Archive}
+          color="slate"
+          accent
+        />
+        <KpiCard
+          label="Amazon Ads (mes)"
+          value={carregando ? "—" : formatBRL(adsValor)}
+          sub={
+            carregando
+              ? undefined
+              : ads?.origem === "SYNC"
+                ? `ACOS ${acosPct} · sync API`
+                : "manual"
+          }
+          icon={Megaphone}
+          color="orange"
+          accent
+        />
+      </div>
     </div>
   );
 }

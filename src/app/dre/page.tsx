@@ -350,6 +350,7 @@ function DreCompetenciaView({ d, de, ate }: { d: DRECompetenciaData; de: string;
           sub={`${d.quantidadeVendas} pedido(s) · ${d.unidades} un.`}
           icon={DollarSign}
           color={d.receitaOperacionalLiquida >= 0 ? "green" : "red"}
+          accent
           valueClassName={
             d.receitaOperacionalLiquida >= 0
               ? "text-emerald-600 dark:text-emerald-400"
@@ -362,6 +363,7 @@ function DreCompetenciaView({ d, de, ate }: { d: DRECompetenciaData; de: string;
           sub={`Margem bruta ${d.margemBrutaPercentual.toFixed(1)}%`}
           icon={d.lucroBruto >= 0 ? TrendingUp : TrendingDown}
           color={d.lucroBruto >= 0 ? "green" : "red"}
+          accent
           valueClassName={
             d.lucroBruto >= 0
               ? "text-emerald-600 dark:text-emerald-400"
@@ -374,6 +376,7 @@ function DreCompetenciaView({ d, de, ate }: { d: DRECompetenciaData; de: string;
           sub="após Ads e despesas"
           icon={d.lucroOperacional >= 0 ? TrendingUp : TrendingDown}
           color={d.lucroOperacional >= 0 ? "blue" : "red"}
+          accent
           valueClassName={
             d.lucroOperacional >= 0
               ? "text-emerald-600 dark:text-emerald-400"
@@ -386,6 +389,7 @@ function DreCompetenciaView({ d, de, ate }: { d: DRECompetenciaData; de: string;
           sub={`Margem líquida ${d.margemLiquidaPercentual.toFixed(1)}%`}
           icon={d.lucroLiquido >= 0 ? TrendingUp : TrendingDown}
           color={d.lucroLiquido >= 0 ? "green" : "red"}
+          accent
           valueClassName={
             d.lucroLiquido >= 0
               ? "text-emerald-600 dark:text-emerald-400"
@@ -683,6 +687,7 @@ function DreCaixaView({ d, de, ate }: { d: DRECaixaData; de: string; ate: string
           sub={`${d.quantidadeLiquidacoes} liquidação(ões) Amazon`}
           icon={DollarSign}
           color={d.receitaLiquida >= 0 ? "green" : "red"}
+          accent
           valueClassName={
             d.receitaLiquida >= 0
               ? "text-emerald-600 dark:text-emerald-400"
@@ -695,6 +700,7 @@ function DreCaixaView({ d, de, ate }: { d: DRECaixaData; de: string; ate: string
           sub={formatBRL(d.margemBruta)}
           icon={d.margemBruta >= 0 ? TrendingUp : TrendingDown}
           color={d.margemBruta >= 0 ? "green" : "red"}
+          accent
           valueClassName={
             d.margemBruta >= 0
               ? "text-emerald-600 dark:text-emerald-400"
@@ -707,6 +713,7 @@ function DreCaixaView({ d, de, ate }: { d: DRECaixaData; de: string; ate: string
           sub="resultado / CMV"
           icon={d.roi >= 0 ? TrendingUp : TrendingDown}
           color={d.roi >= 30 ? "green" : d.roi >= 0 ? "blue" : "red"}
+          accent
           valueClassName={cn(
             d.roi >= 30 && "text-emerald-600 dark:text-emerald-400",
             d.roi < 0 && "text-destructive",
@@ -718,6 +725,7 @@ function DreCaixaView({ d, de, ate }: { d: DRECaixaData; de: string; ate: string
           sub={`Margem pós-anúncio: ${formatBRL(d.mpaValor)}`}
           icon={d.mpaPercentual >= 0 ? TrendingUp : TrendingDown}
           color={d.mpaPercentual >= 20 ? "green" : d.mpaPercentual >= 0 ? "blue" : "red"}
+          accent
           valueClassName={cn(
             d.mpaPercentual >= 20 && "text-emerald-600 dark:text-emerald-400",
             d.mpaPercentual < 0 && "text-destructive",

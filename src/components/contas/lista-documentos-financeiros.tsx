@@ -190,8 +190,11 @@ export function ListaDocumentosFinanceiros({
 
 export function BotaoDocumentosFinanceiros({
   onCriarConta,
+  compact = false,
 }: {
   onCriarConta: (prefill: PrefillNovaConta) => void;
+  /** Renderiza como botão-ícone compacto (para o grupo de ações do header). */
+  compact?: boolean;
 }) {
   const [aberto, setAberto] = React.useState(false);
   const [filtro, setFiltro] = React.useState<FiltroDocumento>("PENDENTES");
@@ -204,24 +207,46 @@ export function BotaoDocumentosFinanceiros({
   const vinculados = dossies.filter((d) => !!d.contaPagarId);
   const lista = filtro === "PENDENTES" ? pendentes : vinculados;
 
+  const abrirDialog = () => {
+    setFiltro(pendentes.length > 0 ? "PENDENTES" : "VINCULADOS");
+    setAberto(true);
+  };
+
   return (
     <>
-      <Button
-        type="button"
-        variant="outline"
-        onClick={() => {
-          setFiltro(pendentes.length > 0 ? "PENDENTES" : "VINCULADOS");
-          setAberto(true);
-        }}
-      >
-        <FileText className="mr-2 h-4 w-4" />
-        Documentos
-        {pendentes.length > 0 && (
-          <span className="ml-2 rounded-full bg-amber-500 px-2 py-0.5 text-[11px] font-semibold text-white">
-            {pendentes.length}
-          </span>
-        )}
-      </Button>
+      {compact ? (
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="relative h-9 w-9 rounded-none text-muted-foreground hover:text-foreground"
+          title={
+            pendentes.length > 0
+              ? `Notas & boletos (${pendentes.length} pendente${pendentes.length === 1 ? "" : "s"})`
+              : "Notas & boletos"
+          }
+          aria-label="Notas e boletos"
+          onClick={abrirDialog}
+        >
+          <FileText className="h-4 w-4" />
+          {pendentes.length > 0 && (
+            <span
+              aria-hidden
+              className="absolute right-1 top-1 h-2 w-2 rounded-full bg-amber-500 ring-2 ring-background"
+            />
+          )}
+        </Button>
+      ) : (
+        <Button type="button" variant="outline" onClick={abrirDialog}>
+          <FileText className="mr-2 h-4 w-4" />
+          Documentos
+          {pendentes.length > 0 && (
+            <span className="ml-2 rounded-full bg-amber-500 px-2 py-0.5 text-[11px] font-semibold text-white">
+              {pendentes.length}
+            </span>
+          )}
+        </Button>
+      )}
 
       <Dialog open={aberto} onOpenChange={setAberto}>
         <DialogContent className="sm:max-w-4xl">
