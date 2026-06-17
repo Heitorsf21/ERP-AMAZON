@@ -1,5 +1,6 @@
 import { addMonths, differenceInCalendarDays } from "date-fns";
 import { db } from "@/lib/db";
+import { fimMesSP, inicioMesSP } from "@/lib/date";
 import { documentosFinanceirosService } from "@/modules/documentos-financeiros/service";
 import { OrigemMovimentacao, TipoMovimentacao } from "@/modules/shared/domain";
 import { contasRepository } from "./repository";
@@ -212,12 +213,10 @@ export const contasService = {
     // Atualiza status VENCIDA antes de calcular totais.
     await contasRepository.atualizarVencidas();
 
-    const agora = new Date();
-    // Início do mês corrente em America/Sao_Paulo (UTC-3).
-    const ano = agora.getFullYear();
-    const mes = agora.getMonth();
-    const inicioMes = new Date(Date.UTC(ano, mes, 1, 3, 0, 0));
-    const fimMes = new Date(Date.UTC(ano, mes + 1, 1, 2, 59, 59, 999));
+    // Mês corrente em America/Sao_Paulo (helper único — evita drift de fuso/DST).
+    const hoje = new Date();
+    const inicioMes = inicioMesSP(hoje);
+    const fimMes = fimMesSP(hoje);
 
     const [emAberto, vencidas, pagasMes, todasMes] = await Promise.all([
       // Em aberto: status ABERTA com vencimento dentro do mês.
@@ -227,6 +226,7 @@ export const contasService = {
         where: {
           status: "ABERTA",
           vencimento: { gte: inicioMes, lte: fimMes },
+          deletedAt: null,
         },
       }),
       // Vencidas: status VENCIDA com vencimento dentro do mês.
@@ -236,6 +236,7 @@ export const contasService = {
         where: {
           status: "VENCIDA",
           vencimento: { gte: inicioMes, lte: fimMes },
+          deletedAt: null,
         },
       }),
       // Pagas no mês: status PAGA com pagoEm dentro do mês.
@@ -245,6 +246,7 @@ export const contasService = {
         where: {
           status: "PAGA",
           pagoEm: { gte: inicioMes, lte: fimMes },
+          deletedAt: null,
         },
       }),
       // Total do mês: todas com vencimento no mês (qualquer status exceto cancelada).
@@ -254,6 +256,7 @@ export const contasService = {
         where: {
           status: { not: "CANCELADA" },
           vencimento: { gte: inicioMes, lte: fimMes },
+          deletedAt: null,
         },
       }),
     ]);

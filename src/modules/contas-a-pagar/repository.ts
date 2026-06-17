@@ -18,7 +18,13 @@ export const contasRepository = {
       const range: { gte?: Date; lte?: Date } = {};
       if (filtros.de) range.gte = new Date(filtros.de + "T00:00:00-03:00");
       if (filtros.ate) range.lte = new Date(filtros.ate + "T23:59:59-03:00");
-      where.vencimento = range;
+      // Na aba "Pagas" o período filtra pela data de PAGAMENTO (pagoEm);
+      // nas demais abas, pelo vencimento.
+      if (filtros.status === "PAGA") {
+        where.pagoEm = range;
+      } else {
+        where.vencimento = range;
+      }
     }
 
     return db.contaPagar.findMany({
@@ -61,6 +67,7 @@ export const contasRepository = {
     return db.contaPagar.findMany({
       where: {
         status: { not: "CANCELADA" },
+        deletedAt: null,
       },
       orderBy: [{ updatedAt: "desc" }, { vencimento: "desc" }],
       take: 200,

@@ -259,11 +259,11 @@ export async function getProjecao(saldoLivreAtual: number): Promise<{
 
   const [entradas, saidas] = await Promise.all([
     db.movimentacao.aggregate({
-      where: { tipo: "ENTRADA", dataCaixa: { gte: desde, lte: ate } },
+      where: { tipo: "ENTRADA", dataCaixa: { gte: desde, lte: ate }, deletedAt: null },
       _sum: { valor: true },
     }),
     db.movimentacao.aggregate({
-      where: { tipo: "SAIDA", dataCaixa: { gte: desde, lte: ate } },
+      where: { tipo: "SAIDA", dataCaixa: { gte: desde, lte: ate }, deletedAt: null },
       _sum: { valor: true },
     }),
   ]);

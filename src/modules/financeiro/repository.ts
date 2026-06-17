@@ -16,7 +16,8 @@ type PrismaTx =
 function construirWhere(
   filtros: FiltrosMovimentacao,
 ): Prisma.MovimentacaoWhereInput {
-  const where: Prisma.MovimentacaoWhereInput = {};
+  // Soft-delete: movimentações excluídas nunca entram em saldo/listagem.
+  const where: Prisma.MovimentacaoWhereInput = { deletedAt: null };
   if (filtros.tipo) where.tipo = filtros.tipo;
   if (filtros.categoriaId) where.categoriaId = filtros.categoriaId;
   if (filtros.origem) where.origem = filtros.origem;

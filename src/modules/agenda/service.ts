@@ -53,11 +53,13 @@ type OcorrenciaAgenda = Awaited<
   ReturnType<typeof contasFixasRepository.listarOcorrenciasNoPeriodo>
 >[number];
 
-function normalizarTarefa(t: TarefaAgenda, agora: Date): AgendaItem {
+function normalizarTarefa(t: TarefaAgenda, hojeDia: string): AgendaItem {
+  // Vencida só quando o DIA-calendário (SP) do prazo é anterior a hoje — evita
+  // marcar como vencido ainda durante o próprio dia (prazos ficam ao meio-dia UTC).
   const vencida =
     t.status === StatusTarefa.ABERTA &&
     t.prazo != null &&
-    t.prazo.getTime() < agora.getTime();
+    formatarDiaPeriodo(t.prazo) < hojeDia;
   const statusAgenda: StatusAgenda =
     t.status === StatusTarefa.CONCLUIDA
       ? StatusAgenda.CONCLUIDA
@@ -87,10 +89,10 @@ function normalizarTarefa(t: TarefaAgenda, agora: Date): AgendaItem {
   };
 }
 
-function normalizarOcorrencia(o: OcorrenciaAgenda, agora: Date): AgendaItem {
+function normalizarOcorrencia(o: OcorrenciaAgenda, hojeDia: string): AgendaItem {
   const vencida =
     o.status === StatusConta.VENCIDA ||
-    (o.status === StatusConta.ABERTA && o.vencimento.getTime() < agora.getTime());
+    (o.status === StatusConta.ABERTA && formatarDiaPeriodo(o.vencimento) < hojeDia);
   const statusAgenda: StatusAgenda =
     o.status === StatusConta.PAGA
       ? StatusAgenda.CONCLUIDA
@@ -159,10 +161,10 @@ export const agendaService = {
       contasFixasRepository.listarOcorrenciasNoPeriodo(de, ate),
     ]);
 
-    const agora = new Date();
+    const hojeDia = formatarDiaPeriodo(new Date());
     const itens: AgendaItem[] = [
-      ...tarefas.map((t) => normalizarTarefa(t, agora)),
-      ...ocorrencias.map((o) => normalizarOcorrencia(o, agora)),
+      ...tarefas.map((t) => normalizarTarefa(t, hojeDia)),
+      ...ocorrencias.map((o) => normalizarOcorrencia(o, hojeDia)),
     ]
       .filter((item) => casaTipo(item, tipos, usuarioId))
       .filter((item) => status.length === 0 || status.includes(item.statusAgenda));

@@ -71,6 +71,7 @@ export async function buscarGlobal(
     // CONTAS A PAGAR — busca em descricao + fornecedor.nome
     db.contaPagar.findMany({
       where: {
+        deletedAt: null,
         OR: [
           { descricao: { contains: termo } },
           { fornecedor: { nome: { contains: termo } } },

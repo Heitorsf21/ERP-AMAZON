@@ -206,6 +206,7 @@ export const notificacaoService = {
         status: "PENDENTE",
         origem: "AMAZON",
         dataPrevisao: { lt: dezesseteAtras },
+        deletedAt: null,
       },
       select: { id: true, descricao: true, valor: true, dataPrevisao: true },
     });

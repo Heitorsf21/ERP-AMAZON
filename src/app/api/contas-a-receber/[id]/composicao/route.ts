@@ -1,7 +1,10 @@
 import { handleAuth, ok, erro } from "@/lib/api";
 import { UsuarioRole } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { whereVendaAmazonContabilizavelEstrito } from "@/modules/vendas/filtros";
+import {
+  whereAmazonReembolsoContabilizavel,
+  whereVendaAmazonContabilizavelEstrito,
+} from "@/modules/vendas/filtros";
 import { valorBrutoDaVenda } from "@/modules/vendas/valores";
 
 export const dynamic = "force-dynamic";
@@ -34,7 +37,7 @@ export const GET = handleAuth(
       },
     }),
     db.amazonReembolso.findMany({
-      where: { liquidacaoId },
+      where: whereAmazonReembolsoContabilizavel({ liquidacaoId }),
       select: {
         valorReembolsadoCentavos: true,
         taxasReembolsadasCentavos: true,
