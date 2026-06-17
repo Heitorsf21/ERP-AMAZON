@@ -12,6 +12,7 @@ export const comprasRepository = {
   }) {
     return db.pedidoCompra.findMany({
       where: {
+        deletedAt: null,
         ...(filtros.status ? { status: filtros.status } : {}),
         ...(filtros.fornecedorId ? { fornecedorId: filtros.fornecedorId } : {}),
         ...(filtros.de && filtros.ate

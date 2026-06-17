@@ -200,9 +200,12 @@ export const financeiroService = {
     // Movimentações geradas por conta paga devem ser revertidas via estorno
     // da conta (F2), não apagadas diretamente. No MVP bloqueamos para evitar
     // inconsistência entre ContaPagar.status e a movimentação vinculada.
-    if (mov.origem === OrigemMovimentacao.CONTA_PAGA) {
+    if (
+      mov.origem === OrigemMovimentacao.CONTA_PAGA ||
+      mov.origem === OrigemMovimentacao.CONTA_RECEBIDA
+    ) {
       throw new Error(
-        "movimentação gerada por conta paga — estorne pela tela de contas",
+        "movimentação gerada por conta (paga/recebida) — estorne pela tela de contas",
       );
     }
     return movimentacaoRepository.remover(id);

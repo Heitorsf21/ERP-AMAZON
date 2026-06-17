@@ -6,11 +6,13 @@ export const dynamic = "force-dynamic";
 
 export const GET = handleAuth([UsuarioRole.FINANCEIRO], async () => {
   const [total, boletos, notasFiscais, semConta] = await Promise.all([
-    db.documentoFinanceiro.count(),
-    db.documentoFinanceiro.count({ where: { tipo: "BOLETO" } }),
-    db.documentoFinanceiro.count({ where: { tipo: "NOTA_FISCAL" } }),
+    db.documentoFinanceiro.count({ where: { deletedAt: null } }),
+    db.documentoFinanceiro.count({ where: { tipo: "BOLETO", deletedAt: null } }),
     db.documentoFinanceiro.count({
-      where: { dossie: { contaPagarId: null } },
+      where: { tipo: "NOTA_FISCAL", deletedAt: null },
+    }),
+    db.documentoFinanceiro.count({
+      where: { dossie: { contaPagarId: null }, deletedAt: null },
     }),
   ]);
 

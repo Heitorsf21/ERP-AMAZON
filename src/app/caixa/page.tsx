@@ -40,7 +40,10 @@ export default function CaixaPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Caixa" description="Movimentações de entrada e saída.">
+      <PageHeader
+        title="Caixa"
+        description="Movimentações de entrada e saída — valores por regime de caixa (o que de fato entrou e saiu)."
+      >
         <Button variant="outline" onClick={() => setModalImportar(true)}>
           <Upload className="mr-2 h-4 w-4" /> Importar
         </Button>

@@ -384,7 +384,39 @@ export async function reconciliarRecebimentosAmazon() {
       take: 2,
     });
 
-    if (matches.length !== 1) continue;
+    if (matches.length !== 1) {
+      // Anti dupla-contagem: a conta pode ter sido RECEBIDA manualmente (com
+      // movimentação SINTÉTICA origem CONTA_RECEBIDA) antes do extrato chegar.
+      // Substitui a sintética pela entrada bancária real (soft-delete + revínculo),
+      // evitando contar o recebimento duas vezes no saldo.
+      const recebidasManuais = await db.contaReceber.findMany({
+        where: {
+          status: StatusContaReceber.RECEBIDA,
+          valor: { gte: lo, lte: hi },
+          deletedAt: null,
+          movimentacao: {
+            is: { origem: OrigemMovimentacao.CONTA_RECEBIDA, deletedAt: null },
+          },
+        },
+        include: { movimentacao: true },
+        take: 2,
+      });
+      if (recebidasManuais.length === 1) {
+        const conta = recebidasManuais[0]!;
+        await db.$transaction([
+          db.movimentacao.update({
+            where: { id: conta.movimentacaoId! },
+            data: { deletedAt: new Date() },
+          }),
+          db.contaReceber.update({
+            where: { id: conta.id },
+            data: { dataRecebimento: mov.dataCaixa, movimentacaoId: mov.id },
+          }),
+        ]);
+        vinculadas++;
+      }
+      continue;
+    }
     const conta = matches[0]!;
 
     await db.$transaction([

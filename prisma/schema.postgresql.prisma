@@ -334,6 +334,7 @@ model DossieFinanceiro {
   contaPagarId        String?   @unique
   createdAt           DateTime  @default(now())
   updatedAt           DateTime  @updatedAt
+  deletedAt           DateTime?
 
   contaPagar ContaPagar?           @relation(fields: [contaPagarId], references: [id], onDelete: SetNull)
   documentos DocumentoFinanceiro[]
@@ -365,6 +366,7 @@ model DocumentoFinanceiro {
   protegidoPorSenha   Boolean   @default(false)
   createdAt           DateTime  @default(now())
   updatedAt           DateTime  @updatedAt
+  deletedAt           DateTime?
 
   dossie DossieFinanceiro @relation(fields: [dossieId], references: [id], onDelete: Cascade)
 
@@ -701,6 +703,7 @@ model PedidoCompra {
   itens           ItemPedidoCompra[]
   createdAt       DateTime           @default(now())
   updatedAt       DateTime           @updatedAt
+  deletedAt       DateTime?
 
   @@index([status])
   @@index([dataEmissao])
@@ -718,6 +721,7 @@ model ItemPedidoCompra {
   custoUnitario Int
   subtotal      Int
   createdAt     DateTime     @default(now())
+  deletedAt     DateTime?
 
   @@index([pedidoId])
   @@index([produtoId])
