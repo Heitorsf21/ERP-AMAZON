@@ -10,6 +10,8 @@ import {
   ChevronRight,
   Printer,
   CalendarDays,
+  Info,
+  AlertTriangle,
 } from "lucide-react";
 import {
   BarChart,
@@ -35,7 +37,13 @@ import { formatBRL } from "@/lib/money";
 import { cn } from "@/lib/utils";
 
 // ── Tipos ─────────────────────────────────────────────────────────────────────
-type DREData = {
+type Regime = "competencia" | "caixa";
+
+type DreLinhaDespesa = { categoria: string; valor: number };
+
+// Regime de CAIXA (estrutura histórica)
+type DRECaixaData = {
+  regime?: "caixa";
   periodo: { de: string; ate: string };
   receitaAmazon: number;
   outrasReceitas: number;
@@ -48,7 +56,7 @@ type DREData = {
   margemBruta: number;
   percentualMargemBruta: number;
   despesaMarketing: number;
-  despesasOperacionais: Array<{ categoria: string; valor: number }>;
+  despesasOperacionais: DreLinhaDespesa[];
   totalDespesas: number;
   resultadoOperacional: number;
   roi: number;
@@ -73,6 +81,47 @@ type DREData = {
   };
 };
 
+type OrigemTaxasDre = "real" | "estimado" | "misto" | "nenhuma";
+
+// Regime de COMPETÊNCIA (novo)
+type DRECompetenciaData = {
+  regime: "competencia";
+  periodo: { de: string; ate: string };
+  receitaBrutaVendas: number;
+  reembolsos: number;
+  receitaLiquidaVendas: number;
+  taxasAmazon: number;
+  fretes: number;
+  impostoSimples: number;
+  receitaOperacionalLiquida: number;
+  cmv: number;
+  custoIncompleto: boolean;
+  vendasSemCusto: number;
+  lucroBruto: number;
+  margemBrutaPercentual: number;
+  ads: number;
+  adsFonte: string;
+  despesasOperacionais: DreLinhaDespesa[];
+  totalDespesasOperacionais: number;
+  lucroOperacional: number;
+  outrasReceitasManuais: number;
+  outrasDespesasManuais: number;
+  lucroLiquido: number;
+  margemLiquidaPercentual: number;
+  origemTaxas: OrigemTaxasDre;
+  quantidadeVendas: number;
+  unidades: number;
+  // chaves de compatibilidade anual
+  totalReceitas: number;
+  receitaLiquida: number;
+  margemBruta: number;
+  custoMercadorias: number;
+  resultadoFinal: number;
+  roi: number;
+};
+
+type DREResposta = DRECaixaData | DRECompetenciaData;
+
 type Preset = "mes-atual" | "mes-anterior" | "trimestre" | "ano" | "custom" | "anual";
 
 type MesDRE = {
@@ -92,6 +141,7 @@ type MesDRE = {
 
 type DREAnualData = {
   ano: number;
+  regime: Regime;
   meses: MesDRE[];
 };
 
@@ -129,7 +179,6 @@ function getPeriodo(preset: Preset): { de: string; ate: string } {
 }
 
 // ── Sub-componentes ────────────────────────────────────────────────────────────
-// Linha da tabela DRE
 type TipoLinha = "grupo" | "item" | "subtotal" | "resultado";
 
 function DRERow({
@@ -139,6 +188,7 @@ function DRERow({
   tipo,
   indent,
   sinal,
+  badge,
 }: {
   label: string;
   valor: number;
@@ -146,6 +196,7 @@ function DRERow({
   tipo: TipoLinha;
   indent?: boolean;
   sinal?: "positivo" | "negativo" | "neutro";
+  badge?: React.ReactNode;
 }) {
   const isZero = valor === 0;
 
@@ -181,7 +232,12 @@ function DRERow({
 
     return (
       <tr className={cn("border-t-2 border-border", bg)}>
-        <td className="py-3 pl-4 text-sm font-bold">{label}</td>
+        <td className="py-3 pl-4 text-sm font-bold">
+          <span className="flex items-center gap-2">
+            {label}
+            {badge}
+          </span>
+        </td>
         <td className={cn("py-3 pr-4 text-right font-mono font-bold text-sm", valorCor)}>
           {isZero ? "—" : formatBRL(Math.abs(valor))}
         </td>
@@ -200,6 +256,7 @@ function DRERow({
         <span className="flex items-center gap-1.5 text-muted-foreground">
           {indent && <ChevronRight className="h-3 w-3 shrink-0 opacity-50" />}
           {label}
+          {badge}
         </span>
       </td>
       <td
@@ -217,8 +274,736 @@ function DRERow({
   );
 }
 
+// Selo de origem das taxas (transparência: real x estimado).
+function SeloOrigemTaxas({ origem }: { origem: OrigemTaxasDre }) {
+  if (origem === "nenhuma") return null;
+  const cfg = {
+    real: { label: "Real", cls: "border-emerald-300 text-emerald-700 dark:text-emerald-400" },
+    estimado: { label: "Estimado", cls: "border-amber-300 text-amber-700 dark:text-amber-400" },
+    misto: { label: "Real + Estimado", cls: "border-sky-300 text-sky-700 dark:text-sky-400" },
+  }[origem];
+  return (
+    <Badge variant="outline" className={cn("h-4 px-1.5 text-[10px] font-medium", cfg.cls)}>
+      {cfg.label}
+    </Badge>
+  );
+}
+
+const CORES = [
+  "hsl(var(--chart-1))",
+  "hsl(var(--chart-2))",
+  "hsl(var(--chart-3))",
+  "hsl(var(--chart-4))",
+  "hsl(var(--chart-5))",
+];
+
+function GraficoDespesas({ despesas }: { despesas: DreLinhaDespesa[] }) {
+  const dados = despesas
+    .filter((x) => x.valor > 0)
+    .map((x) => ({ name: x.categoria.replace(/ e /g, "/"), valor: x.valor }));
+  if (dados.length === 0) return null;
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle className="text-sm">Despesas por Categoria</CardTitle>
+      </CardHeader>
+      <CardContent className="pt-0">
+        <ResponsiveContainer width="100%" height={200}>
+          <BarChart data={dados} layout="vertical" margin={{ left: 0, right: 16 }}>
+            <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+            <XAxis
+              type="number"
+              tickFormatter={(v) =>
+                v >= 100000 ? `R$${(v / 100000).toFixed(0)}k` : formatBRL(v)
+              }
+              tick={{ fontSize: 10 }}
+            />
+            <YAxis type="category" dataKey="name" width={90} tick={{ fontSize: 10 }} />
+            <Tooltip
+              formatter={(v: number) => [formatBRL(v), "Valor"]}
+              contentStyle={{ fontSize: 12 }}
+            />
+            <Bar dataKey="valor" radius={[0, 4, 4, 0]}>
+              {dados.map((_, i) => (
+                <Cell key={i} fill={CORES[i % CORES.length]} />
+              ))}
+            </Bar>
+          </BarChart>
+        </ResponsiveContainer>
+      </CardContent>
+    </Card>
+  );
+}
+
+// ── Visão COMPETÊNCIA ────────────────────────────────────────────────────────
+function DreCompetenciaView({ d, de, ate }: { d: DRECompetenciaData; de: string; ate: string }) {
+  const base = d.receitaBrutaVendas;
+  const pct = (v: number) => (base > 0 ? (v / base) * 100 : 0);
+
+  return (
+    <>
+      {/* KPI Cards */}
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <KpiCard
+          label="Receita Op. Líquida"
+          value={formatBRL(d.receitaOperacionalLiquida)}
+          sub={`${d.quantidadeVendas} pedido(s) · ${d.unidades} un.`}
+          icon={DollarSign}
+          color={d.receitaOperacionalLiquida >= 0 ? "green" : "red"}
+          valueClassName={
+            d.receitaOperacionalLiquida >= 0
+              ? "text-emerald-600 dark:text-emerald-400"
+              : "text-destructive"
+          }
+        />
+        <KpiCard
+          label="Lucro Bruto"
+          value={formatBRL(d.lucroBruto)}
+          sub={`Margem bruta ${d.margemBrutaPercentual.toFixed(1)}%`}
+          icon={d.lucroBruto >= 0 ? TrendingUp : TrendingDown}
+          color={d.lucroBruto >= 0 ? "green" : "red"}
+          valueClassName={
+            d.lucroBruto >= 0
+              ? "text-emerald-600 dark:text-emerald-400"
+              : "text-destructive"
+          }
+        />
+        <KpiCard
+          label="Lucro Operacional"
+          value={formatBRL(d.lucroOperacional)}
+          sub="após Ads e despesas"
+          icon={d.lucroOperacional >= 0 ? TrendingUp : TrendingDown}
+          color={d.lucroOperacional >= 0 ? "blue" : "red"}
+          valueClassName={
+            d.lucroOperacional >= 0
+              ? "text-emerald-600 dark:text-emerald-400"
+              : "text-destructive"
+          }
+        />
+        <KpiCard
+          label="Lucro Líquido"
+          value={formatBRL(d.lucroLiquido)}
+          sub={`Margem líquida ${d.margemLiquidaPercentual.toFixed(1)}%`}
+          icon={d.lucroLiquido >= 0 ? TrendingUp : TrendingDown}
+          color={d.lucroLiquido >= 0 ? "green" : "red"}
+          valueClassName={
+            d.lucroLiquido >= 0
+              ? "text-emerald-600 dark:text-emerald-400"
+              : "text-destructive"
+          }
+        />
+      </div>
+
+      {/* Avisos de transparência */}
+      <div className="flex flex-wrap gap-2">
+        {(d.origemTaxas === "estimado" || d.origemTaxas === "misto") && (
+          <div className="flex items-center gap-1.5 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs text-amber-700 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-400">
+            <Info className="h-3.5 w-3.5" />
+            Parte das taxas é <strong>estimada</strong> (vendas ainda não liquidadas pela Amazon).
+          </div>
+        )}
+        {d.custoIncompleto && (
+          <div className="flex items-center gap-1.5 rounded-md border border-orange-200 bg-orange-50 px-2.5 py-1 text-xs text-orange-700 dark:border-orange-900 dark:bg-orange-950/30 dark:text-orange-400">
+            <AlertTriangle className="h-3.5 w-3.5" />
+            {d.vendasSemCusto} venda(s) sem custo cadastrado — CMV e lucro subestimados.
+          </div>
+        )}
+      </div>
+
+      <div className="grid gap-6 lg:grid-cols-[1fr_360px]">
+        {/* Tabela DRE */}
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <DollarSign className="h-4 w-4 text-muted-foreground" />
+              Demonstração do Resultado — Competência
+            </CardTitle>
+            <p className="text-xs text-muted-foreground">
+              {de} → {ate} · por data da venda
+            </p>
+          </CardHeader>
+          <CardContent className="p-0">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b border-border">
+                  <th className="py-2 pl-4 text-left text-xs font-medium text-muted-foreground">
+                    Linha
+                  </th>
+                  <th className="py-2 pr-4 text-right text-xs font-medium text-muted-foreground">
+                    Valor
+                  </th>
+                  <th className="py-2 pr-4 text-right text-xs font-medium text-muted-foreground">
+                    % Receita
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {/* RECEITA */}
+                <DRERow label="Receita" valor={0} tipo="grupo" />
+                <DRERow
+                  label="Receita bruta de vendas"
+                  valor={d.receitaBrutaVendas}
+                  percentual={100}
+                  tipo="item"
+                  indent
+                  sinal="positivo"
+                />
+                <DRERow
+                  label="Devoluções / Reembolsos"
+                  valor={d.reembolsos}
+                  percentual={pct(d.reembolsos)}
+                  tipo="item"
+                  indent
+                  sinal="negativo"
+                />
+                <DRERow
+                  label="Receita Líquida"
+                  valor={d.receitaLiquidaVendas}
+                  percentual={pct(d.receitaLiquidaVendas)}
+                  tipo="subtotal"
+                  sinal="positivo"
+                />
+
+                {/* DEDUÇÕES */}
+                <DRERow label="Deduções" valor={0} tipo="grupo" />
+                <DRERow
+                  label="Taxas Amazon (comissão + FBA + parcelamento)"
+                  valor={d.taxasAmazon}
+                  percentual={pct(d.taxasAmazon)}
+                  tipo="item"
+                  indent
+                  sinal="negativo"
+                  badge={<SeloOrigemTaxas origem={d.origemTaxas} />}
+                />
+                <DRERow
+                  label="Fretes"
+                  valor={d.fretes}
+                  percentual={pct(d.fretes)}
+                  tipo="item"
+                  indent
+                  sinal="negativo"
+                />
+                <DRERow
+                  label="Impostos sobre vendas (Simples)"
+                  valor={d.impostoSimples}
+                  percentual={pct(d.impostoSimples)}
+                  tipo="item"
+                  indent
+                  sinal="negativo"
+                />
+                <DRERow
+                  label="Receita Operacional Líquida"
+                  valor={d.receitaOperacionalLiquida}
+                  percentual={pct(d.receitaOperacionalLiquida)}
+                  tipo="subtotal"
+                  sinal={d.receitaOperacionalLiquida >= 0 ? "positivo" : "negativo"}
+                />
+
+                {/* CMV */}
+                <DRERow label="Custo das Mercadorias Vendidas" valor={0} tipo="grupo" />
+                <DRERow
+                  label="CMV — custo do que foi vendido"
+                  valor={d.cmv}
+                  percentual={pct(d.cmv)}
+                  tipo="item"
+                  indent
+                  sinal="negativo"
+                  badge={
+                    d.custoIncompleto ? (
+                      <Badge
+                        variant="outline"
+                        className="h-4 px-1.5 text-[10px] font-medium border-orange-300 text-orange-700 dark:text-orange-400"
+                      >
+                        incompleto
+                      </Badge>
+                    ) : undefined
+                  }
+                />
+                <DRERow
+                  label="Lucro Bruto"
+                  valor={d.lucroBruto}
+                  percentual={d.margemBrutaPercentual}
+                  tipo="subtotal"
+                  sinal={d.lucroBruto >= 0 ? "positivo" : "negativo"}
+                />
+
+                {/* DESPESAS */}
+                <DRERow label="Despesas Operacionais" valor={0} tipo="grupo" />
+                <DRERow
+                  label="Publicidade (Ads)"
+                  valor={d.ads}
+                  percentual={pct(d.ads)}
+                  tipo="item"
+                  indent
+                  sinal="negativo"
+                />
+                {d.despesasOperacionais.map((dep) => (
+                  <DRERow
+                    key={dep.categoria}
+                    label={dep.categoria}
+                    valor={dep.valor}
+                    percentual={pct(dep.valor)}
+                    tipo="item"
+                    indent
+                    sinal="negativo"
+                  />
+                ))}
+                <DRERow
+                  label="Lucro Operacional"
+                  valor={d.lucroOperacional}
+                  percentual={pct(d.lucroOperacional)}
+                  tipo="subtotal"
+                  sinal={d.lucroOperacional >= 0 ? "positivo" : "negativo"}
+                />
+
+                {/* OUTRAS (manuais) */}
+                {(d.outrasReceitasManuais > 0 || d.outrasDespesasManuais > 0) && (
+                  <>
+                    <DRERow label="Outras (lançamentos manuais)" valor={0} tipo="grupo" />
+                    {d.outrasReceitasManuais > 0 && (
+                      <DRERow
+                        label="Outras receitas (manuais)"
+                        valor={d.outrasReceitasManuais}
+                        percentual={pct(d.outrasReceitasManuais)}
+                        tipo="item"
+                        indent
+                        sinal="positivo"
+                      />
+                    )}
+                    {d.outrasDespesasManuais > 0 && (
+                      <DRERow
+                        label="Outras despesas (manuais)"
+                        valor={d.outrasDespesasManuais}
+                        percentual={pct(d.outrasDespesasManuais)}
+                        tipo="item"
+                        indent
+                        sinal="negativo"
+                      />
+                    )}
+                  </>
+                )}
+
+                {/* RESULTADO */}
+                <DRERow
+                  label="Lucro Líquido"
+                  valor={d.lucroLiquido}
+                  percentual={d.margemLiquidaPercentual}
+                  tipo="resultado"
+                  sinal={d.lucroLiquido >= 0 ? "positivo" : "negativo"}
+                />
+              </tbody>
+            </table>
+          </CardContent>
+        </Card>
+
+        {/* Coluna direita: indicadores + gráfico */}
+        <div className="space-y-4">
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm">Indicadores</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3 pt-0">
+              {[
+                {
+                  label: "Margem Bruta",
+                  valor: `${d.margemBrutaPercentual.toFixed(1)}%`,
+                  ok: d.margemBrutaPercentual >= 30,
+                },
+                {
+                  label: "Margem Líquida",
+                  valor: `${d.margemLiquidaPercentual.toFixed(1)}%`,
+                  ok: d.lucroLiquido > 0,
+                },
+                {
+                  label: "ROI sobre CMV",
+                  valor: d.cmv > 0 ? `${d.roi.toFixed(1)}%` : "—",
+                  ok: d.roi >= 30,
+                },
+                {
+                  label: "Taxas / Receita",
+                  valor: base > 0 ? `${((d.taxasAmazon / base) * 100).toFixed(1)}%` : "—",
+                  ok: base > 0 && d.taxasAmazon / base < 0.25,
+                },
+                {
+                  label: "Ads / Receita (TACOS)",
+                  valor: base > 0 ? `${((d.ads / base) * 100).toFixed(1)}%` : "—",
+                  ok: base > 0 && d.ads / base < 0.15,
+                },
+                {
+                  label: "Custo / Receita",
+                  valor: base > 0 ? `${((d.cmv / base) * 100).toFixed(1)}%` : "—",
+                  ok: base > 0 && d.cmv / base < 0.6,
+                },
+              ].map((ind) => (
+                <div key={ind.label} className="flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">{ind.label}</span>
+                  <span
+                    className={cn(
+                      "font-mono font-semibold tabular-nums",
+                      ind.ok ? "text-emerald-600 dark:text-emerald-400" : "text-destructive",
+                    )}
+                  >
+                    {ind.valor}
+                  </span>
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+
+          <GraficoDespesas despesas={d.despesasOperacionais} />
+
+          {/* Como é calculado */}
+          <Card className="border-dashed">
+            <CardContent className="space-y-1.5 pt-4 text-xs text-muted-foreground">
+              <p className="flex items-center gap-1.5 font-medium text-foreground">
+                <Info className="h-3.5 w-3.5" /> Como este DRE é calculado
+              </p>
+              <p>
+                Por <strong>competência</strong> (data da venda), com os dados que o sistema
+                sincroniza da Amazon — sem precisar de extrato bancário. Taxas usam o valor real
+                quando a Amazon já liquidou; senão, estimativa calibrada.
+              </p>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    </>
+  );
+}
+
+// ── Visão CAIXA (preservada) ─────────────────────────────────────────────────
+function DreCaixaView({ d, de, ate }: { d: DRECaixaData; de: string; ate: string }) {
+  return (
+    <>
+      {/* KPI Cards */}
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <KpiCard
+          label="Receita Líquida"
+          value={formatBRL(d.receitaLiquida)}
+          sub={`${d.quantidadeLiquidacoes} liquidação(ões) Amazon`}
+          icon={DollarSign}
+          color={d.receitaLiquida >= 0 ? "green" : "red"}
+          valueClassName={
+            d.receitaLiquida >= 0
+              ? "text-emerald-600 dark:text-emerald-400"
+              : "text-destructive"
+          }
+        />
+        <KpiCard
+          label="Margem Bruta"
+          value={`${d.percentualMargemBruta.toFixed(1)}%`}
+          sub={formatBRL(d.margemBruta)}
+          icon={d.margemBruta >= 0 ? TrendingUp : TrendingDown}
+          color={d.margemBruta >= 0 ? "green" : "red"}
+          valueClassName={
+            d.margemBruta >= 0
+              ? "text-emerald-600 dark:text-emerald-400"
+              : "text-destructive"
+          }
+        />
+        <KpiCard
+          label="ROI"
+          value={`${d.roi.toFixed(1)}%`}
+          sub="resultado / CMV"
+          icon={d.roi >= 0 ? TrendingUp : TrendingDown}
+          color={d.roi >= 30 ? "green" : d.roi >= 0 ? "blue" : "red"}
+          valueClassName={cn(
+            d.roi >= 30 && "text-emerald-600 dark:text-emerald-400",
+            d.roi < 0 && "text-destructive",
+          )}
+        />
+        <KpiCard
+          label="MPA"
+          value={`${d.mpaPercentual.toFixed(1)}%`}
+          sub={`Margem pós-anúncio: ${formatBRL(d.mpaValor)}`}
+          icon={d.mpaPercentual >= 0 ? TrendingUp : TrendingDown}
+          color={d.mpaPercentual >= 20 ? "green" : d.mpaPercentual >= 0 ? "blue" : "red"}
+          valueClassName={cn(
+            d.mpaPercentual >= 20 && "text-emerald-600 dark:text-emerald-400",
+            d.mpaPercentual < 0 && "text-destructive",
+          )}
+        />
+      </div>
+
+      <div className="grid gap-6 lg:grid-cols-[1fr_360px]">
+        {/* Tabela DRE */}
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <DollarSign className="h-4 w-4 text-muted-foreground" />
+              Demonstração do Resultado — Caixa
+            </CardTitle>
+            <p className="text-xs text-muted-foreground">
+              {de} → {ate} · por recebimento/pagamento
+            </p>
+          </CardHeader>
+          <CardContent className="p-0">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b border-border">
+                  <th className="py-2 pl-4 text-left text-xs font-medium text-muted-foreground">
+                    Linha
+                  </th>
+                  <th className="py-2 pr-4 text-right text-xs font-medium text-muted-foreground">
+                    Valor
+                  </th>
+                  <th className="py-2 pr-4 text-right text-xs font-medium text-muted-foreground">
+                    % Receita
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {/* RECEITAS */}
+                <DRERow label="Receitas" valor={0} tipo="grupo" />
+                <DRERow
+                  label="Receita Amazon (liquidacoes)"
+                  valor={d.amazon.receitaLiquidacoes}
+                  percentual={d.totalReceitas > 0 ? (d.amazon.receitaLiquidacoes / d.totalReceitas) * 100 : 0}
+                  tipo="item"
+                  indent
+                  sinal="positivo"
+                />
+                <DRERow
+                  label="FBA Reimbursements"
+                  valor={d.amazon.reimbursementsFba}
+                  percentual={d.totalReceitas > 0 ? (d.amazon.reimbursementsFba / d.totalReceitas) * 100 : 0}
+                  tipo="item"
+                  indent
+                  sinal="positivo"
+                />
+                <DRERow
+                  label="Outras receitas (manuais)"
+                  valor={d.outrasReceitas}
+                  percentual={d.totalReceitas > 0 ? (d.outrasReceitas / d.totalReceitas) * 100 : 0}
+                  tipo="item"
+                  indent
+                  sinal="positivo"
+                />
+                <DRERow
+                  label="Receita Bruta"
+                  valor={d.totalReceitas}
+                  percentual={100}
+                  tipo="subtotal"
+                  sinal="positivo"
+                />
+
+                {/* DEDUÇÕES */}
+                <DRERow label="Deduções" valor={0} tipo="grupo" />
+                <DRERow
+                  label="Taxas de plataforma"
+                  valor={d.taxasPlataforma}
+                  percentual={d.totalReceitas > 0 ? (d.taxasPlataforma / d.totalReceitas) * 100 : 0}
+                  tipo="item"
+                  indent
+                  sinal="negativo"
+                />
+                <DRERow
+                  label="Fretes e Entregas"
+                  valor={d.fretes}
+                  percentual={d.totalReceitas > 0 ? (d.fretes / d.totalReceitas) * 100 : 0}
+                  tipo="item"
+                  indent
+                  sinal="negativo"
+                />
+                <DRERow
+                  label="Returns FBA estimados"
+                  valor={d.amazon.returnsEstimados}
+                  percentual={d.totalReceitas > 0 ? (d.amazon.returnsEstimados / d.totalReceitas) * 100 : 0}
+                  tipo="item"
+                  indent
+                  sinal="negativo"
+                />
+                <DRERow
+                  label="Receita Líquida"
+                  valor={d.receitaLiquida}
+                  percentual={d.totalReceitas > 0 ? (d.receitaLiquida / d.totalReceitas) * 100 : 0}
+                  tipo="subtotal"
+                  sinal={d.receitaLiquida >= 0 ? "positivo" : "negativo"}
+                />
+
+                {/* CMV */}
+                <DRERow label="Custo das Mercadorias Vendidas" valor={0} tipo="grupo" />
+                <DRERow
+                  label="CMV produtos"
+                  valor={d.cpv.contasPagas}
+                  percentual={d.totalReceitas > 0 ? (d.cpv.contasPagas / d.totalReceitas) * 100 : 0}
+                  tipo="item"
+                  indent
+                  sinal="negativo"
+                />
+                <DRERow
+                  label="Storage fees FBA"
+                  valor={d.amazon.storageFees}
+                  percentual={d.totalReceitas > 0 ? (d.amazon.storageFees / d.totalReceitas) * 100 : 0}
+                  tipo="item"
+                  indent
+                  sinal="negativo"
+                />
+                <DRERow
+                  label="Margem Bruta"
+                  valor={d.margemBruta}
+                  percentual={d.percentualMargemBruta}
+                  tipo="subtotal"
+                  sinal={d.margemBruta >= 0 ? "positivo" : "negativo"}
+                />
+
+                {/* DESPESAS OPERACIONAIS */}
+                <DRERow label="Despesas Operacionais" valor={0} tipo="grupo" />
+                {d.despesasOperacionais.map((dep) => (
+                  <DRERow
+                    key={dep.categoria}
+                    label={dep.categoria}
+                    valor={dep.valor}
+                    percentual={d.totalReceitas > 0 ? (dep.valor / d.totalReceitas) * 100 : 0}
+                    tipo="item"
+                    indent
+                    sinal="negativo"
+                  />
+                ))}
+                {d.despesasOperacionais.length === 0 && (
+                  <tr>
+                    <td
+                      colSpan={3}
+                      className="py-2 pl-8 text-xs text-muted-foreground/50 italic"
+                    >
+                      Nenhuma despesa operacional no período
+                    </td>
+                  </tr>
+                )}
+
+                {/* RESULTADO FINAL */}
+                <DRERow
+                  label="Resultado Final"
+                  valor={d.resultadoFinal}
+                  percentual={d.totalReceitas > 0 ? (d.resultadoFinal / d.totalReceitas) * 100 : 0}
+                  tipo="resultado"
+                  sinal={d.resultadoFinal >= 0 ? "positivo" : "negativo"}
+                />
+              </tbody>
+            </table>
+          </CardContent>
+        </Card>
+
+        {/* Coluna direita: indicadores + gráfico */}
+        <div className="space-y-4">
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm">Indicadores</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3 pt-0">
+              {[
+                {
+                  label: "Margem Bruta",
+                  valor: `${d.percentualMargemBruta.toFixed(1)}%`,
+                  ok: d.percentualMargemBruta >= 30,
+                },
+                {
+                  label: "Margem Líquida",
+                  valor:
+                    d.totalReceitas > 0
+                      ? `${((d.resultadoFinal / d.totalReceitas) * 100).toFixed(1)}%`
+                      : "—",
+                  ok: d.resultadoFinal > 0,
+                },
+                {
+                  label: "ROI sobre CMV",
+                  valor: d.custoMercadorias > 0 ? `${d.roi.toFixed(1)}%` : "—",
+                  ok: d.roi >= 30,
+                },
+                {
+                  label: "MPA (pós-anúncio)",
+                  valor: `${d.mpaPercentual.toFixed(1)}%`,
+                  ok: d.mpaPercentual >= 20,
+                },
+                {
+                  label: "Participação Amazon",
+                  valor:
+                    d.totalReceitas > 0
+                      ? `${((d.receitaAmazon / d.totalReceitas) * 100).toFixed(0)}%`
+                      : "—",
+                  ok: true,
+                },
+                {
+                  label: "Custo/Receita",
+                  valor:
+                    d.totalReceitas > 0
+                      ? `${((d.custoMercadorias / d.totalReceitas) * 100).toFixed(1)}%`
+                      : "—",
+                  ok: d.totalReceitas > 0 && d.custoMercadorias / d.totalReceitas < 0.6,
+                },
+              ].map((ind) => (
+                <div key={ind.label} className="flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">{ind.label}</span>
+                  <span
+                    className={cn(
+                      "font-mono font-semibold tabular-nums",
+                      ind.ok ? "text-emerald-600 dark:text-emerald-400" : "text-destructive",
+                    )}
+                  >
+                    {ind.valor}
+                  </span>
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+
+          <GraficoDespesas despesas={d.despesasOperacionais} />
+
+          {/* Estrutura de resultado */}
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm">Composição do Resultado</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2 pt-0">
+              {[
+                { label: "Receita Líquida", valor: d.receitaLiquida, positivo: true },
+                { label: "(-) CMV", valor: -d.custoMercadorias, positivo: false },
+                { label: "(-) Marketing", valor: -d.despesaMarketing, positivo: false },
+                {
+                  label: "(-) Outros custos",
+                  valor: -(d.totalDespesas - d.despesaMarketing),
+                  positivo: false,
+                },
+              ].map((item, i) => (
+                <div key={i} className="flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">{item.label}</span>
+                  <span
+                    className={cn(
+                      "font-mono tabular-nums",
+                      item.valor >= 0
+                        ? "text-emerald-600 dark:text-emerald-400"
+                        : "text-destructive",
+                    )}
+                  >
+                    {item.valor >= 0 ? "+" : ""}
+                    {formatBRL(Math.abs(item.valor))}
+                  </span>
+                </div>
+              ))}
+              <Separator />
+              <div className="flex items-center justify-between font-bold">
+                <span>Resultado Final</span>
+                <span
+                  className={
+                    d.resultadoFinal >= 0
+                      ? "text-emerald-600 dark:text-emerald-400"
+                      : "text-destructive"
+                  }
+                >
+                  {formatBRL(d.resultadoFinal)}
+                </span>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    </>
+  );
+}
+
 // ── Página principal ───────────────────────────────────────────────────────────
 export default function DREPage() {
+  const [regime, setRegime] = React.useState<Regime>("competencia");
   const [preset, setPreset] = React.useState<Preset>("mes-atual");
   const [customDe, setCustomDe] = React.useState("");
   const [customAte, setCustomAte] = React.useState("");
@@ -235,16 +1020,20 @@ export default function DREPage() {
   const params = new URLSearchParams();
   if (de) params.set("de", de);
   if (ate) params.set("ate", ate);
+  params.set("regime", regime);
 
-  const { data, isLoading } = useQuery<DREData>({
-    queryKey: ["dre-resumo", de, ate],
-    queryFn: () => fetchJSON<DREData>(`/api/dre/resumo?${params.toString()}`),
+  const { data, isLoading } = useQuery<DREResposta>({
+    queryKey: ["dre-resumo", regime, de, ate],
+    queryFn: () => fetchJSON<DREResposta>(`/api/dre/resumo?${params.toString()}`),
     enabled: !modoAnual && !!de && !!ate,
   });
 
   const { data: dataAnual, isLoading: isLoadingAnual } = useQuery<DREAnualData>({
-    queryKey: ["dre-anual", anoAnual],
-    queryFn: () => fetchJSON<DREAnualData>(`/api/dre/resumo?modo=mensal&ano=${anoAnual}`),
+    queryKey: ["dre-anual", regime, anoAnual],
+    queryFn: () =>
+      fetchJSON<DREAnualData>(
+        `/api/dre/resumo?modo=mensal&ano=${anoAnual}&regime=${regime}`,
+      ),
     enabled: modoAnual,
   });
 
@@ -257,21 +1046,12 @@ export default function DREPage() {
     { key: "custom", label: "Personalizado" },
   ];
 
-  const d = data;
-
-  // Gráfico de despesas
-  const graficoDados =
-    d?.despesasOperacionais
-      .filter((x) => x.valor > 0)
-      .map((x) => ({ name: x.categoria.replace(/ e /g, "/"), valor: x.valor })) ?? [];
-
-  const CORES = [
-    "hsl(var(--chart-1))",
-    "hsl(var(--chart-2))",
-    "hsl(var(--chart-3))",
-    "hsl(var(--chart-4))",
-    "hsl(var(--chart-5))",
+  const regimes: { key: Regime; label: string; hint: string }[] = [
+    { key: "competencia", label: "Competência", hint: "Por data da venda — automático" },
+    { key: "caixa", label: "Caixa", hint: "Por recebimento/pagamento — banco" },
   ];
+
+  const d = data;
 
   return (
     <div className="space-y-6">
@@ -295,6 +1075,33 @@ export default function DREPage() {
           </Badge>
         </div>
       </PageHeader>
+
+      {/* Toggle de regime */}
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="inline-flex rounded-lg border bg-muted/30 p-0.5">
+          {regimes.map((r) => (
+            <button
+              key={r.key}
+              type="button"
+              onClick={() => setRegime(r.key)}
+              title={r.hint}
+              className={cn(
+                "rounded-md px-4 py-1.5 text-sm font-medium transition-colors",
+                regime === r.key
+                  ? "bg-background text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              {r.label}
+            </button>
+          ))}
+        </div>
+        <span className="text-xs text-muted-foreground">
+          {regime === "competencia"
+            ? "Resultado por competência (data da venda) — preenchido automaticamente pelo sistema."
+            : "Resultado por caixa (recebido/pago) — reflete o que entrou e saiu do banco."}
+        </span>
+      </div>
 
       {/* Seletor de período */}
       <div className="inline-flex flex-wrap gap-0.5 rounded-lg border bg-muted/30 p-0.5">
@@ -369,7 +1176,7 @@ export default function DREPage() {
           <CardHeader className="pb-2">
             <CardTitle className="flex items-center gap-2 text-base">
               <CalendarDays className="h-4 w-4 text-muted-foreground" />
-              Comparativo Mensal — {dataAnual.ano}
+              Comparativo Mensal — {dataAnual.ano} ({regime === "competencia" ? "Competência" : "Caixa"})
             </CardTitle>
           </CardHeader>
           <CardContent className="p-0 overflow-x-auto">
@@ -386,47 +1193,13 @@ export default function DREPage() {
               </thead>
               <tbody>
                 {[
-                  {
-                    label: "Receita bruta",
-                    key: "totalReceitas" as keyof MesDRE,
-                    fmt: "brl",
-                  },
-                  {
-                    label: "Receita líquida",
-                    key: "receitaLiquida" as keyof MesDRE,
-                    fmt: "brl",
-                  },
-                  {
-                    label: "CMV",
-                    key: "custoMercadorias" as keyof MesDRE,
-                    fmt: "brl",
-                    negativo: true,
-                  },
-                  {
-                    label: "Margem bruta",
-                    key: "margemBruta" as keyof MesDRE,
-                    fmt: "brl",
-                    colorir: true,
-                  },
-                  {
-                    label: "Margem %",
-                    key: "percentualMargemBruta" as keyof MesDRE,
-                    fmt: "pct",
-                    colorir: true,
-                  },
-                  {
-                    label: "Resultado",
-                    key: "resultadoFinal" as keyof MesDRE,
-                    fmt: "brl",
-                    colorir: true,
-                    negrito: true,
-                  },
-                  {
-                    label: "ROI",
-                    key: "roi" as keyof MesDRE,
-                    fmt: "pct",
-                    colorir: true,
-                  },
+                  { label: "Receita bruta", key: "totalReceitas" as keyof MesDRE, fmt: "brl" },
+                  { label: "Receita líquida", key: "receitaLiquida" as keyof MesDRE, fmt: "brl" },
+                  { label: "CMV", key: "custoMercadorias" as keyof MesDRE, fmt: "brl", negativo: true },
+                  { label: "Margem bruta", key: "margemBruta" as keyof MesDRE, fmt: "brl", colorir: true },
+                  { label: "Margem %", key: "percentualMargemBruta" as keyof MesDRE, fmt: "pct", colorir: true },
+                  { label: "Resultado", key: "resultadoFinal" as keyof MesDRE, fmt: "brl", colorir: true, negrito: true },
+                  { label: "ROI", key: "roi" as keyof MesDRE, fmt: "pct", colorir: true },
                 ].map((row) => (
                   <tr
                     key={row.key}
@@ -481,371 +1254,11 @@ export default function DREPage() {
       )}
 
       {!modoAnual && !isLoading && d && (
-        <>
-          {/* KPI Cards */}
-          <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-            <KpiCard
-              label="Receita Líquida"
-              value={formatBRL(d.receitaLiquida)}
-              sub={`${d.quantidadeLiquidacoes} liquidação(ões) Amazon`}
-              icon={DollarSign}
-              color={d.receitaLiquida >= 0 ? "green" : "red"}
-              valueClassName={
-                d.receitaLiquida >= 0
-                  ? "text-emerald-600 dark:text-emerald-400"
-                  : "text-destructive"
-              }
-            />
-            <KpiCard
-              label="Margem Bruta"
-              value={`${d.percentualMargemBruta.toFixed(1)}%`}
-              sub={formatBRL(d.margemBruta)}
-              icon={d.margemBruta >= 0 ? TrendingUp : TrendingDown}
-              color={d.margemBruta >= 0 ? "green" : "red"}
-              valueClassName={
-                d.margemBruta >= 0
-                  ? "text-emerald-600 dark:text-emerald-400"
-                  : "text-destructive"
-              }
-            />
-            <KpiCard
-              label="ROI"
-              value={`${d.roi.toFixed(1)}%`}
-              sub="resultado / CMV"
-              icon={d.roi >= 0 ? TrendingUp : TrendingDown}
-              color={d.roi >= 30 ? "green" : d.roi >= 0 ? "blue" : "red"}
-              valueClassName={cn(
-                d.roi >= 30 && "text-emerald-600 dark:text-emerald-400",
-                d.roi < 0 && "text-destructive",
-              )}
-            />
-            <KpiCard
-              label="MPA"
-              value={`${d.mpaPercentual.toFixed(1)}%`}
-              sub={`Margem pós-anúncio: ${formatBRL(d.mpaValor)}`}
-              icon={d.mpaPercentual >= 0 ? TrendingUp : TrendingDown}
-              color={d.mpaPercentual >= 20 ? "green" : d.mpaPercentual >= 0 ? "blue" : "red"}
-              valueClassName={cn(
-                d.mpaPercentual >= 20 && "text-emerald-600 dark:text-emerald-400",
-                d.mpaPercentual < 0 && "text-destructive",
-              )}
-            />
-          </div>
-
-          <div className="grid gap-6 lg:grid-cols-[1fr_360px]">
-            {/* Tabela DRE */}
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <DollarSign className="h-4 w-4 text-muted-foreground" />
-                  Demonstração do Resultado
-                </CardTitle>
-                <p className="text-xs text-muted-foreground">
-                  {de} → {ate}
-                </p>
-              </CardHeader>
-              <CardContent className="p-0">
-                <table className="w-full">
-                  <thead>
-                    <tr className="border-b border-border">
-                      <th className="py-2 pl-4 text-left text-xs font-medium text-muted-foreground">
-                        Linha
-                      </th>
-                      <th className="py-2 pr-4 text-right text-xs font-medium text-muted-foreground">
-                        Valor
-                      </th>
-                      <th className="py-2 pr-4 text-right text-xs font-medium text-muted-foreground">
-                        % Receita
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {/* RECEITAS */}
-                    <DRERow label="Receitas" valor={0} tipo="grupo" />
-                    <DRERow
-                      label="Receita Amazon (liquidacoes)"
-                      valor={d.amazon.receitaLiquidacoes}
-                      percentual={d.totalReceitas > 0 ? (d.amazon.receitaLiquidacoes / d.totalReceitas) * 100 : 0}
-                      tipo="item"
-                      indent
-                      sinal="positivo"
-                    />
-                    <DRERow
-                      label="FBA Reimbursements"
-                      valor={d.amazon.reimbursementsFba}
-                      percentual={d.totalReceitas > 0 ? (d.amazon.reimbursementsFba / d.totalReceitas) * 100 : 0}
-                      tipo="item"
-                      indent
-                      sinal="positivo"
-                    />
-                    <DRERow
-                      label="Outras receitas (manuais)"
-                      valor={d.outrasReceitas}
-                      percentual={d.totalReceitas > 0 ? (d.outrasReceitas / d.totalReceitas) * 100 : 0}
-                      tipo="item"
-                      indent
-                      sinal="positivo"
-                    />
-                    <DRERow
-                      label="Receita Bruta"
-                      valor={d.totalReceitas}
-                      percentual={100}
-                      tipo="subtotal"
-                      sinal="positivo"
-                    />
-
-                    {/* DEDUÇÕES */}
-                    <DRERow label="Deduções" valor={0} tipo="grupo" />
-                    <DRERow
-                      label="Taxas de plataforma"
-                      valor={d.taxasPlataforma}
-                      percentual={d.totalReceitas > 0 ? (d.taxasPlataforma / d.totalReceitas) * 100 : 0}
-                      tipo="item"
-                      indent
-                      sinal="negativo"
-                    />
-                    <DRERow
-                      label="Fretes e Entregas"
-                      valor={d.fretes}
-                      percentual={d.totalReceitas > 0 ? (d.fretes / d.totalReceitas) * 100 : 0}
-                      tipo="item"
-                      indent
-                      sinal="negativo"
-                    />
-                    <DRERow
-                      label="Returns FBA estimados"
-                      valor={d.amazon.returnsEstimados}
-                      percentual={d.totalReceitas > 0 ? (d.amazon.returnsEstimados / d.totalReceitas) * 100 : 0}
-                      tipo="item"
-                      indent
-                      sinal="negativo"
-                    />
-                    <DRERow
-                      label="Receita Líquida"
-                      valor={d.receitaLiquida}
-                      percentual={d.totalReceitas > 0 ? (d.receitaLiquida / d.totalReceitas) * 100 : 0}
-                      tipo="subtotal"
-                      sinal={d.receitaLiquida >= 0 ? "positivo" : "negativo"}
-                    />
-
-                    {/* CMV */}
-                    <DRERow label="Custo das Mercadorias Vendidas" valor={0} tipo="grupo" />
-                    <DRERow
-                      label="CMV produtos"
-                      valor={d.cpv.contasPagas}
-                      percentual={d.totalReceitas > 0 ? (d.cpv.contasPagas / d.totalReceitas) * 100 : 0}
-                      tipo="item"
-                      indent
-                      sinal="negativo"
-                    />
-                    <DRERow
-                      label="Storage fees FBA"
-                      valor={d.amazon.storageFees}
-                      percentual={d.totalReceitas > 0 ? (d.amazon.storageFees / d.totalReceitas) * 100 : 0}
-                      tipo="item"
-                      indent
-                      sinal="negativo"
-                    />
-                    <DRERow
-                      label="Margem Bruta"
-                      valor={d.margemBruta}
-                      percentual={d.percentualMargemBruta}
-                      tipo="subtotal"
-                      sinal={d.margemBruta >= 0 ? "positivo" : "negativo"}
-                    />
-
-                    {/* DESPESAS OPERACIONAIS */}
-                    <DRERow label="Despesas Operacionais" valor={0} tipo="grupo" />
-                    {d.despesasOperacionais.map((dep) => (
-                      <DRERow
-                        key={dep.categoria}
-                        label={dep.categoria}
-                        valor={dep.valor}
-                        percentual={d.totalReceitas > 0 ? (dep.valor / d.totalReceitas) * 100 : 0}
-                        tipo="item"
-                        indent
-                        sinal="negativo"
-                      />
-                    ))}
-                    {d.despesasOperacionais.length === 0 && (
-                      <tr>
-                        <td
-                          colSpan={3}
-                          className="py-2 pl-8 text-xs text-muted-foreground/50 italic"
-                        >
-                          Nenhuma despesa operacional no período
-                        </td>
-                      </tr>
-                    )}
-
-                    {/* RESULTADO FINAL */}
-                    <DRERow
-                      label="Resultado Final"
-                      valor={d.resultadoFinal}
-                      percentual={
-                        d.totalReceitas > 0 ? (d.resultadoFinal / d.totalReceitas) * 100 : 0
-                      }
-                      tipo="resultado"
-                      sinal={d.resultadoFinal >= 0 ? "positivo" : "negativo"}
-                    />
-                  </tbody>
-                </table>
-              </CardContent>
-            </Card>
-
-            {/* Coluna direita: indicadores + gráfico */}
-            <div className="space-y-4">
-              {/* Indicadores financeiros */}
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm">Indicadores</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-3 pt-0">
-                  {[
-                    {
-                      label: "Margem Bruta",
-                      valor: `${d.percentualMargemBruta.toFixed(1)}%`,
-                      ok: d.percentualMargemBruta >= 30,
-                    },
-                    {
-                      label: "Margem Líquida",
-                      valor:
-                        d.totalReceitas > 0
-                          ? `${((d.resultadoFinal / d.totalReceitas) * 100).toFixed(1)}%`
-                          : "—",
-                      ok: d.resultadoFinal > 0,
-                    },
-                    {
-                      label: "ROI sobre CMV",
-                      valor: d.custoMercadorias > 0 ? `${d.roi.toFixed(1)}%` : "—",
-                      ok: d.roi >= 30,
-                    },
-                    {
-                      label: "MPA (pós-anúncio)",
-                      valor: `${d.mpaPercentual.toFixed(1)}%`,
-                      ok: d.mpaPercentual >= 20,
-                    },
-                    {
-                      label: "Participação Amazon",
-                      valor:
-                        d.totalReceitas > 0
-                          ? `${((d.receitaAmazon / d.totalReceitas) * 100).toFixed(0)}%`
-                          : "—",
-                      ok: true,
-                    },
-                    {
-                      label: "Custo/Receita",
-                      valor:
-                        d.totalReceitas > 0
-                          ? `${((d.custoMercadorias / d.totalReceitas) * 100).toFixed(1)}%`
-                          : "—",
-                      ok: d.totalReceitas > 0 && d.custoMercadorias / d.totalReceitas < 0.6,
-                    },
-                  ].map((ind) => (
-                    <div key={ind.label} className="flex items-center justify-between text-sm">
-                      <span className="text-muted-foreground">{ind.label}</span>
-                      <span
-                        className={cn(
-                          "font-mono font-semibold tabular-nums",
-                          ind.ok ? "text-emerald-600 dark:text-emerald-400" : "text-destructive",
-                        )}
-                      >
-                        {ind.valor}
-                      </span>
-                    </div>
-                  ))}
-                </CardContent>
-              </Card>
-
-              {/* Gráfico de despesas por categoria */}
-              {graficoDados.length > 0 && (
-                <Card>
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm">Despesas por Categoria</CardTitle>
-                  </CardHeader>
-                  <CardContent className="pt-0">
-                    <ResponsiveContainer width="100%" height={200}>
-                      <BarChart
-                        data={graficoDados}
-                        layout="vertical"
-                        margin={{ left: 0, right: 16 }}
-                      >
-                        <CartesianGrid strokeDasharray="3 3" horizontal={false} />
-                        <XAxis
-                          type="number"
-                          tickFormatter={(v) =>
-                            v >= 100000
-                              ? `R$${(v / 100000).toFixed(0)}k`
-                              : formatBRL(v)
-                          }
-                          tick={{ fontSize: 10 }}
-                        />
-                        <YAxis
-                          type="category"
-                          dataKey="name"
-                          width={90}
-                          tick={{ fontSize: 10 }}
-                        />
-                        <Tooltip
-                          formatter={(v: number) => [formatBRL(v), "Valor"]}
-                          contentStyle={{ fontSize: 12 }}
-                        />
-                        <Bar dataKey="valor" radius={[0, 4, 4, 0]}>
-                          {graficoDados.map((_, i) => (
-                            <Cell key={i} fill={CORES[i % CORES.length]} />
-                          ))}
-                        </Bar>
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </CardContent>
-                </Card>
-              )}
-
-              {/* Estrutura de resultado */}
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm">Composição do Resultado</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-2 pt-0">
-                  {[
-                    { label: "Receita Líquida", valor: d.receitaLiquida, positivo: true },
-                    { label: "(-) CMV", valor: -d.custoMercadorias, positivo: false },
-                    { label: "(-) Marketing", valor: -d.despesaMarketing, positivo: false },
-                    { label: "(-) Outros custos", valor: -(d.totalDespesas - d.despesaMarketing), positivo: false },
-                  ].map((item, i) => (
-                    <div key={i} className="flex items-center justify-between text-sm">
-                      <span className="text-muted-foreground">{item.label}</span>
-                      <span
-                        className={cn(
-                          "font-mono tabular-nums",
-                          item.valor >= 0
-                            ? "text-emerald-600 dark:text-emerald-400"
-                            : "text-destructive",
-                        )}
-                      >
-                        {item.valor >= 0 ? "+" : ""}
-                        {formatBRL(Math.abs(item.valor))}
-                      </span>
-                    </div>
-                  ))}
-                  <Separator />
-                  <div className="flex items-center justify-between font-bold">
-                    <span>Resultado Final</span>
-                    <span
-                      className={
-                        d.resultadoFinal >= 0
-                          ? "text-emerald-600 dark:text-emerald-400"
-                          : "text-destructive"
-                      }
-                    >
-                      {formatBRL(d.resultadoFinal)}
-                    </span>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-          </div>
-        </>
+        d.regime === "competencia" ? (
+          <DreCompetenciaView d={d} de={de} ate={ate} />
+        ) : (
+          <DreCaixaView d={d} de={de} ate={ate} />
+        )
       )}
 
       {!modoAnual && !isLoading && !d && (
