@@ -743,7 +743,16 @@ async function salvarArquivo(buffer: Buffer, nomeOriginal: string) {
 
 async function buscarMelhorDossie(meta: MetadadosDocumento) {
   const candidatos = await db.dossieFinanceiro.findMany({
-    where: { status: { not: "CANCELADO" } },
+    // Allowlist dos status válidos (o enum não tem "CANCELADO" — o filtro
+    // antigo era morto). Protege contra status corrompido virar candidato.
+    where: {
+      status: {
+        in: [
+          StatusDossieFinanceiro.PENDENTE,
+          StatusDossieFinanceiro.VINCULADO_CONTA,
+        ],
+      },
+    },
     include: {
       documentos: true,
       contaPagar: { include: { fornecedor: true } },
@@ -763,7 +772,7 @@ async function buscarMelhorDossie(meta: MetadadosDocumento) {
 
 async function buscarMelhorConta(meta: MetadadosDocumento) {
   const contas = await db.contaPagar.findMany({
-    where: { status: { not: "CANCELADA" } },
+    where: { status: { not: "CANCELADA" }, deletedAt: null },
     include: {
       fornecedor: true,
       movimentacao: true,
@@ -789,6 +798,7 @@ async function buscarMelhorPagamento(meta: MetadadosDocumento) {
     where: {
       tipo: TipoMovimentacao.SAIDA,
       contaPaga: { is: null },
+      deletedAt: null,
     },
     include: { contaPaga: true },
     orderBy: { dataCaixa: "desc" },
@@ -825,7 +835,9 @@ async function criarContaPagaPorPagamento(
       categoriaId: pagamento.categoriaId,
       descricao: meta.descricao ?? pagamento.descricao,
       valor: meta.valor ?? pagamento.valor,
-      vencimento: pagamento.dataCaixa,
+      // Preserva o vencimento do documento (boleto/NF); só cai na data de
+      // pagamento quando o documento não traz vencimento.
+      vencimento: meta.vencimento ?? pagamento.dataCaixa,
       status: StatusConta.PAGA,
       pagoEm: pagamento.dataCaixa,
       movimentacaoId: pagamento.id,
@@ -849,7 +861,7 @@ async function conciliarContaComPagamento(
     data: {
       status: StatusConta.PAGA,
       pagoEm: pagamento.dataCaixa,
-      vencimento: pagamento.dataCaixa,
+      // Conciliar com um pagamento NÃO altera o vencimento original da conta.
       movimentacaoId: pagamento.id,
       observacoes: observacaoConciliacaoPagamento(
         conta.observacoes,

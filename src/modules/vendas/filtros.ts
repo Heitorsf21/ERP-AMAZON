@@ -231,6 +231,31 @@ export function whereVendaAmazonContabilizavelEstrito(
 }
 
 /**
+ * Reembolsos ainda NÃO liberados pela Amazon (diferidos/pendentes) não entram
+ * na composição da liquidação até serem efetivados. Os status liberados
+ * ("RELEASED", "DEFERRED_RELEASED") contam. Atenção: o match é EXATO via `in`
+ * — "DEFERRED_RELEASED" já foi liberado e NÃO pode ser excluído.
+ *
+ * Diferente de venda: para o reembolso, "REEMBOLSADO" é o estado normal de um
+ * reembolso efetivado — por isso este filtro NÃO reusa o filtro de venda.
+ */
+export const STATUS_REEMBOLSO_NAO_LIBERADO = [
+  "DEFERRED",
+  "PENDENTE",
+  "Pending",
+] as const;
+
+export function whereAmazonReembolsoContabilizavel(
+  where?: Prisma.AmazonReembolsoWhereInput,
+): Prisma.AmazonReembolsoWhereInput {
+  const contabilizavel: Prisma.AmazonReembolsoWhereInput = {
+    NOT: [{ statusFinanceiro: { in: [...STATUS_REEMBOLSO_NAO_LIBERADO] } }],
+  };
+  if (!where || Object.keys(where).length === 0) return contabilizavel;
+  return { AND: [contabilizavel, where] };
+}
+
+/**
  * Base do espelho Gestor Seller.
  *
  * Importante: nao exclui reembolsos por status vitalicio da venda. No Gestor,

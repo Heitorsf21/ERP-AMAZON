@@ -9,15 +9,15 @@ export const GET = handleAuth([UsuarioRole.FINANCEIRO], async () => {
   const [entradas, saidas, contasAbertas, pedidosConfirmados, contasReceber] =
     await Promise.all([
       db.movimentacao.aggregate({
-        where: { tipo: "ENTRADA" },
+        where: { tipo: "ENTRADA", deletedAt: null },
         _sum: { valor: true },
       }),
       db.movimentacao.aggregate({
-        where: { tipo: "SAIDA" },
+        where: { tipo: "SAIDA", deletedAt: null },
         _sum: { valor: true },
       }),
       db.contaPagar.aggregate({
-        where: { status: { in: ["ABERTA", "VENCIDA"] } },
+        where: { status: { in: ["ABERTA", "VENCIDA"] }, deletedAt: null },
         _sum: { valor: true },
         _count: true,
       }),
@@ -27,7 +27,7 @@ export const GET = handleAuth([UsuarioRole.FINANCEIRO], async () => {
         _count: true,
       }),
       db.contaReceber.aggregate({
-        where: { status: "PENDENTE" },
+        where: { status: "PENDENTE", deletedAt: null },
         _sum: { valor: true },
         _count: true,
       }),

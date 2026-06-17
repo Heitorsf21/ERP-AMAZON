@@ -4,6 +4,8 @@ import {
   isVendaAmazonContabilizavel,
   isVendaAmazonPrincipal,
   isVendaAmazonRemovalOrder,
+  STATUS_REEMBOLSO_NAO_LIBERADO,
+  whereAmazonReembolsoContabilizavel,
 } from "./filtros";
 
 describe("filtros de vendas Amazon", () => {
@@ -94,5 +96,30 @@ describe("filtros de vendas Amazon", () => {
 
     expect(filtro?.gte).toEqual(new Date("2026-04-27T03:00:00.000Z"));
     expect(filtro?.lte).toEqual(new Date("2026-04-28T02:59:59.999Z"));
+  });
+});
+
+describe("whereAmazonReembolsoContabilizavel", () => {
+  it("exclui status nao liberados mas mantem os liberados (match exato)", () => {
+    expect(STATUS_REEMBOLSO_NAO_LIBERADO).toContain("DEFERRED");
+    expect(STATUS_REEMBOLSO_NAO_LIBERADO).toContain("PENDENTE");
+    // Critico: estes ja foram liberados — NAO podem ser excluidos do calculo.
+    expect(STATUS_REEMBOLSO_NAO_LIBERADO).not.toContain("DEFERRED_RELEASED");
+    expect(STATUS_REEMBOLSO_NAO_LIBERADO).not.toContain("RELEASED");
+  });
+
+  it("sem where: monta NOT com os status nao liberados", () => {
+    expect(whereAmazonReembolsoContabilizavel()).toEqual({
+      NOT: [{ statusFinanceiro: { in: [...STATUS_REEMBOLSO_NAO_LIBERADO] } }],
+    });
+  });
+
+  it("com where extra: combina via AND (ex: liquidacaoId)", () => {
+    expect(whereAmazonReembolsoContabilizavel({ liquidacaoId: "liq-1" })).toEqual({
+      AND: [
+        { NOT: [{ statusFinanceiro: { in: [...STATUS_REEMBOLSO_NAO_LIBERADO] } }] },
+        { liquidacaoId: "liq-1" },
+      ],
+    });
   });
 });

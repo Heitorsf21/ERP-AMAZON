@@ -356,6 +356,7 @@ export async function reconciliarRecebimentosAmazon() {
       origem: OrigemMovimentacao.IMPORTACAO,
       descricao: { contains: "Amazon" },
       contaReceber: { is: null },
+      deletedAt: null,
     },
     take: 100,
     orderBy: { dataCaixa: "desc" },
@@ -378,6 +379,7 @@ export async function reconciliarRecebimentosAmazon() {
         status: StatusContaReceber.PENDENTE,
         valor: { gte: lo, lte: hi },
         dataPrevisao: { gte: dataMin, lte: dataMax },
+        deletedAt: null,
       },
       take: 2,
     });

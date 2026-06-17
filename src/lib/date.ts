@@ -1,4 +1,11 @@
-import { addDays, endOfDay, format, startOfDay } from "date-fns";
+import {
+  addDays,
+  endOfDay,
+  endOfMonth,
+  format,
+  startOfDay,
+  startOfMonth,
+} from "date-fns";
 import { fromZonedTime, toZonedTime } from "date-fns-tz";
 
 export const TIMEZONE = "America/Sao_Paulo";
@@ -23,6 +30,18 @@ export function inicioDoDiaSP(date: Date): Date {
 export function fimDoDiaSP(date: Date): Date {
   const zoned = toZonedTime(date, TIMEZONE);
   return fromZonedTime(endOfDay(zoned), TIMEZONE);
+}
+
+/** Início do mês (1º dia, 00:00) no fuso de SP, devolvido como Date UTC. */
+export function inicioMesSP(date: Date): Date {
+  const zoned = toZonedTime(date, TIMEZONE);
+  return fromZonedTime(startOfDay(startOfMonth(zoned)), TIMEZONE);
+}
+
+/** Fim do mês (último dia, 23:59:59.999) no fuso de SP, devolvido como Date UTC. */
+export function fimMesSP(date: Date): Date {
+  const zoned = toZonedTime(date, TIMEZONE);
+  return fromZonedTime(endOfDay(endOfMonth(zoned)), TIMEZONE);
 }
 
 /** Adiciona N dias no calendário (no fuso de SP). */

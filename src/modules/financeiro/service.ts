@@ -4,7 +4,14 @@ import {
   type ExtendedPrismaClient,
   type ExtendedTransactionClient,
 } from "@/lib/db";
-import { agora, fimDoDiaSP, inicioDoDiaSP, somarDias } from "@/lib/date";
+import {
+  agora,
+  fimDoDiaSP,
+  fimMesSP,
+  inicioDoDiaSP,
+  inicioMesSP,
+  somarDias,
+} from "@/lib/date";
 import {
   FormatoImportacao,
   OrigemMovimentacao,
@@ -55,18 +62,15 @@ export const financeiroService = {
     fim: Date;
   }> {
     const hoje = agora();
-    const inicio = inicioDoDiaSP(
-      new Date(hoje.getFullYear(), hoje.getMonth(), 1),
-    );
-    const fim = fimDoDiaSP(
-      new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0),
-    );
+    const inicio = inicioMesSP(hoje);
+    const fim = fimMesSP(hoje);
 
     const [entradas, saidas] = await Promise.all([
       db.movimentacao.aggregate({
         where: {
           tipo: TipoMovimentacao.ENTRADA,
           dataCaixa: { gte: inicio, lte: fim },
+          deletedAt: null,
         },
         _sum: { valor: true },
       }),
@@ -74,6 +78,7 @@ export const financeiroService = {
         where: {
           tipo: TipoMovimentacao.SAIDA,
           dataCaixa: { gte: inicio, lte: fim },
+          deletedAt: null,
         },
         _sum: { valor: true },
       }),
@@ -101,21 +106,21 @@ export const financeiroService = {
 
     // Garante que contas vencidas estejam com status correto antes de calcular.
     await db.contaPagar.updateMany({
-      where: { status: "ABERTA", vencimento: { lt: inicioDoDiaSP(agora) } },
+      where: { status: "ABERTA", vencimento: { lt: inicioDoDiaSP(agora) }, deletedAt: null },
       data: { status: "VENCIDA" },
     });
 
     const [saldoAtual, contasAbertas] = await Promise.all([
       movimentacaoRepository.somarSaldo(),
       db.contaPagar.findMany({
-        where: { status: { in: ["ABERTA", "VENCIDA"] } },
+        where: { status: { in: ["ABERTA", "VENCIDA"] }, deletedAt: null },
         select: { valor: true, vencimento: true },
       }),
     ]);
 
     const recebiveis: Array<{ valor: number; dataPrevisao: Date | null }> =
       await db.contaReceber.findMany({
-        where: { status: StatusContaReceber.PENDENTE },
+        where: { status: StatusContaReceber.PENDENTE, deletedAt: null },
         select: { valor: true, dataPrevisao: true },
       });
 
