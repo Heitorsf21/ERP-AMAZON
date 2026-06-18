@@ -242,6 +242,36 @@ export async function aplicarCustoAPartirDeHoje(input: {
   observacao?: string | null;
 }): Promise<void> {
   const hoje = startOfDay(new Date());
+
+  // Fossiliza o custo ANTIGO no passado antes de abrir a nova vigência. Sem
+  // isto, quando o produto não tem nenhuma vigência anterior, as vendas
+  // anteriores a `hoje` não são cobertas por vigência e caem no fallback
+  // Produto.custoUnitario — que atualizamos abaixo para o custo novo. O efeito
+  // seria o custo novo (em geral mais caro) sendo aplicado retroativamente,
+  // espremendo a margem de vendas passadas. A vigência de piso [epoch, hoje)
+  // com o custo antigo mantém o passado intacto.
+  const vigenciaAnterior = await db.produtoCustoHistorico.findFirst({
+    where: { produtoId: input.produtoId, vigenciaInicio: { lt: hoje } },
+    orderBy: { vigenciaInicio: "desc" },
+  });
+  if (!vigenciaAnterior) {
+    const produto = await db.produto.findUnique({
+      where: { id: input.produtoId },
+      select: { empresaId: true, custoUnitario: true },
+    });
+    const custoAntigo = produto?.custoUnitario ?? null;
+    if (custoAntigo != null && custoAntigo > 0 && custoAntigo !== input.custoCentavos) {
+      await inserirVigencia({
+        produtoId: input.produtoId,
+        custoCentavos: custoAntigo,
+        vigenciaInicio: EPOCH,
+        vigenciaFim: hoje,
+        origem: ORIGEM_INICIAL,
+        observacao: "piso automatico: custo anterior preservado no passado",
+      });
+    }
+  }
+
   await inserirVigencia({
     produtoId: input.produtoId,
     custoCentavos: input.custoCentavos,
