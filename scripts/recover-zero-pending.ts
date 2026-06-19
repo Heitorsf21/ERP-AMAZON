@@ -24,6 +24,7 @@ import {
   type SPOrderItemDetail,
 } from "@/lib/amazon-sp-api";
 import { getAmazonConfig, isAmazonConfigured } from "@/modules/amazon/service";
+import { isReplacementOrder } from "@/modules/amazon/pricing";
 import {
   STATUS_PEDIDO_PENDENTE,
   isVendaAmazonRemovalOrder,
@@ -126,6 +127,23 @@ async function main() {
 
   const actions: RecoveryAction[] = [];
   for (const venda of alvosVenda) {
+    // Reposicao (replacement order): a Amazon nao cobra o cliente, o preco real
+    // e R$0. NUNCA estimar via listing — isso inflava o faturamento. O sync de
+    // Orders ja marca esses pedidos como precoOrigem="replacement".
+    const rawPayload = rawPorPedido.get(venda.amazonOrderId);
+    if (
+      isReplacementOrder(
+        rawPayload as Parameters<typeof isReplacementOrder>[0],
+      )
+    ) {
+      actions.push({
+        tipo: "SKIP",
+        venda,
+        motivo: "reposicao (replacement order): preco real R$0, nao estimar",
+      });
+      continue;
+    }
+
     const deveConsultarApiPrimeiro = (venda.valorBrutoCentavos ?? 0) > 0;
 
     if (deveConsultarApiPrimeiro && creds) {

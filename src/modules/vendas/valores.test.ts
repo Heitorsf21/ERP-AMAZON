@@ -3,9 +3,80 @@ import { agruparLinhasVendaAmazon } from "@/modules/vendas/agrupamento";
 import {
   calcularImpostoSimplesCentavos,
   calcularPrecoUnitarioCentavos,
+  resolverPrecoVendaAmazon,
   valorBrutoDaVenda,
   valorBrutoFinanceiroPodeAtualizar,
 } from "@/modules/vendas/valores";
+
+describe("resolverPrecoVendaAmazon", () => {
+  const itemBase = {
+    quantidade: 1,
+    valorBrutoCentavos: 0,
+    taxasCentavos: 0,
+    fretesCentavos: 0,
+    liquidoMarketplaceCentavos: 0,
+  };
+
+  it("reposicao: forca R$0 e precoOrigem 'replacement', sem estimar via listing", () => {
+    const r = resolverPrecoVendaAmazon({
+      isReplacement: true,
+      item: itemBase,
+      precoListagemCentavos: 4397, // mesmo com listing disponivel, NAO usa
+    });
+    expect(r).toEqual({
+      valorBrutoCentavos: 0,
+      precoOrigem: "replacement",
+      taxasCentavos: 0,
+      fretesCentavos: 0,
+      liquidoMarketplaceCentavos: 0,
+    });
+  });
+
+  it("venda que ja era reposicao permanece reposicao mesmo sem o sinal novo", () => {
+    const r = resolverPrecoVendaAmazon({
+      isReplacement: false,
+      item: { ...itemBase, valorBrutoCentavos: 4397 },
+      existente: { precoOrigem: "replacement" },
+    });
+    expect(r.precoOrigem).toBe("replacement");
+    expect(r.valorBrutoCentavos).toBe(0);
+  });
+
+  it("ItemPrice real (>0) vira 'sp-api'", () => {
+    const r = resolverPrecoVendaAmazon({
+      isReplacement: false,
+      item: {
+        ...itemBase,
+        valorBrutoCentavos: 6500,
+        liquidoMarketplaceCentavos: 6500,
+      },
+    });
+    expect(r.precoOrigem).toBe("sp-api");
+    expect(r.valorBrutoCentavos).toBe(6500);
+  });
+
+  it("sem ItemPrice, usa fallback de listing (preco de listagem x qty)", () => {
+    const r = resolverPrecoVendaAmazon({
+      isReplacement: false,
+      item: { ...itemBase, quantidade: 2 },
+      precoListagemCentavos: 4397,
+    });
+    expect(r.precoOrigem).toBe("listing");
+    expect(r.valorBrutoCentavos).toBe(8794);
+    expect(r.liquidoMarketplaceCentavos).toBe(8794);
+  });
+
+  it("nunca regride 'sp-api' existente para 'listing'", () => {
+    const r = resolverPrecoVendaAmazon({
+      isReplacement: false,
+      item: itemBase,
+      precoListagemCentavos: 4397,
+      existente: { precoOrigem: "sp-api", valorBrutoCentavos: 4287 },
+    });
+    expect(r.precoOrigem).toBe("sp-api");
+    expect(r.valorBrutoCentavos).toBe(4287);
+  });
+});
 
 describe("valores de VendaAmazon", () => {
   it("usa valor bruto salvo e calcula fallback por unidade vezes quantidade", () => {

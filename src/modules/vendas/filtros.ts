@@ -2,6 +2,22 @@ import { Prisma } from "@prisma/client";
 import { fromZonedTime } from "date-fns-tz";
 import { TIMEZONE } from "@/lib/date";
 
+/**
+ * Valores possiveis de `VendaAmazon.precoOrigem`.
+ * - `sp-api`: preco real vindo da SP-API (Orders ou Finance). Fonte de verdade.
+ * - `listing`: fallback estimado pelo preco de listagem do catalogo, usado
+ *   enquanto a SP-API ainda nao entregou o ItemPrice real de um pedido novo.
+ *   Excluido da contabilidade estrita (DRE/Contas a Receber).
+ * - `replacement`: pedido de reposicao/substituicao (replacement order). A
+ *   Amazon NAO cobra o cliente — o preco real e R$0. Esses pedidos NUNCA sao
+ *   estimados pelo listing e sao EXCLUIDOS de faturamento, contabilidade e da
+ *   visao principal de vendas, do mesmo modo que cancelados e removal orders.
+ *   Deteccao do sinal em `isReplacementOrder` (modules/amazon/pricing.ts).
+ */
+export const PRECO_ORIGEM_SPAPI = "sp-api";
+export const PRECO_ORIGEM_LISTING = "listing";
+export const PRECO_ORIGEM_REPLACEMENT = "replacement";
+
 export const STATUS_PEDIDO_CANCELADO = [
   "Canceled",
   "Cancelled",
@@ -75,6 +91,7 @@ export function isVendaAmazonContabilizavel(input: {
   const valorBruto = input.valorBrutoCentavos ?? 0;
 
   if (isVendaAmazonRemovalOrder(input)) return false;
+  if (input.precoOrigem === PRECO_ORIGEM_REPLACEMENT) return false;
   if (STATUS_PEDIDO_CANCELADO_NORMALIZADO.has(statusPedido)) return false;
   if (STATUS_FINANCEIRO_NAO_CONTABILIZAVEL_NORMALIZADO.has(statusFinanceiro))
     return false;
@@ -103,7 +120,8 @@ export function isVendaAmazonContabilizavelEstrito(input: {
   precoOrigem?: string | null;
 }): boolean {
   if (isVendaAmazonRemovalOrder(input)) return false;
-  if (input.precoOrigem === "listing") return false;
+  if (input.precoOrigem === PRECO_ORIGEM_REPLACEMENT) return false;
+  if (input.precoOrigem === PRECO_ORIGEM_LISTING) return false;
   const statusPedido = normalizarStatus(input.statusPedido);
   const statusFinanceiro = normalizarStatus(input.statusFinanceiro);
   return (
@@ -122,7 +140,9 @@ export function isVendaAmazonPrincipal(input: {
   marketplace?: string | null;
   statusPedido?: string | null;
   statusFinanceiro?: string | null;
+  precoOrigem?: string | null;
 }): boolean {
+  if (input.precoOrigem === PRECO_ORIGEM_REPLACEMENT) return false;
   const statusPedido = normalizarStatus(input.statusPedido);
   const statusFinanceiro = normalizarStatus(input.statusFinanceiro);
 
@@ -155,6 +175,7 @@ export function whereVendaAmazonContabilizavel(
   const contabilizavel: Prisma.VendaAmazonWhereInput = {
     NOT: [
       ...whereRemovalOrders(),
+      { precoOrigem: PRECO_ORIGEM_REPLACEMENT },
       {
         statusPedido: {
           in: [...STATUS_PEDIDO_CANCELADO],
@@ -210,6 +231,7 @@ export function whereVendaAmazonContabilizavelEstrito(
   const contabilizavel: Prisma.VendaAmazonWhereInput = {
     NOT: [
       ...whereRemovalOrders(),
+      { precoOrigem: PRECO_ORIGEM_REPLACEMENT },
       { statusPedido: { in: [...STATUS_PEDIDO_CANCELADO] } },
       { statusPedido: { in: [...STATUS_PEDIDO_REEMBOLSADO] } },
       { statusFinanceiro: { in: [...STATUS_FINANCEIRO_NAO_CONTABILIZAVEL] } },
@@ -219,7 +241,7 @@ export function whereVendaAmazonContabilizavelEstrito(
           { statusFinanceiro: { in: [...STATUS_FINANCEIRO_SEM_CONFIRMACAO] } },
         ],
       },
-      { precoOrigem: "listing" },
+      { precoOrigem: PRECO_ORIGEM_LISTING },
     ],
   };
 
@@ -271,6 +293,7 @@ export function whereVendaAmazonEspelhoGestorSeller(
     {
       NOT: [
         ...whereRemovalOrders(),
+        { precoOrigem: PRECO_ORIGEM_REPLACEMENT },
         { statusPedido: { in: [...STATUS_PEDIDO_CANCELADO] } },
         {
           AND: [
@@ -331,6 +354,7 @@ export function whereVendaAmazonPrincipal(
     {
       NOT: [
         ...whereRemovalOrders(),
+        { precoOrigem: PRECO_ORIGEM_REPLACEMENT },
         { statusPedido: { in: [...STATUS_PEDIDO_CANCELADO] } },
         { statusPedido: { in: [...STATUS_PEDIDO_REEMBOLSADO] } },
         { statusFinanceiro: { in: [...STATUS_FINANCEIRO_NAO_CONTABILIZAVEL] } },
