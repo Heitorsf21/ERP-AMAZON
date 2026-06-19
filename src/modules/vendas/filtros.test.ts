@@ -2,11 +2,38 @@ import { describe, expect, it } from "vitest";
 import {
   dataVendaPeriodoSP,
   isVendaAmazonContabilizavel,
+  isVendaAmazonContabilizavelEstrito,
   isVendaAmazonPrincipal,
   isVendaAmazonRemovalOrder,
   STATUS_REEMBOLSO_NAO_LIBERADO,
   whereAmazonReembolsoContabilizavel,
 } from "./filtros";
+
+describe("reposicao (replacement order) nunca conta como venda", () => {
+  const reposicao = {
+    statusPedido: "Pending",
+    statusFinanceiro: "PENDENTE",
+    valorBrutoCentavos: 4397,
+    precoOrigem: "replacement",
+  };
+
+  it("nao e contabilizavel (dashboard)", () => {
+    expect(isVendaAmazonContabilizavel(reposicao)).toBe(false);
+  });
+
+  it("nao e contabilizavel estrito (DRE/Contas a Receber)", () => {
+    expect(isVendaAmazonContabilizavelEstrito(reposicao)).toBe(false);
+  });
+
+  it("nao aparece na visao principal de vendas", () => {
+    expect(
+      isVendaAmazonPrincipal({
+        statusPedido: "Shipped",
+        precoOrigem: "replacement",
+      }),
+    ).toBe(false);
+  });
+});
 
 describe("filtros de vendas Amazon", () => {
   it("nao contabiliza pedido pendente sem confirmacao financeira", () => {

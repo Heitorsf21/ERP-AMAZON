@@ -2,8 +2,47 @@ import { describe, expect, it } from "vitest";
 import {
   calcularValorBrutoOrderItemCentavos,
   extractAmazonListingEffectivePriceCentavos,
+  isReplacementOrder,
   mergeAmazonOrderItemsWithSummary,
 } from "./pricing";
+
+describe("isReplacementOrder", () => {
+  it("detecta pedido de reposicao via associationType REPLACEMENT_ORIGINAL_ID", () => {
+    expect(
+      isReplacementOrder({
+        associatedOrders: [
+          {
+            orderId: "701-6663197-6633008",
+            associationType: "REPLACEMENT_ORIGINAL_ID",
+          },
+        ],
+      }),
+    ).toBe(true);
+  });
+
+  it("detecta qualquer associationType que contenha REPLACEMENT (case-insensitive)", () => {
+    expect(
+      isReplacementOrder({
+        associatedOrders: [{ associationType: "replacement_new_id" }],
+      }),
+    ).toBe(true);
+  });
+
+  it("nao marca pedido normal sem associatedOrders", () => {
+    expect(isReplacementOrder({ orderItems: [] } as never)).toBe(false);
+    expect(isReplacementOrder({ associatedOrders: [] })).toBe(false);
+    expect(isReplacementOrder(null)).toBe(false);
+    expect(isReplacementOrder(undefined)).toBe(false);
+  });
+
+  it("ignora associacoes que nao sao reposicao", () => {
+    expect(
+      isReplacementOrder({
+        associatedOrders: [{ associationType: "SOME_OTHER_ID" }],
+      }),
+    ).toBe(false);
+  });
+});
 
 const NOW = new Date("2026-05-19T12:00:00.000Z");
 

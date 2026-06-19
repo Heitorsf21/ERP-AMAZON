@@ -68,6 +68,12 @@ export interface SPOrder {
     marketplaceName?: string;
     channelName?: string;
   };
+  // Pedidos de reposicao/substituicao referenciam o pedido original aqui com
+  // `associationType: "REPLACEMENT_ORIGINAL_ID"`. Ver `isReplacementOrder`.
+  associatedOrders?: Array<{
+    orderId?: string;
+    associationType?: string;
+  }>;
   orderItems?: SPOrderItem[];
 }
 

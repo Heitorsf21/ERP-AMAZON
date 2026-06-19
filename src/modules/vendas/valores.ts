@@ -1,4 +1,7 @@
 import {
+  PRECO_ORIGEM_LISTING,
+  PRECO_ORIGEM_REPLACEMENT,
+  PRECO_ORIGEM_SPAPI,
   STATUS_PEDIDO_REEMBOLSADO_NORMALIZADO,
   STATUS_FINANCEIRO_NAO_CONTABILIZAVEL_NORMALIZADO,
   normalizarStatus,
@@ -131,6 +134,112 @@ export function calcularValoresLinhaVendaAmazon(input: {
     taxasCentavos,
     fretesCentavos,
     liquidoMarketplaceCentavos,
+  };
+}
+
+export type ResolverPrecoVendaInput = {
+  /** `true` quando o pedido e uma reposicao/substituicao (replacement order). */
+  isReplacement: boolean;
+  item: {
+    quantidade: number;
+    valorBrutoCentavos: number;
+    taxasCentavos: number;
+    fretesCentavos: number;
+    liquidoMarketplaceCentavos: number;
+  };
+  /** `Produto.amazonPrecoListagemCentavos` — base do fallback estimado. */
+  precoListagemCentavos?: number | null;
+  existente?: {
+    valorBrutoCentavos?: number | null;
+    precoOrigem?: string | null;
+    taxasCentavos?: number | null;
+    fretesCentavos?: number | null;
+    liquidoMarketplaceCentavos?: number | null;
+  } | null;
+};
+
+export type PrecoVendaResolvido = {
+  valorBrutoCentavos: number;
+  precoOrigem: string | null;
+  taxasCentavos: number;
+  fretesCentavos: number;
+  liquidoMarketplaceCentavos: number;
+};
+
+/**
+ * Decide `valorBruto`/`precoOrigem`/taxas/frete/liquido de uma linha de venda
+ * Amazon a partir do item recem-sincronizado, do preco de listagem (fallback)
+ * e do registro existente. Funcao pura — extraida do sync de Orders para ser
+ * testavel.
+ *
+ * Regras (em ordem):
+ * 1. REPOSICAO (replacement order): preco real = R$0 (a Amazon nao cobra o
+ *    cliente). Marca `precoOrigem = "replacement"` e NUNCA estima via listing.
+ *    Uma venda que ja era reposicao permanece reposicao.
+ * 2. ItemPrice real da SP-API (> 0) → `sp-api`.
+ * 3. Sem ItemPrice, mas com preco de listagem → fallback `listing` (estimado).
+ * 4. Sem nada novo → preserva o que ja existia.
+ * 5. Nunca regride `sp-api` para `listing`.
+ */
+export function resolverPrecoVendaAmazon(
+  input: ResolverPrecoVendaInput,
+): PrecoVendaResolvido {
+  const { item, existente } = input;
+  const ehReposicao =
+    input.isReplacement || existente?.precoOrigem === PRECO_ORIGEM_REPLACEMENT;
+
+  if (ehReposicao) {
+    return {
+      valorBrutoCentavos: 0,
+      precoOrigem: PRECO_ORIGEM_REPLACEMENT,
+      taxasCentavos: 0,
+      fretesCentavos: 0,
+      liquidoMarketplaceCentavos: 0,
+    };
+  }
+
+  let valorBrutoFinal = item.valorBrutoCentavos;
+  let precoOrigemFinal: string | null = null;
+  let taxasFinal = item.taxasCentavos;
+  let fretesFinal = item.fretesCentavos;
+  let liquidoFinal = item.liquidoMarketplaceCentavos;
+
+  if (valorBrutoFinal > 0) {
+    precoOrigemFinal = PRECO_ORIGEM_SPAPI;
+  } else if (input.precoListagemCentavos && input.precoListagemCentavos > 0) {
+    valorBrutoFinal = input.precoListagemCentavos * item.quantidade;
+    precoOrigemFinal = PRECO_ORIGEM_LISTING;
+    taxasFinal = 0;
+    fretesFinal = 0;
+    liquidoFinal = valorBrutoFinal;
+  } else if (existente?.valorBrutoCentavos && existente.valorBrutoCentavos > 0) {
+    valorBrutoFinal = existente.valorBrutoCentavos;
+    precoOrigemFinal = existente.precoOrigem ?? null;
+    taxasFinal = existente.taxasCentavos ?? 0;
+    fretesFinal = existente.fretesCentavos ?? 0;
+    liquidoFinal =
+      existente.liquidoMarketplaceCentavos ?? valorBrutoFinal - taxasFinal;
+  }
+
+  // Nao regredir "sp-api" -> "listing".
+  if (
+    existente?.precoOrigem === PRECO_ORIGEM_SPAPI &&
+    precoOrigemFinal === PRECO_ORIGEM_LISTING
+  ) {
+    valorBrutoFinal = existente.valorBrutoCentavos ?? valorBrutoFinal;
+    precoOrigemFinal = PRECO_ORIGEM_SPAPI;
+    taxasFinal = existente.taxasCentavos ?? taxasFinal;
+    fretesFinal = existente.fretesCentavos ?? fretesFinal;
+    liquidoFinal =
+      existente.liquidoMarketplaceCentavos ?? valorBrutoFinal - taxasFinal;
+  }
+
+  return {
+    valorBrutoCentavos: valorBrutoFinal,
+    precoOrigem: precoOrigemFinal,
+    taxasCentavos: taxasFinal,
+    fretesCentavos: fretesFinal,
+    liquidoMarketplaceCentavos: liquidoFinal,
   };
 }
 

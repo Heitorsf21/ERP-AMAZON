@@ -80,6 +80,33 @@ export function calcularValorBrutoOrderItemCentavos(
   return Math.max(0, itemPrice - desconto);
 }
 
+export type AmazonOrderAssociation = {
+  orderId?: string | null;
+  associationType?: string | null;
+};
+
+/**
+ * Detecta se um pedido da SP-API e uma reposicao/substituicao (replacement
+ * order) — gerada quando o item original chegou com defeito/avaria. A Amazon
+ * envia a reposicao SEM custo ao cliente; por isso o preco vem como R$0 (valor
+ * real e final, nao "preco ausente") e o pedido NAO deve contar como receita.
+ *
+ * O sinal vem em `order.associatedOrders` com `associationType` contendo
+ * "REPLACEMENT" (ex.: "REPLACEMENT_ORIGINAL_ID"). Sem esse tratamento, o sync
+ * caia no fallback de preco de listagem e inflava o faturamento.
+ */
+export function isReplacementOrder(
+  order: { associatedOrders?: AmazonOrderAssociation[] | null } | null | undefined,
+): boolean {
+  const associados = order?.associatedOrders;
+  if (!Array.isArray(associados)) return false;
+  return associados.some(
+    (assoc) =>
+      typeof assoc?.associationType === "string" &&
+      assoc.associationType.toUpperCase().includes("REPLACEMENT"),
+  );
+}
+
 export function mergeAmazonOrderItemsWithSummary<
   T extends AmazonOrderItemMergeInput,
 >(

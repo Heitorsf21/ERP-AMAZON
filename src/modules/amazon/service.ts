@@ -39,6 +39,7 @@ import {
 import {
   calcularValorBrutoOrderItemCentavos,
   extractAmazonListingEffectivePriceCentavos,
+  isReplacementOrder,
   mergeAmazonOrderItemsWithSummary,
 } from "@/modules/amazon/pricing";
 import { extractProductOfferSnapshot } from "@/modules/amazon/offers-normalizer";
@@ -61,6 +62,7 @@ import { agruparLinhasVendaAmazon } from "@/modules/vendas/agrupamento";
 import {
   calcularImpostoSimplesCentavos,
   calcularPrecoUnitarioCentavos,
+  resolverPrecoVendaAmazon,
   valorBrutoDaVenda,
   valorBrutoFinanceiroPodeAtualizar,
 } from "@/modules/vendas/valores";
@@ -921,47 +923,30 @@ async function syncOrdersInternal(
         const createdAt = getOrderCreatedTime(order) ?? new Date();
         const lastUpdatedAt = getOrderLastUpdatedTime(order);
 
-        // Decide valorBruto + precoOrigem.
-        // - ItemPrice da SP-API existe (>0) → usa real ja liquido de PromotionDiscount.
-        // - Senao, cache do listing (discounted_price ativo ou our_price) → "listing".
-        // - Senão, mantém o que já existia no banco; ou zero.
-        // - Existente com "sp-api" NUNCA é sobrescrito por "listing" (preserva real).
-        let valorBrutoFinal = item.valorBrutoCentavos;
-        let precoOrigemFinal: string | null = null;
-        let taxasFinal = item.taxasCentavos;
-        let fretesFinal = item.fretesCentavos;
-        let liquidoFinal: number = item.liquidoMarketplaceCentavos;
-
-        if (valorBrutoFinal > 0) {
-          precoOrigemFinal = "sp-api";
-        } else if (
-          produto?.amazonPrecoListagemCentavos &&
-          produto.amazonPrecoListagemCentavos > 0
-        ) {
-          valorBrutoFinal = produto.amazonPrecoListagemCentavos * item.quantidade;
-          precoOrigemFinal = "listing";
-          // Sem taxas/frete reais ainda; deixar 0 e recalcular liquido.
-          taxasFinal = 0;
-          fretesFinal = 0;
-          liquidoFinal = valorBrutoFinal;
-        } else if (existente?.valorBrutoCentavos && existente.valorBrutoCentavos > 0) {
-          // Sem ItemPrice novo e sem listing — preserva o que já tinha.
-          valorBrutoFinal = existente.valorBrutoCentavos;
-          precoOrigemFinal = existente.precoOrigem ?? null;
-          taxasFinal = existente.taxasCentavos ?? 0;
-          fretesFinal = existente.fretesCentavos ?? 0;
-          liquidoFinal = existente.liquidoMarketplaceCentavos ?? valorBrutoFinal - taxasFinal;
-        }
-
-        // Não regredir "sp-api" → "listing".
-        if (existente?.precoOrigem === "sp-api" && precoOrigemFinal === "listing") {
-          valorBrutoFinal = existente.valorBrutoCentavos ?? valorBrutoFinal;
-          precoOrigemFinal = "sp-api";
-          taxasFinal = existente.taxasCentavos ?? taxasFinal;
-          fretesFinal = existente.fretesCentavos ?? fretesFinal;
-          liquidoFinal =
-            existente.liquidoMarketplaceCentavos ?? valorBrutoFinal - taxasFinal;
-        }
+        // Decide valorBruto + precoOrigem (regras em `resolverPrecoVendaAmazon`):
+        // - Reposicao (replacement order) → "replacement" com R$0 (a Amazon nao
+        //   cobra; nunca estima via listing).
+        // - ItemPrice da SP-API (>0) → "sp-api" (ja liquido de PromotionDiscount).
+        // - Sem ItemPrice, com preco de listagem → fallback "listing".
+        // - Senao preserva o existente. "sp-api" NUNCA regride para "listing".
+        const {
+          valorBrutoCentavos: valorBrutoFinal,
+          precoOrigem: precoOrigemFinal,
+          taxasCentavos: taxasFinal,
+          fretesCentavos: fretesFinal,
+          liquidoMarketplaceCentavos: liquidoFinal,
+        } = resolverPrecoVendaAmazon({
+          isReplacement: isReplacementOrder(order),
+          item: {
+            quantidade: item.quantidade,
+            valorBrutoCentavos: item.valorBrutoCentavos,
+            taxasCentavos: item.taxasCentavos,
+            fretesCentavos: item.fretesCentavos,
+            liquidoMarketplaceCentavos: item.liquidoMarketplaceCentavos,
+          },
+          precoListagemCentavos: produto?.amazonPrecoListagemCentavos ?? null,
+          existente,
+        });
 
         const statusFinanceiroFinal = existente?.statusFinanceiro ?? "PENDENTE";
         const impostoSimplesCentavos = calcularImpostoSimplesCentavos({
