@@ -7,7 +7,34 @@ import {
   isVendaAmazonRemovalOrder,
   STATUS_REEMBOLSO_NAO_LIBERADO,
   whereAmazonReembolsoContabilizavel,
+  whereExcluiPrecoOrigem,
+  whereVendaAmazonContabilizavel,
+  whereVendaAmazonContabilizavelEstrito,
+  whereVendaAmazonEspelhoGestorSeller,
+  whereVendaAmazonPrincipal,
 } from "./filtros";
+
+// Procura recursivamente por uma chave `precoOrigem` aninhada DENTRO de qualquer
+// array `NOT`. Em SQL, `NOT ("precoOrigem" = X)` descarta linhas com
+// precoOrigem NULL (logica de tres valores) — foi o bug que sumiu com todo o
+// historico legado. Nenhum filtro pode ter precoOrigem sob um NOT.
+function temPrecoOrigemSobNot(where: unknown): boolean {
+  let achou = false;
+  const visit = (node: unknown, sobNot: boolean): void => {
+    if (Array.isArray(node)) {
+      node.forEach((n) => visit(n, sobNot));
+      return;
+    }
+    if (node && typeof node === "object") {
+      for (const [k, v] of Object.entries(node as Record<string, unknown>)) {
+        if (k === "precoOrigem" && sobNot) achou = true;
+        visit(v, k === "NOT" ? true : sobNot);
+      }
+    }
+  };
+  visit(where, false);
+  return achou;
+}
 
 describe("reposicao (replacement order) nunca conta como venda", () => {
   const reposicao = {
@@ -124,6 +151,41 @@ describe("filtros de vendas Amazon", () => {
     expect(filtro?.gte).toEqual(new Date("2026-04-27T03:00:00.000Z"));
     expect(filtro?.lte).toEqual(new Date("2026-04-28T02:59:59.999Z"));
   });
+});
+
+describe("regressao: filtros preservam vendas legado (precoOrigem NULL)", () => {
+  const filtros = [
+    ["contabilizavel", whereVendaAmazonContabilizavel()],
+    ["estrito", whereVendaAmazonContabilizavelEstrito()],
+    ["espelho", whereVendaAmazonEspelhoGestorSeller()],
+    ["principal", whereVendaAmazonPrincipal()],
+  ] as const;
+
+  it("whereExcluiPrecoOrigem monta OR null-safe (mantem NULL, exclui valores)", () => {
+    expect(whereExcluiPrecoOrigem("replacement")).toEqual({
+      OR: [{ precoOrigem: null }, { precoOrigem: { notIn: ["replacement"] } }],
+    });
+    expect(whereExcluiPrecoOrigem("replacement", "listing")).toEqual({
+      OR: [
+        { precoOrigem: null },
+        { precoOrigem: { notIn: ["replacement", "listing"] } },
+      ],
+    });
+  });
+
+  it.each(filtros)(
+    "%s NUNCA coloca precoOrigem dentro de NOT (descartaria os NULL)",
+    (_nome, where) => {
+      expect(temPrecoOrigemSobNot(where)).toBe(false);
+    },
+  );
+
+  it.each(filtros)(
+    "%s inclui o OR null-safe que preserva precoOrigem NULL",
+    (_nome, where) => {
+      expect(JSON.stringify(where)).toContain('"precoOrigem":null');
+    },
+  );
 });
 
 describe("whereAmazonReembolsoContabilizavel", () => {

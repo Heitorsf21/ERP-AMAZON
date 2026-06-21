@@ -173,9 +173,11 @@ export function whereVendaAmazonContabilizavel(
   where?: Prisma.VendaAmazonWhereInput,
 ): Prisma.VendaAmazonWhereInput {
   const contabilizavel: Prisma.VendaAmazonWhereInput = {
+    // precoOrigem 'replacement' excluido via helper null-safe (preserva legado
+    // com precoOrigem NULL) — NUNCA dentro do NOT (descartaria os NULL).
+    ...whereExcluiPrecoOrigem(PRECO_ORIGEM_REPLACEMENT),
     NOT: [
       ...whereRemovalOrders(),
-      { precoOrigem: PRECO_ORIGEM_REPLACEMENT },
       {
         statusPedido: {
           in: [...STATUS_PEDIDO_CANCELADO],
@@ -229,9 +231,11 @@ export function whereVendaAmazonContabilizavelEstrito(
   where?: Prisma.VendaAmazonWhereInput,
 ): Prisma.VendaAmazonWhereInput {
   const contabilizavel: Prisma.VendaAmazonWhereInput = {
+    // precoOrigem 'replacement' e 'listing' excluidos via helper null-safe
+    // (preserva legado com precoOrigem NULL) — NUNCA dentro do NOT.
+    ...whereExcluiPrecoOrigem(PRECO_ORIGEM_REPLACEMENT, PRECO_ORIGEM_LISTING),
     NOT: [
       ...whereRemovalOrders(),
-      { precoOrigem: PRECO_ORIGEM_REPLACEMENT },
       { statusPedido: { in: [...STATUS_PEDIDO_CANCELADO] } },
       { statusPedido: { in: [...STATUS_PEDIDO_REEMBOLSADO] } },
       { statusFinanceiro: { in: [...STATUS_FINANCEIRO_NAO_CONTABILIZAVEL] } },
@@ -241,7 +245,6 @@ export function whereVendaAmazonContabilizavelEstrito(
           { statusFinanceiro: { in: [...STATUS_FINANCEIRO_SEM_CONFIRMACAO] } },
         ],
       },
-      { precoOrigem: PRECO_ORIGEM_LISTING },
     ],
   };
 
@@ -291,9 +294,11 @@ export function whereVendaAmazonEspelhoGestorSeller(
 ): Prisma.VendaAmazonWhereInput {
   return andWhere(
     {
+      // precoOrigem 'replacement' excluido via helper null-safe (preserva legado
+      // com precoOrigem NULL) — NUNCA dentro do NOT.
+      ...whereExcluiPrecoOrigem(PRECO_ORIGEM_REPLACEMENT),
       NOT: [
         ...whereRemovalOrders(),
-        { precoOrigem: PRECO_ORIGEM_REPLACEMENT },
         { statusPedido: { in: [...STATUS_PEDIDO_CANCELADO] } },
         {
           AND: [
@@ -352,9 +357,11 @@ export function whereVendaAmazonPrincipal(
 ): Prisma.VendaAmazonWhereInput {
   return andWhere(
     {
+      // precoOrigem 'replacement' excluido via helper null-safe (preserva legado
+      // com precoOrigem NULL) — NUNCA dentro do NOT.
+      ...whereExcluiPrecoOrigem(PRECO_ORIGEM_REPLACEMENT),
       NOT: [
         ...whereRemovalOrders(),
-        { precoOrigem: PRECO_ORIGEM_REPLACEMENT },
         { statusPedido: { in: [...STATUS_PEDIDO_CANCELADO] } },
         { statusPedido: { in: [...STATUS_PEDIDO_REEMBOLSADO] } },
         { statusFinanceiro: { in: [...STATUS_FINANCEIRO_NAO_CONTABILIZAVEL] } },
@@ -431,6 +438,25 @@ function whereRemovalOrders(): Prisma.VendaAmazonWhereInput[] {
     { marketplace: { in: [...MARKETPLACE_REMOVAL_ORDER] } },
     { amazonOrderId: { startsWith: PREFIXO_REMOVAL_ORDER } },
   ];
+}
+
+/**
+ * Exclui linhas cujo `precoOrigem` esteja em `valores`, PRESERVANDO as linhas
+ * com `precoOrigem` NULL (vendas legado, importadas antes do campo existir).
+ *
+ * CRITICO — bug de logica de tres valores do SQL: `NOT ("precoOrigem" = 'x')`
+ * descarta a linha quando precoOrigem e NULL (NULL = 'x' -> NULL; NOT NULL ->
+ * NULL -> linha NAO selecionada). Colocar `{ precoOrigem: 'x' }` dentro de um
+ * array `NOT` do Prisma reproduz exatamente esse bug — foi o que sumiu com TODO
+ * o historico legado (precoOrigem NULL) dos relatorios. Este helper usa um OR
+ * explicito que mantem os NULL e so exclui os valores informados.
+ */
+export function whereExcluiPrecoOrigem(
+  ...valores: string[]
+): Prisma.VendaAmazonWhereInput {
+  return {
+    OR: [{ precoOrigem: null }, { precoOrigem: { notIn: valores } }],
+  };
 }
 
 function andWhere(
