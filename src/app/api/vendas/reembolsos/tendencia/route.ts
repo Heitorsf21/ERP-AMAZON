@@ -1,7 +1,7 @@
 import { handleAuth, ok } from "@/lib/api";
 import { UsuarioRole } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { whereVendaAmazonContabilizavelEstrito } from "@/modules/vendas/filtros";
+import { whereVendaAmazonEspelhoGestorSeller } from "@/modules/vendas/filtros";
 import { subDays, startOfWeek, format } from "date-fns";
 
 export const dynamic = "force-dynamic";
@@ -14,7 +14,9 @@ export const GET = handleAuth([UsuarioRole.OPERADOR], async (req: Request) => {
 
   const [vendas, reembolsos] = await Promise.all([
     db.vendaAmazon.findMany({
-      where: whereVendaAmazonContabilizavelEstrito({ dataVenda: { gte: desde } }),
+      // ESPELHO (não estrito): o denominador da taxa precisa manter as vendas
+      // que depois viraram REEMBOLSADO, senão a base de pedidos fica menor.
+      where: whereVendaAmazonEspelhoGestorSeller({ dataVenda: { gte: desde } }),
       select: { amazonOrderId: true, sku: true, dataVenda: true },
     }),
     db.amazonReembolso.findMany({

@@ -3,9 +3,10 @@ import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { requireRole, UsuarioRole } from "@/lib/auth";
 import { logger } from "@/lib/logger";
+import { PeriodoPreset, resolverPeriodo } from "@/lib/periodo";
 import {
-  dataVendaPeriodoSP,
-  whereVendaAmazonContabilizavelEstrito,
+  whereAmazonReembolsoContabilizavel,
+  whereVendaAmazonEspelhoGestorSeller,
 } from "@/modules/vendas/filtros";
 import { calcularResumoReembolsos } from "@/modules/vendas/reembolsos";
 
@@ -15,18 +16,44 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   try {
     await requireRole(UsuarioRole.OPERADOR);
     const { searchParams } = req.nextUrl;
+    const preset = searchParams.get("preset");
     const de = searchParams.get("de");
     const ate = searchParams.get("ate");
     const sku = searchParams.get("sku");
     const pagina = Math.max(1, Number(searchParams.get("pagina") ?? "1"));
     const porPagina = 50;
 
-    const filtrosVendas: Prisma.VendaAmazonWhereInput = {};
-    const dataVenda = dataVendaPeriodoSP(de, ate);
-    if (dataVenda) filtrosVendas.dataVenda = dataVenda;
-    if (sku) filtrosVendas.sku = { contains: sku };
+    // Período: MESMO recorte das outras abas de Vendas (resolve o `preset`, não
+    // só de/ate). Aplicado a `dataVenda` (denominador da taxa) E a
+    // `dataReembolso` (numerador). Sem preset/intervalo válido => vitalício.
+    let intervalo: { de: Date; ate: Date } | null = null;
+    if (preset && preset !== PeriodoPreset.PERSONALIZADO) {
+      intervalo = resolverPeriodo(preset);
+    } else if (preset === PeriodoPreset.PERSONALIZADO && de && ate) {
+      intervalo = resolverPeriodo(PeriodoPreset.PERSONALIZADO, de, ate);
+    }
 
-    const whereVendas = whereVendaAmazonContabilizavelEstrito(filtrosVendas);
+    // Denominador da taxa: pedidos REAIS vendidos no período. Usa o filtro
+    // ESPELHO (não o estrito): precisa MANTER as vendas que depois viraram
+    // REEMBOLSADO, senão a base fica subestimada e — pior — perderíamos o
+    // vínculo com os próprios reembolsos.
+    const filtrosVendas: Prisma.VendaAmazonWhereInput = {};
+    if (intervalo)
+      filtrosVendas.dataVenda = { gte: intervalo.de, lte: intervalo.ate };
+    if (sku) filtrosVendas.sku = { contains: sku };
+    const whereVendas = whereVendaAmazonEspelhoGestorSeller(filtrosVendas);
+
+    // Numerador: reembolsos EFETIVADOS no período, buscados DIRETO por
+    // `dataReembolso` — NUNCA por `amazonOrderId IN (vendas)`. Como a venda de
+    // um pedido totalmente reembolsado fica com status REEMBOLSADO (e some dos
+    // filtros de venda), filtrar reembolso por pedido-de-venda escondia ~todos
+    // os reembolsos. `whereAmazonReembolsoContabilizavel` exclui os ainda não
+    // liberados (DEFERRED/PENDENTE), igual ao resto do sistema.
+    const filtrosReembolsos: Prisma.AmazonReembolsoWhereInput = {};
+    if (intervalo)
+      filtrosReembolsos.dataReembolso = { gte: intervalo.de, lte: intervalo.ate };
+    if (sku) filtrosReembolsos.sku = { contains: sku };
+    const whereReembolsos = whereAmazonReembolsoContabilizavel(filtrosReembolsos);
 
     const vendas = await db.vendaAmazon.findMany({
       where: whereVendas,
@@ -41,47 +68,42 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       },
     });
 
-    const orderIds = [...new Set(vendas.map((venda) => venda.amazonOrderId))];
-    const whereReembolsos: Prisma.AmazonReembolsoWhereInput = {
-      amazonOrderId: { in: orderIds.length > 0 ? orderIds : ["__sem_pedidos__"] },
-    };
-    if (sku) whereReembolsos.sku = { contains: sku };
+    const [reembolsos, totalPedidosReembolsados, todosReembolsosPeriodo] =
+      await Promise.all([
+        db.amazonReembolso.findMany({
+          where: whereReembolsos,
+          orderBy: { dataReembolso: "desc" },
+          skip: (pagina - 1) * porPagina,
+          take: porPagina,
+          select: {
+            id: true,
+            amazonOrderId: true,
+            orderItemId: true,
+            sku: true,
+            asin: true,
+            titulo: true,
+            quantidade: true,
+            valorReembolsadoCentavos: true,
+            taxasReembolsadasCentavos: true,
+            dataReembolso: true,
+            liquidacaoId: true,
+            marketplace: true,
+            statusFinanceiro: true,
+          },
+        }),
+        db.amazonReembolso.count({ where: whereReembolsos }),
+        db.amazonReembolso.findMany({
+          where: whereReembolsos,
+          select: {
+            amazonOrderId: true,
+            sku: true,
+            titulo: true,
+            quantidade: true,
+            valorReembolsadoCentavos: true,
+          },
+        }),
+      ]);
 
-    const [reembolsos, totalPedidosReembolsados] = await Promise.all([
-      db.amazonReembolso.findMany({
-        where: whereReembolsos,
-        orderBy: { dataReembolso: "desc" },
-        skip: (pagina - 1) * porPagina,
-        take: porPagina,
-        select: {
-          id: true,
-          amazonOrderId: true,
-          orderItemId: true,
-          sku: true,
-          asin: true,
-          titulo: true,
-          quantidade: true,
-          valorReembolsadoCentavos: true,
-          taxasReembolsadasCentavos: true,
-          dataReembolso: true,
-          liquidacaoId: true,
-          marketplace: true,
-          statusFinanceiro: true,
-        },
-      }),
-      db.amazonReembolso.count({ where: whereReembolsos }),
-    ]);
-
-    const todosReembolsosPeriodo = await db.amazonReembolso.findMany({
-      where: whereReembolsos,
-      select: {
-        amazonOrderId: true,
-        sku: true,
-        titulo: true,
-        quantidade: true,
-        valorReembolsadoCentavos: true,
-      },
-    });
     const produtos = calcularResumoReembolsos(vendas, todosReembolsosPeriodo);
     const pedidosVendidosUnicos = new Set(
       vendas.map((venda) => venda.amazonOrderId),

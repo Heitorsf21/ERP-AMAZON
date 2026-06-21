@@ -45,4 +45,33 @@ describe("calcularResumoReembolsos", () => {
     });
     expect(resumo[0]?.taxaReembolso).toBe(50);
   });
+
+  it("contabiliza reembolso mesmo sem a venda na base (pedido totalmente reembolsado)", () => {
+    // Regressao: pedido totalmente reembolsado -> a VendaAmazon vira REEMBOLSADO
+    // e sai da base de vendas. O reembolso (vindo por dataReembolso) AINDA deve
+    // ser contabilizado. (O bug antigo buscava reembolso por orderId das vendas,
+    // entao esses reembolsos sumiam.)
+    const resumo = calcularResumoReembolsos(
+      [],
+      [
+        {
+          amazonOrderId: "701-9",
+          sku: "SKU-9",
+          titulo: "Produto 9",
+          quantidade: 1,
+          valorReembolsadoCentavos: 4500,
+        },
+      ],
+    );
+
+    expect(resumo).toHaveLength(1);
+    expect(resumo[0]).toMatchObject({
+      sku: "SKU-9",
+      pedidosVendidos: 0,
+      pedidosReembolsados: 1,
+      unidadesReembolsadas: 1,
+      valorReembolsadoCentavos: 4500,
+    });
+    expect(resumo[0]?.taxaReembolso).toBe(0);
+  });
 });
