@@ -177,6 +177,8 @@ const presets = [
   { label: "Mes atual", value: PeriodoPreset.MES_ATUAL },
   { label: "Mes anterior", value: PeriodoPreset.MES_PASSADO },
   { label: "Ano atual", value: PeriodoPreset.ANO_ATUAL },
+  { label: "Ultimos 12 meses", value: PeriodoPreset.DOZE_MESES },
+  { label: "Tudo (vitalicio)", value: PeriodoPreset.VITALICIO },
   { label: "Personalizado", value: PeriodoPreset.PERSONALIZADO },
 ] as const;
 

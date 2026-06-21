@@ -21,8 +21,15 @@ export const PeriodoPreset = {
   MES_ATUAL: "mesAtual",
   MES_PASSADO: "mesPassado",
   ANO_ATUAL: "anoAtual",
+  DOZE_MESES: "12m",
+  VITALICIO: "vitalicio",
   PERSONALIZADO: "personalizado",
 } as const;
+
+// Piso do preset "Vitalício/Tudo": data fixa anterior a qualquer venda possível
+// do ERP (a 1ª venda real da loja foi em ago/2025). Serve só como limite
+// inferior do intervalo — traz todo o histórico sem depender de filtro nulo.
+const VITALICIO_INICIO = new Date("2000-01-01T00:00:00");
 
 export type PeriodoPreset =
   (typeof PeriodoPreset)[keyof typeof PeriodoPreset];
@@ -78,6 +85,14 @@ export function resolverPeriodo(
 
   if (preset === PeriodoPreset.ANO_ATUAL) {
     return intervaloZonado(startOfYear(hojeZonado), endOfYear(hojeZonado));
+  }
+
+  if (preset === PeriodoPreset.DOZE_MESES) {
+    return intervaloEntreDias(subMonths(hojeZonado, 12), hojeZonado);
+  }
+
+  if (preset === PeriodoPreset.VITALICIO) {
+    return intervaloEntreDias(VITALICIO_INICIO, hojeZonado);
   }
 
   return intervaloEntreDias(subDays(hojeZonado, 29), hojeZonado);

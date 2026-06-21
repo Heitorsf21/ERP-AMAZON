@@ -31,6 +31,8 @@ const PRESET_LABELS: Array<{ preset: PeriodoPreset; label: string }> = [
   { preset: PeriodoPreset.MES_ATUAL, label: "Mês atual" },
   { preset: PeriodoPreset.MES_PASSADO, label: "Mês passado" },
   { preset: PeriodoPreset.ANO_ATUAL, label: "Ano atual" },
+  { preset: PeriodoPreset.DOZE_MESES, label: "Últimos 12 meses" },
+  { preset: PeriodoPreset.VITALICIO, label: "Tudo (vitalício)" },
   { preset: PeriodoPreset.PERSONALIZADO, label: "Personalizado" },
 ];
 
