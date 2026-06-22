@@ -21,6 +21,10 @@ import {
   whereVendaAmazonEspelhoGestorSeller,
 } from "@/modules/vendas/filtros";
 import {
+  chaveVendaReembolso,
+  separarVendasReembolsadas,
+} from "./reembolso-faturamento";
+import {
   calcularImpostoSimplesCentavos,
   calcularValoresLinhaVendaAmazon,
   valorBrutoDaVenda,
@@ -46,6 +50,7 @@ type VendaDashboard = {
   impostoSimplesCentavos: number;
   custoUnitarioCentavos: number | null;
   dataVenda: Date;
+  statusPedido?: string | null;
   statusFinanceiro?: string;
   taxasEstimadas?: boolean;
   categoriaTaxaEstimada?: {
@@ -230,23 +235,21 @@ export const dashboardEcommerceService = {
 
   async obterKpis(periodo: IntervaloPeriodo) {
     const [
-      vendasRaw,
-      vendasReembolsadas,
+      vendasSeparadas,
       ads,
       traffic,
       cfgImpostoSimples,
       contasFixas,
     ] = await Promise.all([
-      buscarVendas(periodo),
-      buscarVendasReembolsadasGestorSeller(periodo),
+      buscarVendasSeparadas(periodo),
       fetchAdsGasto(periodo),
       buscarTraffic(periodo),
       getConfigImpostoSimples(),
       contasFixasService.totalDoPeriodo(periodo),
     ]);
-    const vendas = await enriquecerComEstimativas(vendasRaw);
+    const vendas = await enriquecerComEstimativas(vendasSeparadas.faturaveis);
     const agregado = agregarVendas(vendas);
-    const agregadoReembolsados = agregarVendas(vendasReembolsadas);
+    const agregadoReembolsados = agregarVendas(vendasSeparadas.reembolsadas);
     const lucroBrutoCentavos = calcularLucroBruto(agregado);
     const lucroPosAdsCentavos =
       lucroBrutoCentavos == null
@@ -498,13 +501,18 @@ export async function fetchAdsGasto(periodo: IntervaloPeriodo): Promise<{
   };
 }
 
-async function buscarVendas(periodo: IntervaloPeriodo): Promise<VendaDashboard[]> {
-  const [vendas, vendasReembolsadas] = await Promise.all([
+async function buscarVendasSeparadas(
+  periodo: IntervaloPeriodo,
+): Promise<{ faturaveis: VendaDashboard[]; reembolsadas: VendaDashboard[] }> {
+  const [base, reembolsoKeys] = await Promise.all([
     buscarVendasBaseGestorSeller(periodo),
-    buscarVendasReembolsadasGestorSeller(periodo),
+    buscarChavesReembolsoNoPeriodo(periodo),
   ]);
-  const reembolsadas = new Set(vendasReembolsadas.map(chaveVendaDashboard));
-  return vendas.filter((venda) => !reembolsadas.has(chaveVendaDashboard(venda)));
+  return separarVendasReembolsadas(base, reembolsoKeys);
+}
+
+async function buscarVendas(periodo: IntervaloPeriodo): Promise<VendaDashboard[]> {
+  return (await buscarVendasSeparadas(periodo)).faturaveis;
 }
 
 async function buscarVendasBaseGestorSeller(
@@ -530,14 +538,18 @@ async function buscarVendasBaseGestorSeller(
       impostoSimplesCentavos: true,
       custoUnitarioCentavos: true,
       dataVenda: true,
+      statusPedido: true,
       statusFinanceiro: true,
     },
   });
 }
 
-async function buscarVendasReembolsadasGestorSeller(
+// Chaves (amazonOrderId + sku) das vendas que têm AmazonReembolso na janela
+// consultada. Mantém o acoplamento de janela do Gestor Seller; a decisão de
+// remover (reembolso total) vs manter (parcial) fica em separarVendasReembolsadas.
+async function buscarChavesReembolsoNoPeriodo(
   periodo: IntervaloPeriodo,
-): Promise<VendaDashboard[]> {
+): Promise<Set<string>> {
   const reembolsos = await db.amazonReembolso.findMany({
     where: {
       dataReembolso: {
@@ -550,42 +562,16 @@ async function buscarVendasReembolsadasGestorSeller(
       sku: true,
     },
   });
-  const chaves = [
-    ...new Set(
-      reembolsos.map(
-        (reembolso) => `${reembolso.amazonOrderId}\u0000${reembolso.sku}`,
+  return new Set(
+    reembolsos
+      .filter((reembolso) => reembolso.sku)
+      .map((reembolso) =>
+        chaveVendaReembolso({
+          amazonOrderId: reembolso.amazonOrderId,
+          sku: reembolso.sku as string,
+        }),
       ),
-    ),
-  ];
-  if (chaves.length === 0) return [];
-
-  return db.vendaAmazon.findMany({
-    where: whereVendaAmazonEspelhoGestorSeller({
-      dataVenda: { gte: periodo.de, lte: periodo.ate },
-      OR: chaves.map((chave) => {
-        const [amazonOrderId, sku] = chave.split("\u0000");
-        return { amazonOrderId, sku };
-      }),
-    }),
-    select: {
-      amazonOrderId: true,
-      sku: true,
-      titulo: true,
-      quantidade: true,
-      precoUnitarioCentavos: true,
-      valorBrutoCentavos: true,
-      taxasCentavos: true,
-      fretesCentavos: true,
-      liquidoMarketplaceCentavos: true,
-      impostoSimplesCentavos: true,
-      custoUnitarioCentavos: true,
-      dataVenda: true,
-    },
-  });
-}
-
-function chaveVendaDashboard(venda: Pick<VendaDashboard, "amazonOrderId" | "sku">) {
-  return `${venda.amazonOrderId}\u0000${venda.sku}`;
+  );
 }
 
 async function carregarMapaSkuAgrupador(skus: string[]) {
