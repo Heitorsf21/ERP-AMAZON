@@ -30,6 +30,7 @@ import {
 import { gunzipSync } from "zlib";
 import {
   agruparValoresFinanceirosVendaAmazon,
+  reconciliarFinanceiroParaBrutoCheio,
   type LinhaFinanceiraVendaAmazon,
 } from "@/modules/amazon/finance-aggregation";
 import {
@@ -1264,6 +1265,21 @@ async function syncFinancialEvents(
             valorBrutoFinanceiroCentavos: linha.valorBrutoCentavos,
           }) || (venda.precoOrigem === "listing" && brutoFinanceiroConfirmado);
 
+          // Reconcilia taxas/liquido para o bruto CHEIO do pedido — corrige o
+          // multi-unidade sub-escalado (evento Finance de 1 unidade contra bruto
+          // de N unidades do Orders). Só quando o evento traz ProductCharges
+          // (base de taxa confiável); senão mantém o comportamento legado.
+          const brutoCheioCentavos = atualizarBruto
+            ? linha.valorBrutoCentavos
+            : brutoAtual;
+          const reconciliado = brutoFinanceiroConfirmado
+            ? reconciliarFinanceiroParaBrutoCheio({
+                brutoCheioCentavos,
+                taxasCentavos: linha.taxasCentavos,
+                baseBrutoCentavos: linha.valorBrutoCentavos,
+              })
+            : null;
+
           const statusFinanceiroNovo = linha.statusFinanceiro ?? "LIQUIDADO";
           const recalcularImposto =
             atualizarBruto || statusFinanceiroNovo !== venda.statusFinanceiro;
@@ -1282,7 +1298,9 @@ async function syncFinancialEvents(
           await db.vendaAmazon.update({
             where: { id: venda.id },
             data: {
-              taxasCentavos: linha.taxasCentavos,
+              taxasCentavos: reconciliado
+                ? reconciliado.taxasCentavos
+                : linha.taxasCentavos,
               fretesCentavos: linha.fretesCentavos,
               ...(atualizarBruto
                 ? {
@@ -1297,8 +1315,9 @@ async function syncFinancialEvents(
                 ? { impostoSimplesCentavos }
                 : {}),
               ...(brutoFinanceiroConfirmado ? { precoOrigem: "sp-api" } : {}),
-              liquidoMarketplaceCentavos:
-                linha.liquidoMarketplaceCentavos ?? undefined,
+              liquidoMarketplaceCentavos: reconciliado
+                ? reconciliado.liquidoMarketplaceCentavos
+                : (linha.liquidoMarketplaceCentavos ?? undefined),
               liquidacaoId: linha.liquidacaoId ?? undefined,
               statusFinanceiro: statusFinanceiroNovo,
               ultimaSyncEm: new Date(),
