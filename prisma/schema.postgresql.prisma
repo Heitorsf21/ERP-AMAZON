@@ -1402,6 +1402,25 @@ model AmazonSkuTrafficDaily {
   @@index([childAsin])
 }
 
+// Sales & Traffic no NIVEL CONTA, com quebra DIARIA (secao salesAndTrafficByDate).
+// Fonte correta e somavel para os KPIs de trafego do dashboard. Diferente de
+// AmazonSkuTrafficDaily (byAsin), que agrega o periodo inteiro por SKU.
+model AmazonTrafficDaily {
+  id                     String   @id @default(cuid())
+  empresaId              String?
+  data                   DateTime @unique
+  sessoes                Int      @default(0)
+  pageViews              Int      @default(0)
+  unitsOrdered           Int      @default(0)
+  orderedRevenueCentavos Int      @default(0)
+  buyBoxPercent          Float?
+  conversaoPercent       Float?
+  currency               String?
+  payloadJson            Json
+  criadoEm               DateTime @default(now())
+  atualizadoEm           DateTime @updatedAt
+}
+
 // ── Sprint 5.5: Amazon Advertising (Sponsored Products) ─────────────────────
 
 model AmazonAdsCampanha {
