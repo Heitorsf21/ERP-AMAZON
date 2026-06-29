@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { agruparValoresFinanceirosVendaAmazon } from "./finance-aggregation";
+import {
+  agruparValoresFinanceirosVendaAmazon,
+  reconciliarFinanceiroParaBrutoCheio,
+} from "./finance-aggregation";
 
 describe("agruparValoresFinanceirosVendaAmazon", () => {
   it("soma partes financeiras do mesmo pedido e SKU antes de gravar", () => {
@@ -63,5 +66,50 @@ describe("agruparValoresFinanceirosVendaAmazon", () => {
     expect(linhas.reduce((sum, linha) => sum + linha.taxasCentavos, 0)).toBe(
       1000,
     );
+  });
+});
+
+describe("reconciliarFinanceiroParaBrutoCheio", () => {
+  it("escala taxa/liquido de um evento de 1 unidade para o bruto cheio do pedido", () => {
+    // Pedido qty=2: bruto cheio 17978 (do Orders), mas o evento Finance trouxe
+    // taxa de 1 unidade (1714) sobre ProductCharges de 1 unidade (8989).
+    const r = reconciliarFinanceiroParaBrutoCheio({
+      brutoCheioCentavos: 17978,
+      taxasCentavos: 1714,
+      baseBrutoCentavos: 8989,
+    });
+    expect(r.taxasCentavos).toBe(3428);
+    expect(r.liquidoMarketplaceCentavos).toBe(14550);
+    expect(r.taxasCentavos + r.liquidoMarketplaceCentavos).toBe(17978);
+  });
+
+  it("nao altera quando o evento ja cobre o bruto cheio", () => {
+    const r = reconciliarFinanceiroParaBrutoCheio({
+      brutoCheioCentavos: 17994,
+      taxasCentavos: 3430,
+      baseBrutoCentavos: 17994,
+    });
+    expect(r.taxasCentavos).toBe(3430);
+    expect(r.liquidoMarketplaceCentavos).toBe(14564);
+  });
+
+  it("sem base de taxa (ProductCharges 0): mantem taxas e garante o invariante", () => {
+    const r = reconciliarFinanceiroParaBrutoCheio({
+      brutoCheioCentavos: 10000,
+      taxasCentavos: 1500,
+      baseBrutoCentavos: 0,
+    });
+    expect(r.taxasCentavos).toBe(1500);
+    expect(r.liquidoMarketplaceCentavos).toBe(8500);
+  });
+
+  it("bruto cheio zero => zera", () => {
+    const r = reconciliarFinanceiroParaBrutoCheio({
+      brutoCheioCentavos: 0,
+      taxasCentavos: 1714,
+      baseBrutoCentavos: 8989,
+    });
+    expect(r.taxasCentavos).toBe(0);
+    expect(r.liquidoMarketplaceCentavos).toBe(0);
   });
 });
