@@ -602,7 +602,10 @@ function nomeProdutoDashboard(
 }
 
 async function buscarTraffic(periodo: IntervaloPeriodo) {
-  const agregado = await db.amazonSkuTrafficDaily.aggregate({
+  // Fonte: AmazonTrafficDaily (byDate — nivel conta, 1 linha/dia), somavel por
+  // periodo. NAO usar AmazonSkuTrafficDaily (byAsin): la cada linha e o agregado
+  // de ~30 dias do SKU; somar janelas sobrepostas inflava os KPIs ~11x.
+  const agregado = await db.amazonTrafficDaily.aggregate({
     where: {
       data: {
         gte: periodo.de,

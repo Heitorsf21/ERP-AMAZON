@@ -25,7 +25,10 @@ import { parseAllOrdersTsv } from "@/modules/amazon/parsers/all-orders-tsv";
 import { parseFbaReimbursementsTsv } from "@/modules/amazon/parsers/fba-reimbursements-tsv";
 import { parseFbaReturnsTsv } from "@/modules/amazon/parsers/fba-returns-tsv";
 import { parseFbaStorageFeesTsv } from "@/modules/amazon/parsers/fba-storage-fees-tsv";
-import { parseSalesTrafficJson } from "@/modules/amazon/parsers/sales-traffic-json";
+import {
+  parseSalesTrafficByDateJson,
+  parseSalesTrafficJson,
+} from "@/modules/amazon/parsers/sales-traffic-json";
 import {
   downloadReportDocument,
   stepReportLifecycle,
@@ -1363,8 +1366,13 @@ export async function runTrafficSync(
   }
 
   const fallbackDate = pendingStart ?? start;
+  // byAsin: snapshot por SKU (agregado do periodo) — usado pela tabela de produtos.
   const rows = parseSalesTrafficJson(lifecycle.buffer, fallbackDate);
   const stats = await upsertTrafficRows(rows);
+  // byDate: metricas no nivel conta, 1 linha por DIA — fonte somavel dos KPIs
+  // de trafego do dashboard. O mesmo report (janela de 30d) traz todos os dias.
+  const rowsByDate = parseSalesTrafficByDateJson(lifecycle.buffer);
+  const statsByDate = await upsertTrafficByDateRows(rowsByDate);
   await clearReportKeys(
     TRAFFIC_PENDING_KEY,
     TRAFFIC_PENDING_START_KEY,
@@ -1376,7 +1384,9 @@ export async function runTrafficSync(
     de: fallbackDate.toISOString(),
     ate: end.toISOString(),
     linhas: rows.length,
+    linhasByDate: rowsByDate.length,
     ...stats,
+    ...statsByDate,
   };
 }
 
@@ -1601,6 +1611,41 @@ async function upsertTrafficRows(
   }
 
   return { criadas, atualizadas };
+}
+
+// Upsert das metricas byDate (nivel conta, 1 linha por dia). Idempotente por
+// `data` (@unique): a janela de 30d do report cobre os mesmos dias a cada
+// execucao, e cada dia e sobrescrito — NUNCA somado (ao contrario do bug byAsin).
+async function upsertTrafficByDateRows(
+  rows: ReturnType<typeof parseSalesTrafficByDateJson>,
+) {
+  let byDateCriadas = 0;
+  let byDateAtualizadas = 0;
+
+  for (const row of rows) {
+    const campos = {
+      sessoes: row.sessoes,
+      pageViews: row.pageViews,
+      unitsOrdered: row.unitsOrdered,
+      orderedRevenueCentavos: row.orderedRevenueCentavos,
+      buyBoxPercent: row.buyBoxPercent,
+      conversaoPercent: row.conversaoPercent,
+      currency: row.currency,
+      payloadJson: JSON.stringify(row.payload),
+    };
+    const existing = await db.amazonTrafficDaily.findUnique({
+      where: { data: row.data },
+    });
+    if (existing) {
+      await db.amazonTrafficDaily.update({ where: { data: row.data }, data: campos });
+      byDateAtualizadas++;
+    } else {
+      await db.amazonTrafficDaily.create({ data: { data: row.data, ...campos } });
+      byDateCriadas++;
+    }
+  }
+
+  return { byDateCriadas, byDateAtualizadas };
 }
 
 async function loadProdutoLookup(skus: string[], asins: string[]) {

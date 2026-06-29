@@ -93,6 +93,92 @@ export function parseSalesTrafficJson(
     .filter((row): row is SalesTrafficDailyRow => row !== null);
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Seção `salesAndTrafficByDate` — métricas no NÍVEL CONTA, com quebra DIÁRIA.
+//
+// Por que existe (e por que NÃO usar `salesAndTrafficByAsin` para totais):
+// a seção byAsin agrega o PERÍODO INTEIRO do report por SKU (não tem dimensão de
+// data) — somar várias execuções com janelas sobrepostas infla o total. Já a
+// seção byDate traz 1 linha por dia (campo `date`), então é a fonte correta e
+// somável para os KPIs de tráfego do dashboard.
+// ─────────────────────────────────────────────────────────────────────────────
+type SalesByDate = {
+  unitsOrdered?: number;
+  orderedProductSales?: Money;
+  [key: string]: unknown;
+};
+
+type TrafficByDate = {
+  sessions?: number;
+  browserSessions?: number;
+  mobileAppSessions?: number;
+  pageViews?: number;
+  browserPageViews?: number;
+  mobileAppPageViews?: number;
+  buyBoxPercentage?: number;
+  unitSessionPercentage?: number;
+  [key: string]: unknown;
+};
+
+type SalesTrafficByDate = {
+  date?: string;
+  salesByDate?: SalesByDate;
+  trafficByDate?: TrafficByDate;
+  [key: string]: unknown;
+};
+
+export interface SalesTrafficDateRow {
+  data: Date;
+  sessoes: number;
+  pageViews: number;
+  unitsOrdered: number;
+  orderedRevenueCentavos: number;
+  buyBoxPercent: number | null;
+  conversaoPercent: number | null;
+  currency: string | null;
+  payload: SalesTrafficByDate;
+}
+
+export function parseSalesTrafficByDateJson(
+  input: Buffer | string,
+): SalesTrafficDateRow[] {
+  const text = typeof input === "string" ? input : input.toString("utf8");
+  const parsed = JSON.parse(text) as {
+    salesAndTrafficByDate?: SalesTrafficByDate[];
+  };
+
+  return (parsed.salesAndTrafficByDate ?? [])
+    .map((item) => {
+      const dataRaw = parseDateOrNull(item.date);
+      if (!dataRaw) return null; // sem data não dá pra ancorar no tempo
+
+      const traffic = item.trafficByDate ?? {};
+      const sales = item.salesByDate ?? {};
+      const sessoes =
+        num(traffic.sessions) ??
+        (num(traffic.browserSessions) ?? 0) +
+          (num(traffic.mobileAppSessions) ?? 0);
+      const pageViews =
+        num(traffic.pageViews) ??
+        (num(traffic.browserPageViews) ?? 0) +
+          (num(traffic.mobileAppPageViews) ?? 0);
+      const revenue = parseMoney(sales.orderedProductSales);
+
+      return {
+        data: startOfUTCDay(dataRaw),
+        sessoes,
+        pageViews,
+        unitsOrdered: num(sales.unitsOrdered) ?? 0,
+        orderedRevenueCentavos: revenue.centavos,
+        buyBoxPercent: num(traffic.buyBoxPercentage),
+        conversaoPercent: num(traffic.unitSessionPercentage),
+        currency: revenue.currency,
+        payload: item,
+      };
+    })
+    .filter((row): row is SalesTrafficDateRow => row !== null);
+}
+
 function parseMoney(value: Money | undefined): {
   centavos: number;
   currency: string | null;
