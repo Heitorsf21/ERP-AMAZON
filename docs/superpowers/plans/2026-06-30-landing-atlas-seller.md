@@ -21,6 +21,12 @@
 - **Diretório raiz da entrega:** `landing-atlas/` na raiz do repo.
 - **Branch:** `feat/landing-atlas-seller` (já criada).
 - **Commits frequentes:** um commit ao final de cada task.
+- **Animação (estilo Eluria):** scroll-reveal (fade + slide-up ao entrar na viewport) via IntersectionObserver vanilla + microinterações de hover via CSS. Sem biblioteca/CDN. SEMPRE respeitar `prefers-reduced-motion: reduce` (desliga tudo). Sem JS/observer, conteúdo aparece normalmente (graceful degradation).
+
+### Decisões fechadas (confirmadas pelo usuário)
+- **Subdomínio:** `atlasseller.mundofs.cloud`.
+- **E-mail de contato/DPO:** `admfsmundo@gmail.com`.
+- **Screenshots e vídeo de demonstração:** serão produzidos pelo usuário e adicionados em `landing-atlas/assets/img/screenshots/` (e `assets/video/` se houver vídeo). O hero usa mock CSS e não depende deles para a aprovação; pontos de inserção ficam comentados no HTML.
 
 ---
 
@@ -195,6 +201,21 @@ p{margin:0 0 1em;color:var(--text-2)}
   .nav-toggle{display:block}
   .section{padding:56px 0}
 }
+/* ===== Motion / scroll-reveal (estilo Eluria) ===== */
+.reveal{opacity:0;transform:translateY(18px);
+  transition:opacity .6s ease, transform .6s cubic-bezier(.16,1,.3,1);
+  transition-delay:var(--reveal-delay,0ms);will-change:opacity,transform}
+.reveal.is-visible{opacity:1;transform:none}
+/* microinterações de hover */
+.feat,.problema,.plan,.trust{transition:transform .18s ease, box-shadow .18s ease}
+.feat:hover,.problema:hover,.trust:hover,.plan:hover{transform:translateY(-3px);box-shadow:var(--shadow-card)}
+.btn{transition:background .15s ease, transform .12s ease}
+.btn:active{transform:translateY(1px)}
+@media (prefers-reduced-motion: reduce){
+  *{animation:none!important}
+  html{scroll-behavior:auto}
+  .reveal{opacity:1!important;transform:none!important;transition:none}
+}
 ```
 
 - [ ] **Step 2: Escrever `app.js`**
@@ -221,8 +242,24 @@ function initFaqAccordion(){
     if(q)q.addEventListener('click',()=>item.classList.toggle('open'));
   });
 }
+function initScrollReveal(){
+  const sel='.sec-head, .problema, .passo, .feat, .plan, .trust, .analytics-block, .faq-item, .cta-band, .hero-grid > *';
+  const targets=document.querySelectorAll(sel);
+  const reduced=window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if(reduced || !('IntersectionObserver' in window)){
+    targets.forEach(el=>el.classList.add('is-visible'));return;
+  }
+  targets.forEach(el=>el.classList.add('reveal'));
+  const io=new IntersectionObserver((entries)=>{
+    entries.forEach(e=>{
+      if(e.isIntersecting){e.target.classList.add('is-visible');io.unobserve(e.target)}
+    });
+  },{threshold:0.12,rootMargin:'0px 0px -40px 0px'});
+  // stagger leve por grupo (efeito cascata como na Eluria)
+  targets.forEach((el,i)=>{el.style.setProperty('--reveal-delay',(i%6)*70+'ms');io.observe(el)});
+}
 document.addEventListener('DOMContentLoaded',()=>{
-  initMobileMenu();initSmoothScroll();initFaqAccordion();
+  initMobileMenu();initSmoothScroll();initFaqAccordion();initScrollReveal();
 });
 ```
 
@@ -317,7 +354,7 @@ Abrir visualmente:
 ```bash
 start "" "C:/Projects/ERP-AMAZON/landing-atlas/index.html"
 ```
-Expected: hero clean light, headline "Decisões com o lucro na mão" com traço laranja, badge "Feito para sellers Amazon", botão azul, card de dashboard à direita. Menu vira hambúrguer abaixo de 860px.
+Expected: hero clean light, headline "Decisões com o lucro na mão" com traço laranja, badge "Feito para sellers Amazon", botão azul, card de dashboard à direita. Os elementos do hero entram com fade + slide-up (scroll-reveal) e os botões respondem ao hover. Menu vira hambúrguer abaixo de 860px. (Para testar o reveal das seções de baixo, role a página após as Tasks 3-6.)
 
 - [ ] **Step 5: Commit**
 
@@ -1160,8 +1197,9 @@ git commit -m "docs(landing): rascunho de resposta ao caso Amazon 20883425301"
 
 **3. Type/identifier consistency:** classes CSS definidas na Task 2 e estendidas nas tasks seguintes batem com o HTML que as usa (`.dash-card`, `.eyebrow`, `.btn-primary`, `.plan.featured`, `.faq-item`, `.legal`). Funções de `app.js` (`initMobileMenu/initSmoothScroll/initFaqAccordion`) batem com os seletores usados no HTML (`.nav-toggle`, `.nav-links`, `a[href^="#"]`, `.faq-q/.faq-item`). Âncoras (`#recursos`, `#analytics`, `#seguranca`, `#precos`, `#contato`, `#topo`) referenciadas na nav/CTAs existem nas seções. ✔
 
-## Decisões pendentes (confirmar com o usuário antes/durante a execução)
+## Decisões — FECHADAS
 
-1. **Nome exato do subdomínio** — usado na Task 10 (Nginx) e na Task 11 (resposta). Default assumido: `atlasseller.mundofs.cloud`.
-2. **E-mail de contato/DPO exibido** — Tasks 6/7/8/11 usam `admfsmundo@gmail.com`. Trocar por `contato@`/`privacidade@` do domínio se preferir.
-3. **Screenshots reais** — Task 1 copia logos; o hero usa um mock CSS (não depende de imagem). Se quiser prints reais do dashboard nas seções, adicionar à `assets/img/screenshots/` e referenciar (decisão opcional, não bloqueia aprovação).
+1. **Subdomínio:** `atlasseller.mundofs.cloud` (Task 10 Nginx + Task 11 resposta).
+2. **E-mail de contato/DPO:** `admfsmundo@gmail.com` (Tasks 6/7/8/11).
+3. **Screenshots/vídeo:** produzidos pelo usuário; entram em `assets/img/screenshots/` (e `assets/video/`). Hero usa mock CSS — não bloqueia. Pontos de inserção comentados no HTML.
+4. **Animações:** scroll-reveal estilo Eluria + hovers, via `initScrollReveal()` (Task 2), com `prefers-reduced-motion`.
