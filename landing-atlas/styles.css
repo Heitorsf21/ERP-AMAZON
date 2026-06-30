@@ -149,3 +149,27 @@ p{margin:0 0 1em;color:var(--text-2)}
 .plan li{display:flex;gap:9px;font-size:14px;color:var(--text-2);margin-bottom:10px}
 .plan li::before{content:"✓";color:var(--success-700);font-weight:800}
 @media(max-width:860px){.trust-grid{grid-template-columns:1fr 1fr}.plans{grid-template-columns:1fr}}
+/* ===== FAQ ===== */
+.faq{max-width:780px;margin:0 auto}
+.faq-item{border-bottom:1px solid var(--border)}
+.faq-q{width:100%;text-align:left;background:none;border:0;cursor:pointer;
+  font-size:16px;font-weight:700;color:var(--text);padding:20px 0;display:flex;justify-content:space-between;gap:16px}
+.faq-q::after{content:"+";color:var(--primary);font-weight:800}
+.faq-item.open .faq-q::after{content:"–"}
+.faq-a{display:none;padding:0 0 20px;font-size:14px;color:var(--text-2)}
+.faq-item.open .faq-a{display:block}
+/* ===== CTA band ===== */
+.cta-band{background:linear-gradient(135deg,var(--primary),var(--success-700));color:#fff;
+  border-radius:18px;padding:44px;text-align:center;margin:0 24px}
+.cta-band h2{color:#fff;font-size:30px}
+.cta-band p{color:#E0E7FF;max-width:48ch;margin:0 auto 22px}
+.cta-band .btn-primary{background:#fff;color:var(--primary)}
+.cta-band .btn-primary:hover{background:#F1F5F9}
+/* ===== Footer ===== */
+.site-footer{background:#0F172A;color:#CBD5E1;padding:48px 0 28px;margin-top:64px}
+.footer-grid{display:flex;justify-content:space-between;gap:32px;flex-wrap:wrap}
+.site-footer a{color:#CBD5E1}.site-footer a:hover{color:#fff}
+.site-footer .brand{color:#fff}
+.footer-legal{font-size:13px;color:var(--muted);margin-top:28px;border-top:1px solid #1E293B;padding-top:18px;display:flex;gap:18px;flex-wrap:wrap;justify-content:space-between}
+.footer-legal a{color:var(--muted)}
+@media(max-width:860px){.cta-band{padding:32px 20px}}
