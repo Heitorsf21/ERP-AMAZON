@@ -114,3 +114,19 @@ p{margin:0 0 1em;color:var(--text-2)}
 .passo h3{font-size:17px}
 .passo p{font-size:14px;margin:0}
 @media(max-width:860px){.problemas,.passos{grid-template-columns:1fr}}
+/* ===== 03 Recursos ===== */
+.analytics-block{background:linear-gradient(180deg,#fff, #F8FAFC);border:1px solid var(--border);
+  border-radius:16px;padding:32px;display:grid;grid-template-columns:1fr 1fr;gap:32px;align-items:center;margin-bottom:28px}
+.analytics-block .tag{display:inline-block;font-size:12px;font-weight:700;color:var(--primary);
+  background:#EFF6FF;border:1px solid #BFDBFE;padding:4px 10px;border-radius:var(--radius-pill);margin-bottom:12px}
+.analytics-block h3{font-size:24px}
+.analytics-list{list-style:none;padding:0;margin:0}
+.analytics-list li{display:flex;gap:10px;align-items:flex-start;font-size:14px;color:var(--text-2);margin-bottom:10px}
+.analytics-list li::before{content:"✓";color:var(--success-700);font-weight:800;flex:none}
+.feat-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:20px}
+.feat{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:22px}
+.feat h4{font-size:16px;margin:0 0 6px}
+.feat p{font-size:13px;margin:0}
+.feat .ic{width:36px;height:36px;border-radius:9px;background:#EFF6FF;color:var(--primary);
+  display:flex;align-items:center;justify-content:center;margin-bottom:12px;font-weight:800}
+@media(max-width:860px){.analytics-block{grid-template-columns:1fr}.feat-grid{grid-template-columns:1fr}}
