@@ -96,3 +96,21 @@ p{margin:0 0 1em;color:var(--text-2)}
   html{scroll-behavior:auto}
   .reveal{opacity:1!important;transform:none!important;transition:none}
 }
+/* ===== 01 Problema ===== */
+.sec-head{max-width:60ch;margin-bottom:40px}
+.sec-head h2{font-size:32px}
+.sec-head p{font-size:17px}
+.problemas{display:grid;grid-template-columns:repeat(3,1fr);gap:20px}
+.problema{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:24px}
+.problema h3{font-size:18px}
+.problema p{margin:0;font-size:14px}
+.problema .ic{width:40px;height:40px;border-radius:10px;background:#FFF7ED;color:var(--amazon-700);
+  display:flex;align-items:center;justify-content:center;font-size:20px;margin-bottom:14px}
+/* ===== 02 Como funciona ===== */
+.passos{display:grid;grid-template-columns:repeat(3,1fr);gap:24px;counter-reset:p}
+.passo{position:relative;padding-top:8px}
+.passo::before{counter-increment:p;content:counter(p,decimal-leading-zero);
+  font-size:13px;font-weight:800;color:var(--primary);display:block;margin-bottom:8px}
+.passo h3{font-size:17px}
+.passo p{font-size:14px;margin:0}
+@media(max-width:860px){.problemas,.passos{grid-template-columns:1fr}}
