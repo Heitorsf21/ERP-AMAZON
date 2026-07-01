@@ -17,14 +17,14 @@ Website: https://atlasseller.mundofs.cloud
 Where each requested item is addressed:
 
 - **Features and analytical services (Brand Analytics role):** the "Recursos / Marketplace
-  Analytics" section (https://atlasseller.mundofs.cloud#analytics) describes the marketplace analytics we surface to
+  Analytics" section (https://atlasseller.mundofs.cloud/#analytics) describes the marketplace analytics we surface to
   sellers — traffic and conversion metrics by SKU and by day (sessions, page views, unit
   session conversion rate), Buy Box percentage, and insights into how customers discover
   and purchase products. This aligns directly with the Brand Analytics role we requested.
 - **Other features:** profitability per order (Amazon referral, FBA, installments, freight,
   tax, cost and margin), advertising optimization (ACOS/ROAS/CTR/CPC), Buy Box monitoring,
   financial management and inventory coverage.
-- **Pricing:** clearly displayed at https://atlasseller.mundofs.cloud#precos — three monthly plans (Starter R$ 89.99,
+- **Pricing:** clearly displayed at https://atlasseller.mundofs.cloud/#precos — three monthly plans (Starter R$ 89.99,
   Pro R$ 159.99, Scale R$ 219.99).
 - **Privacy policy:** https://atlasseller.mundofs.cloud/privacidade.html — covers how data is collected, used, stored,
   protected, shared and deleted, in compliance with the LGPD and Amazon's Data Protection
