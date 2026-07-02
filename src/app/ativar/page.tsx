@@ -5,7 +5,7 @@ export const dynamic = "force-dynamic";
 export default async function Page({
   searchParams,
 }: {
-  searchParams: Promise<{ session_id?: string }>;
+  searchParams: Promise<{ session_id?: string; payment_intent?: string }>;
 }) {
   const sp = await searchParams;
   return (
@@ -18,7 +18,7 @@ export default async function Page({
         padding: 24,
       }}
     >
-      <AtivarClient sessionId={sp.session_id ?? ""} />
+      <AtivarClient sessionId={sp.session_id ?? ""} paymentIntentId={sp.payment_intent ?? ""} />
     </div>
   );
 }

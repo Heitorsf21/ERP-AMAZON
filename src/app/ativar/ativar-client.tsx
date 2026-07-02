@@ -6,13 +6,19 @@ type Fase = "validando" | "processando" | "ja-ativo" | "nao-pago" | "erro";
 const MAX_TENTATIVAS = 10; // ~30s de espera pelo webhook
 const INTERVALO_MS = 3000;
 
-export function AtivarClient({ sessionId }: { sessionId: string }) {
+export function AtivarClient({
+  sessionId,
+  paymentIntentId,
+}: {
+  sessionId: string;
+  paymentIntentId: string;
+}) {
   const [fase, setFase] = useState<Fase>("validando");
   const tentativas = useRef(0);
   const timeoutId = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    if (!sessionId) {
+    if (!sessionId && !paymentIntentId) {
       setFase("erro");
       return;
     }
@@ -23,7 +29,7 @@ export function AtivarClient({ sessionId }: { sessionId: string }) {
         const res = await fetch("/api/checkout-publico/ativar", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ sessionId }),
+          body: JSON.stringify(sessionId ? { sessionId } : { paymentIntentId }),
         });
         if (cancelado) return;
 
@@ -65,7 +71,7 @@ export function AtivarClient({ sessionId }: { sessionId: string }) {
       cancelado = true;
       if (timeoutId.current) clearTimeout(timeoutId.current);
     };
-  }, [sessionId]);
+  }, [sessionId, paymentIntentId]);
 
   const estilos: React.CSSProperties = {
     width: 380,
