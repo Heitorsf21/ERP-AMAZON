@@ -77,7 +77,10 @@ function initPricing(){
       b.classList.toggle('active',active);
       b.setAttribute('aria-pressed',String(active));
     });
-    document.querySelectorAll('.plan a[data-plan]').forEach(a=>a.dataset.period=p);
+    document.querySelectorAll('.plan a[data-plan]').forEach(a=>{
+      a.dataset.period=p;
+      a.href='checkout.html?plano='+a.dataset.plan+'&ciclo='+p;
+    });
   }
   toggle.querySelectorAll('button').forEach(b=>b.addEventListener('click',()=>apply(b.dataset.period)));
   apply('mensal');
