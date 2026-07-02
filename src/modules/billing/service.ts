@@ -319,9 +319,13 @@ export async function processarEventoStripe(event: Stripe.Event): Promise<void> 
     }
     case "invoice.paid": {
       const invoice = event.data.object as Stripe.Invoice;
+      // API dahlia moveu a subscription da invoice para parent.subscription_details;
+      // mantemos o campo legado como fallback para eventos antigos re-entregues.
+      const legado = (invoice as Stripe.Invoice & {
+        subscription?: string | Stripe.Subscription | null;
+      }).subscription;
       const subscriptionId = stringId(
-        (invoice as Stripe.Invoice & { subscription?: string | Stripe.Subscription | null })
-          .subscription,
+        invoice.parent?.subscription_details?.subscription ?? legado ?? null,
       );
       if (subscriptionId) {
         const subscription = await stripe.subscriptions.retrieve(subscriptionId);

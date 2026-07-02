@@ -199,7 +199,11 @@ describe("processarEventoStripe / invoice.paid", () => {
       data: {
         object: {
           id: "in_1",
-          subscription: subscriptionId,
+          parent: {
+            subscription_details: {
+              subscription: subscriptionId,
+            },
+          },
         },
       },
     } as unknown as Stripe.Event;
@@ -238,6 +242,31 @@ describe("processarEventoStripe / invoice.paid", () => {
 
     expect(provisionarEmpresaDoCustomer).not.toHaveBeenCalled();
     expect(stripeMock.customers.retrieve).not.toHaveBeenCalled();
+    expect(dbMock.empresa.updateMany).toHaveBeenCalled();
+  });
+
+  it("aplica a assinatura via fallback legado quando a invoice não tem parent.subscription_details (evento antigo re-entregue)", async () => {
+    stripeMock.subscriptions.retrieve.mockResolvedValue({
+      id: "sub_1",
+      customer: "cus_1",
+      status: "active",
+      items: { data: [{ price: { id: "price_1" } }] },
+      metadata: { empresaId: "emp_1", plano: "pro", ciclo: "mensal" },
+    });
+
+    const eventoLegado = {
+      type: "invoice.paid",
+      data: {
+        object: {
+          id: "in_1",
+          subscription: "sub_1",
+        },
+      },
+    } as unknown as Stripe.Event;
+
+    await processarEventoStripe(eventoLegado);
+
+    expect(stripeMock.subscriptions.retrieve).toHaveBeenCalledWith("sub_1");
     expect(dbMock.empresa.updateMany).toHaveBeenCalled();
   });
 });
