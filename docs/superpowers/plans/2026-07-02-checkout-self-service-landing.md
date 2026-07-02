@@ -2158,7 +2158,7 @@ Pré-requisitos iguais à Task 11 original (`.env` completo com os 12 price IDs 
 1. **Fontes**: adicionar os 4 `@font-face` Inter (400/600/700/800) apontando para `assets/fonts/Inter-{Regular,SemiBold,Bold,ExtraBold}.woff2` (existentes) no topo do styles.css portado; `font-display:swap`.
 2. **Head/SEO**: portar do index ATUAL → canonical, OG/Twitter metas, favicon existente, e os 3 blocos JSON-LD (Organization, SoftwareApplication com offers, FAQPage — atualizar as perguntas do FAQPage para as 6 do V5). `<link rel="stylesheet" href="styles.css?v=7">`.
 3. **CTAs dos planos**: "Começar"/mailto → **"Contratar"** com `href="checkout.html?plano={starter|pro|scale}&ciclo=mensal"` + `data-plan`; no app.js, a função de pricing atualiza os 3 hrefs com o ciclo ativo (mesma mecânica da Task 9). Manter os demais CTAs ("Agendar demo") como mailto **admfsmundo@gmail.com** (e-mail real em uso — NÃO contato@mundofs.com.br).
-4. **Descontos**: anual = **0.20 / "Economize 20% pagando uma vez ao ano"** (V5 diz 15% — DIVERGÊNCIA DELIBERADA: precisa bater com os prices reais do Stripe e com o checkout). Trimestral 5% e semestral 10% ficam.
+4. **Descontos**: anual = **0.15 / "Economize 15% pagando uma vez ao ano"** (decisão do Heitor 2026-07-02; novos prices anuais criados no Stripe test: Starter `price_1TolPNKMqHJ7jzJdfEAOarlJ` R$ 917,90 · Pro `price_1TolPOKMqHJ7jzJdPh0VOilu` R$ 1.631,90 · Scale `price_1TolPPKMqHJ7jzJdm8G1eSX2` R$ 2.243,90). Trimestral 5% e semestral 10% ficam — igual ao V5.
 5. **Vídeos**: hero usa `assets/demo.mp4` (copiado do handoff, 2.1MB). Grade `#videos` mantém os 4 `assets/videos/*.mp4` ausentes → fallback visual do próprio V5 (JS `.no-src`) fica ativo até exportarem os clipes.
 6. **Footer**: link "Contato" → `contato.html` (não mailto); manter disclaimer Amazon obrigatório; Política/Termos apontam para as páginas ATUAIS (não substituí-las — as do V5 exigem revisão jurídica).
 7. **WhatsApp flutuante**: manter `wa.me/551151085002` do design (CONFIRMAR número com o Heitor antes do deploy — anotar no report).
@@ -2173,6 +2173,8 @@ Pré-requisitos iguais à Task 11 original (`.env` completo com os 12 price IDs 
 **Files:** Modify `landing-atlas/checkout.html` (+`checkout.js` se necessário).
 
 1. Atualizar `styles.css?v=6`→`?v=7`.
+1b. **CICLOS do checkout.js**: `anual: [12, .20, '/ano']` → `[12, .15, '/ano']` (novos prices de 15%; conferir que o resumo exibe R$ 1.631,90 p/ Pro anual).
+1c. **.env local**: trocar os 3 `STRIPE_PRICE_*_ANUAL` pelos price IDs novos (fazer só APÓS o E2E da Task 17 concluir — o dev server do E2E usa os antigos).
 2. Substituir o header antigo (`.nav`/`.brand` com SVG bússola) pelo header novo do V5 (logo 10 listras SVG inline + wordmark; sem a nav completa — só "Voltar aos planos" → `index.html#precos`).
 3. Conferir classes usadas que não existem mais no styles novo (ex.: `.eyebrow`) e cobrir no `<style>` local da página (prefixo ck-) sem tocar styles.css.
 4. Ajustar tokens locais se algum usado sumiu (--radius-sm etc. — conferir `:root` novo; cobrir com fallback local).

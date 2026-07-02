@@ -154,13 +154,13 @@ Em `processarEventoStripe` (`src/modules/billing/service.ts`), no case
 - Price IDs test mode (já criados no dashboard):
   - Starter: mensal `price_1ToRkVKMqHJ7jzJduKUTpEB6` · trimestral
     `price_1ToRmQKMqHJ7jzJdOngcIfAa` · semestral `price_1ToRmQKMqHJ7jzJdmwPQkNLb` ·
-    anual `price_1ToRmQKMqHJ7jzJdnTkiEkwi`
+    anual `price_1TolPNKMqHJ7jzJdfEAOarlJ` (15% — R$ 917,90; antigo 20% price_1ToRmQKMqHJ7jzJdnTkiEkwi descontinuado)
   - Pro: mensal `price_1ToRniKMqHJ7jzJd5GEPrRJK` · trimestral
     `price_1ToRniKMqHJ7jzJd1AwLhrOP` · semestral `price_1ToRniKMqHJ7jzJd5e97eRM9` ·
-    anual `price_1ToRniKMqHJ7jzJd08baH3a6`
+    anual `price_1TolPOKMqHJ7jzJdPh0VOilu` (15% — R$ 1.631,90; antigo price_1ToRniKMqHJ7jzJd08baH3a6 descontinuado)
   - Scale: mensal `price_1ToRnyKMqHJ7jzJdJJf6q9Hc` · trimestral
     `price_1ToRoXKMqHJ7jzJd6nhCrcrj` · semestral `price_1ToRoXKMqHJ7jzJdyIw7LO47` ·
-    anual `price_1ToRoXKMqHJ7jzJd01EDAfMb`
+    anual `price_1TolPPKMqHJ7jzJdm8G1eSX2` (15% — R$ 2.243,90; antigo price_1ToRoXKMqHJ7jzJd01EDAfMb descontinuado)
 - Webhook local para teste: `stripe listen --forward-to localhost:3000/api/stripe/webhook`.
 - **Sem migration**: nenhum campo novo no schema (tudo já existe de `6f2fc8b`).
 
