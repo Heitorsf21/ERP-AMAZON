@@ -7,13 +7,20 @@ import {
   BarChart3,
   Coins,
   DollarSign,
+  Info,
   PercentSquare,
   TrendingUp,
   Upload,
+  Zap,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/page-header";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { FiltroPeriodo, type FiltroPeriodoValue } from "@/components/ui/filtro-periodo";
@@ -34,10 +41,7 @@ import { DialogImportarCsv } from "@/components/publicidade/dialog-importar-csv"
 import { FunilConversao } from "@/components/publicidade/funil-conversao";
 import { GastoManualSection } from "@/components/publicidade/gasto-manual-section";
 import { GraficoTimelineAds } from "@/components/publicidade/grafico-timeline-ads";
-import {
-  KpiCard,
-  type DeltaPolaridade,
-} from "@/components/publicidade/kpi-card";
+import { KpiCard } from "@/components/publicidade/kpi-card";
 import {
   TabelaCampanhas,
   type CampanhaTabela,
@@ -135,16 +139,14 @@ export default function PublicidadePage() {
 
   const classifAcos = classificarAcos(data?.acosGeral ?? null);
   const origemInfo = data?.origem ? BADGE_ORIGEM[data.origem] : null;
+  const totalCampanhas = data?.campanhas.length ?? 0;
 
   return (
     <div className="flex flex-col gap-6 p-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <PageHeader
-          title="Publicidade Amazon Ads"
-          description={
-            origemInfo?.descricao ??
-            "Análise de campanhas, ACoS, ROAS e TACoS."
-          }
+          title="Publicidade"
+          description="Amazon Ads — desempenho de campanhas e investimento por produto."
         />
         {origemInfo && (
           <span
@@ -163,9 +165,6 @@ export default function PublicidadePage() {
       <div className="flex flex-wrap items-center gap-3">
         <FiltroPeriodo value={filtro} onChange={setFiltro} />
         <div className="ml-auto flex flex-wrap gap-2">
-          <Button asChild variant="outline" size="sm">
-            <Link href="/publicidade/otimizador">Otimizador Ads</Link>
-          </Button>
           <Button
             variant="outline"
             size="sm"
@@ -174,10 +173,16 @@ export default function PublicidadePage() {
             <Upload className="mr-2 h-4 w-4" />
             Importar CSV
           </Button>
+          <Button asChild size="sm">
+            <Link href="/publicidade/otimizador">
+              <Zap className="mr-2 h-4 w-4" />
+              Otimizador
+            </Link>
+          </Button>
         </div>
       </div>
 
-      {/* KPIs */}
+      {/* KPIs — padrão do Dashboard (barra lateral âmbar = categoria ads) */}
       {isLoading ? (
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-5">
           {[...Array(5)].map((_, i) => (
@@ -233,27 +238,46 @@ export default function PublicidadePage() {
         </div>
       )}
 
-      {/* Funil */}
-      {!isLoading && (
-        <FunilConversao
-          impressoes={totals.impressoes}
-          cliques={totals.cliques}
-          pedidos={totals.pedidos}
-          vendasCentavos={data?.totalVendas ?? 0}
-          gastoCentavos={data?.totalGasto ?? 0}
-        />
+      {/* Sinais de atenção — strip acionável logo abaixo dos KPIs */}
+      {!isLoading && data?.campanhas && (
+        <AlertasAds campanhas={data.campanhas} />
       )}
 
-      {/* Timeline */}
-      <GraficoTimelineAds de={periodo.de} ate={periodo.ate} />
+      {/* Gráfico (2/3) + Funil (1/3) */}
+      <div className="grid gap-4 xl:grid-cols-3">
+        <div className="xl:col-span-2">
+          <GraficoTimelineAds de={periodo.de} ate={periodo.ate} />
+        </div>
+        {isLoading ? (
+          <Skeleton className="h-72 rounded-lg" />
+        ) : (
+          <FunilConversao
+            impressoes={totals.impressoes}
+            cliques={totals.cliques}
+            pedidos={totals.pedidos}
+            vendasCentavos={data?.totalVendas ?? 0}
+            gastoCentavos={data?.totalGasto ?? 0}
+          />
+        )}
+      </div>
 
       {/* Tabs com as três visões */}
       <Tabs defaultValue="campanhas" className="w-full">
-        <TabsList>
-          <TabsTrigger value="campanhas">Campanhas</TabsTrigger>
-          <TabsTrigger value="por-sku">Por SKU</TabsTrigger>
-          <TabsTrigger value="manual">Gasto manual</TabsTrigger>
-        </TabsList>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <TabsList>
+            <TabsTrigger value="campanhas">
+              Campanhas
+              {totalCampanhas > 0 && (
+                <span className="ml-1.5 text-muted-foreground">
+                  {totalCampanhas}
+                </span>
+              )}
+            </TabsTrigger>
+            <TabsTrigger value="por-sku">Por SKU</TabsTrigger>
+            <TabsTrigger value="manual">Gasto manual</TabsTrigger>
+          </TabsList>
+          <EscalaAcosPopover />
+        </div>
         <TabsContent value="campanhas" className="mt-4">
           <Card>
             <CardContent className="pt-6">
@@ -284,53 +308,54 @@ export default function PublicidadePage() {
         </TabsContent>
       </Tabs>
 
-      {/* Alertas */}
-      {!isLoading && data?.campanhas && (
-        <AlertasAds campanhas={data.campanhas} />
-      )}
-
-      {/* Legenda ACoS */}
-      <Card>
-        <CardContent className="pt-6">
-          <p className="mb-2 text-xs uppercase tracking-wide text-muted-foreground">
-            Escala de ACoS
-          </p>
-          <div className="flex flex-wrap gap-2 text-xs">
-            {FAIXAS_ACOS.map((f) => {
-              const ref = classificarAcos(
-                f.label === "Excelente"
-                  ? 10
-                  : f.label === "Bom"
-                    ? 20
-                    : f.label === "Atenção"
-                      ? 30
-                      : f.label === "Alto"
-                        ? 45
-                        : 60,
-              );
-              return (
-                <div key={f.label} className="flex items-center gap-1">
-                  <span
-                    className={cn(
-                      "rounded px-1.5 py-0.5 font-medium",
-                      ref.classe,
-                    )}
-                  >
-                    {f.label}
-                  </span>
-                  <span className="text-muted-foreground">{f.range}</span>
-                </div>
-              );
-            })}
-          </div>
-        </CardContent>
-      </Card>
-
       <DialogImportarCsv
         open={importDialogOpen}
         onOpenChange={setImportDialogOpen}
         periodoInicial={periodo}
       />
     </div>
+  );
+}
+
+/** A escala de faixas saiu do card no rodapé e virou este popover ⓘ. */
+function EscalaAcosPopover() {
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-8 gap-1.5 text-muted-foreground"
+          aria-label="Escala de ACoS"
+        >
+          <Info className="h-3.5 w-3.5" />
+          Escala de ACoS
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align="end" className="w-64">
+        <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          Escala de ACoS
+        </p>
+        <div className="space-y-1.5 text-xs">
+          {FAIXAS_ACOS.map((f) => {
+            const ref = classificarAcos(f.ref);
+            return (
+              <div key={f.label} className="flex items-center justify-between gap-2">
+                <span
+                  className={cn(
+                    "rounded px-1.5 py-0.5 font-medium",
+                    ref.classe,
+                  )}
+                >
+                  {f.label}
+                </span>
+                <span className="text-muted-foreground">{f.range}</span>
+                <span className="ml-auto text-muted-foreground/80">{ref.acao}</span>
+              </div>
+            );
+          })}
+        </div>
+      </PopoverContent>
+    </Popover>
   );
 }

@@ -48,10 +48,12 @@ export function classificarAcos(acos: number | null | undefined): ClassAcoS {
   };
 }
 
+// `ref` é um valor representativo da faixa — permite obter as classes via
+// classificarAcos(ref) sem espalhar números mágicos pelos consumidores.
 export const FAIXAS_ACOS = [
-  { range: "< 15%", label: "Excelente" },
-  { range: "15–25%", label: "Bom" },
-  { range: "25–35%", label: "Atenção" },
-  { range: "35–50%", label: "Alto" },
-  { range: "≥ 50%", label: "Crítico" },
+  { range: "< 15%", label: "Excelente", ref: 10 },
+  { range: "15–25%", label: "Bom", ref: 20 },
+  { range: "25–35%", label: "Atenção", ref: 30 },
+  { range: "35–50%", label: "Alto", ref: 45 },
+  { range: "≥ 50%", label: "Crítico", ref: 60 },
 ] as const;

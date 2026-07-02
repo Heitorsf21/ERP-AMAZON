@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mockup — Publicidade (redesign)</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+tailwind.config = {
+  darkMode: 'class',
+  theme: { extend: {
+    colors: {
+      background: 'hsl(var(--background))', foreground: 'hsl(var(--foreground))',
+      muted: 'hsl(var(--muted))', 'muted-foreground': 'hsl(var(--muted-foreground))',
+      card: 'hsl(var(--card))', border: 'hsl(var(--border))',
+      primary: 'hsl(var(--primary))', success: 'hsl(var(--success))',
+      warning: 'hsl(var(--warning))', destructive: 'hsl(var(--destructive))',
+    },
+    borderRadius: { lg: 'var(--radius)', md: 'calc(var(--radius) - 2px)' },
+  } }
+}
+</script>
+<style>
+:root {
+  --background: 0 0% 98%; --foreground: 224 71% 4%;
+  --muted: 220 14% 96%; --muted-foreground: 220 9% 46%;
+  --card: 0 0% 100%; --border: 220 13% 91%;
+  --primary: 221 83% 53%; --success: 142 76% 36%;
+  --warning: 38 92% 50%; --destructive: 0 72% 51%;
+  --radius: 0.625rem;
+}
+.dark {
+  --background: 224 71% 4%; --foreground: 210 20% 98%;
+  --muted: 222 47% 11%; --muted-foreground: 215 16% 57%;
+  --card: 224 71% 6%; --border: 222 47% 13%;
+  --primary: 221 83% 58%; --success: 142 70% 40%;
+  --warning: 38 85% 50%; --destructive: 0 62% 50%;
+}
+body { background: hsl(var(--background)); color: hsl(var(--foreground)); }
+.tabnum { font-variant-numeric: tabular-nums; }
+</style>
+</head>
+<body class="antialiased">
+
+<!-- Topbar fake -->
+<header class="border-b border-border bg-card">
+  <div class="max-w-7xl mx-auto px-6 h-14 flex items-center justify-between">
+    <div class="flex items-center gap-2 font-semibold"><span class="text-primary">◆</span> Atlas Seller <span class="text-muted-foreground font-normal text-sm">/ Publicidade</span></div>
+    <button onclick="document.documentElement.classList.toggle('dark')" class="h-8 w-8 rounded-md border border-border hover:bg-muted">🌓</button>
+  </div>
+</header>
+
+<main class="max-w-7xl mx-auto px-6 py-6 space-y-5">
+
+  <!-- Page header -->
+  <div class="flex flex-wrap items-end justify-between gap-3">
+    <div>
+      <h1 class="text-2xl font-semibold tracking-tight">Publicidade</h1>
+      <p class="text-sm text-muted-foreground">Amazon Ads — desempenho de campanhas e investimento por produto.</p>
+    </div>
+    <div class="flex items-center gap-2">
+      <span class="inline-flex items-center gap-1.5 rounded-full border border-emerald-300 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400 px-2.5 py-0.5 text-xs font-semibold">● Sync API</span>
+      <button class="h-9 px-3 rounded-md border border-border bg-card text-sm hover:bg-muted">📅 Mês atual</button>
+      <button class="h-9 px-3 rounded-md border border-border bg-card text-sm hover:bg-muted">⇪ Importar CSV</button>
+      <button class="h-9 px-3 rounded-md bg-primary text-white text-sm font-medium hover:opacity-90">⚡ Otimizador</button>
+    </div>
+  </div>
+
+  <!-- KPIs hero: barra lateral âmbar (categoria ads), padrão do Dashboard -->
+  <section class="grid gap-4 grid-cols-2 xl:grid-cols-5">
+    <div class="bg-card border border-border rounded-lg p-5 relative overflow-hidden hover:shadow-md transition-shadow">
+      <div class="absolute left-0 top-0 bottom-0 w-1 bg-amber-500"></div>
+      <div class="flex items-start justify-between">
+        <p class="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Investido</p>
+        <div class="h-9 w-9 rounded-md bg-amber-500/10 text-amber-600 dark:text-amber-400 grid place-items-center">💰</div>
+      </div>
+      <p class="text-2xl xl:text-3xl font-bold tabnum mt-1">R$ 2.418,60</p>
+      <p class="text-xs mt-2"><span class="text-red-600 dark:text-red-400 font-medium">▲ 8,2%</span> <span class="text-muted-foreground">vs. período anterior</span></p>
+    </div>
+    <div class="bg-card border border-border rounded-lg p-5 relative overflow-hidden hover:shadow-md transition-shadow">
+      <div class="absolute left-0 top-0 bottom-0 w-1 bg-amber-500"></div>
+      <div class="flex items-start justify-between">
+        <p class="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Vendas atribuídas</p>
+        <div class="h-9 w-9 rounded-md bg-amber-500/10 text-amber-600 dark:text-amber-400 grid place-items-center">🛒</div>
+      </div>
+      <p class="text-2xl xl:text-3xl font-bold tabnum mt-1">R$ 11.842,00</p>
+      <p class="text-xs mt-2"><span class="text-emerald-600 dark:text-emerald-400 font-medium">▲ 14,6%</span> <span class="text-muted-foreground">vs. período anterior</span></p>
+    </div>
+    <div class="bg-card border border-border rounded-lg p-5 relative overflow-hidden hover:shadow-md transition-shadow">
+      <div class="absolute left-0 top-0 bottom-0 w-1 bg-amber-500"></div>
+      <div class="flex items-start justify-between">
+        <p class="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">ACoS</p>
+        <div class="h-9 w-9 rounded-md bg-amber-500/10 text-amber-600 dark:text-amber-400 grid place-items-center">%</div>
+      </div>
+      <div class="flex items-baseline gap-2 mt-1">
+        <p class="text-2xl xl:text-3xl font-bold tabnum">20,4%</p>
+        <span class="rounded-full bg-emerald-600 text-white text-[10px] font-semibold px-2 py-0.5">Bom</span>
+      </div>
+      <p class="text-xs mt-2"><span class="text-emerald-600 dark:text-emerald-400 font-medium">▼ 1,1pp</span> <span class="text-muted-foreground">vs. período anterior</span></p>
+    </div>
+    <div class="bg-card border border-border rounded-lg p-5 relative overflow-hidden hover:shadow-md transition-shadow">
+      <div class="absolute left-0 top-0 bottom-0 w-1 bg-amber-500"></div>
+      <div class="flex items-start justify-between">
+        <p class="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">ROAS</p>
+        <div class="h-9 w-9 rounded-md bg-amber-500/10 text-amber-600 dark:text-amber-400 grid place-items-center">📈</div>
+      </div>
+      <p class="text-2xl xl:text-3xl font-bold tabnum mt-1">4,9×</p>
+      <p class="text-xs mt-2"><span class="text-emerald-600 dark:text-emerald-400 font-medium">▲ 0,3</span> <span class="text-muted-foreground">vs. período anterior</span></p>
+    </div>
+    <div class="bg-card border border-border rounded-lg p-5 relative overflow-hidden hover:shadow-md transition-shadow">
+      <div class="absolute left-0 top-0 bottom-0 w-1 bg-amber-500"></div>
+      <div class="flex items-start justify-between">
+        <p class="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">TACoS</p>
+        <div class="h-9 w-9 rounded-md bg-amber-500/10 text-amber-600 dark:text-amber-400 grid place-items-center">🎯</div>
+      </div>
+      <p class="text-2xl xl:text-3xl font-bold tabnum mt-1">6,8%</p>
+      <p class="text-xs mt-2"><span class="text-muted-foreground">— estável</span></p>
+    </div>
+  </section>
+
+  <!-- Sinais de atenção: SOBE para logo abaixo dos KPIs (hoje fica no rodapé) -->
+  <section class="rounded-lg border border-amber-200 dark:border-amber-900/50 bg-amber-50 dark:bg-amber-950/30 px-4 py-3">
+    <div class="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
+      <span class="font-semibold text-amber-800 dark:text-amber-300">⚠ Sinais de atenção</span>
+      <span class="text-amber-800/90 dark:text-amber-200/90"><b class="tabnum">3</b> campanhas com ACoS &gt; 30%</span>
+      <span class="text-amber-800/90 dark:text-amber-200/90"><b class="tabnum">1</b> campanha com ROAS &lt; 2</span>
+      <span class="text-amber-800/90 dark:text-amber-200/90"><b class="tabnum">2</b> com conversão &lt; 1%</span>
+      <a href="otimizador-redesign.html" class="ml-auto text-amber-900 dark:text-amber-200 font-medium underline underline-offset-2">Resolver no Otimizador →</a>
+    </div>
+  </section>
+
+  <!-- Gráfico (2/3) + Funil (1/3) -->
+  <section class="grid gap-4 xl:grid-cols-3">
+    <div class="xl:col-span-2 bg-card border border-border rounded-lg p-5">
+      <div class="flex items-center justify-between mb-1">
+        <div>
+          <h2 class="text-base font-semibold">Investimento × Vendas × ACoS</h2>
+          <p class="text-xs text-muted-foreground">Hoje o gráfico só mostra ACoS/ROAS — investimento e receita passam a ser séries visíveis.</p>
+        </div>
+        <div class="flex items-center gap-3 text-xs text-muted-foreground">
+          <span class="flex items-center gap-1.5"><span class="h-2.5 w-2.5 rounded-sm bg-amber-500"></span>Investido</span>
+          <span class="flex items-center gap-1.5"><span class="h-2.5 w-2.5 rounded-full bg-emerald-500"></span>Vendas</span>
+          <span class="flex items-center gap-1.5"><span class="h-0.5 w-3 bg-red-500"></span>ACoS</span>
+        </div>
+      </div>
+      <!-- chart estático ilustrativo -->
+      <svg viewBox="0 0 640 220" class="w-full mt-3">
+        <g stroke="hsl(var(--border))" stroke-dasharray="3 3"><line x1="40" y1="40" x2="620" y2="40"/><line x1="40" y1="90" x2="620" y2="90"/><line x1="40" y1="140" x2="620" y2="140"/><line x1="40" y1="190" x2="620" y2="190"/></g>
+        <!-- barras investimento -->
+        <g fill="#f59e0b" opacity="0.85">
+          <rect x="60" y="150" width="22" height="40" rx="3"/><rect x="130" y="140" width="22" height="50" rx="3"/><rect x="200" y="155" width="22" height="35" rx="3"/><rect x="270" y="130" width="22" height="60" rx="3"/><rect x="340" y="145" width="22" height="45" rx="3"/><rect x="410" y="120" width="22" height="70" rx="3"/><rect x="480" y="135" width="22" height="55" rx="3"/><rect x="550" y="125" width="22" height="65" rx="3"/>
+        </g>
+        <!-- área vendas -->
+        <path d="M71 120 L141 100 L211 118 L281 84 L351 96 L421 62 L491 80 L561 58 L561 190 L71 190 Z" fill="#10b981" opacity="0.12"/>
+        <path d="M71 120 L141 100 L211 118 L281 84 L351 96 L421 62 L491 80 L561 58" fill="none" stroke="#10b981" stroke-width="2.5"/>
+        <!-- linha ACoS -->
+        <path d="M71 95 L141 105 L211 88 L281 100 L351 92 L421 108 L491 98 L561 104" fill="none" stroke="#ef4444" stroke-width="2" stroke-dasharray="5 3"/>
+        <g font-size="10" fill="hsl(var(--muted-foreground))"><text x="60" y="208">01/07</text><text x="200" y="208">08/07</text><text x="340" y="208">15/07</text><text x="480" y="208">22/07</text><text x="560" y="208">29/07</text></g>
+      </svg>
+    </div>
+
+    <!-- Funil vertical compacto no rail -->
+    <div class="bg-card border border-border rounded-lg p-5">
+      <h2 class="text-base font-semibold mb-3">Funil de conversão</h2>
+      <div class="space-y-2.5">
+        <div class="rounded-md border border-border bg-muted/40 px-3 py-2.5 flex items-center justify-between">
+          <span class="text-xs text-muted-foreground">Impressões</span><span class="font-semibold tabnum">184.220</span>
+        </div>
+        <div class="pl-3 text-[11px] text-muted-foreground">↓ CTR 0,42%</div>
+        <div class="rounded-md border border-border bg-muted/40 px-3 py-2.5 flex items-center justify-between">
+          <span class="text-xs text-muted-foreground">Cliques</span><span class="font-semibold tabnum">774</span>
+        </div>
+        <div class="pl-3 text-[11px] text-muted-foreground">↓ Conversão 9,4%</div>
+        <div class="rounded-md border border-border bg-muted/40 px-3 py-2.5 flex items-center justify-between">
+          <span class="text-xs text-muted-foreground">Pedidos</span><span class="font-semibold tabnum">73</span>
+        </div>
+        <div class="pl-3 text-[11px] text-muted-foreground">↓ Ticket médio R$ 162,20</div>
+        <div class="rounded-md border border-emerald-200 dark:border-emerald-900 bg-emerald-50 dark:bg-emerald-950/30 px-3 py-2.5 flex items-center justify-between">
+          <span class="text-xs text-emerald-700 dark:text-emerald-400">Vendas atribuídas</span><span class="font-semibold tabnum text-emerald-700 dark:text-emerald-400">R$ 11.842,00</span>
+        </div>
+      </div>
+      <p class="mt-3 text-[11px] text-muted-foreground border-t border-border pt-2.5">CPC médio <b class="tabnum text-foreground">R$ 3,12</b></p>
+    </div>
+  </section>
+
+  <!-- Tabs com contadores + tabela mais respirada -->
+  <section class="bg-card border border-border rounded-lg">
+    <div class="px-5 pt-4 flex flex-wrap items-center justify-between gap-3">
+      <div class="inline-flex rounded-lg bg-muted p-1 text-sm">
+        <button class="px-3 py-1.5 rounded-md bg-card shadow-sm font-medium">Campanhas <span class="text-muted-foreground">12</span></button>
+        <button class="px-3 py-1.5 rounded-md text-muted-foreground hover:text-foreground">Por SKU <span>8</span></button>
+        <button class="px-3 py-1.5 rounded-md text-muted-foreground hover:text-foreground">Gasto manual</button>
+      </div>
+      <div class="flex items-center gap-2">
+        <input placeholder="Buscar campanha, SKU, ASIN…" class="h-9 w-56 rounded-md border border-border bg-background px-3 text-sm">
+        <button class="h-9 px-3 rounded-md border border-border text-sm text-muted-foreground hover:bg-muted">Filtros ▾</button>
+        <!-- Escala de ACoS vira popover aqui (sai o card do rodapé) -->
+        <button class="h-9 w-9 rounded-md border border-border text-muted-foreground hover:bg-muted" title="Escala de ACoS: <15% Excelente · 15–25% Bom · 25–35% Atenção · 35–50% Alto · ≥50% Crítico">ⓘ</button>
+      </div>
+    </div>
+    <div class="px-5 pb-5 pt-3 overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead>
+          <tr class="text-left text-[11px] uppercase tracking-wider text-muted-foreground border-b border-border">
+            <th class="py-2 pr-3 font-medium">Campanha</th>
+            <th class="py-2 px-3 font-medium text-right">Investido</th>
+            <th class="py-2 px-3 font-medium text-right">Vendas</th>
+            <th class="py-2 px-3 font-medium text-right">ACoS</th>
+            <th class="py-2 px-3 font-medium text-right">ROAS</th>
+            <th class="py-2 px-3 font-medium text-right">Cliques → Pedidos</th>
+            <th class="py-2 pl-3 font-medium text-right">CPC</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-border">
+          <tr class="hover:bg-muted/40">
+            <td class="py-2.5 pr-3"><div class="font-medium">SP • Garrafa Térmica 1L — Auto</div><div class="text-[11px] text-muted-foreground">MFS-0012 · B0ABC1234</div></td>
+            <td class="py-2.5 px-3 text-right tabnum">R$ 612,40</td>
+            <td class="py-2.5 px-3 text-right tabnum">R$ 3.480,00</td>
+            <td class="py-2.5 px-3 text-right tabnum font-semibold text-emerald-600 dark:text-emerald-400">17,6%</td>
+            <td class="py-2.5 px-3 text-right tabnum">5,7×</td>
+            <td class="py-2.5 px-3 text-right tabnum text-muted-foreground">214 → 24</td>
+            <td class="py-2.5 pl-3 text-right tabnum">R$ 2,86</td>
+          </tr>
+          <tr class="hover:bg-muted/40">
+            <td class="py-2.5 pr-3"><div class="font-medium">SP • Kit Potes Herméticos — Exata</div><div class="text-[11px] text-muted-foreground">MFS-0027 · B0DEF5678</div></td>
+            <td class="py-2.5 px-3 text-right tabnum">R$ 488,10</td>
+            <td class="py-2.5 px-3 text-right tabnum">R$ 2.140,00</td>
+            <td class="py-2.5 px-3 text-right tabnum font-semibold text-amber-600 dark:text-amber-400">22,8%</td>
+            <td class="py-2.5 px-3 text-right tabnum">4,4×</td>
+            <td class="py-2.5 px-3 text-right tabnum text-muted-foreground">163 → 15</td>
+            <td class="py-2.5 pl-3 text-right tabnum">R$ 2,99</td>
+          </tr>
+          <tr class="hover:bg-muted/40">
+            <td class="py-2.5 pr-3"><div class="font-medium">SP • Organizador Inox — Auto</div><div class="text-[11px] text-muted-foreground">MFS-0035 · B0GHI9012</div></td>
+            <td class="py-2.5 px-3 text-right tabnum">R$ 402,00</td>
+            <td class="py-2.5 px-3 text-right tabnum">R$ 980,00</td>
+            <td class="py-2.5 px-3 text-right tabnum font-semibold text-red-600 dark:text-red-400">41,0%</td>
+            <td class="py-2.5 px-3 text-right tabnum">2,4×</td>
+            <td class="py-2.5 px-3 text-right tabnum text-muted-foreground">142 → 8</td>
+            <td class="py-2.5 pl-3 text-right tabnum">R$ 2,83</td>
+          </tr>
+        </tbody>
+      </table>
+      <p class="mt-3 text-[11px] text-muted-foreground">Mostrando 3 de 12 · <button class="underline underline-offset-2">4 campanhas sem gasto ocultas</button></p>
+    </div>
+  </section>
+
+  <p class="text-xs text-muted-foreground pb-8">Mockup estático — dados ilustrativos. Toggle 🌓 no topo testa o dark mode.</p>
+</main>
+</body>
+</html>

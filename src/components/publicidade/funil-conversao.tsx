@@ -1,13 +1,6 @@
 "use client";
 
-import {
-  Eye,
-  MousePointerClick,
-  ShoppingBag,
-  DollarSign,
-  ChevronRight,
-} from "lucide-react";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatBRL } from "@/lib/money";
 
 type FunilProps = {
@@ -27,6 +20,8 @@ function fmtPct(num: number, den: number): string {
   return `${((num / den) * 100).toFixed(2)}%`;
 }
 
+// Funil vertical compacto — desenhado para o rail lateral do gráfico
+// (grid 2/3 + 1/3 da página de Publicidade).
 export function FunilConversao({
   impressoes,
   cliques,
@@ -40,86 +35,57 @@ export function FunilConversao({
     pedidos > 0 ? Math.round(vendasCentavos / pedidos) : null;
 
   return (
-    <Card>
-      <CardContent className="py-4">
-        <p className="mb-3 text-xs uppercase tracking-wide text-muted-foreground">
-          Funil de conversão
-        </p>
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-[1fr_auto_1fr_auto_1fr_auto_1fr]">
-          <Etapa
-            icon={Eye}
-            label="Impressões"
-            valor={fmtNum(impressoes)}
-            metrica={null}
-          />
-          <Seta />
-          <Etapa
-            icon={MousePointerClick}
-            label="Cliques"
-            valor={fmtNum(cliques)}
-            metrica={`CTR ${fmtPct(cliques, impressoes)}`}
-          />
-          <Seta />
-          <Etapa
-            icon={ShoppingBag}
-            label="Pedidos"
-            valor={fmtNum(pedidos)}
-            metrica={`Conv. ${fmtPct(pedidos, cliques)}`}
-          />
-          <Seta />
-          <Etapa
-            icon={DollarSign}
-            label="Vendas atrib."
-            valor={vendasCentavos > 0 ? formatBRL(vendasCentavos) : "—"}
+    <Card className="flex h-full flex-col">
+      <CardHeader className="pb-3">
+        <CardTitle className="text-base">Funil de conversão</CardTitle>
+      </CardHeader>
+      <CardContent className="flex flex-1 flex-col">
+        <div className="space-y-2">
+          <Etapa label="Impressões" valor={fmtNum(impressoes)} />
+          <Conector metrica={`CTR ${fmtPct(cliques, impressoes)}`} />
+          <Etapa label="Cliques" valor={fmtNum(cliques)} />
+          <Conector metrica={`Conversão ${fmtPct(pedidos, cliques)}`} />
+          <Etapa label="Pedidos" valor={fmtNum(pedidos)} />
+          <Conector
             metrica={
-              ticketCentavos != null ? `Ticket ${formatBRL(ticketCentavos)}` : null
+              ticketCentavos != null
+                ? `Ticket médio ${formatBRL(ticketCentavos)}`
+                : "Ticket médio —"
             }
           />
+          <div className="flex items-center justify-between rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2.5 dark:border-emerald-900 dark:bg-emerald-950/30">
+            <span className="text-xs text-emerald-700 dark:text-emerald-400">
+              Vendas atribuídas
+            </span>
+            <span className="font-semibold tabular-nums text-emerald-700 dark:text-emerald-400">
+              {vendasCentavos > 0 ? formatBRL(vendasCentavos) : "—"}
+            </span>
+          </div>
         </div>
-        <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
-          <span>
-            CPC médio:{" "}
-            <strong className="text-foreground tabular-nums">
-              {cpcCentavos != null ? formatBRL(cpcCentavos) : "—"}
-            </strong>
-          </span>
-        </div>
+        <p className="mt-auto border-t pt-2.5 text-[11px] text-muted-foreground">
+          CPC médio{" "}
+          <strong className="tabular-nums text-foreground">
+            {cpcCentavos != null ? formatBRL(cpcCentavos) : "—"}
+          </strong>
+        </p>
       </CardContent>
     </Card>
   );
 }
 
-function Etapa({
-  icon: Icon,
-  label,
-  valor,
-  metrica,
-}: {
-  icon: React.ComponentType<{ className?: string }>;
-  label: string;
-  valor: string;
-  metrica: string | null;
-}) {
+function Etapa({ label, valor }: { label: string; valor: string }) {
   return (
-    <div className="rounded-md border bg-card/50 px-3 py-2">
-      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-        <Icon className="h-3.5 w-3.5" />
-        {label}
-      </div>
-      <div className="mt-0.5 text-lg font-semibold tabular-nums">{valor}</div>
-      {metrica && (
-        <div className="text-[11px] text-muted-foreground tabular-nums">
-          {metrica}
-        </div>
-      )}
+    <div className="flex items-center justify-between rounded-md border bg-muted/40 px-3 py-2.5">
+      <span className="text-xs text-muted-foreground">{label}</span>
+      <span className="font-semibold tabular-nums">{valor}</span>
     </div>
   );
 }
 
-function Seta() {
+function Conector({ metrica }: { metrica: string }) {
   return (
-    <div className="hidden items-center justify-center text-muted-foreground/40 md:flex">
-      <ChevronRight className="h-5 w-5" />
+    <div className="pl-3 text-[11px] text-muted-foreground tabular-nums">
+      ↓ {metrica}
     </div>
   );
 }
