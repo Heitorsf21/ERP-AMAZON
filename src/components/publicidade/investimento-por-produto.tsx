@@ -3,7 +3,7 @@
 import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
 import { format, subDays } from "date-fns";
-import { X } from "lucide-react";
+import { Eye, X } from "lucide-react";
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -56,6 +56,10 @@ type Props = {
   onSelecionar: (sku: string | null) => void;
   /** Contagem de recomendações pendentes (PROPOSED) por SKU, vinda do snapshot. */
   recPendentesPorSku: Map<string, number>;
+  /** Contagem de ações em observação por SKU (badge 👁 na lista). */
+  obsPorSku?: Map<string, number>;
+  /** Conteúdo discreto no rodapé do card (ex: pendências sem produto). */
+  rodape?: React.ReactNode;
 };
 
 function corAcos(acos: number | null): string {
@@ -79,6 +83,8 @@ export function InvestimentoPorProduto({
   skuSelecionado,
   onSelecionar,
   recPendentesPorSku,
+  obsPorSku,
+  rodape,
 }: Props) {
   const periodo = React.useMemo(() => {
     const hoje = new Date();
@@ -325,21 +331,32 @@ export function InvestimentoPorProduto({
                           {pct}%
                         </p>
                       </div>
-                      {pendentes > 0 ? (
-                        <span className="shrink-0 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-bold tabular-nums text-primary">
-                          {pendentes} rec.
-                        </span>
-                      ) : (
-                        <span className="w-8 shrink-0 text-center text-[10px] text-muted-foreground">
-                          —
-                        </span>
-                      )}
+                      <span className="flex w-16 shrink-0 flex-col items-end gap-1">
+                        {pendentes > 0 && (
+                          <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-bold tabular-nums text-primary">
+                            {pendentes} rec.
+                          </span>
+                        )}
+                        {f.selecionavel && (obsPorSku?.get(f.sku) ?? 0) > 0 && (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-blue-500/10 px-2 py-0.5 text-[10px] font-bold tabular-nums text-blue-700 dark:text-blue-400">
+                            <Eye className="h-2.5 w-2.5" />
+                            {obsPorSku?.get(f.sku)}
+                          </span>
+                        )}
+                        {pendentes === 0 &&
+                          (!f.selecionavel || (obsPorSku?.get(f.sku) ?? 0) === 0) && (
+                            <span className="text-center text-[10px] text-muted-foreground">
+                              —
+                            </span>
+                          )}
+                      </span>
                     </button>
                   );
                 })}
               </div>
             </div>
           )}
+          {rodape}
         </CardContent>
       </Card>
 
