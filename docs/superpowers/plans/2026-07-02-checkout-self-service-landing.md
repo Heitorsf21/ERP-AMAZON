@@ -1675,3 +1675,509 @@ Qualquer correção descoberta no E2E entra em commits pequenos (`fix(...)`). N�
 - [ ] `npx eslint src/modules/billing src/app/api/checkout-publico src/app/ativar` limpo.
 - [ ] Invocar o skill `superpowers:finishing-a-development-branch` para decidir merge/PR (branch `feat/landing-atlas-seller`; lembrar: a remota homônima diverge — NÃO rebasear, avaliar PR novo).
 - [ ] Deploy (fora deste plano; exige envs live no VPS): trocar chaves live, criar produtos/prices live, `CHECKOUT_PUBLICO_ORIGEM=https://atlasseller.mundofs.cloud`, `APP_URL=https://erp.mundofs.cloud`, webhook endpoint no dashboard Stripe com `STRIPE_WEBHOOK_SECRET` de prod, e publicar `landing-atlas/` no vhost (rsync como no deploy original da landing). Conferir que o vhost Nginx da landing NÃO envia CSP que bloqueie `js.stripe.com` (script) e `*.stripe.com` (frame/connect) — risco mapeado no spec.
+
+---
+
+# APÊNDICE — Iteração 2 (aprovada 2026-07-02): Stripe Elements + visual BR
+
+> As Tasks 11 (E2E embedded) e 12 (encerramento) originais estão **SUPERSEDED** pelas
+> Tasks 17 e 18 abaixo. As Tasks 1-10 permanecem válidas como fundação: provisionamento,
+> ativação por customer, rotas públicas e a página embedded (que vira fallback).
+> Referência de visual: checkout "Hermes" aprovado pelo Heitor (banner hero, card do
+> plano rico, depoimentos ★, selos de segurança, form BR próprio).
+
+### Task 13: Service + rota pública `POST /api/checkout-publico/assinatura`
+
+**Files:**
+- Modify: `src/modules/billing/service.ts` (adicionar `criarAssinaturaPublicaLanding` após `criarCheckoutPublicoLanding`)
+- Modify: `src/modules/billing/service.test.ts` (novo describe)
+- Create: `src/app/api/checkout-publico/assinatura/route.ts`
+- Modify: `src/proxy.ts` (adicionar `/api/checkout-publico/assinatura` a PUBLIC_PATHS, junto das entradas existentes de checkout-publico)
+
+**Interfaces:**
+- Consumes: `requireStripe`, `getStripePriceId`, padrão CORS/rate-limit/try-catch da rota `sessao` (`src/app/api/checkout-publico/sessao/route.ts` é o template — lição da T6: erros levam headers CORS).
+- Produces (contrato para a Task 16):
+  - `POST /api/checkout-publico/assinatura` body `{ plano, ciclo, nome, email, cpfCnpj, celular, nomeEmpresa? }`
+  - 200 `{ clientSecret, publishableKey }` · 400 `{"erro":"CPF_CNPJ_INVALIDO"}` p/ tax_id_invalid · 400 dados inválidos · 403/429 como na rota sessao.
+
+- [ ] **Step 1: Teste do service (RED)**
+
+Adicionar em `src/modules/billing/service.test.ts` (os mocks hoisted já existem; adicionar `customers: { create: vi.fn() }` e `subscriptions: { create: vi.fn() }` ao stripeMock se ausentes):
+
+```ts
+describe("criarAssinaturaPublicaLanding", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.stubEnv("STRIPE_PRICE_PRO_MENSAL", "price_pro_mensal_test");
+    stripeMock.customers.create.mockResolvedValue({ id: "cus_9" });
+    stripeMock.subscriptions.create.mockResolvedValue({
+      id: "sub_9",
+      latest_invoice: { confirmation_secret: { client_secret: "pi_secret_9", type: "payment_intent" } },
+    });
+  });
+
+  it("cria customer BR + subscription incomplete e devolve o client_secret", async () => {
+    const secret = await criarAssinaturaPublicaLanding({
+      planId: "pro", period: "mensal",
+      nome: "Maria Silva", email: "Maria@Exemplo.com",
+      cpfCnpj: "12345678901", celular: "11999998888",
+      nomeEmpresa: "Açaí do João",
+    });
+
+    expect(secret).toBe("pi_secret_9");
+    const cust = stripeMock.customers.create.mock.calls[0]?.[0];
+    expect(cust.email).toBe("maria@exemplo.com");
+    expect(cust.phone).toBe("+5511999998888");
+    expect(cust.tax_id_data).toEqual([{ type: "br_cpf", value: "12345678901" }]);
+    expect(cust.metadata.nome_empresa).toBe("Açaí do João");
+    expect(cust.metadata.origem).toBe("landing");
+
+    const sub = stripeMock.subscriptions.create.mock.calls[0]?.[0];
+    expect(sub.customer).toBe("cus_9");
+    expect(sub.items).toEqual([{ price: "price_pro_mensal_test" }]);
+    expect(sub.payment_behavior).toBe("default_incomplete");
+    expect(sub.payment_settings).toEqual({ save_default_payment_method: "on_subscription" });
+    expect(sub.expand).toEqual(["latest_invoice.confirmation_secret"]);
+    expect(sub.metadata).toMatchObject({ origem: "landing", plano: "pro", ciclo: "mensal" });
+  });
+
+  it("usa br_cnpj para 14 dígitos e nome como fallback de nome_empresa", async () => {
+    await criarAssinaturaPublicaLanding({
+      planId: "pro", period: "mensal",
+      nome: "Loja XPTO LTDA", email: "x@y.com",
+      cpfCnpj: "12345678000199", celular: "1133334444",
+    });
+    const cust = stripeMock.customers.create.mock.calls[0]?.[0];
+    expect(cust.tax_id_data).toEqual([{ type: "br_cnpj", value: "12345678000199" }]);
+    expect(cust.metadata.nome_empresa).toBe("Loja XPTO LTDA");
+  });
+
+  it("falha claramente sem client_secret", async () => {
+    stripeMock.subscriptions.create.mockResolvedValue({ id: "sub_9", latest_invoice: { confirmation_secret: null } });
+    await expect(
+      criarAssinaturaPublicaLanding({ planId: "pro", period: "mensal", nome: "A B", email: "a@b.com", cpfCnpj: "12345678901", celular: "11999998888" }),
+    ).rejects.toThrow("assinatura sem client_secret");
+  });
+});
+```
+
+Import: adicionar `criarAssinaturaPublicaLanding` ao import de `./service`.
+
+- [ ] **Step 2: RED** — `npx vitest run src/modules/billing/service.test.ts` → novos testes falham (export ausente).
+
+- [ ] **Step 3: Implementar o service**
+
+Em `src/modules/billing/service.ts`, após `criarCheckoutPublicoLanding`:
+
+```ts
+type AssinaturaPublicaInput = {
+  planId: BillingPlanId;
+  period: BillingPeriod;
+  nome: string;
+  email: string;
+  /** somente dígitos: 11 (CPF) ou 14 (CNPJ) — validado na rota */
+  cpfCnpj: string;
+  /** somente dígitos com DDD — validado na rota */
+  celular: string;
+  nomeEmpresa?: string;
+};
+
+/**
+ * Fluxo Elements (form próprio na landing): cria Customer BR + Subscription
+ * incomplete e devolve o client_secret do PaymentIntent da 1ª invoice
+ * (confirmation_secret — stripe@22.3.0/dahlia). O webhook invoice.paid
+ * provisiona a Empresa depois. Não escreve nada no banco.
+ */
+export async function criarAssinaturaPublicaLanding(
+  input: AssinaturaPublicaInput,
+): Promise<string> {
+  const stripe = requireStripe();
+  const priceId = getStripePriceId(input.planId, input.period);
+  const metadata = {
+    origem: "landing",
+    plano: input.planId,
+    ciclo: input.period,
+    nome_empresa: input.nomeEmpresa?.trim() || input.nome.trim(),
+  };
+
+  const customer = await stripe.customers.create({
+    name: input.nome.trim(),
+    email: input.email.toLowerCase().trim(),
+    phone: `+55${input.celular}`,
+    tax_id_data: [
+      { type: input.cpfCnpj.length === 11 ? "br_cpf" : "br_cnpj", value: input.cpfCnpj },
+    ],
+    metadata,
+  });
+
+  const subscription = await stripe.subscriptions.create({
+    customer: customer.id,
+    items: [{ price: priceId }],
+    payment_behavior: "default_incomplete",
+    payment_settings: { save_default_payment_method: "on_subscription" },
+    expand: ["latest_invoice.confirmation_secret"],
+    metadata,
+  });
+
+  const invoice = subscription.latest_invoice;
+  const clientSecret =
+    invoice && typeof invoice === "object"
+      ? invoice.confirmation_secret?.client_secret
+      : undefined;
+  if (!clientSecret) throw new Error("assinatura sem client_secret");
+  return clientSecret;
+}
+```
+
+- [ ] **Step 4: GREEN** — testes do service passam; suíte billing inteira passa.
+
+- [ ] **Step 5: Rota pública**
+
+Criar `src/app/api/checkout-publico/assinatura/route.ts` — ESPELHAR a rota `sessao`
+(mesmos helpers CORS locais, OPTIONS, rate-limit — janela 15min, MAX **10** — e o
+try/catch com headers do fix da T6), trocando o miolo:
+
+```ts
+const schema = z.object({
+  plano: z.string(),
+  ciclo: z.string().optional(),
+  nome: z.string().trim().min(2).max(120),
+  email: z.string().trim().email().max(160),
+  cpfCnpj: z
+    .string()
+    .transform((s) => s.replace(/\D/g, ""))
+    .refine((v) => v.length === 11 || v.length === 14, "CPF/CNPJ inválido"),
+  celular: z
+    .string()
+    .transform((s) => s.replace(/\D/g, ""))
+    .refine((v) => v.length >= 10 && v.length <= 13, "celular inválido"),
+  nomeEmpresa: z.string().trim().max(80).optional(),
+});
+```
+
+Dentro do try: `schema.safeParse(body)` → falha = 400 `{"erro":"DADOS_INVALIDOS"}` (com
+headers); `parseBillingPlanId(data.plano)` / `parseBillingPeriod(data.ciclo ?? "mensal")`;
+`criarAssinaturaPublicaLanding({...})`; resposta `{ clientSecret, publishableKey }`.
+No catch: se o erro Stripe tiver `code === "tax_id_invalid"` → 400
+`{"erro":"CPF_CNPJ_INVALIDO"}` (com headers); senão manter o mapeamento
+Error→400 / resto→500 com headers (padrão do fix T6). Rate-limit key:
+`"checkout-assinatura:" + ip`.
+
+Proxy: adicionar `"/api/checkout-publico/assinatura",` junto às entradas checkout-publico.
+
+- [ ] **Step 6: Verificação viva (curl)** — subir `npm run dev:web` em background;
+  `curl -s -X POST localhost:3000/api/checkout-publico/assinatura -H "content-type: application/json" -H "origin: http://localhost:8080" -d '{"plano":"pro","ciclo":"mensal","nome":"Teste E2E","email":"t13@exemplo.com","cpfCnpj":"000.000.001-91","celular":"(11) 99999-8888","nomeEmpresa":"Loja T13"}'`
+  → 200 `{clientSecret:"pi_..._secret_...", publishableKey}` (CPF de teste 00000000191 é
+  aceito pelo Stripe test mode). Body inválido (cpfCnpj "123") → 400 DADOS_INVALIDOS com
+  header CORS. Matar o server depois.
+
+- [ ] **Step 7: Lint, typecheck, commit**
+
+```bash
+npx eslint src/modules/billing/service.ts src/modules/billing/service.test.ts src/app/api/checkout-publico/assinatura/route.ts src/proxy.ts
+npx tsc --noEmit
+git add src/modules/billing/service.ts src/modules/billing/service.test.ts src/app/api/checkout-publico/assinatura/route.ts src/proxy.ts
+git commit -m "feat(api): assinatura publica via Elements (customer BR + subscription incomplete)"
+```
+
+---
+
+### Task 14: Provisionamento por customer + gancho no `invoice.paid`
+
+**Files:**
+- Modify: `src/modules/billing/provisionamento.ts` (refactor: núcleo `provisionarEmpresa(dados)` + wrappers `provisionarEmpresaDoCheckout(session)` e novo `provisionarEmpresaDoCustomer(customer)`)
+- Modify: `src/modules/billing/provisionamento.test.ts` (testes do novo wrapper; existentes continuam passando)
+- Modify: `src/modules/billing/service.ts` (case `invoice.paid`)
+- Modify: `src/modules/billing/service.test.ts` (testes do gancho)
+
+**Interfaces:**
+- Produces:
+  ```ts
+  type DadosProvisionamento = {
+    customerId: string;
+    email: string | null | undefined;
+    nomePagador: string | null | undefined;
+    nomeEmpresa: string | null | undefined;
+  };
+  provisionarEmpresa(dados: DadosProvisionamento): Promise<ProvisionamentoResult>
+  provisionarEmpresaDoCustomer(customer: Stripe.Customer): Promise<ProvisionamentoResult>
+  // extrai: customerId=customer.id, email=customer.email, nomePagador=customer.name,
+  //         nomeEmpresa=customer.metadata?.nome_empresa
+  ```
+- Comportamento do núcleo = EXATAMENTE o atual (idempotência por stripeCustomerId, e-mail
+  obrigatório, precedência nomeEmpresa→nomePagador→email, slug, criarEmpresa, update).
+  `provisionarEmpresaDoCheckout` vira casca fina que monta `DadosProvisionamento` da
+  session (custom field `nome_empresa` / customer_details) e delega — testes existentes
+  do checkout NÃO mudam de expectativa.
+
+- [ ] **Step 1 (RED):** adicionar testes: (a) `provisionarEmpresaDoCustomer` com customer
+  `{id:"cus_1", email:"a@b.com", name:"Maria", metadata:{nome_empresa:"Loja X"}}` → cria
+  com nome "Loja X"/admin "Maria"; (b) sem metadata.nome_empresa → fallback name; (c) sem
+  email → ignorada sem-email. No service.test.ts: evento `invoice.paid` cuja subscription
+  (mock retrieve) tem `metadata.origem="landing"` e `customer:"cus_1"` → mock
+  `stripeMock.customers.retrieve` devolve customer → `provisionarEmpresaDoCustomer`
+  chamado ANTES de `empresa.updateMany`; evento invoice.paid sem origem landing → NÃO
+  chama. (Mockar `@/modules/billing/provisionamento` já é feito no topo do arquivo —
+  acrescentar `provisionarEmpresaDoCustomer: vi.fn()` ao mock e importar a referência.)
+
+- [ ] **Step 2: Implementar refactor + gancho**
+
+provisionamento.ts: mover o corpo de `provisionarEmpresaDoCheckout` (da checagem de
+e-mail em diante) para `provisionarEmpresa(dados)`; wrappers extraem os campos.
+
+service.ts, case `invoice.paid` (substituir o miolo atual mantendo o formato):
+
+```ts
+    case "invoice.paid": {
+      const invoice = event.data.object as Stripe.Invoice;
+      const subscriptionId = stringId(
+        (invoice as Stripe.Invoice & { subscription?: string | Stripe.Subscription | null })
+          .subscription,
+      );
+      if (subscriptionId) {
+        const subscription = await stripe.subscriptions.retrieve(subscriptionId);
+        // Fluxo Elements da landing: a 1ª invoice paga é o gatilho de provisionamento
+        // (não há Checkout Session). Idempotente — renovações reentram sem efeito.
+        if (subscription.metadata?.origem === "landing") {
+          const customerId = stringId(subscription.customer);
+          if (customerId) {
+            const customer = await stripe.customers.retrieve(customerId);
+            if (!("deleted" in customer) || !customer.deleted) {
+              await provisionarEmpresaDoCustomer(customer as Stripe.Customer);
+            }
+          }
+        }
+        await aplicarAssinaturaStripe(subscription);
+      }
+      break;
+    }
+```
+
+(`stripe.customers.retrieve` precisa entrar no stripeMock do teste se ainda não existe.)
+
+- [ ] **Step 3 (GREEN):** `npx vitest run src/modules/billing/` → tudo passa (antigos + novos).
+
+- [ ] **Step 4: Lint, typecheck, commit**
+
+```bash
+npx eslint src/modules/billing/provisionamento.ts src/modules/billing/provisionamento.test.ts src/modules/billing/service.ts src/modules/billing/service.test.ts
+npx tsc --noEmit
+git add src/modules/billing/provisionamento.ts src/modules/billing/provisionamento.test.ts src/modules/billing/service.ts src/modules/billing/service.test.ts
+git commit -m "feat(billing): provisionamento via invoice.paid para assinatura da landing (Elements)"
+```
+
+---
+
+### Task 15: Ativação por `payment_intent` (rota + página)
+
+**Files:**
+- Modify: `src/app/api/checkout-publico/ativar/route.ts`
+- Modify: `src/app/ativar/page.tsx` + `src/app/ativar/ativar-client.tsx`
+
+**Interfaces:**
+- Rota aceita `{ sessionId }` OU `{ paymentIntentId }` (exatamente um):
+  ```ts
+  const schema = z
+    .object({
+      sessionId: z.string().min(10).max(200).optional(),
+      paymentIntentId: z.string().min(10).max(200).optional(),
+    })
+    .refine((d) => !!d.sessionId !== !!d.paymentIntentId, "exatamente um identificador");
+  ```
+- Caminho PI: `stripe.paymentIntents.retrieve(paymentIntentId)`; pago =
+  `pi.status === "succeeded"`; `customerId` de `pi.customer` (string|objeto). Não pago ou
+  sem customer → 402 nao-pago. Depois `ativarPorCustomer(customerId)` — mesmas respostas.
+- Página: `page.tsx` passa também `paymentIntentId: sp.payment_intent ?? ""`;
+  `ativar-client.tsx` recebe `{ sessionId, paymentIntentId }`, erro imediato só se AMBOS
+  vazios, e o body do fetch envia o que existir
+  (`sessionId ? { sessionId } : { paymentIntentId }`). Nada mais muda (polling/estados
+  idênticos; o return_url do Stripe adiciona `payment_intent` e
+  `payment_intent_client_secret` — o client_secret é IGNORADO de propósito, a validação é
+  server-side via retrieve).
+
+- [ ] **Step 1:** aplicar as mudanças na rota (schema + branch PI antes/junto do branch session).
+- [ ] **Step 2:** aplicar as mudanças na página (prop nova + escolha do body).
+- [ ] **Step 3:** `npx eslint` nos 3 arquivos; `npx tsc --noEmit` limpo.
+- [ ] **Step 4 (verificação viva):** dev server em background; curls:
+  - `-d '{"paymentIntentId":"pi_inexistente_1234567890"}'` → 400 (Stripe not found).
+  - `-d '{"sessionId":"x","paymentIntentId":"y"}'` → 400 DADOS_INVALIDOS (refine).
+  - `-d '{}'` → 400 DADOS_INVALIDOS.
+  - `curl -s "localhost:3000/ativar?payment_intent=pi_x_1234567890" -o /dev/null -w "%{http_code}"` → 200.
+  Matar o server.
+- [ ] **Step 5: Commit**
+
+```bash
+git add src/app/api/checkout-publico/ativar/route.ts src/app/ativar/
+git commit -m "feat(ativar): aceitar payment_intent do fluxo Elements alem de session_id"
+```
+
+---
+
+### Task 16: `checkout.html`/`checkout.js` v2 — form BR próprio + Payment Element + visual do modelo
+
+**Files:**
+- Rewrite: `landing-atlas/checkout.html`
+- Rewrite: `landing-atlas/checkout.js`
+
+**Interfaces:**
+- Consumes: `POST {API_BASE}/api/checkout-publico/assinatura` (contrato T13); Stripe.js v3
+  Elements: `Stripe(pk)` → `stripe.elements({ clientSecret, appearance })` →
+  `elements.create("payment")` → `.mount()` → `stripe.confirmPayment({ elements,
+  confirmParams: { return_url: API_BASE + "/ativar" } })`.
+- `API_BASE` por hostname (localhost→`http://localhost:3000`, senão
+  `https://erp.mundofs.cloud`) — NUNCA por query param.
+
+**Estrutura da página (mesmo head/header/`styles.css` da v1; robots noindex mantido):**
+
+1. **Banner hero** (`<section class="ck-hero">`): fundo `linear-gradient(135deg,#0F172A,#1D4ED8)`,
+   texto branco — h1 "Decisões com o lucro na mão." + sub "Conecte sua conta Amazon e veja
+   vendas, taxas, Ads e margem reais — tudo em um painel só." + `<img
+   src="assets/video/demo-poster.jpg" alt="Painel do Atlas Seller">` arredondada à direita
+   (grid 2 colunas, empilha no mobile).
+2. **Grid principal** (form à esquerda ~1fr, coluna do plano à direita ~380px; inverte a
+   ordem do modelo v1 para espelhar a referência aprovada — form à ESQUERDA).
+3. **Form (card `.pagamento`)** com fieldsets:
+   - Dados: Nome completo* · E-mail* · Confirmar e-mail* (client-side match) · CPF ou
+     CNPJ* (máscara leve por JS: só dígitos, 11-14) · Celular/WhatsApp* (placeholder
+     "(11) 99999-8888") · Nome da sua empresa/loja (opcional — "usaremos seu nome se
+     vazio").
+   - `🔒 Seus dados serão mantidos em sigilo` (selo, classe `.selo-seguro`).
+   - Botão `Continuar para pagamento` (`.btn .btn-primary`, largura total).
+   - Seção pagamento (`hidden` até criar a assinatura): `<div id="payment-element">` +
+     checkbox `Li e concordo com os <a href="termos.html" target="_blank">Termos de
+     Assinatura</a>*` + botão `Assinar agora 🔒` (desabilitado até o checkbox) + área de
+     erro `#erroPagamento` (aria-live="polite").
+   - Rodapé do card: `Pagamento processado pelo Stripe. Não armazenamos os dados do seu
+     cartão.`
+4. **Coluna direita**: card do plano rico (troca de plano/ciclo COMPACTA no topo — manter
+   os mesmos grupos de botões da v1) — nome do plano grande, preço + `/ciclo` + equivalente
+   mensal, `<ul>` de benefícios (mesmas features da v1, ✓ verdes via `.plan li::before`),
+   selo `Cancele quando quiser`. Abaixo, card `Quem usa recomenda` com 3 depoimentos:
+   `★★★★★` (aria-label "5 estrelas") + texto + nome — **conteúdo PLACEHOLDER, cada um
+   marcado com `<!-- PLACEHOLDER: substituir por depoimento real -->`**.
+
+**checkout.js v2 — fluxo (escrever completo, IIFE como v1, sem framework):**
+
+```js
+// Estado: plano/ciclo da query (defaults pro/mensal) — igual v1, incl. history.replaceState.
+// renderResumo() — igual v1 (mesma fórmula de preço, mesmos dados PLANOS/CICLOS).
+// Etapa 1: submit do form de dados →
+//   valida: nome>=2, email===confirmacao (case-insensitive), cpfCnpj 11|14 dígitos,
+//   celular 10-13 dígitos; erros inline (div .form-erro por campo, aria-live).
+//   POST /api/checkout-publico/assinatura {plano, ciclo, nome, email, cpfCnpj, celular, nomeEmpresa}
+//   → { clientSecret, publishableKey }.
+//   stripe = Stripe(publishableKey);
+//   elements = stripe.elements({ clientSecret, appearance: { theme: "stripe",
+//     variables: { colorPrimary: "#2563EB", fontFamily: "Inter, system-ui, sans-serif",
+//     borderRadius: "8px" } } });
+//   elements.create("payment").mount("#payment-element");
+//   revela a seção de pagamento, desabilita os campos de dados e a troca de plano/ciclo
+//   (mudar plano depois de criada a assinatura = recomeçar: botão "alterar plano" que dá
+//   location.reload() com a query atual).
+// Etapa 2: click em "Assinar agora" (habilitado pelo checkbox dos termos) →
+//   const { error } = await stripe.confirmPayment({ elements,
+//     confirmParams: { return_url: API_BASE + "/ativar" } });
+//   if (error) mostrar error.message em #erroPagamento (o Stripe só retorna aqui em falha;
+//   sucesso = redirect automático para /ativar?payment_intent=...).
+// Duplo-submit: desabilitar botões durante requests; reabilitar em erro.
+// Falha do POST: mensagem amigável + link index.html#contato (padrão v1);
+//   corpo {"erro":"CPF_CNPJ_INVALIDO"} → erro inline no campo CPF/CNPJ.
+```
+
+- [ ] **Step 1:** reescrever os dois arquivos conforme acima (v1 está no git — commits
+  anteriores — se precisar resgatar trechos; os dados de PLANOS/CICLOS/preços são os mesmos).
+- [ ] **Step 2 (estático):** `npx html-validate landing-atlas/checkout.html` → 0 erros;
+  `node --check landing-atlas/checkout.js` → ok.
+- [ ] **Step 3 (vivo, best-effort):** dev server (:3000) + `npx -y http-server
+  landing-atlas -p 8080 -c-1`; via Playwright MCP: abrir
+  `http://localhost:8080/checkout.html?plano=pro&ciclo=anual`, conferir banner + card
+  (R$ 1.535,90 /ano), preencher o form (CPF teste 00000000191, e-mail novo), "Continuar
+  para pagamento" → Payment Element carrega (iframe stripe). NÃO pagar (E2E é a T17).
+  Console sem erros. Screenshot p/ o report. Sem Playwright → fallback estático declarado.
+  Matar servers.
+- [ ] **Step 4: Commit**
+
+```bash
+git add landing-atlas/checkout.html landing-atlas/checkout.js
+git commit -m "feat(landing): checkout v2 com form proprio, Payment Element e visual BR"
+```
+
+---
+
+### Task 17: E2E manual do fluxo Elements (test mode) — SUBSTITUI a Task 11
+
+Pré-requisitos iguais à Task 11 original (`.env` completo com os 12 price IDs +
+`CHECKOUT_PUBLICO_ORIGEM` + `APP_URL` + `STRIPE_WEBHOOK_SECRET` do `stripe listen`;
+`npm run prisma:generate && npm run prisma:push` no SQLite local).
+
+- [ ] `stripe listen --forward-to localhost:3000/api/stripe/webhook` rodando; dev server
+  (:3000) e landing (:8080) rodando.
+- [ ] Caminho feliz: `index.html#precos` → toggle Anual → Contratar Pro → checkout v2 →
+  dados (e-mail novo `teste+e2e-el1@exemplo.com`, CPF 00000000191, empresa "Loja E2E EL")
+  → Continuar → cartão `4242 4242 4242 4242` → Assinar agora → redirect
+  `/ativar?payment_intent=pi_...` → "preparando sua conta" → `/definir-senha` → senha
+  forte → login OK. Banco: Empresa nova (slug `loja-e2e-el`), `stripeCustomerId`,
+  `assinaturaStatus=ACTIVE`, `plano=pro`, `cicloAssinatura=anual`.
+- [ ] Reuso do link de ativação depois da senha → "conta já ativa".
+- [ ] Webhook reentregue (`stripe events resend`) → idempotente (`ja-existia`).
+- [ ] Cartão recusado (`4000 0000 0000 0002`) → erro inline no Payment Element, sem
+  conta criada.
+- [ ] CPF inválido ("111") → erro inline client-side; CPF válido de formato mas rejeitado
+  pelo Stripe → 400 CPF_CNPJ_INVALIDO exibido no campo.
+- [ ] Fluxo logado (`/configuracoes` → Abrir Checkout) intacto (regressão).
+- [ ] Fluxo embedded (fallback): `POST /api/checkout-publico/sessao` ainda responde 200
+  (curl) — sem regressão.
+
+### Task 18: Encerramento — SUBSTITUI a Task 12
+
+- [ ] `npx vitest run src/modules/billing/` → verde; `npx tsc --noEmit` e eslint nos
+  arquivos tocados → limpos.
+- [ ] Review final de branch inteira (whole-branch) + triage dos Minors acumulados no
+  ledger.
+- [ ] `superpowers:finishing-a-development-branch` (branch `feat/landing-atlas-seller`;
+  remota homônima diverge — NÃO rebasear).
+- [ ] Deploy (fora do plano): envs live (chaves + 12 prices live + CHECKOUT_PUBLICO_ORIGEM
+  + APP_URL), webhook endpoint live no dashboard (incluir evento `invoice.paid`!),
+  payment methods do dashboard = cartão (SEM boleto — gate OR da ativação), CSP do vhost
+  da landing permitindo `js.stripe.com` (script) e `*.stripe.com` (frame/connect),
+  publicar `landing-atlas/`, depoimentos reais no lugar dos placeholders.
+
+---
+
+# APÊNDICE — Iteração 3 (2026-07-02): port do redesign V5 (Claude Design)
+
+> Handoff em `<scratchpad>/v5/design_handoff_atlas_landing/` (fonte: Downloads/V5.zip).
+> README do handoff é a especificação de design (14 seções, tokens, a11y, motion).
+> Ordem: executar APÓS a Task 17 (E2E), antes da Task 18 (encerramento).
+
+### Task 19: Portar landing V5 para `landing-atlas/` (preservando integrações)
+
+**Files:** Rewrite `landing-atlas/index.html`, `landing-atlas/styles.css`, `landing-atlas/app.js` a partir de `site/` do handoff; Create `landing-atlas/assets/demo.mp4` (copiar do handoff) e pasta `landing-atlas/assets/videos/` (vazia + `.gitkeep`); NÃO tocar: `privacidade.html`, `termos.html`, `contato.html`, `sitemap.xml`, `robots.txt`, `.well-known/`, `checkout.html`, `checkout.js`.
+
+**Adaptações obrigatórias sobre o V5 (o resto é cópia fiel):**
+1. **Fontes**: adicionar os 4 `@font-face` Inter (400/600/700/800) apontando para `assets/fonts/Inter-{Regular,SemiBold,Bold,ExtraBold}.woff2` (existentes) no topo do styles.css portado; `font-display:swap`.
+2. **Head/SEO**: portar do index ATUAL → canonical, OG/Twitter metas, favicon existente, e os 3 blocos JSON-LD (Organization, SoftwareApplication com offers, FAQPage — atualizar as perguntas do FAQPage para as 6 do V5). `<link rel="stylesheet" href="styles.css?v=7">`.
+3. **CTAs dos planos**: "Começar"/mailto → **"Contratar"** com `href="checkout.html?plano={starter|pro|scale}&ciclo=mensal"` + `data-plan`; no app.js, a função de pricing atualiza os 3 hrefs com o ciclo ativo (mesma mecânica da Task 9). Manter os demais CTAs ("Agendar demo") como mailto **admfsmundo@gmail.com** (e-mail real em uso — NÃO contato@mundofs.com.br).
+4. **Descontos**: anual = **0.15 / "Economize 15% pagando uma vez ao ano"** (decisão do Heitor 2026-07-02; novos prices anuais criados no Stripe test: Starter `price_1TolPNKMqHJ7jzJdfEAOarlJ` R$ 917,90 · Pro `price_1TolPOKMqHJ7jzJdPh0VOilu` R$ 1.631,90 · Scale `price_1TolPPKMqHJ7jzJdm8G1eSX2` R$ 2.243,90). Trimestral 5% e semestral 10% ficam — igual ao V5.
+5. **Vídeos**: hero usa `assets/demo.mp4` (copiado do handoff, 2.1MB). Grade `#videos` mantém os 4 `assets/videos/*.mp4` ausentes → fallback visual do próprio V5 (JS `.no-src`) fica ativo até exportarem os clipes.
+6. **Footer**: link "Contato" → `contato.html` (não mailto); manter disclaimer Amazon obrigatório; Política/Termos apontam para as páginas ATUAIS (não substituí-las — as do V5 exigem revisão jurídica).
+7. **WhatsApp flutuante**: manter `wa.me/551151085002` do design (CONFIRMAR número com o Heitor antes do deploy — anotar no report).
+8. **Acessibilidade/motion**: preservar tudo do V5 (skip-link, tablists com setas, aria-live, reveal com failsafe de 1.2s, reduced-motion).
+
+**Verificação**: `npx html-validate landing-atlas/index.html` (0 erros); `node --check landing-atlas/app.js`; browser (Playwright): hero+ticket animando, abas de produto, calculadora reagindo aos sliders, toggle de preços (anual mostra R$ 917,90/ano p/ Starter → bate com Stripe), botões Contratar com href correto por ciclo, vídeo hero tocando, grade #videos com fallbacks, FAQ acordeão, WhatsApp flutuante, barra de progresso. Console sem erros. Screenshot.
+
+**Commit**: `feat(landing): redesign V5 (produto, calculadora, comparativo, videos) preservando checkout`
+
+### Task 20: Harmonizar `checkout.html`/`checkout.js` com o DS novo
+
+**Files:** Modify `landing-atlas/checkout.html` (+`checkout.js` se necessário).
+
+1. Atualizar `styles.css?v=6`→`?v=7`.
+1b. **CICLOS do checkout.js**: `anual: [12, .20, '/ano']` → `[12, .15, '/ano']` (novos prices de 15%; conferir que o resumo exibe R$ 1.631,90 p/ Pro anual).
+1c. **.env local**: trocar os 3 `STRIPE_PRICE_*_ANUAL` pelos price IDs novos (fazer só APÓS o E2E da Task 17 concluir — o dev server do E2E usa os antigos).
+2. Substituir o header antigo (`.nav`/`.brand` com SVG bússola) pelo header novo do V5 (logo 10 listras SVG inline + wordmark; sem a nav completa — só "Voltar aos planos" → `index.html#precos`).
+3. Conferir classes usadas que não existem mais no styles novo (ex.: `.eyebrow`) e cobrir no `<style>` local da página (prefixo ck-) sem tocar styles.css.
+4. Ajustar tokens locais se algum usado sumiu (--radius-sm etc. — conferir `:root` novo; cobrir com fallback local).
+5. Verificação: html-validate 0 erros; browser: página carrega com visual coerente ao novo DS, resumo correto, form ok, "Continuar para pagamento" monta o Payment Element (1 sessão só — rate-limit). Console limpo. Screenshot.
+
+**Commit**: `fix(landing): harmonizar checkout com o design system V5`

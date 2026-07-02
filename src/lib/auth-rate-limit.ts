@@ -16,10 +16,15 @@ export type LoginFailureResult = {
   retryAfterSeconds: number;
 };
 
+// x-real-ip é setado pelo Nginx com $remote_addr (confiável, o cliente não
+// consegue forjar). O X-Forwarded-For usa $proxy_add_x_forwarded_for, que
+// APPENDA o IP real ao header recebido do cliente — logo o PRIMEIRO hop do
+// XFF pode ser forjado pelo próprio atacante. Preferir x-real-ip sempre que
+// presente.
 export function getClientIp(headers: Headers): string {
   return (
-    headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
     headers.get("x-real-ip") ||
+    headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
     "unknown"
   );
 }

@@ -1,7 +1,7 @@
 # Checkout self-service na landing Atlas Seller — Design
 
 **Data:** 2026-07-01
-**Status:** aprovado pelo Heitor (brainstorm em sessão)
+**Status:** aprovado pelo Heitor (brainstorm em sessão) · **Iteração 2 aprovada em 2026-07-02** (ver adendo no fim)
 **Branch alvo:** `feat/landing-atlas-seller`
 
 ## Contexto
@@ -154,13 +154,13 @@ Em `processarEventoStripe` (`src/modules/billing/service.ts`), no case
 - Price IDs test mode (já criados no dashboard):
   - Starter: mensal `price_1ToRkVKMqHJ7jzJduKUTpEB6` · trimestral
     `price_1ToRmQKMqHJ7jzJdOngcIfAa` · semestral `price_1ToRmQKMqHJ7jzJdmwPQkNLb` ·
-    anual `price_1ToRmQKMqHJ7jzJdnTkiEkwi`
+    anual `price_1TolPNKMqHJ7jzJdfEAOarlJ` (15% — R$ 917,90; antigo 20% price_1ToRmQKMqHJ7jzJdnTkiEkwi descontinuado)
   - Pro: mensal `price_1ToRniKMqHJ7jzJd5GEPrRJK` · trimestral
     `price_1ToRniKMqHJ7jzJd1AwLhrOP` · semestral `price_1ToRniKMqHJ7jzJd5e97eRM9` ·
-    anual `price_1ToRniKMqHJ7jzJd08baH3a6`
+    anual `price_1TolPOKMqHJ7jzJdPh0VOilu` (15% — R$ 1.631,90; antigo price_1ToRniKMqHJ7jzJd08baH3a6 descontinuado)
   - Scale: mensal `price_1ToRnyKMqHJ7jzJdJJf6q9Hc` · trimestral
     `price_1ToRoXKMqHJ7jzJd6nhCrcrj` · semestral `price_1ToRoXKMqHJ7jzJdyIw7LO47` ·
-    anual `price_1ToRoXKMqHJ7jzJd01EDAfMb`
+    anual `price_1TolPPKMqHJ7jzJdm8G1eSX2` (15% — R$ 2.243,90; antigo price_1ToRoXKMqHJ7jzJd01EDAfMb descontinuado)
 - Webhook local para teste: `stripe listen --forward-to localhost:3000/api/stripe/webhook`.
 - **Sem migration**: nenhum campo novo no schema (tudo já existe de `6f2fc8b`).
 
@@ -198,3 +198,57 @@ Notificação interna de provisionamento falho (caso manual via logs por enquant
   sessões Stripe não pagas expiram sozinhas em ~24h, sem lixo no nosso banco.
 - **CSP/headers da landing** — verificar no deploy que o vhost permite scripts/frames de
   `js.stripe.com` (hoje a landing não define CSP restritiva; conferir antes de subir).
+
+---
+
+## Adendo — Iteração 2 (2026-07-02): form próprio (Stripe Elements) + visual de checkout BR
+
+Heitor aprovou uma referência visual (checkout "Hermes/Checkout Sun") e decidiu, ciente do
+trade-off de escopo: **formulário de pagamento próprio via Stripe Elements** (Payment
+Element), não mais o Embedded Checkout, mais os elementos visuais do modelo:
+
+1. **Banner hero** no topo da página de checkout (mensagem do produto + screenshot).
+2. **Card do plano rico**: nome em destaque, preço grande, benefícios com ✓, selo.
+3. **Depoimentos com estrelas** (social proof) — TEXTOS PLACEHOLDER até o Heitor mandar
+   os reais; marcar claramente no código.
+4. **Selos de segurança/sigilo** (🔒 dados em sigilo · processado pelo Stripe).
+
+### Fluxo técnico v2 (substitui o miolo de pagamento; provisão/ativação permanecem)
+
+- **Form próprio** na landing coleta: nome completo, e-mail (+confirmação client-side),
+  CPF/CNPJ (11 ou 14 dígitos → `tax_id_data` `br_cpf`/`br_cnpj`), celular, nome da
+  empresa/loja (opcional, fallback = nome completo), aceite dos Termos (checkbox
+  obrigatório, link `termos.html`). Pagamento: **cartão** via Payment Element (assinatura
+  recorrente exige cartão; Pix segue fora de escopo).
+- **Novo endpoint** `POST /api/checkout-publico/assinatura` (CORS restrito + rate-limit
+  10/15min + try/catch com headers CORS — lição da rota `sessao`): cria
+  `customers.create({name, email, phone, tax_id_data, metadata:{origem:"landing",
+  nome_empresa}})` + `subscriptions.create({customer, items:[{price}],
+  payment_behavior:"default_incomplete",
+  payment_settings:{save_default_payment_method:"on_subscription"},
+  expand:["latest_invoice.confirmation_secret"], metadata:{origem:"landing", plano,
+  ciclo}})` e devolve `{clientSecret: latest_invoice.confirmation_secret.client_secret,
+  publishableKey}`. (Confirmado no stripe@22.3.0: `Invoice.confirmation_secret =
+  {client_secret, type:"payment_intent"}`.)
+- **UI em 2 etapas na mesma página**: dados → "Continuar para pagamento" (cria a
+  assinatura) → Payment Element → `stripe.confirmPayment({elements, confirmParams:
+  {return_url: ERP/ativar}})`.
+- **Retorno**: Stripe redireciona para `/ativar?payment_intent=pi_...&
+  payment_intent_client_secret=...&redirect_status=...`. Rota de ativação passa a
+  aceitar `paymentIntentId` (exige `status === "succeeded"`, customer do PI) ALÉM do
+  `sessionId` legado. `ativarPorCustomer` inalterado.
+- **Webhook**: provisionamento também dispara em `invoice.paid` com
+  `billing_reason === "subscription_create"` e `subscription.metadata.origem ===
+  "landing"` — extrai email/nome do **customer** (retrieve) e `nome_empresa` do metadata.
+  O caminho `checkout.session.completed` (embedded) permanece como retrocompat; o
+  endpoint `sessao` e a página embedded ficam como fallback (código testado, sem churn).
+- **Customers órfãos** (criados sem pagamento concluído) e subscriptions
+  `incomplete_expired` são aceitos como lixo benigno no Stripe (expiram/limpáveis via
+  dashboard); nada persiste no nosso banco antes do `invoice.paid`.
+
+### Riscos novos
+
+- Payment Element + confirmation_secret é o fluxo recomendado da API atual, mas o E2E
+  (cartão 4242) é obrigatório antes de qualquer deploy.
+- CPF/CNPJ inválido → `tax_id_invalid` do Stripe: validar formato no client E tratar o
+  erro no server devolvendo 400 legível (`{"erro":"CPF_CNPJ_INVALIDO"}`).

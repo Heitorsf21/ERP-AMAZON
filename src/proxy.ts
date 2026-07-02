@@ -22,6 +22,12 @@ const PUBLIC_PATHS = [
   "/api/auth/recuperar-senha",
   "/api/auth/redefinir-senha",
   "/api/stripe/webhook",
+  // Checkout público da landing (atlasseller): cria sessão embedded e ativa
+  // conta pós-pagamento. CORS/rate-limit são aplicados nas próprias rotas.
+  "/api/checkout-publico/sessao",
+  "/api/checkout-publico/assinatura",
+  "/api/checkout-publico/ativar",
+  "/ativar",
   // Health check público para watchdog/load balancer/Nginx checar saúde do app
   // sem precisar manter sessão. Não vaza nada sensível (só status agregado).
   "/api/health",
@@ -153,10 +159,15 @@ function withSecurityHeaders(res: NextResponse): NextResponse {
   return res;
 }
 
+// x-real-ip é setado pelo Nginx com $remote_addr (confiável, o cliente não
+// consegue forjar). O X-Forwarded-For usa $proxy_add_x_forwarded_for, que
+// APPENDA o IP real ao header recebido do cliente — logo o PRIMEIRO hop do
+// XFF pode ser forjado pelo próprio atacante. Preferir x-real-ip sempre que
+// presente.
 function getClientIp(req: NextRequest): string {
   return (
-    req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
     req.headers.get("x-real-ip") ||
+    req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
     "unknown"
   );
 }

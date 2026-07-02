@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Contratar — Atlas Seller</title>
+  <meta name="description" content="Contrate o Atlas Seller: preencha seus dados e finalize o pagamento com segurança via Stripe.">
+  <meta name="robots" content="noindex">
+  <link rel="icon" href="assets/img/atlas-symbol.png">
+  <link rel="stylesheet" href="styles.css?v=7">
+  <style>
+    /* Estilos locais da página de checkout v2 (segue tokens do styles.css V5) */
+    /* Tokens usados nesta página que existiam no styles.css antigo e não estão mais no :root do V5 — fallback local. */
+    :root{--radius-sm:8px;--radius-pill:99px;--shadow-card:0 10px 30px -12px rgba(15,23,42,.18)}
+
+    /* Nav do header reduzida a um único link "Voltar aos planos" (sem .nav-links no V5). */
+    .ck-header-nav{margin-left:auto}
+    .ck-header-nav a{color:var(--text-2);text-decoration:none;font-weight:600;font-size:14px;padding:8px 12px;border-radius:8px;transition:color .15s ease,background .15s ease}
+    .ck-header-nav a:hover{color:var(--text);background:var(--bg-2)}
+
+    .ck-hero{background:linear-gradient(135deg,#0F172A,#1D4ED8);color:#fff;padding:52px 0}
+    .ck-hero-grid{display:grid;grid-template-columns:1.15fr 1fr;gap:40px;align-items:center}
+    .ck-hero h1{color:#fff;font-size:36px;line-height:1.15;margin:0 0 12px;max-width:16ch}
+    .ck-hero p{color:#DBEAFE;font-size:16px;max-width:46ch;margin:0}
+    .ck-hero-media img{width:100%;display:block;border-radius:16px;border:1px solid rgba(255,255,255,.18);
+      box-shadow:0 30px 70px -30px rgba(0,0,0,.55)}
+    @media(max-width:900px){.ck-hero-grid{grid-template-columns:1fr}.ck-hero h1{font-size:28px}.ck-hero-media{order:-1}}
+
+    /* Grid principal: form (esquerda, ~1fr) + coluna do plano (direita, ~380px) */
+    .ck-grid{display:grid;grid-template-columns:1fr 380px;gap:32px;align-items:start;padding:40px 0 80px}
+    @media(max-width:900px){.ck-grid{grid-template-columns:1fr}}
+
+    /* Card do formulário */
+    .pagamento{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:28px}
+    .pagamento fieldset{border:0;padding:0;margin:0}
+    .pagamento legend{font-size:15px;font-weight:800;color:var(--text);padding:0 0 16px;width:100%}
+    .pagamento fieldset:disabled{opacity:.55}
+    .ck-field{margin-bottom:16px}
+    .ck-field label{display:block;font-size:13px;font-weight:700;color:var(--text-2);margin-bottom:6px}
+    .ck-field input{width:100%;padding:11px 13px;border:1px solid var(--border);border-radius:var(--radius-sm);
+      font-family:inherit;font-size:14.5px;color:var(--text);background:#fff}
+    .ck-field input:focus{outline:2px solid var(--primary);outline-offset:1px;border-color:var(--primary)}
+    .ck-field input[aria-invalid="true"]{border-color:#DC2626}
+    .ck-row2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+    @media(max-width:520px){.ck-row2{grid-template-columns:1fr}}
+    .form-erro{color:#DC2626;font-size:12.5px;font-weight:600;margin-top:5px;min-height:15px}
+    .selo-seguro{display:flex;align-items:center;gap:8px;justify-content:center;margin:16px 0 0;
+      font-size:12.5px;color:var(--muted);font-weight:600}
+    .ck-btn-full{width:100%;margin-top:18px}
+    .ck-btn-full:disabled{opacity:.6;cursor:not-allowed}
+
+    .ck-secao-pagamento{margin-top:24px;padding-top:24px;border-top:1px solid var(--border)}
+    .ck-alterar-plano{display:inline-block;font-size:13px;font-weight:700;color:var(--primary);margin-bottom:16px}
+    #payment-element{margin-bottom:18px}
+    .ck-termos{display:flex;align-items:flex-start;gap:9px;font-size:13px;color:var(--text-2);cursor:pointer}
+    .ck-termos input{margin-top:3px;flex:none}
+    .ck-termos a{color:var(--primary);font-weight:700}
+
+    /* Coluna do plano */
+    .ck-plano-col{position:sticky;top:92px}
+    .troca-plano{display:flex;gap:8px;margin:0 0 14px}
+    .troca-plano button{flex:1;padding:9px 0;border-radius:var(--radius-sm);border:1px solid var(--border);
+      background:var(--surface);font-weight:700;font-size:13px;cursor:pointer;color:var(--text-2)}
+    .troca-plano button.active{border-color:var(--primary);color:var(--primary);background:rgba(37,99,235,.06)}
+    .troca-plano button:disabled,.price-toggle.compacto button:disabled{opacity:.45;cursor:not-allowed}
+    .price-toggle.compacto{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin:0 0 18px}
+    .price-toggle.compacto button{padding:8px 0;border-radius:var(--radius-sm);border:1px solid var(--border);
+      background:var(--surface);font-weight:600;font-size:12.5px;cursor:pointer;color:var(--text-2)}
+    .price-toggle.compacto button.active{border-color:var(--primary);color:var(--primary);background:rgba(37,99,235,.06)}
+    .ck-plano-col .plan{cursor:default}
+    .ck-plano-col .plan:hover{transform:none;box-shadow:var(--shadow-card)}
+
+    .ck-depoimentos{margin-top:22px;background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:20px}
+    .ck-depoimentos h3{font-size:14px;margin:0 0 14px}
+    .ck-depoimento{margin-bottom:16px;padding-bottom:16px;border-bottom:1px solid var(--border)}
+    .ck-depoimento:last-child{margin-bottom:0;padding-bottom:0;border-bottom:0}
+    .ck-estrelas{display:block;color:#F59E0B;font-size:14px;letter-spacing:2px;margin-bottom:6px}
+    .ck-depoimento p{font-size:13px;color:var(--text-2);margin:0 0 6px;font-style:italic}
+    .ck-autor{display:block;font-size:12px;font-weight:700;color:var(--text)}
+  </style>
+</head>
+<body>
+  <header class="site-header">
+    <div class="container header-inner">
+      <a class="brand" href="index.html" aria-label="Atlas Seller — início">
+        <svg class="brand-sym" viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><g stroke-linecap="round" fill="none"><path d="M10 9.5h8" stroke="#34D399" stroke-width="2.2"/><path d="M8.5 12.5h10.5" stroke="#10B981" stroke-width="2.2"/><path d="M8 15.5h11.5" stroke="#94A3B8" stroke-width="2.2"/><path d="M10.5 18.5h10" stroke="#10B981" stroke-width="2.2"/><path d="M14 21.5h8.5" stroke="#94A3B8" stroke-width="2.2"/><path d="M16.5 24.5h7" stroke="#10B981" stroke-width="2.2"/><path d="M15.5 27.5h8" stroke="#94A3B8" stroke-width="2.2"/><path d="M14 30.5h7.5" stroke="#10B981" stroke-width="2.2"/><path d="M12.5 33.5h6.5" stroke="#94A3B8" stroke-width="2.2"/><path d="M13.5 36.5h4.5" stroke="#34D399" stroke-width="2.2"/><path d="M21 4.5c7.5 3.5 11 12 9.5 19.5-1.2 6-5.5 10.9-11 13" stroke="#E8A33D" stroke-width="1.7"/></g><circle cx="21" cy="4.5" r="2" fill="#FF9900"/></svg>
+        <span class="brand-word">Atlas <span class="brand-accent">Seller</span></span>
+      </a>
+      <nav class="ck-header-nav" aria-label="Navegação">
+        <a href="index.html#precos">Voltar aos planos</a>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <section class="ck-hero">
+      <div class="container ck-hero-grid">
+        <div>
+          <h1>Decisões com o lucro na mão.</h1>
+          <p>Conecte sua conta Amazon e veja vendas, taxas, Ads e margem reais — tudo em um painel só.</p>
+        </div>
+        <div class="ck-hero-media">
+          <img src="assets/video/demo-poster.jpg" alt="Painel do Atlas Seller">
+        </div>
+      </div>
+    </section>
+
+    <div class="container ck-grid">
+      <section aria-label="Seus dados e pagamento">
+        <div class="pagamento">
+          <form id="formDados" novalidate>
+            <fieldset id="fieldsetDados">
+              <legend>Dados para cadastro</legend>
+              <div class="ck-field">
+                <label for="nome">Nome completo*</label>
+                <input type="text" id="nome" name="nome" autocomplete="name" required>
+                <div class="form-erro" id="erroNome" aria-live="polite"></div>
+              </div>
+              <div class="ck-row2">
+                <div class="ck-field">
+                  <label for="email">E-mail*</label>
+                  <input type="email" id="email" name="email" autocomplete="email" required>
+                  <div class="form-erro" id="erroEmail" aria-live="polite"></div>
+                </div>
+                <div class="ck-field">
+                  <label for="emailConfirma">Confirmar e-mail*</label>
+                  <input type="email" id="emailConfirma" name="emailConfirma" autocomplete="email" required>
+                  <div class="form-erro" id="erroEmailConfirma" aria-live="polite"></div>
+                </div>
+              </div>
+              <div class="ck-row2">
+                <div class="ck-field">
+                  <label for="cpfCnpj">CPF ou CNPJ*</label>
+                  <input type="text" id="cpfCnpj" name="cpfCnpj" inputmode="numeric" placeholder="Somente números" required>
+                  <div class="form-erro" id="erroCpfCnpj" aria-live="polite"></div>
+                </div>
+                <div class="ck-field">
+                  <label for="celular">Celular/WhatsApp*</label>
+                  <input type="tel" id="celular" name="celular" inputmode="tel" placeholder="(11) 99999-8888" required>
+                  <div class="form-erro" id="erroCelular" aria-live="polite"></div>
+                </div>
+              </div>
+              <div class="ck-field">
+                <label for="nomeEmpresa">Nome da sua empresa/loja</label>
+                <input type="text" id="nomeEmpresa" name="nomeEmpresa" placeholder="Usaremos seu nome se ficar vazio" autocomplete="organization">
+              </div>
+            </fieldset>
+            <p class="selo-seguro">🔒 Seus dados serão mantidos em sigilo</p>
+            <button type="submit" class="btn btn-primary ck-btn-full" id="btnContinuar">Continuar para pagamento</button>
+            <p class="form-erro" id="erroSubmissao" aria-live="polite"></p>
+          </form>
+
+          <form id="formPagamento" class="ck-secao-pagamento" novalidate hidden>
+            <a href="#" id="btnAlterarPlano" class="ck-alterar-plano">← Alterar plano</a>
+            <div id="payment-element"></div>
+            <label class="ck-termos">
+              <input type="checkbox" id="checkTermos">
+              <span>Li e concordo com os <a href="termos.html" target="_blank" rel="noopener">Termos de Assinatura</a>*</span>
+            </label>
+            <button type="submit" class="btn btn-primary ck-btn-full" id="btnAssinar" disabled>Assinar agora 🔒</button>
+            <div class="form-erro" id="erroPagamento" aria-live="polite"></div>
+          </form>
+
+          <p class="selo-seguro">Pagamento processado pelo Stripe. Não armazenamos os dados do seu cartão.</p>
+        </div>
+      </section>
+
+      <aside class="ck-plano-col" aria-label="Resumo do plano">
+        <div class="troca-plano" id="trocaPlano" role="group" aria-label="Escolher plano">
+          <button type="button" data-plan="starter">Starter</button>
+          <button type="button" data-plan="pro">Pro</button>
+          <button type="button" data-plan="scale">Scale</button>
+        </div>
+        <div class="price-toggle compacto" id="trocaCiclo" role="group" aria-label="Ciclo de cobrança">
+          <button type="button" data-period="mensal">Mensal</button>
+          <button type="button" data-period="trimestral">Trimestral</button>
+          <button type="button" data-period="semestral">Semestral</button>
+          <button type="button" data-period="anual">Anual</button>
+        </div>
+        <div class="plan" id="cardResumo">
+          <h3 id="resumoNome">Pro</h3>
+          <div class="price"><span class="amount" id="resumoValor">R$ 159,99</span><small class="per" id="resumoPer">/mês</small><div class="equiv" id="resumoEquiv"></div></div>
+          <ul id="resumoFeatures"></ul>
+          <p class="selo-seguro" style="margin:0">✓ Cancele quando quiser</p>
+        </div>
+
+        <div class="ck-depoimentos">
+          <h3>Quem usa recomenda</h3>
+          <!-- PLACEHOLDER: substituir por depoimento real -->
+          <div class="ck-depoimento">
+            <span class="ck-estrelas" role="img" aria-label="5 estrelas">★★★★★</span>
+            <p>"Finalmente enxergo a margem real de cada SKU depois das taxas da Amazon. Mudou como eu decido preço."</p>
+            <span class="ck-autor">Marcelo T. — loja de eletrônicos</span>
+          </div>
+          <!-- PLACEHOLDER: substituir por depoimento real -->
+          <div class="ck-depoimento">
+            <span class="ck-estrelas" role="img" aria-label="5 estrelas">★★★★★</span>
+            <p>"O resumo de estoque no WhatsApp evitou duas rupturas em um mês. Se paga sozinho."</p>
+            <span class="ck-autor">Renata A. — casa e decoração</span>
+          </div>
+          <!-- PLACEHOLDER: substituir por depoimento real -->
+          <div class="ck-depoimento">
+            <span class="ck-estrelas" role="img" aria-label="5 estrelas">★★★★★</span>
+            <p>"O otimizador de Ads cortou meu ACOS sem eu precisar mexer em campanha todo dia."</p>
+            <span class="ck-autor">Diego S. — suplementos</span>
+          </div>
+        </div>
+      </aside>
+    </div>
+  </main>
+
+  <script src="https://js.stripe.com/v3/"></script>
+  <script src="checkout.js"></script>
+</body>
+</html>
