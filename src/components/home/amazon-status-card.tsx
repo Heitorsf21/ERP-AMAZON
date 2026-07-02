@@ -48,7 +48,7 @@ export function AmazonStatusCard() {
             </div>
           </div>
           <Link
-            href={"/amazon" as Route}
+            href={"/configuracoes?tab=integracoes" as Route}
             className="flex items-center gap-1 text-xs text-primary transition-colors hover:underline"
           >
             Abrir <ArrowRight className="h-3 w-3" />

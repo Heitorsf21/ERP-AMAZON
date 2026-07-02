@@ -183,7 +183,7 @@ export function AlertasCriticos() {
           icon: Globe,
           texto: `Amazon: última sync (${ultimoLog.tipo}) com erro`,
           detalhe: `há ${formatDistanceToNow(quandoDate, { locale: ptBR })}`,
-          href: "/sistema" as Route,
+          href: "/configuracoes?tab=integracoes" as Route,
           ordem: 1,
         });
       }

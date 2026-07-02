@@ -2,126 +2,71 @@
 
 import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-  Eye,
-  EyeOff,
-  Globe,
-  Loader2,
-  ShieldCheck,
-} from "lucide-react";
+import { Globe, Loader2, ShieldCheck, Unplug } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { fetchJSON } from "@/lib/fetcher";
 
+// Conexão da conta Amazon do cliente via OAuth (Login with Amazon → Seller
+// Central). O formulário manual de credenciais LWA saiu da UI — o endpoint
+// POST /api/amazon/config continua existindo para operação via script.
 type ConfigResponse = {
   config: Record<string, string>;
   configurado: boolean;
+  conta: {
+    oauthConectado: boolean;
+    status: string;
+    sellerId: string | null;
+    conectadoEm: string | null;
+  } | null;
 };
 
-type QueueSummary = {
-  queued: number;
-  running: number;
-  failed: number;
-};
-
-const CAMPOS_CONFIG = [
-  {
-    key: "amazon_client_id",
-    label: "LWA Client ID",
-    placeholder: "amzn1.application-oa2-client...",
-    secret: false,
-  },
-  {
-    key: "amazon_client_secret",
-    label: "LWA Client Secret",
-    placeholder: "...",
-    secret: true,
-  },
-  {
-    key: "amazon_refresh_token",
-    label: "LWA Refresh Token",
-    placeholder: "Atz|...",
-    secret: true,
-  },
-  {
-    key: "amazon_marketplace_id",
-    label: "Marketplace ID",
-    placeholder: "A2Q3Y263D00KWC",
-    secret: false,
-  },
-  {
-    key: "amazon_endpoint",
-    label: "SP-API Endpoint",
-    placeholder: "https://sellingpartnerapi-na.amazon.com",
-    secret: false,
-  },
-] as const;
+function formatData(value: string | null) {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toLocaleDateString("pt-BR", {
+    timeZone: "America/Sao_Paulo",
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  });
+}
 
 export function AmazonSection() {
   const qc = useQueryClient();
-  const [formValues, setFormValues] = React.useState<Record<string, string>>({});
-  const [camposVisiveis, setCamposVisiveis] = React.useState<Set<string>>(new Set());
 
-  const { data: configData, isLoading: loadingConfig } = useQuery<ConfigResponse>({
+  const { data: configData, isLoading } = useQuery<ConfigResponse>({
     queryKey: ["amazon-config"],
     queryFn: () => fetchJSON<ConfigResponse>("/api/amazon/config"),
   });
 
-  const { data: queue } = useQuery<QueueSummary>({
-    queryKey: ["amazon-jobs"],
-    queryFn: () => fetchJSON<QueueSummary>("/api/amazon/jobs"),
-    refetchInterval: 8_000,
-  });
-
-  React.useEffect(() => {
-    if (!configData) return;
-    setFormValues({
-      amazon_marketplace_id: "A2Q3Y263D00KWC",
-      amazon_endpoint: "https://sellingpartnerapi-na.amazon.com",
-      ...configData.config,
-    });
-  }, [configData]);
-
-  const salvarConfig = useMutation({
-    mutationFn: (values: Record<string, string>) =>
-      fetchJSON("/api/amazon/config", {
-        method: "POST",
-        body: JSON.stringify(values),
-      }),
+  const desconectar = useMutation({
+    mutationFn: () => fetchJSON("/api/amazon/oauth/desconectar", { method: "POST" }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["amazon-config"] });
-      toast.success("Credenciais salvas.");
+      toast.success("Conta Amazon desconectada.");
     },
-    onError: () => toast.error("Erro ao salvar credenciais."),
+    onError: (err) =>
+      toast.error(err instanceof Error ? err.message : "Erro ao desconectar."),
   });
 
-  const testarConexao = useMutation({
-    mutationFn: () =>
-      fetchJSON<{ ok: boolean; mensagem: string }>("/api/amazon/sync", {
-        method: "POST",
-        body: JSON.stringify({ tipo: "TEST" }),
-      }),
-    onSuccess: (data) => {
-      if (data.ok) toast.success(data.mensagem);
-      else toast.error(data.mensagem);
-      qc.invalidateQueries({ queryKey: ["amazon-logs"] });
-    },
-    onError: (e) => toast.error(e instanceof Error ? e.message : "Erro"),
-  });
-
-  function toggleVisivel(key: string) {
-    setCamposVisiveis((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
-  }
+  const conta = configData?.conta ?? null;
+  const oauthConectado = !!conta?.oauthConectado;
+  // Contas antigas podem estar configuradas pelo caminho legado (sem OAuth);
+  // para o cliente isso também é "conectado".
+  const conectado = oauthConectado || (configData?.configurado ?? false);
+  const comErro = conta?.status === "ERRO";
+  const conectadoEm = formatData(conta?.conectadoEm ?? null);
 
   return (
     <Card>
@@ -134,113 +79,74 @@ export function AmazonSection() {
             <div>
               <CardTitle className="text-base">Amazon Seller Central</CardTitle>
               <CardDescription>
-                Credenciais SP-API usadas pelo conector e workers de sincronizacao.
+                Conecte sua conta de vendedor para sincronizar pedidos, estoque e
+                financeiro automaticamente.
               </CardDescription>
             </div>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
-            {configData && (
-              <Badge variant={configData.configurado ? "success" : "secondary"}>
-                {configData.configurado ? "Configurado" : "Nao configurado"}
+          {configData &&
+            (comErro ? (
+              <Badge variant="destructive">Erro na conexao</Badge>
+            ) : (
+              <Badge variant={conectado ? "success" : "secondary"}>
+                {conectado ? "Conectada" : "Nao conectada"}
               </Badge>
-            )}
-            {queue && (
-              <Badge variant="outline">
-                Fila: {queue.queued} pend. / {queue.running} rod.
-              </Badge>
-            )}
-          </div>
+            ))}
         </div>
       </CardHeader>
-      <CardContent className="space-y-5">
-        <div className="rounded-lg border border-primary/20 bg-primary/5 p-4 text-xs text-muted-foreground">
-          <p className="mb-1 flex items-center gap-1.5 font-medium text-foreground">
-            <ShieldCheck className="h-3.5 w-3.5 text-primary" />
-            Como obter as credenciais
-          </p>
-          <ol className="list-inside list-decimal space-y-1 leading-relaxed">
-            <li>Seller Central, abra o aplicativo SP-API privado.</li>
-            <li>Copie o Client ID e Client Secret em Credenciais do LWA.</li>
-            <li>Em Gerenciar autorizacoes, gere o Refresh Token do Brasil.</li>
-            <li>Marketplace BR: <code className="rounded bg-muted px-1 font-mono">A2Q3Y263D00KWC</code></li>
-            <li>Endpoint: <code className="rounded bg-muted px-1 font-mono">https://sellingpartnerapi-na.amazon.com</code></li>
-          </ol>
-        </div>
-
-        {loadingConfig ? (
-          <div className="space-y-3">
-            {Array.from({ length: 5 }).map((_, i) => (
-              <Skeleton key={i} className="h-10 w-full" />
-            ))}
-          </div>
+      <CardContent className="space-y-4">
+        {isLoading ? (
+          <Skeleton className="h-16 w-full" />
         ) : (
-          <div className="grid gap-4 sm:grid-cols-2">
-            {CAMPOS_CONFIG.map((campo) => (
-              <div key={campo.key} className="space-y-1">
-                <Label>{campo.label}</Label>
-                <div className="relative">
-                  <Input
-                    type={
-                      campo.secret && !camposVisiveis.has(campo.key)
-                        ? "password"
-                        : "text"
-                    }
-                    placeholder={campo.placeholder}
-                    value={formValues[campo.key] ?? ""}
-                    onChange={(e) =>
-                      setFormValues((prev) => ({
-                        ...prev,
-                        [campo.key]: e.target.value,
-                      }))
-                    }
-                  />
-                  {campo.secret && (
-                    <button
-                      type="button"
-                      onClick={() => toggleVisivel(campo.key)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                      aria-label={
-                        camposVisiveis.has(campo.key)
-                          ? "Ocultar credencial"
-                          : "Mostrar credencial"
-                      }
-                    >
-                      {camposVisiveis.has(campo.key) ? (
-                        <EyeOff className="h-4 w-4" />
-                      ) : (
-                        <Eye className="h-4 w-4" />
-                      )}
-                    </button>
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-background p-3">
+            <div className="space-y-1">
+              <p className="text-sm font-medium text-foreground">
+                {conectado
+                  ? "Sua conta esta vinculada ao Atlas Seller."
+                  : "Nenhuma conta vinculada ainda."}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {conectado
+                  ? [
+                      conta?.sellerId ? `Seller ${conta.sellerId}` : null,
+                      conectadoEm ? `conectada em ${conectadoEm}` : null,
+                    ]
+                      .filter(Boolean)
+                      .join(" · ") || "Sincronizacao automatica ativa."
+                  : "Voce sera redirecionado ao Seller Central para autorizar o acesso."}
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                variant={conectado ? "outline" : "default"}
+                onClick={() => window.location.assign("/api/amazon/oauth/iniciar")}
+              >
+                <ShieldCheck className="mr-2 h-4 w-4" />
+                {conectado ? "Reconectar" : "Conectar com a Amazon"}
+              </Button>
+              {oauthConectado && (
+                <Button
+                  variant="outline"
+                  onClick={() => desconectar.mutate()}
+                  disabled={desconectar.isPending}
+                >
+                  {desconectar.isPending ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <Unplug className="mr-2 h-4 w-4" />
                   )}
-                </div>
-              </div>
-            ))}
+                  Desconectar
+                </Button>
+              )}
+            </div>
           </div>
         )}
 
-        <div className="flex flex-wrap gap-3">
-          <Button
-            onClick={() => salvarConfig.mutate(formValues)}
-            disabled={salvarConfig.isPending || loadingConfig}
-          >
-            {salvarConfig.isPending && (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            )}
-            Salvar credenciais
-          </Button>
-          <Button
-            variant="outline"
-            onClick={() => testarConexao.mutate()}
-            disabled={testarConexao.isPending || loadingConfig}
-          >
-            {testarConexao.isPending ? (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            ) : (
-              <Globe className="mr-2 h-4 w-4" />
-            )}
-            Testar conexao
-          </Button>
-        </div>
+        <p className="text-xs text-muted-foreground">
+          A autorizacao usa o login oficial da Amazon — suas credenciais nunca
+          passam pelo Atlas Seller. Apos conectar, a primeira sincronizacao
+          comeca em poucos minutos.
+        </p>
       </CardContent>
     </Card>
   );

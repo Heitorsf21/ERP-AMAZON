@@ -23,7 +23,9 @@ export const GET = handle(async (req: Request) => {
   const oauthError = url.searchParams.get("error");
 
   if (oauthError) {
-    return NextResponse.redirect(new URL("/amazon?erro=ads_oauth", req.url));
+    return NextResponse.redirect(
+      new URL("/configuracoes?tab=integracoes&ads=erro", req.url),
+    );
   }
 
   const secret = process.env.SESSION_SECRET;
@@ -101,8 +103,8 @@ export const GET = handle(async (req: Request) => {
 
     const destino =
       status === "ATIVA"
-        ? "/amazon?ads=conectado"
-        : "/amazon?ads=profile_required";
+        ? "/configuracoes?tab=integracoes&ads=conectado"
+        : "/configuracoes?tab=integracoes&ads=profile_required";
     return NextResponse.redirect(new URL(destino, req.url));
   } catch (err) {
     logger.error(
@@ -115,6 +117,8 @@ export const GET = handle(async (req: Request) => {
         data: { adsStatus: "ERRO" },
       })
       .catch(() => {});
-    return NextResponse.redirect(new URL("/amazon?erro=ads_oauth", req.url));
+    return NextResponse.redirect(
+      new URL("/configuracoes?tab=integracoes&ads=erro", req.url),
+    );
   }
 });
