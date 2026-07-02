@@ -194,10 +194,17 @@ export async function criarAssinaturaPublicaLanding(
     nome_empresa: input.nomeEmpresa?.trim() || input.nome.trim(),
   };
 
+  // Usuário pode digitar o celular já com +55; o DDD 55 (RS) é legítimo, então
+  // só removemos o prefixo quando sobram 10-11 dígitos (12-13 no total).
+  const celular =
+    input.celular.length >= 12 && input.celular.startsWith("55")
+      ? input.celular.slice(2)
+      : input.celular;
+
   const customer = await stripe.customers.create({
     name: input.nome.trim(),
     email: input.email.toLowerCase().trim(),
-    phone: `+55${input.celular}`,
+    phone: `+55${celular}`,
     tax_id_data: [
       { type: input.cpfCnpj.length === 11 ? "br_cpf" : "br_cnpj", value: input.cpfCnpj },
     ],

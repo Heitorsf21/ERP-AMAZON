@@ -119,6 +119,26 @@ describe("criarAssinaturaPublicaLanding", () => {
       criarAssinaturaPublicaLanding({ planId: "pro", period: "mensal", nome: "A B", email: "a@b.com", cpfCnpj: "12345678901", celular: "11999998888" }),
     ).rejects.toThrow("assinatura sem client_secret");
   });
+
+  it("remove o código do país duplicado quando o celular já vem com 55", async () => {
+    await criarAssinaturaPublicaLanding({
+      planId: "pro", period: "mensal",
+      nome: "A B", email: "a@b.com",
+      cpfCnpj: "12345678901", celular: "5511999998888",
+    });
+    const cust = stripeMock.customers.create.mock.calls[0]?.[0];
+    expect(cust.phone).toBe("+5511999998888");
+  });
+
+  it("NÃO remove o 55 quando é DDD legítimo (11 dígitos ou menos)", async () => {
+    await criarAssinaturaPublicaLanding({
+      planId: "pro", period: "mensal",
+      nome: "A B", email: "a@b.com",
+      cpfCnpj: "12345678901", celular: "55999998888",
+    });
+    const cust = stripeMock.customers.create.mock.calls[0]?.[0];
+    expect(cust.phone).toBe("+5555999998888");
+  });
 });
 
 describe("processarEventoStripe / checkout.session.completed", () => {
