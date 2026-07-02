@@ -146,7 +146,7 @@ export const notificacaoService = {
           tipo: "ESTOQUE_CRITICO",
           titulo: `Estoque crítico: ${p.nome || p.sku}`,
           descricao: `${diasEstoque} dia${diasEstoque === 1 ? "" : "s"} restante${diasEstoque === 1 ? "" : "s"} de estoque (${unidadesPorDia.toFixed(1)} un/dia)`,
-          linkRef: "/produtos",
+          linkRef: `/produtos?busca=${encodeURIComponent(p.sku)}`,
           dedupeKey: `ESTOQUE_CRITICO:${p.sku}:${hoje}`,
         });
       }
@@ -168,7 +168,7 @@ export const notificacaoService = {
         tipo: "BUYBOX_PERDIDO",
         titulo: `Buybox perdida: ${p.nome || p.sku}`,
         descricao: `O produto está sem o Buybox há mais de 7 dias consecutivos`,
-        linkRef: "/produtos",
+        linkRef: `/produtos?busca=${encodeURIComponent(p.sku)}`,
         dedupeKey: `BUYBOX_PERDIDO:${p.sku}:${hoje}`,
       });
     }

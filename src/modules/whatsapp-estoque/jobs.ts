@@ -79,7 +79,7 @@ async function notificarFalha(erro: string): Promise<void> {
     tipo: TipoNotificacao.CONFIG_REVIEW,
     titulo: "Resumo de estoque WhatsApp falhou",
     descricao: erro.slice(0, 280),
-    linkRef: "/configuracoes",
+    linkRef: "/configuracoes?tab=integracoes",
     dedupeKey: `whatsapp_estoque_falha:${dataLocalSaoPaulo()}`,
   });
 }

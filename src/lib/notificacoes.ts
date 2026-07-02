@@ -210,7 +210,8 @@ export function notificarAcosAlto(args: {
     tipo: TipoNotificacao.ACOS_ALTO,
     titulo: `ACOS alto: ${args.sku} (${pct}%)`,
     descricao: `${args.janelaDias}d: gasto R$ ${(args.gastoCentavos / 100).toFixed(2)} / vendas R$ ${(args.vendasCentavos / 100).toFixed(2)}.`,
-    linkRef: `/produtos?busca=${encodeURIComponent(args.sku)}`,
+    // Ação sobre ACOS acontece no Otimizador (lances/negativação), não em /produtos.
+    linkRef: `/publicidade/otimizador?sku=${encodeURIComponent(args.sku)}`,
     dedupeKey: `acos_alto:${args.sku}:${diaUTC()}`,
   });
 }

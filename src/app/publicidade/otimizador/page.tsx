@@ -1,6 +1,7 @@
 ﻿"use client";
 
 import * as React from "react";
+import { useSearchParams } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle,
@@ -38,6 +39,7 @@ import { fetchJSON } from "@/lib/fetcher";
 import { formatBRL } from "@/lib/money";
 import { cn } from "@/lib/utils";
 import { ProductThumb } from "@/components/ui/product-thumb";
+import { InvestimentoPorProduto } from "@/components/publicidade/investimento-por-produto";
 import { resolverImagemProduto } from "@/lib/amazon-images";
 
 type OptimizerMetrics = {
@@ -212,8 +214,20 @@ const SEVERITY_LABEL: Record<Recommendation["severity"], string> = {
   CRITICAL: "Critica",
 };
 
-export default function AdsOptimizerPage() {
+function AdsOptimizerPageInner() {
   const queryClient = useQueryClient();
+  // Deep-link das notificações (ACOS alto → /publicidade/otimizador?sku=SKU):
+  // pré-seleciona o produto no painel de investimento.
+  const searchParams = useSearchParams();
+  const skuInicial = searchParams.get("sku");
+  const [skuSelecionado, setSkuSelecionado] = React.useState<string | null>(
+    skuInicial || null,
+  );
+  // Navegação client-side para outro ?sku= (ex: clicar em outra notificação
+  // com o app aberto) precisa re-selecionar — useState só inicializa uma vez.
+  React.useEffect(() => {
+    if (skuInicial) setSkuSelecionado(skuInicial);
+  }, [skuInicial]);
   const [statusFilter, setStatusFilter] = React.useState("PROPOSED");
   const [actionFilter, setActionFilter] = React.useState("ALL");
   const [severityFilter, setSeverityFilter] = React.useState("ALL");
@@ -294,9 +308,23 @@ export default function AdsOptimizerPage() {
     onError: (error: Error) => toast.error(error.message),
   });
 
-  const recommendations = query.data?.recommendations ?? [];
+  const recommendations = React.useMemo(
+    () => query.data?.recommendations ?? [],
+    [query.data],
+  );
   const historyLabel = "Historico disponivel";
+  // Contagem de pendentes por SKU para os badges do painel de investimento.
+  const recPendentesPorSku = React.useMemo(() => {
+    const map = new Map<string, number>();
+    for (const rec of recommendations) {
+      if (rec.status !== "PROPOSED" || !rec.sku) continue;
+      map.set(rec.sku, (map.get(rec.sku) ?? 0) + 1);
+    }
+    return map;
+  }, [recommendations]);
   const filtered = recommendations.filter((rec) => {
+    // Seleção de produto no donut: foca as recomendações daquele SKU.
+    if (skuSelecionado && rec.sku !== skuSelecionado) return false;
     if (statusFilter !== "ALL" && rec.status !== statusFilter) return false;
     if (actionFilter !== "ALL" && rec.actionType !== actionFilter) return false;
     if (severityFilter !== "ALL" && rec.severity !== severityFilter) return false;
@@ -361,12 +389,24 @@ export default function AdsOptimizerPage() {
         >
           <Play className="mr-2 h-4 w-4" />
           Executar aprovadas
+          {executableApproved > 0 && (
+            <span className="ml-1.5 rounded-full bg-white/25 px-1.5 text-xs tabular-nums">
+              {executableApproved}
+            </span>
+          )}
         </Button>
       </PageHeader>
 
-      <ObservationPanel observations={query.data?.observations ?? []} />
+      <InvestimentoPorProduto
+        skuSelecionado={skuSelecionado}
+        onSelecionar={setSkuSelecionado}
+        recPendentesPorSku={recPendentesPorSku}
+      />
 
-      <SkuSummaryRail groups={grouped.resolvedGroups} unresolvedCount={grouped.unresolved.length} />
+      {/* Painéis de visão geral — somem quando um produto está em foco */}
+      {!skuSelecionado && (
+        <ObservationPanel observations={query.data?.observations ?? []} />
+      )}
 
       <Card>
         <CardContent className="grid gap-3 pt-6 md:grid-cols-3 lg:grid-cols-8">
@@ -449,7 +489,10 @@ export default function AdsOptimizerPage() {
           ))}
         </div>
       ) : filtered.length === 0 ? (
-        <EmptyState hasData={recommendations.length > 0} />
+        <EmptyState
+          hasData={recommendations.length > 0}
+          skuSelecionado={skuSelecionado}
+        />
       ) : (
         <div className="grid gap-4">
           {grouped.resolvedGroups.map((group) => (
@@ -488,58 +531,11 @@ export default function AdsOptimizerPage() {
   );
 }
 
-
-function SkuSummaryRail({
-  groups,
-  unresolvedCount,
-}: {
-  groups: SkuGroup[];
-  unresolvedCount: number;
-}) {
-  if (groups.length === 0 && unresolvedCount === 0) return null;
+export default function AdsOptimizerPage() {
   return (
-    <Card>
-      <CardContent className="space-y-3 pt-5">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <p className="text-sm font-semibold">Resumo por SKU</p>
-            <p className="text-sm text-muted-foreground">
-              Priorize os SKUs com mais gasto, acoes criticas e oportunidades de termo.
-            </p>
-          </div>
-          {unresolvedCount > 0 && (
-            <Badge variant="outline" className="border-amber-300 bg-amber-50 text-amber-900">
-              {unresolvedCount} sem atribuicao segura
-            </Badge>
-          )}
-        </div>
-        <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-4">
-          {groups.slice(0, 8).map((group) => (
-            <div key={group.key} className="rounded-md border bg-muted/20 p-3">
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-semibold">{group.sku}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {plural(group.actionGroupCount, "grupo", "grupos")} |{" "}
-                    {plural(group.proposedCount, "pendente", "pendentes")}
-                  </p>
-                </div>
-                {group.criticalCount > 0 && (
-                  <Badge className="border-transparent bg-red-600 text-white">
-                    {group.criticalCount}
-                  </Badge>
-                )}
-              </div>
-              <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
-                <Fact label="Gasto afetado" value={formatBRL(group.totals30d.gastoCentavos)} />
-                <Fact label="Vendas afetadas" value={formatBRL(group.totals30d.vendasCentavos)} />
-                <Fact label="ACOS" value={formatPct(group.totals30d.acos)} />
-              </div>
-            </div>
-          ))}
-        </div>
-      </CardContent>
-    </Card>
+    <React.Suspense fallback={<div className="h-40 rounded-xl border bg-card" />}>
+      <AdsOptimizerPageInner />
+    </React.Suspense>
   );
 }
 
@@ -1276,7 +1272,28 @@ function MiniEmpty({ text }: { text: string }) {
   );
 }
 
-function EmptyState({ hasData }: { hasData: boolean }) {
+function EmptyState({
+  hasData,
+  skuSelecionado,
+}: {
+  hasData: boolean;
+  skuSelecionado?: string | null;
+}) {
+  if (skuSelecionado) {
+    return (
+      <Card>
+        <CardContent className="py-10 text-center">
+          <p className="text-sm font-medium">
+            Nenhuma recomendação pendente para este produto.
+          </p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            O funil está observando as campanhas dele — novas ações aparecem
+            aqui. Confira também os filtros de status acima.
+          </p>
+        </CardContent>
+      </Card>
+    );
+  }
   return (
     <Card>
       <CardContent className="py-10 text-center">

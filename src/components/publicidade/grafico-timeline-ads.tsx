@@ -2,10 +2,12 @@
 
 import { useQuery } from "@tanstack/react-query";
 import {
+  Area,
+  Bar,
   CartesianGrid,
+  ComposedChart,
   Legend,
   Line,
-  LineChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -34,6 +36,8 @@ function formatDataCurta(iso: string): string {
   return `${d}/${m}`;
 }
 
+// Investimento (barras) × Vendas atribuídas (área) × ACoS (linha) —
+// as grandezas em R$ viraram séries visíveis; ROAS permanece no tooltip.
 export function GraficoTimelineAds({
   de,
   ate,
@@ -57,57 +61,64 @@ export function GraficoTimelineAds({
     gasto: p.gastoCentavos / 100,
     vendas: p.vendasCentavos / 100,
     acosShow: p.acos != null ? Number(p.acos.toFixed(2)) : null,
-    roasShow: p.roas != null ? Number(p.roas.toFixed(2)) : null,
   }));
 
   return (
-    <Card>
+    <Card className="flex h-full flex-col">
       <CardHeader className="pb-2">
-        <CardTitle className="text-sm font-medium">
-          Evolução de ACoS e ROAS
+        <CardTitle className="text-base">
+          Investimento × Vendas × ACoS
         </CardTitle>
       </CardHeader>
-      <CardContent>
+      <CardContent className="flex-1">
         {isLoading ? (
-          <Skeleton className="h-64 w-full" />
+          <Skeleton className="h-72 w-full" />
         ) : pontos.length === 0 ? (
-          <div className="flex h-64 items-center justify-center text-sm text-muted-foreground">
+          <div className="flex h-72 items-center justify-center text-sm text-muted-foreground">
             Sem dados no período selecionado.
           </div>
         ) : (
-          <div className="h-64 w-full">
+          <div className="h-72 w-full">
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart
+              <ComposedChart
                 data={pontos}
-                margin={{ top: 5, right: 16, bottom: 5, left: 0 }}
+                margin={{ top: 5, right: 8, bottom: 5, left: 8 }}
               >
+                <defs>
+                  <linearGradient id="gradVendasAds" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#10b981" stopOpacity={0.35} />
+                    <stop offset="100%" stopColor="#10b981" stopOpacity={0.03} />
+                  </linearGradient>
+                </defs>
                 <CartesianGrid
                   strokeDasharray="3 3"
+                  vertical={false}
                   stroke="hsl(var(--border))"
                 />
-                <XAxis dataKey="dataLabel" tick={{ fontSize: 11 }} />
-                <YAxis
-                  yAxisId="left"
+                <XAxis
+                  dataKey="dataLabel"
                   tick={{ fontSize: 11 }}
-                  tickFormatter={(v) => `${v}%`}
-                  label={{
-                    value: "ACoS",
-                    angle: -90,
-                    position: "insideLeft",
-                    style: { fontSize: 11 },
-                  }}
+                  tickLine={false}
+                  axisLine={false}
                 />
                 <YAxis
-                  yAxisId="right"
-                  orientation="right"
+                  yAxisId="reais"
+                  width={70}
                   tick={{ fontSize: 11 }}
-                  tickFormatter={(v) => `${v}x`}
-                  label={{
-                    value: "ROAS",
-                    angle: 90,
-                    position: "insideRight",
-                    style: { fontSize: 11 },
-                  }}
+                  tickLine={false}
+                  axisLine={false}
+                  tickFormatter={(v: number) =>
+                    `R$ ${v.toLocaleString("pt-BR", { maximumFractionDigits: 0 })}`
+                  }
+                />
+                <YAxis
+                  yAxisId="pct"
+                  orientation="right"
+                  width={44}
+                  tick={{ fontSize: 11 }}
+                  tickLine={false}
+                  axisLine={false}
+                  tickFormatter={(v: number) => `${v}%`}
                 />
                 <Tooltip
                   content={({ active, payload, label }) => {
@@ -121,7 +132,7 @@ export function GraficoTimelineAds({
                         <div className="mb-1 font-medium">{label}</div>
                         <div className="space-y-0.5 tabular-nums">
                           <div>
-                            Gasto:{" "}
+                            Investido:{" "}
                             <strong>{formatBRL(p.gastoCentavos)}</strong>
                           </div>
                           <div>
@@ -159,27 +170,36 @@ export function GraficoTimelineAds({
                   }}
                 />
                 <Legend wrapperStyle={{ fontSize: 11 }} />
+                <Bar
+                  yAxisId="reais"
+                  dataKey="gasto"
+                  fill="#f59e0b"
+                  radius={[3, 3, 0, 0]}
+                  maxBarSize={26}
+                  name="Investido (R$)"
+                />
+                <Area
+                  yAxisId="reais"
+                  type="monotone"
+                  dataKey="vendas"
+                  stroke="#10b981"
+                  strokeWidth={2}
+                  fill="url(#gradVendasAds)"
+                  dot={false}
+                  name="Vendas atrib. (R$)"
+                />
                 <Line
-                  yAxisId="left"
+                  yAxisId="pct"
                   type="monotone"
                   dataKey="acosShow"
                   stroke="#ef4444"
                   strokeWidth={2}
-                  dot={{ r: 3 }}
+                  strokeDasharray="5 3"
+                  dot={false}
                   name="ACoS %"
                   connectNulls
                 />
-                <Line
-                  yAxisId="right"
-                  type="monotone"
-                  dataKey="roasShow"
-                  stroke="#10b981"
-                  strokeWidth={2}
-                  dot={{ r: 3 }}
-                  name="ROAS"
-                  connectNulls
-                />
-              </LineChart>
+              </ComposedChart>
             </ResponsiveContainer>
           </div>
         )}

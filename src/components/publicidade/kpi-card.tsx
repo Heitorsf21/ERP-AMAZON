@@ -53,6 +53,8 @@ function corDelta(
   };
 }
 
+// Card de KPI da Publicidade no padrão visual do Dashboard E-commerce:
+// barra lateral de categoria (âmbar = ads) + ícone em pastilha colorida.
 export function KpiCard({
   label,
   value,
@@ -75,41 +77,24 @@ export function KpiCard({
   const cores = delta == null ? null : corDelta(delta, polaridade);
 
   return (
-    <Card>
-      <CardContent className="pt-6">
-        <div className="flex items-start justify-between">
-          <div className="min-w-0">
-            <p className="text-xs uppercase tracking-wide text-muted-foreground">
-              {label}
-            </p>
-            <p className="mt-1 truncate text-2xl font-semibold tabular-nums">
-              {value}
-            </p>
-            {sub && (
-              <p className="mt-0.5 text-xs text-muted-foreground">{sub}</p>
-            )}
-          </div>
-          <Icon className="h-5 w-5 shrink-0 text-muted-foreground" />
+    <Card className="relative overflow-hidden transition-shadow hover:shadow-md">
+      <span
+        aria-hidden
+        className="absolute bottom-0 left-0 top-0 w-1 bg-amber-500"
+      />
+      <CardContent className="pt-5">
+        <div className="flex items-start justify-between gap-2">
+          <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+            {label}
+          </p>
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-amber-500/10 text-amber-600 dark:text-amber-400">
+            <Icon className="h-4 w-4" />
+          </span>
         </div>
-
-        <div className="mt-3 flex items-center gap-2">
-          {delta != null && cores ? (
-            <span
-              className={cn(
-                "inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs font-medium",
-                cores.bg,
-                cores.texto,
-              )}
-            >
-              <SetaIcon className="h-3 w-3" />
-              {formatPct(delta)}
-            </span>
-          ) : (
-            <span className="inline-flex items-center gap-1 rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
-              <Minus className="h-3 w-3" />
-              vs. anterior
-            </span>
-          )}
+        <div className="mt-1 flex flex-wrap items-baseline gap-2">
+          <p className="truncate text-2xl font-bold leading-tight tracking-tight tabular-nums xl:text-3xl">
+            {value}
+          </p>
           {destaqueLabel && (
             <span
               className={cn(
@@ -119,6 +104,27 @@ export function KpiCard({
             >
               {destaqueLabel}
             </span>
+          )}
+        </div>
+        {sub && <p className="mt-0.5 text-xs text-muted-foreground">{sub}</p>}
+
+        <div className="mt-2.5 flex items-center gap-2 text-xs">
+          {delta != null && cores ? (
+            <>
+              <span
+                className={cn(
+                  "inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-medium",
+                  cores.bg,
+                  cores.texto,
+                )}
+              >
+                <SetaIcon className="h-3 w-3" />
+                {formatPct(delta)}
+              </span>
+              <span className="text-muted-foreground">vs. período anterior</span>
+            </>
+          ) : (
+            <span className="text-muted-foreground">— sem comparativo</span>
           )}
         </div>
       </CardContent>

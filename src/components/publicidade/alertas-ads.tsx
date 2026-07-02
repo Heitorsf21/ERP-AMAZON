@@ -1,8 +1,7 @@
 "use client";
 
-import { AlertTriangle, MousePointerClick, Zap } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { cn } from "@/lib/utils";
+import Link from "next/link";
+import { AlertTriangle } from "lucide-react";
 
 type CampanhaParaAlerta = {
   nomeCampanha: string;
@@ -16,6 +15,9 @@ type AlertasAdsProps = {
   campanhas: CampanhaParaAlerta[];
 };
 
+// Strip compacta de sinais acionáveis — vive logo abaixo dos KPIs (antes era
+// um card grande no rodapé da página). Os nomes das campanhas afetadas ficam
+// no title de cada contador.
 export function AlertasAds({ campanhas }: AlertasAdsProps) {
   const acosAlto = campanhas.filter((c) => (c.acosPercentual ?? 0) > 30);
   const roasBaixo = campanhas.filter(
@@ -37,72 +39,59 @@ export function AlertasAds({ campanhas }: AlertasAdsProps) {
   }
 
   return (
-    <Card>
-      <CardHeader className="pb-2">
-        <CardTitle className="text-sm font-medium">
+    <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 dark:border-amber-900/50 dark:bg-amber-950/30">
+      <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
+        <span className="flex items-center gap-1.5 font-semibold text-amber-800 dark:text-amber-300">
+          <AlertTriangle className="h-4 w-4" />
           Sinais de atenção
-        </CardTitle>
-      </CardHeader>
-      <CardContent>
-        <ul className="space-y-2 text-sm">
-          {acosAlto.length > 0 && (
-            <Linha
-              icon={AlertTriangle}
-              cor="text-orange-700 dark:text-orange-300 bg-orange-50 dark:bg-orange-950/40 border-orange-200 dark:border-orange-900"
-              titulo={`${acosAlto.length} campanha(s) com ACoS acima de 30%`}
-              detalhe="Considere reduzir lances ou pausar palavras-chave caras."
-              exemplos={acosAlto.slice(0, 3).map((c) => c.nomeCampanha)}
-            />
-          )}
-          {roasBaixo.length > 0 && (
-            <Linha
-              icon={Zap}
-              cor="text-red-700 dark:text-red-300 bg-red-50 dark:bg-red-950/40 border-red-200 dark:border-red-900"
-              titulo={`${roasBaixo.length} campanha(s) com ROAS abaixo de 2`}
-              detalhe="Cada R$ investido está retornando menos de R$ 2,00 — revise."
-              exemplos={roasBaixo.slice(0, 3).map((c) => c.nomeCampanha)}
-            />
-          )}
-          {conversaoBaixa.length > 0 && (
-            <Linha
-              icon={MousePointerClick}
-              cor="text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 border-amber-200 dark:border-amber-900"
-              titulo={`${conversaoBaixa.length} campanha(s) com conversão abaixo de 1%`}
-              detalhe="Avalie título, fotos e preço; tráfego está chegando mas não converte."
-              exemplos={conversaoBaixa.slice(0, 3).map((c) => c.nomeCampanha)}
-            />
-          )}
-        </ul>
-      </CardContent>
-    </Card>
+        </span>
+        {acosAlto.length > 0 && (
+          <Contador
+            n={acosAlto.length}
+            texto={`campanha${acosAlto.length > 1 ? "s" : ""} com ACoS > 30%`}
+            exemplos={acosAlto.map((c) => c.nomeCampanha)}
+          />
+        )}
+        {roasBaixo.length > 0 && (
+          <Contador
+            n={roasBaixo.length}
+            texto={`campanha${roasBaixo.length > 1 ? "s" : ""} com ROAS < 2`}
+            exemplos={roasBaixo.map((c) => c.nomeCampanha)}
+          />
+        )}
+        {conversaoBaixa.length > 0 && (
+          <Contador
+            n={conversaoBaixa.length}
+            texto="com conversão < 1%"
+            exemplos={conversaoBaixa.map((c) => c.nomeCampanha)}
+          />
+        )}
+        <Link
+          href="/publicidade/otimizador"
+          className="ml-auto font-medium text-amber-900 underline underline-offset-2 dark:text-amber-200"
+        >
+          Resolver no Otimizador →
+        </Link>
+      </div>
+    </div>
   );
 }
 
-function Linha({
-  icon: Icon,
-  cor,
-  titulo,
-  detalhe,
+function Contador({
+  n,
+  texto,
   exemplos,
 }: {
-  icon: React.ComponentType<{ className?: string }>;
-  cor: string;
-  titulo: string;
-  detalhe: string;
+  n: number;
+  texto: string;
   exemplos: string[];
 }) {
   return (
-    <li className={cn("flex items-start gap-3 rounded-md border p-3", cor)}>
-      <Icon className="mt-0.5 h-4 w-4 shrink-0" />
-      <div className="min-w-0 flex-1">
-        <p className="font-medium">{titulo}</p>
-        <p className="mt-0.5 text-xs opacity-90">{detalhe}</p>
-        {exemplos.length > 0 && (
-          <p className="mt-1 truncate text-[11px] opacity-80">
-            Ex.: {exemplos.join(" · ")}
-          </p>
-        )}
-      </div>
-    </li>
+    <span
+      className="cursor-default text-amber-800/90 dark:text-amber-200/90"
+      title={exemplos.slice(0, 5).join(" · ")}
+    >
+      <b className="tabular-nums">{n}</b> {texto}
+    </span>
   );
 }
