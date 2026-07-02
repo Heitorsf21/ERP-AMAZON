@@ -8,7 +8,7 @@ import {
   type BillingPlanId,
   getStripePriceId,
 } from "./plans";
-import { provisionarEmpresaDoCheckout } from "./provisionamento";
+import { provisionarEmpresaDoCheckout, provisionarEmpresaDoCustomer } from "./provisionamento";
 
 type CheckoutInput = {
   empresaId: string;
@@ -325,6 +325,17 @@ export async function processarEventoStripe(event: Stripe.Event): Promise<void> 
       );
       if (subscriptionId) {
         const subscription = await stripe.subscriptions.retrieve(subscriptionId);
+        // Fluxo Elements da landing: a 1ª invoice paga é o gatilho de provisionamento
+        // (não há Checkout Session). Idempotente — renovações reentram sem efeito.
+        if (subscription.metadata?.origem === "landing") {
+          const customerId = stringId(subscription.customer);
+          if (customerId) {
+            const customer = await stripe.customers.retrieve(customerId);
+            if (!("deleted" in customer) || !customer.deleted) {
+              await provisionarEmpresaDoCustomer(customer as Stripe.Customer);
+            }
+          }
+        }
         await aplicarAssinaturaStripe(subscription);
       }
       break;

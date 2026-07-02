@@ -17,7 +17,11 @@ const { dbMock, criarEmpresaMock } = vi.hoisted(() => ({
 vi.mock("@/lib/db", () => ({ db: dbMock }));
 vi.mock("@/modules/plataforma/empresas", () => ({ criarEmpresa: criarEmpresaMock }));
 
-import { provisionarEmpresaDoCheckout, slugificarNome } from "./provisionamento";
+import {
+  provisionarEmpresaDoCheckout,
+  provisionarEmpresaDoCustomer,
+  slugificarNome,
+} from "./provisionamento";
 import type Stripe from "stripe";
 
 function sessionFake(overrides: Record<string, unknown> = {}): Stripe.Checkout.Session {
@@ -31,6 +35,16 @@ function sessionFake(overrides: Record<string, unknown> = {}): Stripe.Checkout.S
     metadata: { origem: "landing", plano: "pro", ciclo: "mensal" },
     ...overrides,
   } as unknown as Stripe.Checkout.Session;
+}
+
+function customerFake(overrides: Record<string, unknown> = {}): Stripe.Customer {
+  return {
+    id: "cus_1",
+    email: "a@b.com",
+    name: "Maria",
+    metadata: { nome_empresa: "Loja X" },
+    ...overrides,
+  } as unknown as Stripe.Customer;
 }
 
 describe("slugificarNome", () => {
@@ -122,5 +136,49 @@ describe("provisionarEmpresaDoCheckout", () => {
     const slugUsado = (criarEmpresaMock.mock.calls[0]?.[0] as any)?.slug as string;
     expect(slugUsado).not.toBe("acai-do-joao");
     expect(slugUsado).toMatch(/^acai-do-joao-[a-z0-9]{4}$/);
+  });
+});
+
+describe("provisionarEmpresaDoCustomer", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    dbMock.empresa.findFirst.mockResolvedValue(null);
+    dbMock.empresa.findUnique.mockResolvedValue(null); // slug livre
+    dbMock.usuario.findFirst.mockResolvedValue(null); // e-mail livre
+    dbMock.empresa.update.mockResolvedValue({});
+    criarEmpresaMock.mockResolvedValue({
+      empresaId: "emp_1",
+      adminId: "usr_1",
+      rawToken: "tok",
+      definiuSenha: false,
+    });
+  });
+
+  it("cria empresa com nome_empresa do metadata do customer e admin com nome do pagador", async () => {
+    const r = await provisionarEmpresaDoCustomer(customerFake());
+
+    expect(r).toEqual({ status: "criada", empresaId: "emp_1" });
+    expect(criarEmpresaMock).toHaveBeenCalledWith({
+      nome: "Loja X",
+      slug: "loja-x",
+      admin: { nome: "Maria", email: "a@b.com" },
+    });
+    expect(dbMock.empresa.update).toHaveBeenCalledWith({
+      where: { id: "emp_1" },
+      data: { stripeCustomerId: "cus_1" },
+    });
+  });
+
+  it("sem metadata.nome_empresa usa o nome do pagador como fallback", async () => {
+    await provisionarEmpresaDoCustomer(customerFake({ metadata: {} }));
+    expect(criarEmpresaMock).toHaveBeenCalledWith(
+      expect.objectContaining({ nome: "Maria" }),
+    );
+  });
+
+  it("ignora customer sem e-mail", async () => {
+    const r = await provisionarEmpresaDoCustomer(customerFake({ email: null }));
+    expect(r).toEqual({ status: "ignorada", motivo: "sem-email" });
+    expect(criarEmpresaMock).not.toHaveBeenCalled();
   });
 });

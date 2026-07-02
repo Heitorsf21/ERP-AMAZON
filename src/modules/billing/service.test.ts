@@ -7,7 +7,7 @@ const { dbMock, stripeMock } = vi.hoisted(() => ({
   stripeMock: {
     checkout: { sessions: { create: vi.fn(), retrieve: vi.fn() } },
     subscriptions: { retrieve: vi.fn(), create: vi.fn() },
-    customers: { create: vi.fn() },
+    customers: { create: vi.fn(), retrieve: vi.fn() },
     billingPortal: { sessions: { create: vi.fn() } },
   },
 }));
@@ -16,9 +16,13 @@ vi.mock("@/lib/db", () => ({ db: dbMock }));
 vi.mock("@/lib/stripe", () => ({ requireStripe: () => stripeMock, stripe: stripeMock }));
 vi.mock("@/modules/billing/provisionamento", () => ({
   provisionarEmpresaDoCheckout: vi.fn().mockResolvedValue({ status: "criada", empresaId: "e1" }),
+  provisionarEmpresaDoCustomer: vi.fn().mockResolvedValue({ status: "criada", empresaId: "e1" }),
 }));
 
-import { provisionarEmpresaDoCheckout } from "@/modules/billing/provisionamento";
+import {
+  provisionarEmpresaDoCheckout,
+  provisionarEmpresaDoCustomer,
+} from "@/modules/billing/provisionamento";
 import {
   criarAssinaturaPublicaLanding,
   criarCheckoutPublicoLanding,
@@ -179,6 +183,61 @@ describe("processarEventoStripe / checkout.session.completed", () => {
   it("NÃO provisiona para checkout do fluxo logado (sem origem landing)", async () => {
     await processarEventoStripe(evento({ empresaId: "emp_1", plano: "pro", ciclo: "anual" }));
     expect(provisionarEmpresaDoCheckout).not.toHaveBeenCalled();
+    expect(dbMock.empresa.updateMany).toHaveBeenCalled();
+  });
+});
+
+describe("processarEventoStripe / invoice.paid", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    dbMock.empresa.updateMany.mockResolvedValue({ count: 1 });
+  });
+
+  function eventoInvoicePaid(subscriptionId: string | null = "sub_1"): Stripe.Event {
+    return {
+      type: "invoice.paid",
+      data: {
+        object: {
+          id: "in_1",
+          subscription: subscriptionId,
+        },
+      },
+    } as unknown as Stripe.Event;
+  }
+
+  it("provisiona empresa via customer ANTES de aplicar a assinatura quando veio da landing (fluxo Elements)", async () => {
+    stripeMock.subscriptions.retrieve.mockResolvedValue({
+      id: "sub_1",
+      customer: "cus_1",
+      status: "active",
+      items: { data: [{ price: { id: "price_1" } }] },
+      metadata: { origem: "landing", plano: "pro", ciclo: "mensal" },
+    });
+    stripeMock.customers.retrieve.mockResolvedValue({ id: "cus_1", email: "a@b.com" });
+
+    await processarEventoStripe(eventoInvoicePaid());
+
+    expect(stripeMock.customers.retrieve).toHaveBeenCalledWith("cus_1");
+    expect(provisionarEmpresaDoCustomer).toHaveBeenCalledWith({ id: "cus_1", email: "a@b.com" });
+
+    const ordemProvisionar = (provisionarEmpresaDoCustomer as any).mock.invocationCallOrder[0] as number;
+    const ordemUpdateMany = dbMock.empresa.updateMany.mock.invocationCallOrder[0] as number;
+    expect(ordemProvisionar).toBeLessThan(ordemUpdateMany);
+  });
+
+  it("NÃO provisiona quando a assinatura não veio da landing", async () => {
+    stripeMock.subscriptions.retrieve.mockResolvedValue({
+      id: "sub_1",
+      customer: "cus_1",
+      status: "active",
+      items: { data: [{ price: { id: "price_1" } }] },
+      metadata: { empresaId: "emp_1", plano: "pro", ciclo: "mensal" },
+    });
+
+    await processarEventoStripe(eventoInvoicePaid());
+
+    expect(provisionarEmpresaDoCustomer).not.toHaveBeenCalled();
+    expect(stripeMock.customers.retrieve).not.toHaveBeenCalled();
     expect(dbMock.empresa.updateMany).toHaveBeenCalled();
   });
 });
