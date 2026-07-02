@@ -5,49 +5,135 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Atlas Seller — Gestão e analytics para quem vende na Amazon</title>
   <meta name="description" content="Atlas Seller: plataforma de gestão e analytics para vendedores Amazon. Lucratividade real por venda, métricas de tráfego e conversão, otimização de Ads e controle financeiro.">
+  <link rel="canonical" href="https://atlasseller.mundofs.cloud/">
+  <meta property="og:type" content="website">
+  <meta property="og:locale" content="pt_BR">
+  <meta property="og:site_name" content="Atlas Seller">
+  <meta property="og:title" content="Atlas Seller — Gestão e analytics para quem vende na Amazon">
+  <meta property="og:description" content="Conecte sua conta Amazon por OAuth e acompanhe vendas, taxas, Ads, estoque e margem real em um painel único.">
+  <meta property="og:url" content="https://atlasseller.mundofs.cloud/">
+  <meta property="og:image" content="https://atlasseller.mundofs.cloud/assets/video/demo-poster.jpg?v=3">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Atlas Seller — Gestão e analytics para quem vende na Amazon">
+  <meta name="twitter:description" content="Lucratividade real, analytics Amazon, Ads, estoque e financeiro para vendedores Amazon.">
+  <meta name="twitter:image" content="https://atlasseller.mundofs.cloud/assets/video/demo-poster.jpg?v=3">
   <link rel="icon" href="assets/img/atlas-symbol.png">
-  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="styles.css?v=6">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "Organization",
+        "@id": "https://atlasseller.mundofs.cloud/#organization",
+        "name": "Fernandes \u0026 Santos Empreendimentos LTDA",
+        "alternateName": "MundoFS",
+        "url": "https://atlasseller.mundofs.cloud/",
+        "email": "admfsmundo@gmail.com",
+        "taxID": "61.549.983/0001-04",
+        "address": {
+          "@type": "PostalAddress",
+          "streetAddress": "Avenida Doutor Luis Arrobas Martins, 667 - CONJ 6.985",
+          "addressLocality": "São Paulo",
+          "addressRegion": "SP",
+          "postalCode": "04781-001",
+          "addressCountry": "BR"
+        }
+      },
+      {
+        "@type": "SoftwareApplication",
+        "@id": "https://atlasseller.mundofs.cloud/#software",
+        "name": "Atlas Seller",
+        "applicationCategory": "BusinessApplication",
+        "operatingSystem": "Web",
+        "description": "Plataforma de gestão e analytics para vendedores Amazon.",
+        "provider": { "@id": "https://atlasseller.mundofs.cloud/#organization" },
+        "offers": [
+          { "@type": "Offer", "name": "Starter", "price": "89.99", "priceCurrency": "BRL", "url": "https://atlasseller.mundofs.cloud/#precos" },
+          { "@type": "Offer", "name": "Pro", "price": "159.99", "priceCurrency": "BRL", "url": "https://atlasseller.mundofs.cloud/#precos" },
+          { "@type": "Offer", "name": "Scale", "price": "219.99", "priceCurrency": "BRL", "url": "https://atlasseller.mundofs.cloud/#precos" }
+        ]
+      }
+    ]
+  }
+  </script>
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    "mainEntity": [
+      {
+        "@type": "Question",
+        "name": "Preciso estar no Amazon Brand Registry?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "Para os relatórios de Marketplace Analytics (Brand Analytics), a Amazon exige que a marca esteja registrada no Brand Registry. Os demais recursos de gestão e lucratividade funcionam independentemente disso."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "Como o Atlas Seller se conecta à minha conta?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "Pela autorização oficial da Amazon (SP-API via OAuth). Você aprova o acesso no painel da Amazon e pode revogar quando quiser. Não pedimos nem armazenamos sua senha."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "Meus dados ficam seguros?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "Tokens e segredos são cifrados em repouso e os dados são usados apenas para servir a própria operação do cliente, em conformidade com a LGPD e as políticas da Amazon."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "Posso cancelar a qualquer momento?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "Sim. A assinatura pode ser cancelada a qualquer momento, sem fidelidade."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "Quais marketplaces são suportados?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "O foco atual é a Amazon Brasil (amazon.com.br). Outras integrações podem ser avaliadas conforme a evolução do produto."
+        }
+      }
+    ]
+  }
+  </script>
 </head>
 <body>
   <header class="site-header">
     <div class="container nav">
-      <a class="brand" href="#topo"><span class="sym"></span>Atlas <span class="accent">Seller</span></a>
-      <button type="button" class="nav-toggle" aria-label="Abrir menu"><span></span><span></span><span></span></button>
-      <nav class="nav-links">
+      <a class="brand" href="#topo"><span class="sym" aria-hidden="true"><svg viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg"><circle cx="18.5" cy="20.5" r="12" fill="none" stroke="#10B981" stroke-width="2.6"/><path d="M6.5 20.5h24" stroke="#10B981" stroke-width="2"/><path d="M18.5 8.5c5.6 3.6 5.6 20.4 0 24M18.5 8.5c-5.6 3.6-5.6 20.4 0 24" stroke="#10B981" stroke-width="2" fill="none"/><circle cx="31" cy="9" r="3.8" fill="#FF9900"/></svg></span>Atlas <span class="accent">Seller</span></a>
+      <button type="button" class="nav-toggle" aria-label="Abrir menu" aria-expanded="false" aria-controls="navLinks"><span></span><span></span><span></span></button>
+      <nav class="nav-links" id="navLinks" aria-label="Navegação principal">
         <a href="#recursos">Recursos</a>
         <a href="#analytics">Analytics</a>
         <a href="#seguranca">Segurança</a>
         <a href="#precos">Preços</a>
-        <a class="btn btn-primary" href="#contato">Agendar demo</a>
+        <a href="contato.html">Contato</a>
+        <a class="btn btn-primary" href="#precos">Ver planos</a>
       </nav>
     </div>
   </header>
 
   <main id="topo">
     <section class="hero">
-      <div class="container hero-grid">
-        <div>
-          <span class="eyebrow"><span class="dot" aria-hidden="true"></span>Feito para sellers Amazon</span>
-          <h1>Decisões com o <span class="underline">lucro na mão<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 12" preserveAspectRatio="none"><path d="M3 8 Q100 1 197 8" stroke="#FF9900" stroke-width="4" fill="none" stroke-linecap="round"/></svg></span>.</h1>
+      <div class="container hero-center">
+          <span class="eyebrow"><span class="dot" aria-hidden="true"></span>Pra quem vende na Amazon</span>
+          <h1>Decisões com o <span class="underline">lucro na mão<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 12" preserveAspectRatio="none" aria-hidden="true" focusable="false"><path d="M3 8 Q100 1 197 8" stroke="#FF9900" stroke-width="4" fill="none" stroke-linecap="round"/></svg></span>.</h1>
           <p class="lead">Conecte sua conta Amazon e veja vendas, taxas, Ads e margem reais — tudo em um painel só.</p>
           <div class="hero-cta">
-            <a class="btn btn-primary" href="#contato">Começar agora</a>
+            <a class="btn btn-primary" href="#precos">Começar agora</a>
             <a class="btn btn-outline" href="#recursos">Ver recursos</a>
           </div>
-        </div>
-        <div class="dash-card" aria-hidden="true">
-          <div class="dash-head"><span>Faturamento · últimos 30 dias</span><span style="color:var(--success)">+18%</span></div>
-          <div class="dash-value">R$ 248.910</div>
-          <div class="dash-bars">
-            <i style="height:40%;background:#BFDBFE"></i><i style="height:60%;background:#93C5FD"></i>
-            <i style="height:45%;background:#6EE7B7"></i><i style="height:80%;background:#34D399"></i>
-            <i style="height:65%;background:#10B981"></i><i style="height:100%;background:#059669"></i>
-          </div>
-          <div class="dash-kpis">
-            <div class="kpi"><div class="l">Margem</div><div class="v" style="color:var(--success-700)">23,4%</div></div>
-            <div class="kpi"><div class="l">ACOS</div><div class="v" style="color:var(--amazon-700)">14,1%</div></div>
-            <div class="kpi"><div class="l">Buy Box</div><div class="v">92%</div></div>
-          </div>
+        <div class="hero-video">
+          <video src="assets/video/atlas-seller-demo.mp4?v=3" poster="assets/video/demo-poster.jpg?v=3" autoplay muted loop playsinline preload="metadata" controls title="Demonstração visual do painel Atlas Seller"></video>
         </div>
       </div>
     </section>
@@ -57,7 +143,7 @@
     <section class="section" id="problema" style="background:var(--surface);border-top:1px solid var(--border);border-bottom:1px solid var(--border)">
       <div class="container">
         <div class="sec-head">
-          <span class="eyebrow"><span class="dot" aria-hidden="true"></span>O desafio de vender na Amazon</span>
+          <span class="eyebrow"><span class="dot" aria-hidden="true"></span>O problema de verdade</span>
           <h2>Vender é fácil. Saber se deu lucro é o problema.</h2>
           <p>Entre comissão, FBA, parcelamento, frete e imposto, o resultado real de cada venda se perde — e a decisão vira chute.</p>
         </div>
@@ -72,7 +158,7 @@
     <section class="section" id="como-funciona">
       <div class="container">
         <div class="sec-head">
-          <span class="eyebrow"><span class="dot" aria-hidden="true"></span>Como funciona</span>
+          <span class="eyebrow"><span class="dot" aria-hidden="true"></span>Como funciona na prática</span>
           <h2>Conectou, sincronizou, decidiu.</h2>
           <p>O Atlas Seller se conecta à sua conta Amazon de forma segura e transforma os dados brutos em decisões.</p>
         </div>
@@ -87,7 +173,7 @@
     <section class="section" id="recursos" style="background:var(--surface);border-top:1px solid var(--border)">
       <div class="container">
         <div class="sec-head">
-          <span class="eyebrow"><span class="dot" aria-hidden="true"></span>Recursos</span>
+          <span class="eyebrow"><span class="dot" aria-hidden="true"></span>Tudo num lugar só</span>
           <h2>Tudo da sua operação Amazon, em um lugar.</h2>
           <p>Da venda ao caixa: lucratividade, analytics de marketplace, publicidade, estoque e financeiro.</p>
         </div>
@@ -123,7 +209,7 @@
     <section class="section" id="seguranca">
       <div class="container">
         <div class="sec-head">
-          <span class="eyebrow"><span class="dot" aria-hidden="true"></span>Segurança e privacidade</span>
+          <span class="eyebrow"><span class="dot" aria-hidden="true"></span>Seus dados, seguros</span>
           <h2>Seus dados são seus. Tratados com cuidado.</h2>
           <p>Conexão oficial com a Amazon e proteção dos dados em conformidade com a LGPD e as políticas da Amazon.</p>
         </div>
@@ -140,44 +226,53 @@
     <section class="section" id="precos" style="background:var(--surface);border-top:1px solid var(--border);border-bottom:1px solid var(--border)">
       <div class="container">
         <div class="sec-head">
-          <span class="eyebrow"><span class="dot" aria-hidden="true"></span>Planos e preços</span>
+          <span class="eyebrow"><span class="dot" aria-hidden="true"></span>Planos e valores</span>
           <h2>Preços simples, sem surpresa.</h2>
-          <p>Escolha pelo volume da sua operação. Valores mensais em reais.</p>
+          <p>Escolha pelo volume da sua operação. Quanto maior o ciclo, maior o desconto.</p>
+        </div>
+        <div class="price-toggle-wrap">
+          <div class="price-toggle" id="priceToggle" role="group" aria-label="Ciclo de cobrança">
+            <button type="button" data-period="mensal" class="active" aria-pressed="true">Mensal</button>
+            <button type="button" data-period="trimestral" aria-pressed="false">Trimestral</button>
+            <button type="button" data-period="semestral" aria-pressed="false">Semestral</button>
+            <button type="button" data-period="anual" aria-pressed="false">Anual</button>
+          </div>
+          <p class="toggle-note" id="toggleNote"></p>
         </div>
         <div class="plans">
           <div class="plan">
             <h3>Starter</h3>
-            <div class="price">R$ 89,99<small>/mês</small></div>
+            <div class="price" data-base="8999"><span class="amount">R$ 89,99</span><small class="per">/mês</small><div class="equiv"></div></div>
             <ul>
               <li>1 conta Amazon</li>
               <li>Até ~500 vendas/mês</li>
               <li>Dashboards e DRE</li>
               <li>Lucratividade por venda</li>
             </ul>
-            <a class="btn btn-outline" href="#contato">Começar</a>
+            <a class="btn btn-outline" href="#contato" data-plan="starter">Começar</a>
           </div>
           <div class="plan featured">
             <span class="ribbon">Mais popular</span>
             <h3>Pro</h3>
-            <div class="price">R$ 159,99<small>/mês</small></div>
+            <div class="price" data-base="15999"><span class="amount">R$ 159,99</span><small class="per">/mês</small><div class="equiv"></div></div>
             <ul>
               <li>Até ~3.000 vendas/mês</li>
               <li>Marketplace Analytics (tráfego/Brand Analytics)</li>
               <li>Otimizador de Ads</li>
               <li>Resumo de estoque no WhatsApp</li>
             </ul>
-            <a class="btn btn-primary" href="#contato">Começar</a>
+            <a class="btn btn-primary" href="#contato" data-plan="pro">Começar</a>
           </div>
           <div class="plan">
             <h3>Scale</h3>
-            <div class="price">R$ 219,99<small>/mês</small></div>
+            <div class="price" data-base="21999"><span class="amount">R$ 219,99</span><small class="per">/mês</small><div class="equiv"></div></div>
             <ul>
               <li>Até 10.000+ vendas/mês</li>
               <li>Multi-conta</li>
               <li>Tudo do Pro</li>
               <li>Suporte premium</li>
             </ul>
-            <a class="btn btn-outline" href="#contato">Começar</a>
+            <a class="btn btn-outline" href="#contato" data-plan="scale">Começar</a>
           </div>
         </div>
       </div>
@@ -203,7 +298,16 @@
         <div class="cta-band">
           <h2>Pronto para enxergar o lucro de cada venda?</h2>
           <p>Agende uma demonstração e veja o Atlas Seller com os dados da sua operação.</p>
-          <a class="btn btn-primary" href="mailto:admfsmundo@gmail.com?subject=Quero%20uma%20demo%20do%20Atlas%20Seller">Agendar demo</a>
+          <div class="cta-actions">
+            <a class="btn btn-primary" href="mailto:admfsmundo@gmail.com?subject=Quero%20uma%20demo%20do%20Atlas%20Seller">Agendar demo</a>
+            <a class="btn btn-outline" href="contato.html">Ver contato completo</a>
+          </div>
+          <dl class="company-facts">
+            <div><dt>Operadora</dt><dd>Fernandes &amp; Santos Empreendimentos LTDA</dd></div>
+            <div><dt>CNPJ</dt><dd>61.549.983/0001-04</dd></div>
+            <div><dt>E-mail</dt><dd><a href="mailto:admfsmundo@gmail.com">admfsmundo@gmail.com</a></dd></div>
+            <div><dt>Encarregado LGPD</dt><dd>Heitor Dos Santos Fernandes</dd></div>
+          </dl>
         </div>
       </div>
     </section>
@@ -214,7 +318,7 @@
     <div class="container">
       <div class="footer-grid">
         <div style="max-width:300px">
-          <a class="brand" href="#topo"><span class="sym"></span>Atlas <span style="color:var(--success)">Seller</span></a>
+          <a class="brand" href="#topo"><span class="sym" aria-hidden="true"><svg viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg"><circle cx="18.5" cy="20.5" r="12" fill="none" stroke="#10B981" stroke-width="2.6"/><path d="M6.5 20.5h24" stroke="#10B981" stroke-width="2"/><path d="M18.5 8.5c5.6 3.6 5.6 20.4 0 24M18.5 8.5c-5.6 3.6-5.6 20.4 0 24" stroke="#10B981" stroke-width="2" fill="none"/><circle cx="31" cy="9" r="3.8" fill="#FF9900"/></svg></span>Atlas <span style="color:var(--success)">Seller</span></a>
           <p style="color:var(--muted);font-size:13px;margin-top:12px">Gestão e analytics para quem vende na Amazon.</p>
         </div>
         <div>
@@ -227,8 +331,15 @@
           <strong style="color:#fff;font-size:13px;display:block;margin-bottom:10px">Legal</strong>
           <div style="display:flex;flex-direction:column;gap:8px;font-size:14px">
             <a href="privacidade.html">Política de Privacidade</a><a href="termos.html">Termos de Uso</a>
-            <a href="mailto:admfsmundo@gmail.com">Contato</a>
+            <a href="contato.html">Contato</a>
           </div>
+        </div>
+        <div class="footer-company">
+          <strong>Dados da empresa</strong>
+          <p>Fernandes &amp; Santos Empreendimentos LTDA</p>
+          <p>CNPJ 61.549.983/0001-04</p>
+          <p>Avenida Doutor Luis Arrobas Martins, 667 - CONJ 6.985, Capela do Socorro, São Paulo - SP, CEP 04781-001</p>
+          <p>Encarregado: Heitor Dos Santos Fernandes</p>
         </div>
       </div>
       <div class="footer-legal">
@@ -238,6 +349,6 @@
     </div>
   </footer>
 
-  <script src="app.js"></script>
+  <script src="app.js?v=4"></script>
 </body>
 </html>
