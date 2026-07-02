@@ -6,7 +6,7 @@ const { dbMock, stripeMock } = vi.hoisted(() => ({
   },
   stripeMock: {
     checkout: { sessions: { create: vi.fn(), retrieve: vi.fn() } },
-    subscriptions: { retrieve: vi.fn() },
+    subscriptions: { retrieve: vi.fn(), create: vi.fn() },
     customers: { create: vi.fn() },
     billingPortal: { sessions: { create: vi.fn() } },
   },
@@ -19,7 +19,11 @@ vi.mock("@/modules/billing/provisionamento", () => ({
 }));
 
 import { provisionarEmpresaDoCheckout } from "@/modules/billing/provisionamento";
-import { criarCheckoutPublicoLanding, processarEventoStripe } from "./service";
+import {
+  criarAssinaturaPublicaLanding,
+  criarCheckoutPublicoLanding,
+  processarEventoStripe,
+} from "./service";
 import type Stripe from "stripe";
 
 describe("criarCheckoutPublicoLanding", () => {
@@ -59,6 +63,61 @@ describe("criarCheckoutPublicoLanding", () => {
     await expect(
       criarCheckoutPublicoLanding({ planId: "pro", period: "anual" }),
     ).rejects.toThrow("checkout sem client_secret");
+  });
+});
+
+describe("criarAssinaturaPublicaLanding", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.stubEnv("STRIPE_PRICE_PRO_MENSAL", "price_pro_mensal_test");
+    stripeMock.customers.create.mockResolvedValue({ id: "cus_9" });
+    stripeMock.subscriptions.create.mockResolvedValue({
+      id: "sub_9",
+      latest_invoice: { confirmation_secret: { client_secret: "pi_secret_9", type: "payment_intent" } },
+    });
+  });
+
+  it("cria customer BR + subscription incomplete e devolve o client_secret", async () => {
+    const secret = await criarAssinaturaPublicaLanding({
+      planId: "pro", period: "mensal",
+      nome: "Maria Silva", email: "Maria@Exemplo.com",
+      cpfCnpj: "12345678901", celular: "11999998888",
+      nomeEmpresa: "Açaí do João",
+    });
+
+    expect(secret).toBe("pi_secret_9");
+    const cust = stripeMock.customers.create.mock.calls[0]?.[0];
+    expect(cust.email).toBe("maria@exemplo.com");
+    expect(cust.phone).toBe("+5511999998888");
+    expect(cust.tax_id_data).toEqual([{ type: "br_cpf", value: "12345678901" }]);
+    expect(cust.metadata.nome_empresa).toBe("Açaí do João");
+    expect(cust.metadata.origem).toBe("landing");
+
+    const sub = stripeMock.subscriptions.create.mock.calls[0]?.[0];
+    expect(sub.customer).toBe("cus_9");
+    expect(sub.items).toEqual([{ price: "price_pro_mensal_test" }]);
+    expect(sub.payment_behavior).toBe("default_incomplete");
+    expect(sub.payment_settings).toEqual({ save_default_payment_method: "on_subscription" });
+    expect(sub.expand).toEqual(["latest_invoice.confirmation_secret"]);
+    expect(sub.metadata).toMatchObject({ origem: "landing", plano: "pro", ciclo: "mensal" });
+  });
+
+  it("usa br_cnpj para 14 dígitos e nome como fallback de nome_empresa", async () => {
+    await criarAssinaturaPublicaLanding({
+      planId: "pro", period: "mensal",
+      nome: "Loja XPTO LTDA", email: "x@y.com",
+      cpfCnpj: "12345678000199", celular: "1133334444",
+    });
+    const cust = stripeMock.customers.create.mock.calls[0]?.[0];
+    expect(cust.tax_id_data).toEqual([{ type: "br_cnpj", value: "12345678000199" }]);
+    expect(cust.metadata.nome_empresa).toBe("Loja XPTO LTDA");
+  });
+
+  it("falha claramente sem client_secret", async () => {
+    stripeMock.subscriptions.create.mockResolvedValue({ id: "sub_9", latest_invoice: { confirmation_secret: null } });
+    await expect(
+      criarAssinaturaPublicaLanding({ planId: "pro", period: "mensal", nome: "A B", email: "a@b.com", cpfCnpj: "12345678901", celular: "11999998888" }),
+    ).rejects.toThrow("assinatura sem client_secret");
   });
 });
 

@@ -25,6 +25,7 @@ const PUBLIC_PATHS = [
   // Checkout público da landing (atlasseller): cria sessão embedded e ativa
   // conta pós-pagamento. CORS/rate-limit são aplicados nas próprias rotas.
   "/api/checkout-publico/sessao",
+  "/api/checkout-publico/assinatura",
   "/api/checkout-publico/ativar",
   "/ativar",
   // Health check público para watchdog/load balancer/Nginx checar saúde do app

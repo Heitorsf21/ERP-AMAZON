@@ -164,6 +164,64 @@ export async function criarCheckoutPublicoLanding(
   return session.client_secret;
 }
 
+type AssinaturaPublicaInput = {
+  planId: BillingPlanId;
+  period: BillingPeriod;
+  nome: string;
+  email: string;
+  /** somente dígitos: 11 (CPF) ou 14 (CNPJ) — validado na rota */
+  cpfCnpj: string;
+  /** somente dígitos com DDD — validado na rota */
+  celular: string;
+  nomeEmpresa?: string;
+};
+
+/**
+ * Fluxo Elements (form próprio na landing): cria Customer BR + Subscription
+ * incomplete e devolve o client_secret do PaymentIntent da 1ª invoice
+ * (confirmation_secret — stripe@22.3.0/dahlia). O webhook invoice.paid
+ * provisiona a Empresa depois. Não escreve nada no banco.
+ */
+export async function criarAssinaturaPublicaLanding(
+  input: AssinaturaPublicaInput,
+): Promise<string> {
+  const stripe = requireStripe();
+  const priceId = getStripePriceId(input.planId, input.period);
+  const metadata = {
+    origem: "landing",
+    plano: input.planId,
+    ciclo: input.period,
+    nome_empresa: input.nomeEmpresa?.trim() || input.nome.trim(),
+  };
+
+  const customer = await stripe.customers.create({
+    name: input.nome.trim(),
+    email: input.email.toLowerCase().trim(),
+    phone: `+55${input.celular}`,
+    tax_id_data: [
+      { type: input.cpfCnpj.length === 11 ? "br_cpf" : "br_cnpj", value: input.cpfCnpj },
+    ],
+    metadata,
+  });
+
+  const subscription = await stripe.subscriptions.create({
+    customer: customer.id,
+    items: [{ price: priceId }],
+    payment_behavior: "default_incomplete",
+    payment_settings: { save_default_payment_method: "on_subscription" },
+    expand: ["latest_invoice.confirmation_secret"],
+    metadata,
+  });
+
+  const invoice = subscription.latest_invoice;
+  const clientSecret =
+    invoice && typeof invoice === "object"
+      ? invoice.confirmation_secret?.client_secret
+      : undefined;
+  if (!clientSecret) throw new Error("assinatura sem client_secret");
+  return clientSecret;
+}
+
 export async function criarPortalAssinatura(empresaId: string): Promise<string> {
   const stripe = requireStripe();
   const empresa = await db.empresa.findUnique({
