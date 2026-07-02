@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mockup v2 — Otimizador (foco no produto + Em observação redesenhado)</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+tailwind.config = {
+  darkMode: 'class',
+  theme: { extend: {
+    colors: {
+      background: 'hsl(var(--background))', foreground: 'hsl(var(--foreground))',
+      muted: 'hsl(var(--muted))', 'muted-foreground': 'hsl(var(--muted-foreground))',
+      card: 'hsl(var(--card))', border: 'hsl(var(--border))',
+      primary: 'hsl(var(--primary))', success: 'hsl(var(--success))',
+      warning: 'hsl(var(--warning))', destructive: 'hsl(var(--destructive))',
+    },
+    borderRadius: { lg: 'var(--radius)', md: 'calc(var(--radius) - 2px)' },
+  } }
+}
+</script>
+<style>
+:root {
+  --background: 0 0% 98%; --foreground: 224 71% 4%;
+  --muted: 220 14% 96%; --muted-foreground: 220 9% 46%;
+  --card: 0 0% 100%; --border: 220 13% 91%;
+  --primary: 221 83% 53%; --success: 142 76% 36%;
+  --warning: 38 92% 50%; --destructive: 0 72% 51%;
+  --radius: 0.625rem;
+}
+.dark {
+  --background: 224 71% 4%; --foreground: 210 20% 98%;
+  --muted: 222 47% 11%; --muted-foreground: 215 16% 57%;
+  --card: 224 71% 6%; --border: 222 47% 13%;
+  --primary: 221 83% 58%; --success: 142 70% 40%;
+  --warning: 38 85% 50%; --destructive: 0 62% 50%;
+}
+body { background: hsl(var(--background)); color: hsl(var(--foreground)); }
+.tabnum { font-variant-numeric: tabular-nums; }
+.fatia { cursor: pointer; transition: opacity .15s, stroke-width .15s; }
+.fatia:hover { opacity: .82; }
+.item-produto { cursor: pointer; }
+.item-produto:hover { background: hsl(var(--muted)); }
+.item-produto.ativo { background: hsl(var(--muted)); box-shadow: inset 3px 0 0 var(--cor-item); }
+details.obs-det > summary { list-style: none; cursor: pointer; }
+details.obs-det > summary::-webkit-details-marker { display: none; }
+</style>
+</head>
+<body class="antialiased">
+
+<header class="border-b border-border bg-card">
+  <div class="max-w-7xl mx-auto px-6 h-14 flex items-center justify-between">
+    <div class="flex items-center gap-2 font-semibold"><span class="text-primary">◆</span> Atlas Seller <span class="text-muted-foreground font-normal text-sm">/ Publicidade / Otimizador</span></div>
+    <button onclick="document.documentElement.classList.toggle('dark')" class="h-8 w-8 rounded-md border border-border hover:bg-muted">🌓</button>
+  </div>
+</header>
+
+<main class="max-w-7xl mx-auto px-6 py-6 space-y-5">
+
+  <!-- Page header -->
+  <div class="flex flex-wrap items-end justify-between gap-3">
+    <div>
+      <h1 class="text-2xl font-semibold tracking-tight">Otimizador de Ads</h1>
+      <p class="text-sm text-muted-foreground">Última rodada: hoje às 06:12 · 10 ações propostas · 3 em observação</p>
+    </div>
+    <div class="flex items-center gap-2">
+      <button class="h-9 px-3 rounded-md border border-border bg-card text-sm hover:bg-muted">⟳ Atualizar agora</button>
+      <button class="h-9 px-3 rounded-md bg-primary text-white text-sm font-medium hover:opacity-90">▶ Executar aprovadas <span class="ml-1 rounded-full bg-white/25 px-1.5 text-xs tabnum">2</span></button>
+    </div>
+  </div>
+
+  <!-- ESTADO INICIAL: apenas a pizza + gastos. Nada mais. -->
+  <section class="bg-card border border-border rounded-lg p-5">
+    <div class="flex flex-wrap items-center justify-between gap-2 mb-4">
+      <div>
+        <h2 class="text-base font-semibold">Investimento por produto</h2>
+        <p class="text-xs text-muted-foreground">Últimos 30 dias · selecione um produto para ver recomendações e o que está em observação.</p>
+      </div>
+      <span class="text-xs text-muted-foreground">Fonte: métricas diárias por SKU (Ads API)</span>
+    </div>
+
+    <div class="grid gap-6 lg:grid-cols-2 items-center">
+      <div class="relative mx-auto" style="width:300px;height:300px">
+        <svg id="donut" viewBox="0 0 100 100" class="w-full h-full -rotate-90"></svg>
+        <div class="absolute inset-0 grid place-items-center pointer-events-none">
+          <div class="text-center">
+            <p id="centro-label" class="text-[11px] uppercase tracking-wider text-muted-foreground">Investido 30d</p>
+            <p id="centro-valor" class="text-2xl font-bold tabnum">R$ 2.418,60</p>
+            <p id="centro-sub" class="text-xs text-muted-foreground">10 produtos</p>
+          </div>
+        </div>
+      </div>
+      <div id="lista-produtos" class="divide-y divide-border rounded-lg border border-border overflow-hidden"></div>
+    </div>
+
+    <!-- Pendências que não pertencem a nenhum produto: linha discreta, expandível -->
+    <details class="obs-det mt-4 rounded-md border border-dashed border-border bg-muted/30">
+      <summary class="px-3.5 py-2 text-xs text-muted-foreground flex items-center justify-between">
+        <span>⚠ 2 recomendações sem produto identificado (revisão manual)</span>
+        <span class="underline underline-offset-2">ver</span>
+      </summary>
+      <div class="px-3.5 pb-3 text-xs text-muted-foreground">
+        SP • Institucional Marca — grupo de anúncio com múltiplos SKUs ativos. Aprove pela lista completa da campanha.
+      </div>
+    </details>
+  </section>
+
+  <!-- TUDO ABAIXO SÓ APARECE COM PRODUTO SELECIONADO -->
+  <section id="painel-produto" class="hidden space-y-4">
+
+    <!-- Banner do produto -->
+    <div class="bg-card border border-border rounded-lg p-5 relative overflow-hidden">
+      <div id="banner-acento" class="absolute left-0 top-0 bottom-0 w-1 bg-amber-500"></div>
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <div class="flex items-center gap-3">
+          <div id="sel-emoji" class="h-12 w-12 rounded-lg bg-muted grid place-items-center text-2xl">📦</div>
+          <div>
+            <h3 id="sel-nome" class="font-semibold">Produto</h3>
+            <p id="sel-sku" class="text-xs text-muted-foreground">SKU</p>
+          </div>
+        </div>
+        <div class="flex items-center gap-5 text-sm">
+          <div><p class="text-[11px] uppercase tracking-wider text-muted-foreground">Gasto 30d</p><p id="sel-gasto" class="font-semibold tabnum">—</p></div>
+          <div><p class="text-[11px] uppercase tracking-wider text-muted-foreground">Vendas atrib.</p><p id="sel-vendas" class="font-semibold tabnum">—</p></div>
+          <div><p class="text-[11px] uppercase tracking-wider text-muted-foreground">ACoS</p><p id="sel-acos" class="font-semibold tabnum">—</p></div>
+          <button onclick="limparSelecao()" class="h-8 px-3 rounded-md border border-border text-xs hover:bg-muted">✕ Limpar seleção</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- EM OBSERVAÇÃO — redesenhado: 1 linha de essência + efeito no ACoS + barra de maturação -->
+    <div id="secao-observacao" class="bg-card border border-border rounded-lg p-5">
+      <div class="flex items-center justify-between mb-1">
+        <h3 class="text-sm font-semibold flex items-center gap-2">👁 Em observação neste produto <span id="obs-count" class="rounded-full bg-blue-500/10 text-blue-700 dark:text-blue-400 text-[10px] font-bold px-2 py-0.5 tabnum">2</span></h3>
+      </div>
+      <p class="text-xs text-muted-foreground mb-3">Mudanças já aplicadas — o sistema segura novos ajustes até o efeito amadurecer.</p>
+      <div id="lista-observacao" class="space-y-2.5"></div>
+    </div>
+
+    <!-- RECOMENDAÇÕES -->
+    <div class="flex items-center justify-between">
+      <h3 class="text-sm font-semibold">Recomendações do sistema <span id="rec-count" class="text-muted-foreground font-normal"></span></h3>
+      <div class="inline-flex rounded-lg bg-muted p-1 text-xs">
+        <button class="px-2.5 py-1 rounded-md bg-card shadow-sm font-medium">Ajustes</button>
+        <button class="px-2.5 py-1 rounded-md text-muted-foreground">Termos</button>
+        <button class="px-2.5 py-1 rounded-md text-muted-foreground">Histórico</button>
+      </div>
+    </div>
+    <div id="lista-recs" class="space-y-3"></div>
+  </section>
+
+  <p class="text-xs text-muted-foreground pb-8">Mockup interativo v2 — clique nas fatias/produtos. Antes de selecionar: só a pizza. Toggle 🌓 testa o dark mode.</p>
+</main>
+
+<script>
+const CORES = ["#3b82f6","#f59e0b","#10b981","#ef4444","#8b5cf6","#ec4899","#14b8a6","#94a3b8"];
+const fmtBRL = c => "R$ " + (c/100).toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2});
+
+const PRODUTOS = [
+  { sku:"MFS-0012", nome:"Garrafa Térmica Inox 1L", emoji:"🥤", gasto:61240, vendas:348000, acos:17.6, pendentes:2 },
+  { sku:"MFS-0027", nome:"Kit 10 Potes Herméticos", emoji:"🥡", gasto:48810, vendas:214000, acos:22.8, pendentes:1 },
+  { sku:"MFS-0035", nome:"Organizador Geladeira Inox", emoji:"🧺", gasto:40200, vendas:98000, acos:41.0, pendentes:3 },
+  { sku:"MFS-0041", nome:"Jogo de Facas Inox 6pç", emoji:"🔪", gasto:28400, vendas:152000, acos:18.7, pendentes:0 },
+  { sku:"MFS-0008", nome:"Tábua de Corte Bambu XL", emoji:"🪵", gasto:21150, vendas:84000, acos:25.2, pendentes:1 },
+  { sku:"MFS-0053", nome:"Escorredor Dobrável Silicone", emoji:"🫙", gasto:15300, vendas:43000, acos:35.6, pendentes:2 },
+  { sku:"__outros", nome:"Outros 4 produtos", emoji:"📦", gasto:26760, vendas:103000, acos:26.0, pendentes:1 },
+];
+
+// EM OBSERVAÇÃO por produto — o redesign:
+// linha 1 = o quê + qual mudança; linha 2 = efeito no ACoS (a única métrica
+// que importa de cara); linha 3 = barra de maturação. Detalhes no expand.
+const OBSERVACOES = {
+  "MFS-0012": [
+    { termo:"garrafa térmica inox", match:"EXATA", acao:"Lance reduzido", antes:"R$ 3,20", depois:"R$ 2,45",
+      dias:4, diasMin:7, cliques:18, cliquesMin:10,
+      acosAntes:31.2, acosAgora:24.1,
+      gastoDesde:12400, vendasDesde:51500 },
+  ],
+  "MFS-0035": [
+    { termo:"organizador geladeira", match:"AMPLA", acao:"Lance reduzido", antes:"R$ 3,20", depois:"R$ 2,10",
+      dias:9, diasMin:7, cliques:41, cliquesMin:10,
+      acosAntes:48.0, acosAgora:39.5,
+      gastoDesde:8900, vendasDesde:22500 },
+    { termo:"porta temperos geladeira", match:"AUTO", acao:"Termo negativado", antes:null, depois:null,
+      dias:2, diasMin:7, cliques:0, cliquesMin:10,
+      acosAntes:null, acosAgora:null,
+      gastoDesde:0, vendasDesde:0 },
+  ],
+  "MFS-0027": [],
+  "MFS-0041": [], "MFS-0008": [], "MFS-0053": [], "__outros": [],
+};
+
+const RECS = {
+  "MFS-0035": [
+    { sev:"CRITICAL", corSev:"border-l-red-500", badge:"Crítica", badgeCls:"bg-red-500/15 text-red-700 dark:text-red-400", tipo:"Palavra-chave · AMPLA", label:"organizador geladeira", acao:"Reduzir lance", antes:"R$ 3,20", depois:"R$ 2,10", motivo:"ACoS 30d de 48% (meta < 25%) com 62 cliques. Multi-janela: 7d e 65d também acima do teto.", conf:88 },
+    { sev:"HIGH", corSev:"border-l-amber-500", badge:"Alta", badgeCls:"bg-amber-500/15 text-amber-700 dark:text-amber-400", tipo:"Termo de busca · AUTO", label:"organizador de geladeira acrílico", acao:"Negativar termo", antes:"—", depois:"Negativo exato", motivo:"25 cliques e nenhuma venda em 30d (corte por conversão).", conf:92 },
+    { sev:"MEDIUM", corSev:"border-l-blue-500", badge:"Média", badgeCls:"bg-blue-500/15 text-blue-700 dark:text-blue-400", tipo:"Termo de busca · AUTO", label:"porta mantimentos inox", acao:"Criar exata", antes:"—", depois:"Exata · lance R$ 2,40", motivo:"Harvest: 9 pedidos com ACoS 14% dentro da automática.", conf:76 },
+  ],
+  "MFS-0012": [
+    { sev:"MEDIUM", corSev:"border-l-blue-500", badge:"Média", badgeCls:"bg-blue-500/15 text-blue-700 dark:text-blue-400", tipo:"Palavra-chave · EXATA", label:"garrafa térmica 1 litro", acao:"Aumentar lance", antes:"R$ 2,10", depois:"R$ 2,45", motivo:"ACoS excelente em 7d (11%) e 30d (14%) — espaço para escalar.", conf:81 },
+    { sev:"LOW", corSev:"border-l-slate-400", badge:"Baixa", badgeCls:"bg-slate-500/15 text-slate-600 dark:text-slate-400", tipo:"Termo de busca · AUTO", label:"garrafa café inox", acao:"Criar exata", antes:"—", depois:"Exata · lance R$ 1,90", motivo:"5 pedidos com ACoS 16% — candidato a harvest.", conf:64 },
+  ],
+  "MFS-0027": [
+    { sev:"HIGH", corSev:"border-l-amber-500", badge:"Alta", badgeCls:"bg-amber-500/15 text-amber-700 dark:text-amber-400", tipo:"Palavra-chave · FRASE", label:"potes herméticos cozinha", acao:"Reduzir lance", antes:"R$ 2,80", depois:"R$ 2,20", motivo:"Spike de ACoS em 7d (52%) com vida saudável — reduzir e observar.", conf:79 },
+  ],
+  "MFS-0008": [], "MFS-0041": [], "MFS-0053": [
+    { sev:"HIGH", corSev:"border-l-amber-500", badge:"Alta", badgeCls:"bg-amber-500/15 text-amber-700 dark:text-amber-400", tipo:"Palavra-chave · AMPLA", label:"escorredor louça", acao:"Pausar", antes:"Ativa", depois:"Pausada", motivo:"ACoS de vida 58% em 65d com 90+ cliques.", conf:85 },
+  ], "__outros": [],
+};
+
+const total = PRODUTOS.reduce((s,p)=>s+p.gasto,0);
+let selecionado = null;
+
+function montarDonut(){
+  const svg = document.getElementById("donut");
+  svg.innerHTML = "";
+  const R = 34, C = 2*Math.PI*R;
+  let off = 0;
+  PRODUTOS.forEach((p,i)=>{
+    const frac = p.gasto/total;
+    const el = document.createElementNS("http://www.w3.org/2000/svg","circle");
+    el.setAttribute("cx","50"); el.setAttribute("cy","50"); el.setAttribute("r",R);
+    el.setAttribute("fill","none");
+    el.setAttribute("stroke",CORES[i%CORES.length]);
+    el.setAttribute("stroke-width", selecionado===p.sku ? "34" : "26");
+    el.setAttribute("stroke-dasharray", `${Math.max(frac*C-0.6,0.4)} ${C}`);
+    el.setAttribute("stroke-dashoffset", -off*C);
+    el.setAttribute("class","fatia");
+    if(selecionado && selecionado!==p.sku) el.setAttribute("opacity","0.35");
+    el.addEventListener("click",()=>selecionar(p.sku));
+    const t = document.createElementNS("http://www.w3.org/2000/svg","title");
+    t.textContent = `${p.nome} — ${fmtBRL(p.gasto)} (${(frac*100).toFixed(1)}%)`;
+    el.appendChild(t);
+    svg.appendChild(el);
+    off += frac;
+  });
+}
+
+function montarLista(){
+  const div = document.getElementById("lista-produtos");
+  div.innerHTML = "";
+  PRODUTOS.forEach((p,i)=>{
+    const frac = (p.gasto/total*100).toFixed(1);
+    const obs = (OBSERVACOES[p.sku]??[]).length;
+    const row = document.createElement("div");
+    row.className = "item-produto flex items-center gap-3 px-3.5 py-2.5"+(selecionado===p.sku?" ativo":"");
+    row.style.setProperty("--cor-item", CORES[i%CORES.length]);
+    row.innerHTML = `
+      <span class="h-2.5 w-2.5 rounded-full shrink-0" style="background:${CORES[i%CORES.length]}"></span>
+      <span class="h-8 w-8 rounded-md bg-muted grid place-items-center text-base shrink-0">${p.emoji}</span>
+      <div class="min-w-0 flex-1">
+        <p class="text-sm font-medium truncate">${p.nome}</p>
+        <p class="text-[11px] text-muted-foreground">${p.sku === "__outros" ? "agrupados" : p.sku} · ACoS <span class="tabnum ${p.acos>=35?'text-red-600 dark:text-red-400 font-semibold':p.acos>=25?'text-amber-600 dark:text-amber-400 font-semibold':'text-emerald-600 dark:text-emerald-400 font-semibold'}">${p.acos.toFixed(1)}%</span></p>
+      </div>
+      <div class="text-right shrink-0">
+        <p class="text-sm font-semibold tabnum">${fmtBRL(p.gasto)}</p>
+        <p class="text-[11px] text-muted-foreground tabnum">${frac}%</p>
+      </div>
+      <div class="flex flex-col items-end gap-1 shrink-0 w-16">
+        ${p.pendentes>0?`<span class="rounded-full bg-primary/10 text-primary text-[10px] font-bold px-2 py-0.5 tabnum">${p.pendentes} rec.</span>`:""}
+        ${obs>0?`<span class="rounded-full bg-blue-500/10 text-blue-700 dark:text-blue-400 text-[10px] font-bold px-2 py-0.5 tabnum">👁 ${obs}</span>`:""}
+        ${p.pendentes===0&&obs===0?`<span class="text-[10px] text-muted-foreground">—</span>`:""}
+      </div>
+    `;
+    row.addEventListener("click",()=>selecionar(p.sku));
+    div.appendChild(row);
+  });
+}
+
+function selecionar(sku){
+  if(sku==="__outros") return;
+  selecionado = (selecionado===sku) ? null : sku;
+  render();
+}
+function limparSelecao(){ selecionado = null; render(); }
+
+function montarObservacoes(sku){
+  const secao = document.getElementById("secao-observacao");
+  const lista = document.getElementById("lista-observacao");
+  const obs = OBSERVACOES[sku] ?? [];
+  document.getElementById("obs-count").textContent = obs.length;
+  if(obs.length===0){ secao.classList.add("hidden"); return; }
+  secao.classList.remove("hidden");
+  lista.innerHTML = "";
+  obs.forEach(o=>{
+    const progDias = Math.min(o.dias/o.diasMin,1);
+    const progCliques = o.cliquesMin>0 ? Math.min(o.cliques/o.cliquesMin,1) : 1;
+    const prog = Math.min(progDias,progCliques);
+    const maduro = prog>=1;
+    const temEfeito = o.acosAntes!=null && o.acosAgora!=null;
+    const delta = temEfeito ? o.acosAgora-o.acosAntes : null;
+    const melhorou = delta!=null && delta<-0.5;
+    const piorou = delta!=null && delta>0.5;
+    const corEfeito = melhorou?"text-emerald-600 dark:text-emerald-400":piorou?"text-red-600 dark:text-red-400":"text-muted-foreground";
+    const seta = melhorou?"▼":piorou?"▲":"→";
+
+    const el = document.createElement("details");
+    el.className = "obs-det rounded-lg border border-border bg-muted/20";
+    el.innerHTML = `
+      <summary class="px-3.5 py-3">
+        <div class="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+          <span class="font-medium text-sm">“${o.termo}”</span>
+          <span class="text-[10px] text-muted-foreground">${o.match}</span>
+          <span class="rounded-full bg-blue-500/10 text-blue-700 dark:text-blue-400 text-[10px] font-semibold px-2 py-0.5">${o.acao}${o.antes?` ${o.antes} → ${o.depois}`:""}</span>
+          <span class="ml-auto text-right">
+            ${temEfeito
+              ? `<span class="text-[10px] uppercase tracking-wider text-muted-foreground mr-1.5">ACoS</span><span class="tabnum text-sm font-semibold">${o.acosAntes.toFixed(0)}%</span> <span class="tabnum text-sm font-bold ${corEfeito}">${seta} ${o.acosAgora.toFixed(0)}%</span>`
+              : `<span class="text-xs text-muted-foreground">sem cliques ainda</span>`}
+          </span>
+        </div>
+        <div class="mt-2.5 flex items-center gap-3">
+          <div class="h-1.5 flex-1 rounded-full bg-muted overflow-hidden">
+            <div class="h-full rounded-full ${maduro?"bg-emerald-500":"bg-blue-500"}" style="width:${Math.round(prog*100)}%"></div>
+          </div>
+          <span class="text-[11px] shrink-0 ${maduro?"text-emerald-600 dark:text-emerald-400 font-medium":"text-muted-foreground"}">
+            ${maduro?"✓ Dado maduro — pronto para o próximo passo":`amadurecendo · ${o.dias}/${o.diasMin} dias · ${o.cliques}/${o.cliquesMin} cliques`}
+          </span>
+        </div>
+      </summary>
+      <div class="px-3.5 pb-3 pt-1 grid grid-cols-3 gap-2 text-xs border-t border-border/60 mt-1">
+        <div><p class="text-[10px] uppercase tracking-wider text-muted-foreground mt-2">Gasto desde</p><p class="tabnum font-medium">${fmtBRL(o.gastoDesde)}</p></div>
+        <div><p class="text-[10px] uppercase tracking-wider text-muted-foreground mt-2">Vendas desde</p><p class="tabnum font-medium">${fmtBRL(o.vendasDesde)}</p></div>
+        <div><p class="text-[10px] uppercase tracking-wider text-muted-foreground mt-2">Cliques desde</p><p class="tabnum font-medium">${o.cliques}</p></div>
+      </div>
+    `;
+    lista.appendChild(el);
+  });
+}
+
+function render(){
+  montarDonut(); montarLista();
+  const painel = document.getElementById("painel-produto");
+  const p = PRODUTOS.find(x=>x.sku===selecionado);
+  if(!p){
+    painel.classList.add("hidden");
+    document.getElementById("centro-label").textContent = "Investido 30d";
+    document.getElementById("centro-valor").textContent = fmtBRL(total);
+    document.getElementById("centro-sub").textContent = "10 produtos";
+    return;
+  }
+  painel.classList.remove("hidden");
+  document.getElementById("centro-label").textContent = p.sku;
+  document.getElementById("centro-valor").textContent = fmtBRL(p.gasto);
+  document.getElementById("centro-sub").textContent = (p.gasto/total*100).toFixed(1) + "% do investimento";
+  document.getElementById("sel-emoji").textContent = p.emoji;
+  document.getElementById("sel-nome").textContent = p.nome;
+  document.getElementById("sel-sku").textContent = p.sku;
+  document.getElementById("sel-gasto").textContent = fmtBRL(p.gasto);
+  document.getElementById("sel-vendas").textContent = fmtBRL(p.vendas);
+  const acosEl = document.getElementById("sel-acos");
+  acosEl.textContent = p.acos.toFixed(1)+"%";
+  acosEl.className = "font-semibold tabnum " + (p.acos>=35?"text-red-600 dark:text-red-400":p.acos>=25?"text-amber-600 dark:text-amber-400":"text-emerald-600 dark:text-emerald-400");
+  document.getElementById("banner-acento").className = "absolute left-0 top-0 bottom-0 w-1 " + (p.acos>=35?"bg-red-500":p.acos>=25?"bg-amber-500":"bg-emerald-500");
+
+  montarObservacoes(p.sku);
+
+  const recs = RECS[p.sku] ?? [];
+  document.getElementById("rec-count").textContent = recs.length ? `· ${recs.length} pendente${recs.length>1?"s":""}` : "";
+  const lista = document.getElementById("lista-recs");
+  lista.innerHTML = recs.length ? "" : `
+    <div class="rounded-lg border border-dashed border-border bg-muted/30 px-4 py-8 text-center text-sm text-muted-foreground">
+      ✅ Nenhuma recomendação pendente para este produto.
+    </div>`;
+  recs.forEach(r=>{
+    const card = document.createElement("div");
+    card.className = `bg-card border border-border rounded-lg border-l-4 ${r.corSev} p-4`;
+    card.innerHTML = `
+      <div class="flex flex-wrap items-start justify-between gap-3">
+        <div class="min-w-0">
+          <div class="flex flex-wrap items-center gap-2">
+            <span class="rounded-full ${r.badgeCls} text-[10px] font-semibold px-2 py-0.5">${r.badge}</span>
+            <span class="text-[11px] text-muted-foreground">${r.tipo}</span>
+          </div>
+          <p class="mt-1 font-medium">“${r.label}”</p>
+          <p class="mt-1 text-sm text-muted-foreground">${r.motivo}</p>
+        </div>
+        <div class="shrink-0 text-right">
+          <p class="text-[11px] uppercase tracking-wider text-muted-foreground">${r.acao}</p>
+          <p class="text-sm font-semibold tabnum mt-0.5">${r.antes} <span class="text-muted-foreground font-normal">→</span> ${r.depois}</p>
+          <p class="text-[11px] text-muted-foreground mt-0.5">Confiança <b class="tabnum">${r.conf}%</b></p>
+        </div>
+      </div>
+      <div class="mt-3 flex items-center gap-2">
+        <button class="h-8 px-3 rounded-md bg-emerald-600 text-white text-xs font-medium hover:opacity-90">✓ Aprovar</button>
+        <button class="h-8 px-3 rounded-md border border-border text-xs hover:bg-muted">✕ Rejeitar</button>
+        <button class="h-8 px-3 rounded-md text-xs text-muted-foreground hover:bg-muted ml-auto">Detalhes (7d · 30d · 65d)</button>
+      </div>`;
+    lista.appendChild(card);
+  });
+}
+
+montarDonut(); montarLista();
+</script>
+</body>
+</html>

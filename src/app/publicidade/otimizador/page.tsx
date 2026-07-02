@@ -41,6 +41,10 @@ import { cn } from "@/lib/utils";
 import { ProductThumb } from "@/components/ui/product-thumb";
 import { InvestimentoPorProduto } from "@/components/publicidade/investimento-por-produto";
 import { resolverImagemProduto } from "@/lib/amazon-images";
+import {
+  FUNNEL_OBSERVATION_MIN_CLICKS,
+  FUNNEL_OBSERVATION_MIN_DAYS,
+} from "@/modules/ads-optimizer/funnel-params";
 
 type OptimizerMetrics = {
   impressoes: number;
@@ -322,6 +326,36 @@ function AdsOptimizerPageInner() {
     }
     return map;
   }, [recommendations]);
+  const observations = React.useMemo(
+    () => query.data?.observations ?? [],
+    [query.data],
+  );
+  const obsPorSku = React.useMemo(() => {
+    const map = new Map<string, number>();
+    for (const obs of observations) {
+      if (!obs.sku) continue;
+      map.set(obs.sku, (map.get(obs.sku) ?? 0) + 1);
+    }
+    return map;
+  }, [observations]);
+  const obsDoProduto = React.useMemo(
+    () => observations.filter((obs) => obs.sku === skuSelecionado),
+    [observations, skuSelecionado],
+  );
+  const obsSemSku = React.useMemo(
+    () => observations.filter((obs) => !obs.sku),
+    [observations],
+  );
+  // Pendências sem produto identificado — vivem no rodapé discreto da pizza.
+  const unresolvedPendentes = React.useMemo(
+    () =>
+      recommendations.filter(
+        (rec) =>
+          rec.status === "PROPOSED" &&
+          (rec.skuAttributionStatus === "UNRESOLVED" || !rec.sku),
+      ),
+    [recommendations],
+  );
   const filtered = recommendations.filter((rec) => {
     // Seleção de produto no donut: foca as recomendações daquele SKU.
     if (skuSelecionado && rec.sku !== skuSelecionado) return false;
@@ -401,13 +435,47 @@ function AdsOptimizerPageInner() {
         skuSelecionado={skuSelecionado}
         onSelecionar={setSkuSelecionado}
         recPendentesPorSku={recPendentesPorSku}
+        obsPorSku={obsPorSku}
+        rodape={
+          unresolvedPendentes.length > 0 || obsSemSku.length > 0 ? (
+            <details className="mt-4 rounded-md border border-dashed bg-muted/30">
+              <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-3.5 py-2 text-xs text-muted-foreground [&::-webkit-details-marker]:hidden">
+                <span className="flex items-center gap-1.5">
+                  <AlertTriangle className="h-3.5 w-3.5 text-amber-500" />
+                  {unresolvedPendentes.length > 0 &&
+                    `${unresolvedPendentes.length} recomendaç${unresolvedPendentes.length === 1 ? "ão" : "ões"} sem produto identificado (revisão manual)`}
+                  {unresolvedPendentes.length > 0 && obsSemSku.length > 0 && " · "}
+                  {obsSemSku.length > 0 &&
+                    `${obsSemSku.length} em observação sem produto`}
+                </span>
+                <span className="underline underline-offset-2">ver</span>
+              </summary>
+              <div className="space-y-3 px-3.5 pb-3.5 pt-1">
+                <ObservacaoPanel
+                  observations={obsSemSku}
+                  titulo="Em observação (sem produto identificado)"
+                />
+                {unresolvedPendentes.length > 0 && (
+                  <UnresolvedPanel
+                    recommendations={unresolvedPendentes}
+                    historyLabel={historyLabel}
+                    busy={isBusy}
+                    onReject={(id) => rejectMutation.mutate(id)}
+                  />
+                )}
+              </div>
+            </details>
+          ) : undefined
+        }
       />
 
-      {/* Painéis de visão geral — somem quando um produto está em foco */}
-      {!skuSelecionado && (
-        <ObservationPanel observations={query.data?.observations ?? []} />
+      {/* Detalhes do produto: observação + filtros + recomendações — só com seleção */}
+      {skuSelecionado && (
+        <ObservacaoPanel observations={obsDoProduto} />
       )}
 
+      {skuSelecionado && (
+      <>
       <Card>
         <CardContent className="grid gap-3 pt-6 md:grid-cols-3 lg:grid-cols-8">
           <div className="lg:col-span-2">
@@ -505,15 +573,9 @@ function AdsOptimizerPageInner() {
               onReject={(id) => rejectMutation.mutate(id)}
             />
           ))}
-          {grouped.unresolved.length > 0 && (
-            <UnresolvedPanel
-              recommendations={grouped.unresolved}
-              historyLabel={historyLabel}
-              busy={isBusy}
-              onReject={(id) => rejectMutation.mutate(id)}
-            />
-          )}
         </div>
+      )}
+      </>
       )}
 
       <div className="text-xs text-muted-foreground">
@@ -539,56 +601,143 @@ export default function AdsOptimizerPage() {
   );
 }
 
-function ObservationPanel({ observations }: { observations: Observation[] }) {
+/**
+ * "Em observação" redesenhado: uma linha com a essência (o quê + qual mudança
+ * + efeito no ACoS) e uma barra de maturação. Detalhes (gasto/vendas/cliques
+ * desde a mudança) ficam num expand por item.
+ */
+function ObservacaoPanel({
+  observations,
+  titulo = "Em observação neste produto",
+}: {
+  observations: Observation[];
+  titulo?: string;
+}) {
   if (observations.length === 0) return null;
   return (
-    <Card className="border-l-4 border-l-blue-500">
-      <CardContent className="space-y-3 pt-5">
-        <div>
-          <p className="text-sm font-semibold">Em observação</p>
-          <p className="text-sm text-muted-foreground">
-            Ações aplicadas recentemente. O sistema acompanha o efeito dia a dia e
-            só decide o próximo passo com dado maduro (7+ dias e 10+ cliques).
+    <Card>
+      <CardContent className="pt-5">
+        <div className="flex items-center gap-2">
+          <p className="flex items-center gap-2 text-sm font-semibold">
+            <Eye className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+            {titulo}
           </p>
+          <span className="rounded-full bg-blue-500/10 px-2 py-0.5 text-[10px] font-bold tabular-nums text-blue-700 dark:text-blue-400">
+            {observations.length}
+          </span>
         </div>
-        <div className="grid gap-2 md:grid-cols-2">
+        <p className="mb-3 mt-0.5 text-xs text-muted-foreground">
+          Mudanças já aplicadas — o sistema segura novos ajustes até o efeito
+          amadurecer.
+        </p>
+        <div className="space-y-2.5">
           {observations.map((obs) => (
-            <div key={obs.recommendationId} className="rounded-md border bg-muted/20 p-3">
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-semibold">{obs.displayLabel}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {obs.sku ? `${obs.sku} | ` : ""}
-                    {ACTION_LABEL[obs.actionType] ?? obs.actionType} ·{" "}
-                    {plural(obs.diasDesdeMudanca, "dia", "dias")} desde a mudança
-                  </p>
-                </div>
-                <Badge
-                  variant="outline"
-                  className={obs.madura ? "border-emerald-300 text-emerald-700" : "border-blue-300 text-blue-700"}
-                >
-                  {obs.madura ? "Dado maduro" : "Provisório"}
-                </Badge>
-              </div>
-              <div className="mt-3 grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
-                <Fact label="Gasto desde" value={formatBRL(obs.postChange.gastoCentavos)} />
-                <Fact label="Vendas desde" value={formatBRL(obs.postChange.vendasCentavos)} />
-                <Fact label="Cliques" value={String(obs.cliquesPosMudanca)} />
-                <Fact
-                  label="ACOS antes → agora"
-                  value={`${formatPct(obs.baselineAcos)} → ${formatPct(obs.postChange.acos)}`}
-                />
-              </div>
-              {!obs.madura && (
-                <p className="mt-2 text-[11px] text-muted-foreground">
-                  Conversões da Amazon ainda entrando (janela de atribuição de 7 dias).
-                </p>
-              )}
-            </div>
+            <ObservacaoItem key={obs.recommendationId} obs={obs} />
           ))}
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+function ObservacaoItem({ obs }: { obs: Observation }) {
+  const acosAntes = obs.baselineAcos != null ? obs.baselineAcos * 100 : null;
+  const acosAgora =
+    obs.postChange.acos != null ? obs.postChange.acos * 100 : null;
+  const temEfeito = acosAntes != null && acosAgora != null;
+  const delta = temEfeito ? acosAgora - acosAntes : null;
+  const melhorou = delta != null && delta < -0.5;
+  const piorou = delta != null && delta > 0.5;
+
+  const progDias = Math.min(
+    obs.diasDesdeMudanca / FUNNEL_OBSERVATION_MIN_DAYS,
+    1,
+  );
+  const progCliques = Math.min(
+    obs.cliquesPosMudanca / FUNNEL_OBSERVATION_MIN_CLICKS,
+    1,
+  );
+  const progresso = obs.madura ? 1 : Math.min(progDias, progCliques);
+
+  return (
+    <details className="rounded-lg border bg-muted/20">
+      <summary className="cursor-pointer list-none px-3.5 py-3 [&::-webkit-details-marker]:hidden">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+          <span className="text-sm font-medium">“{obs.displayLabel}”</span>
+          <span className="rounded-full bg-blue-500/10 px-2 py-0.5 text-[10px] font-semibold text-blue-700 dark:text-blue-400">
+            {ACTION_LABEL[obs.actionType] ?? obs.actionType}
+          </span>
+          <span className="ml-auto text-right">
+            {temEfeito ? (
+              <>
+                <span className="mr-1.5 text-[10px] uppercase tracking-wider text-muted-foreground">
+                  ACoS
+                </span>
+                <span className="text-sm font-semibold tabular-nums">
+                  {acosAntes.toFixed(0)}%
+                </span>{" "}
+                <span
+                  className={cn(
+                    "text-sm font-bold tabular-nums",
+                    melhorou && "text-emerald-600 dark:text-emerald-400",
+                    piorou && "text-red-600 dark:text-red-400",
+                    !melhorou && !piorou && "text-muted-foreground",
+                  )}
+                >
+                  {melhorou ? "▼" : piorou ? "▲" : "→"} {acosAgora.toFixed(0)}%
+                </span>
+              </>
+            ) : (
+              <span className="text-xs text-muted-foreground">
+                sem cliques suficientes ainda
+              </span>
+            )}
+          </span>
+        </div>
+        <div className="mt-2.5 flex items-center gap-3">
+          <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted">
+            <div
+              className={cn(
+                "h-full rounded-full",
+                obs.madura ? "bg-emerald-500" : "bg-blue-500",
+              )}
+              style={{ width: `${Math.round(progresso * 100)}%` }}
+            />
+          </div>
+          <span
+            className={cn(
+              "shrink-0 text-[11px]",
+              obs.madura
+                ? "font-medium text-emerald-600 dark:text-emerald-400"
+                : "text-muted-foreground",
+            )}
+          >
+            {obs.madura
+              ? "✓ Dado maduro — pronto para o próximo passo"
+              : `amadurecendo · ${obs.diasDesdeMudanca}/${FUNNEL_OBSERVATION_MIN_DAYS} dias · ${obs.cliquesPosMudanca}/${FUNNEL_OBSERVATION_MIN_CLICKS} cliques`}
+          </span>
+        </div>
+      </summary>
+      <div className="border-t px-3.5 pb-3 pt-2">
+        <div className="grid grid-cols-3 gap-2 text-xs">
+          <Fact
+            label="Gasto desde"
+            value={formatBRL(obs.postChange.gastoCentavos)}
+          />
+          <Fact
+            label="Vendas desde"
+            value={formatBRL(obs.postChange.vendasCentavos)}
+          />
+          <Fact label="Cliques desde" value={String(obs.cliquesPosMudanca)} />
+        </div>
+        {!obs.madura && (
+          <p className="mt-2 text-[11px] text-muted-foreground">
+            Conversões da Amazon ainda entrando (janela de atribuição de ~7
+            dias).
+          </p>
+        )}
+      </div>
+    </details>
   );
 }
 
