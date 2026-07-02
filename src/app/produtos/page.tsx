@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/ui/page-header";
@@ -12,13 +13,16 @@ import {
   type ProdutoFiltrosQuery,
 } from "@/modules/estoque/filtros";
 
-export default function ProdutosPage() {
+function ProdutosPageInner() {
+  // Deep-link das notificações (ex: estoque crítico → /produtos?busca=SKU).
+  const searchParams = useSearchParams();
+  const buscaInicial = searchParams.get("busca") ?? "";
   const [modalNovo, setModalNovo] = useState(false);
   const [filtros, setFiltros] = useState<ProdutoFiltrosQuery>({
     ...DEFAULT_PRODUTO_FILTROS,
-    busca: "",
+    busca: buscaInicial,
   });
-  const [buscaDebounced, setBuscaDebounced] = useState("");
+  const [buscaDebounced, setBuscaDebounced] = useState(buscaInicial);
 
   useEffect(() => {
     const id = setTimeout(() => setBuscaDebounced(filtros.busca ?? ""), 250);
@@ -58,5 +62,13 @@ export default function ProdutosPage() {
         onOpenChange={setModalNovo}
       />
     </div>
+  );
+}
+
+export default function ProdutosPage() {
+  return (
+    <Suspense fallback={<div className="h-40 rounded-xl border bg-card" />}>
+      <ProdutosPageInner />
+    </Suspense>
   );
 }
