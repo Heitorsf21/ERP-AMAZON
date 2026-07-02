@@ -18,7 +18,9 @@ vi.mock("@/modules/billing/provisionamento", () => ({
   provisionarEmpresaDoCheckout: vi.fn().mockResolvedValue({ status: "criada", empresaId: "e1" }),
 }));
 
-import { criarCheckoutPublicoLanding } from "./service";
+import { provisionarEmpresaDoCheckout } from "@/modules/billing/provisionamento";
+import { criarCheckoutPublicoLanding, processarEventoStripe } from "./service";
+import type Stripe from "stripe";
 
 describe("criarCheckoutPublicoLanding", () => {
   beforeEach(() => {
@@ -57,5 +59,47 @@ describe("criarCheckoutPublicoLanding", () => {
     await expect(
       criarCheckoutPublicoLanding({ planId: "pro", period: "anual" }),
     ).rejects.toThrow("checkout sem client_secret");
+  });
+});
+
+describe("processarEventoStripe / checkout.session.completed", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    stripeMock.subscriptions.retrieve.mockResolvedValue({
+      id: "sub_1",
+      customer: "cus_1",
+      status: "active",
+      items: { data: [{ price: { id: "price_1" } }] },
+      metadata: { plano: "pro", ciclo: "anual", empresaId: "" },
+    });
+    dbMock.empresa.updateMany.mockResolvedValue({ count: 1 });
+  });
+
+  function evento(metadata: Record<string, string>): Stripe.Event {
+    return {
+      type: "checkout.session.completed",
+      data: {
+        object: {
+          id: "cs_1",
+          customer: "cus_1",
+          subscription: "sub_1",
+          metadata,
+          customer_details: { email: "a@b.com", name: "A" },
+          custom_fields: [],
+        },
+      },
+    } as unknown as Stripe.Event;
+  }
+
+  it("provisiona empresa quando a sessão veio da landing", async () => {
+    await processarEventoStripe(evento({ origem: "landing", plano: "pro", ciclo: "anual" }));
+    expect(provisionarEmpresaDoCheckout).toHaveBeenCalledTimes(1);
+    expect(dbMock.empresa.updateMany).toHaveBeenCalled(); // aplicarAssinaturaStripe rodou depois
+  });
+
+  it("NÃO provisiona para checkout do fluxo logado (sem origem landing)", async () => {
+    await processarEventoStripe(evento({ empresaId: "emp_1", plano: "pro", ciclo: "anual" }));
+    expect(provisionarEmpresaDoCheckout).not.toHaveBeenCalled();
+    expect(dbMock.empresa.updateMany).toHaveBeenCalled();
   });
 });

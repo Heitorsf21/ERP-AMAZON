@@ -8,6 +8,7 @@ import {
   type BillingPlanId,
   getStripePriceId,
 } from "./plans";
+import { provisionarEmpresaDoCheckout } from "./provisionamento";
 
 type CheckoutInput = {
   empresaId: string;
@@ -232,6 +233,12 @@ export async function processarEventoStripe(event: Stripe.Event): Promise<void> 
   switch (event.type) {
     case "checkout.session.completed": {
       const session = event.data.object as Stripe.Checkout.Session;
+      // Fluxo landing (paga primeiro, conta depois): provisiona ANTES de
+      // aplicar a assinatura, para o match por stripeCustomerId encontrar
+      // a empresa recém-criada.
+      if (session.metadata?.origem === "landing") {
+        await provisionarEmpresaDoCheckout(session);
+      }
       const subscriptionId = stringId(session.subscription);
       if (!subscriptionId) return;
 
