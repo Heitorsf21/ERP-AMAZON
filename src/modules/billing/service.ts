@@ -123,6 +123,46 @@ export async function criarCheckoutAssinatura(input: CheckoutInput): Promise<str
   return session.url;
 }
 
+type CheckoutPublicoInput = {
+  planId: BillingPlanId;
+  period: BillingPeriod;
+};
+
+/**
+ * Checkout público da landing (Embedded). NÃO tem empresa/customer: o Stripe
+ * cria o customer no pagamento e o webhook provisiona a Empresa depois
+ * (provisionarEmpresaDoCheckout). Não escreve nada no banco.
+ */
+export async function criarCheckoutPublicoLanding(
+  input: CheckoutPublicoInput,
+): Promise<string> {
+  const stripe = requireStripe();
+  const priceId = getStripePriceId(input.planId, input.period);
+  const metadata = { origem: "landing", plano: input.planId, ciclo: input.period };
+
+  const session = await stripe.checkout.sessions.create({
+    ui_mode: "embedded_page",
+    mode: "subscription",
+    line_items: [{ price: priceId, quantity: 1 }],
+    return_url: `${getAppUrl()}/ativar?session_id={CHECKOUT_SESSION_ID}`,
+    allow_promotion_codes: true,
+    billing_address_collection: "auto",
+    tax_id_collection: { enabled: true },
+    custom_fields: [
+      {
+        key: "nome_empresa",
+        label: { type: "custom", custom: "Nome da sua empresa/loja" },
+        type: "text",
+      },
+    ],
+    metadata,
+    subscription_data: { metadata },
+  });
+
+  if (!session.client_secret) throw new Error("checkout sem client_secret");
+  return session.client_secret;
+}
+
 export async function criarPortalAssinatura(empresaId: string): Promise<string> {
   const stripe = requireStripe();
   const empresa = await db.empresa.findUnique({
