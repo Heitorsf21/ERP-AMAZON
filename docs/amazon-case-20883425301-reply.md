@@ -23,9 +23,13 @@ Where each requested item is addressed:
   and purchase products. This aligns directly with the Brand Analytics role we requested.
 - **Other features:** profitability per order (Amazon referral, FBA, installments, freight,
   tax, cost and margin), advertising optimization (ACOS/ROAS/CTR/CPC), Buy Box monitoring,
-  financial management and inventory coverage.
-- **Pricing:** clearly displayed at https://atlasseller.mundofs.cloud/#precos — three monthly plans (Starter R$ 89.99,
-  Pro R$ 159.99, Scale R$ 219.99).
+  financial management and inventory coverage. The site also includes recreated product
+  screens (https://atlasseller.mundofs.cloud/#produto), per-feature demo videos
+  (https://atlasseller.mundofs.cloud/#videos) and an interactive profit calculator
+  (https://atlasseller.mundofs.cloud/#calculadora), plus a detailed plan comparison table.
+- **Pricing:** clearly displayed at https://atlasseller.mundofs.cloud/#precos — three plans (Starter R$ 89.99,
+  Pro R$ 159.99, Scale R$ 219.99 per month), with quarterly/semiannual/annual billing
+  options and a full feature-comparison table.
 - **Privacy policy:** https://atlasseller.mundofs.cloud/privacidade.html — covers how data is collected, used, stored,
   protected, shared and deleted, in compliance with the LGPD and Amazon's Data Protection
   Policy.
