@@ -122,7 +122,7 @@ export function notificarJobFalhando(args: {
     tipo: TipoNotificacao.JOB_FALHANDO,
     titulo: `Job ${args.tipo} falhou ${args.attempts}x`,
     descricao: args.error.slice(0, 280),
-    linkRef: `/sistema`,
+    // Sem linkRef: a página de saúde do sistema saiu da UI (cliente final).
     dedupeKey: `job_falhando:${args.tipo}:${diaUTC()}`,
   });
 }
@@ -135,7 +135,7 @@ export function notificarQuotaBloqueada(args: {
     tipo: TipoNotificacao.QUOTA_BLOQUEADA,
     titulo: `Quota Amazon ${args.operation} bloqueada`,
     descricao: `Proximo slot ${args.proximoSlot.toISOString()}.`,
-    linkRef: `/sistema`,
+    // Sem linkRef: a página de saúde do sistema saiu da UI (cliente final).
     dedupeKey: `quota:${args.operation}:${diaUTC()}`,
   });
 }

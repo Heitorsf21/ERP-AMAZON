@@ -3,9 +3,7 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import type { Route } from "next";
-import { useQueryClient } from "@tanstack/react-query";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
-import { toast } from "sonner";
 import {
   Search,
   ArrowRight,
@@ -15,10 +13,8 @@ import {
   Receipt,
   Plus,
   Upload,
-  RefreshCw,
   CheckCircle2,
   Zap,
-  ScrollText,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ALL_NAV_ITEMS } from "./nav-routes";
@@ -102,7 +98,6 @@ function CommandPaletteDialog({
   onClose: () => void;
 }) {
   const router = useRouter();
-  const qc = useQueryClient();
   const [query, setQuery] = React.useState("");
   const [selectedIdx, setSelectedIdx] = React.useState(0);
   const inputRef = React.useRef<HTMLInputElement>(null);
@@ -193,53 +188,6 @@ function CommandPaletteDialog({
         },
       },
       {
-        key: "acao:sync-amazon",
-        label: "Sincronizar Amazon agora",
-        sub: "Pedidos + estoque",
-        group: "Ações",
-        icon: RefreshCw,
-        run: async () => {
-          onClose();
-          toast.loading("Disparando sync...", { id: "sync-amazon" });
-          try {
-            const r = await fetch("/api/amazon/sync", {
-              method: "POST",
-              headers: { "content-type": "application/json" },
-              body: JSON.stringify({ tipo: "ORDERS", diasAtras: 3 }),
-            });
-            if (r.ok) {
-              toast.success("Sync de pedidos disparado", { id: "sync-amazon" });
-              qc.invalidateQueries({ queryKey: ["amazon-status"] });
-            } else {
-              toast.error("Falha ao disparar sync", { id: "sync-amazon" });
-            }
-          } catch {
-            toast.error("Erro de rede", { id: "sync-amazon" });
-          }
-        },
-      },
-      {
-        key: "acao:sync-settlement",
-        label: "Sincronizar settlement Amazon",
-        sub: "Baixa CSV financeiro",
-        group: "Ações",
-        icon: RefreshCw,
-        run: async () => {
-          onClose();
-          toast.loading("Buscando settlement...", { id: "sync-sett" });
-          try {
-            const r = await fetch("/api/amazon/sync-settlement", { method: "POST" });
-            if (r.ok) {
-              toast.success("Settlement sincronizado", { id: "sync-sett" });
-            } else {
-              toast.error("Falha", { id: "sync-sett" });
-            }
-          } catch {
-            toast.error("Erro de rede", { id: "sync-sett" });
-          }
-        },
-      },
-      {
         key: "acao:marcar-recebida",
         label: "Marcar liquidação como recebida",
         sub: "Vai para Contas a Receber",
@@ -250,19 +198,8 @@ function CommandPaletteDialog({
           onClose();
         },
       },
-      {
-        key: "acao:health",
-        label: "Ver saúde do sistema",
-        sub: "Worker, fila, quotas",
-        group: "Ações",
-        icon: ScrollText,
-        run: () => {
-          router.push("/sistema" as Route);
-          onClose();
-        },
-      },
     ],
-    [router, qc, onClose],
+    [router, onClose],
   );
 
   // Constrói lista plana de resultados de acordo com o modo.

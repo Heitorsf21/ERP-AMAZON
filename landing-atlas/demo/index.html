@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Atlas Seller — Demo</title>
+<style>
+@font-face{font-family:Inter;font-weight:400;font-display:block;src:url('../assets/fonts/Inter-Regular.woff2') format('woff2')}
+@font-face{font-family:Inter;font-weight:600;font-display:block;src:url('../assets/fonts/Inter-SemiBold.woff2') format('woff2')}
+@font-face{font-family:Inter;font-weight:700;font-display:block;src:url('../assets/fonts/Inter-Bold.woff2') format('woff2')}
+@font-face{font-family:Inter;font-weight:800;font-display:block;src:url('../assets/fonts/Inter-ExtraBold.woff2') format('woff2')}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{background:#05070d;overflow:hidden;font-family:Inter,system-ui,sans-serif}
+#viewport{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:#05070d}
+/* ===== Palco 1920x1080 ===== */
+#stage{position:relative;width:1920px;height:1080px;transform-origin:center center;
+  background:radial-gradient(1200px 700px at 50% 20%, #16233f 0%, #0a1120 45%, #05070d 100%);
+  color:#E5E7EB;overflow:hidden}
+#stage::before{content:"";position:absolute;inset:0;
+  background:radial-gradient(900px 500px at 78% 60%, rgba(37,99,235,.16), transparent 60%),
+             radial-gradient(700px 400px at 20% 70%, rgba(16,185,129,.10), transparent 60%);pointer-events:none}
+/* ===== Topbar ===== */
+.topbar{position:absolute;top:0;left:0;right:0;height:96px;display:flex;align-items:center;
+  justify-content:space-between;padding:0 56px;z-index:20}
+.brand{display:flex;align-items:center;gap:14px;font-weight:800;font-size:26px;letter-spacing:-.01em}
+.brand .sym{width:44px;height:44px;display:flex;align-items:center;justify-content:center}
+.brand .sym svg{width:44px;height:44px}
+.brand .accent{color:#5b9bff}
+.topbar .center{font-size:17px;color:#93A4C4;font-weight:600;letter-spacing:.02em}
+.live{display:flex;align-items:center;gap:9px;font-size:15px;font-weight:700;color:#fecaca;
+  background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.35);padding:8px 15px;border-radius:99px}
+.live .dot{width:10px;height:10px;border-radius:99px;background:#ef4444;box-shadow:0 0 12px #ef4444}
+/* ===== Split ===== */
+.split{position:absolute;top:128px;left:56px;right:56px;bottom:150px;display:grid;
+  grid-template-columns:430px 1fr;gap:40px}
+/* ---- Phone (Amazon) ---- */
+.phone{position:relative;background:#0d1526;border:1px solid #1e2c48;border-radius:44px;padding:16px;
+  box-shadow:0 40px 90px -30px rgba(0,0,0,.8), inset 0 0 0 2px rgba(255,255,255,.02);overflow:hidden}
+.phone .notch{position:absolute;top:22px;left:50%;transform:translateX(-50%);width:130px;height:26px;
+  background:#05070d;border-radius:0 0 16px 16px;z-index:5}
+.phone-screen{background:linear-gradient(180deg,#0b1322,#0e1728);border-radius:32px;height:100%;
+  padding:26px 20px 20px;overflow:hidden;display:flex;flex-direction:column}
+.amz-head{display:flex;align-items:center;gap:11px;margin:14px 4px 20px}
+.amz-logo{width:38px;height:38px;border-radius:10px;background:#131a2b;display:flex;align-items:center;justify-content:center}
+.amz-logo svg{width:26px;height:12px}
+.amz-title{font-size:16px;font-weight:800}
+.amz-sub{font-size:12px;color:#7c8bab}
+.orders{display:flex;flex-direction:column;gap:13px;flex:1}
+.order{background:#111c33;border:1px solid #22314f;border-radius:16px;padding:15px 16px;
+  display:flex;align-items:center;gap:13px;opacity:0;transform:translateY(18px)}
+.order .oic{width:40px;height:40px;border-radius:10px;background:#0b1322;flex:none;
+  display:flex;align-items:center;justify-content:center}
+.order .oic svg{width:26px;height:12px}
+.order .obody{flex:1;min-width:0}
+.order .osku{font-size:14px;font-weight:700;color:#e7ecf7}
+.order .oname{font-size:12px;color:#8194b5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.order .oval{font-size:15px;font-weight:800;color:#34D399}
+.order .otime{font-size:11px;color:#6b7ba0;text-align:right;margin-top:2px}
+.order.hot{border-color:#FF9900;box-shadow:0 0 0 1px #FF9900, 0 10px 30px -12px rgba(255,153,0,.5)}
+.pulse-new{position:absolute;right:14px;top:14px;font-size:10px;font-weight:800;color:#FF9900;
+  background:rgba(255,153,0,.12);border:1px solid rgba(255,153,0,.4);padding:3px 8px;border-radius:99px}
+/* ---- Browser (Atlas) ---- */
+.browser{background:#0d1526;border:1px solid #1e2c48;border-radius:20px;overflow:hidden;
+  box-shadow:0 50px 110px -30px rgba(0,0,0,.85);display:flex;flex-direction:column}
+.chrome{height:52px;background:#0b1220;border-bottom:1px solid #1b2740;display:flex;align-items:center;
+  gap:9px;padding:0 18px;flex:none}
+.chrome .dot{width:13px;height:13px;border-radius:99px}
+.chrome .r{background:#ff5f57}.chrome .y{background:#febc2e}.chrome .g{background:#28c840}
+.url{flex:1;height:32px;background:#131c30;border-radius:9px;margin-left:14px;display:flex;align-items:center;
+  gap:9px;padding:0 14px;font-size:14px;color:#9fb0d0}
+.url svg{width:13px;height:13px;opacity:.7}
+.app{flex:1;display:flex;background:#F4F7FB;color:#0F172A;position:relative;overflow:hidden}
+/* mini sidebar */
+.side{width:74px;background:#0B1220;flex:none;display:flex;flex-direction:column;align-items:center;
+  padding:18px 0;gap:6px}
+.side .lg{width:38px;height:38px;border-radius:10px;background:linear-gradient(135deg,#2563EB,#10B981);margin-bottom:16px}
+.side .it{width:44px;height:44px;border-radius:12px;display:flex;align-items:center;justify-content:center;color:#5b6b8c}
+.side .it svg{width:22px;height:22px}
+.side .it.on{background:#16233f;color:#7fb0ff}
+.content{flex:1;position:relative;overflow:hidden}
+.screen{position:absolute;inset:0;padding:34px 40px;opacity:0;transition:none}
+.screen h2{font-size:26px;font-weight:800;letter-spacing:-.01em}
+.screen .sub{font-size:14px;color:#64748B;margin-top:3px}
+/* --- Vendas screen --- */
+.vhead{display:flex;justify-content:space-between;align-items:flex-start}
+.vkpis{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-top:22px}
+.vkpi{background:#fff;border:1px solid #E2E8F0;border-radius:13px;padding:15px 17px}
+.vkpi .l{font-size:12px;color:#94A3B8}
+.vkpi .v{font-size:22px;font-weight:800;margin-top:5px}
+.salecard{margin-top:22px;background:#fff;border:1px solid #E2E8F0;border-radius:16px;
+  box-shadow:0 20px 40px -24px rgba(15,23,42,.25);overflow:hidden}
+.sc-head{display:flex;align-items:center;gap:15px;padding:18px 20px}
+.sc-thumb{width:52px;height:52px;border-radius:11px;background:#EFF3F9;flex:none;display:flex;align-items:center;justify-content:center}
+.sc-thumb svg{width:28px;height:28px;color:#94A3B8}
+.sc-h-body{flex:1}
+.sc-sku{font-size:16px;font-weight:800}
+.sc-name{font-size:13px;color:#64748B}
+.sc-tag{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:700;color:#B45309;
+  background:#FEF3C7;border:1px solid #FDE68A;padding:4px 10px;border-radius:99px}
+.sc-gross{font-size:22px;font-weight:800;text-align:right}
+.sc-gross small{display:block;font-size:11px;color:#94A3B8;font-weight:600}
+.breakdown{border-top:1px dashed #E2E8F0;padding:8px 20px 20px;overflow:hidden}
+.bd-row{display:flex;justify-content:space-between;align-items:center;padding:11px 2px;font-size:15px;
+  border-bottom:1px solid #F1F5F9;opacity:0;transform:translateX(-14px)}
+.bd-row .lbl{color:#475569;display:flex;align-items:center;gap:9px}
+.bd-row .ic{width:26px;height:26px;border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:13px}
+.bd-neg{color:#DC2626;font-weight:700}
+.bd-profit{margin-top:6px;background:linear-gradient(90deg,#ECFDF5,#fff);border:1px solid #A7F3D0;border-radius:12px;
+  padding:16px 18px;display:flex;justify-content:space-between;align-items:center;opacity:0;transform:scale(.96)}
+.bd-profit .pl{font-size:16px;font-weight:800;color:#065F46}
+.bd-profit .pv{font-size:26px;font-weight:800;color:#059669}
+.margin-badge{font-size:13px;font-weight:800;color:#065F46;background:#D1FAE5;border-radius:99px;padding:6px 13px;margin-left:12px}
+/* --- Dashboard screen --- */
+.dkpis{display:grid;grid-template-columns:repeat(4,1fr);gap:15px;margin-top:22px}
+.dkpi{background:#fff;border:1px solid #E2E8F0;border-radius:14px;padding:17px 18px;position:relative;
+  opacity:0;transform:translateY(16px)}
+.dkpi::before{content:"";position:absolute;left:0;top:14px;bottom:14px;width:4px;border-radius:4px}
+.dkpi.green::before{background:#10B981}.dkpi.blue::before{background:#2563EB}
+.dkpi.amber::before{background:#F59E0B}.dkpi.violet::before{background:#8B5CF6}
+.dkpi .l{font-size:12px;color:#94A3B8;text-transform:uppercase;letter-spacing:.03em;padding-left:12px}
+.dkpi .v{font-size:27px;font-weight:800;margin-top:7px;padding-left:12px}
+.dkpi .d{font-size:12px;font-weight:700;padding-left:12px;margin-top:2px}
+.chartbox{margin-top:20px;background:#fff;border:1px solid #E2E8F0;border-radius:16px;padding:20px 22px;height:250px}
+.chartbox .ct{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+.chartbox .ct h3{font-size:16px;font-weight:800}
+.legend{display:flex;gap:16px;font-size:12px;color:#64748B}
+.legend i{display:inline-block;width:9px;height:9px;border-radius:99px;margin-right:5px;vertical-align:middle}
+.chartwrap{position:relative;height:170px}
+.chartwrap svg{position:absolute;inset:0;width:100%;height:100%}
+.chart-reveal{clip-path:inset(0 100% 0 0)}
+/* --- Analytics screen --- */
+.akpis{display:grid;grid-template-columns:repeat(4,1fr);gap:15px;margin-top:22px}
+.akpi{background:#fff;border:1px solid #E2E8F0;border-radius:14px;padding:18px;opacity:0;transform:translateY(16px)}
+.akpi .l{font-size:12px;color:#94A3B8}
+.akpi .v{font-size:28px;font-weight:800;margin-top:8px}
+.akpi .foot{font-size:12px;color:#64748B;margin-top:6px}
+.abars{margin-top:20px;background:#fff;border:1px solid #E2E8F0;border-radius:16px;padding:22px;height:230px}
+.abars h3{font-size:15px;font-weight:800;margin-bottom:16px}
+.abars .row{display:flex;align-items:center;gap:14px;margin-bottom:15px}
+.abars .rl{width:130px;font-size:13px;color:#475569;font-weight:600}
+.abars .track{flex:1;height:16px;background:#F1F5F9;border-radius:99px;overflow:hidden}
+.abars .fill{height:100%;border-radius:99px;width:0}
+.abars .rv{width:66px;text-align:right;font-size:14px;font-weight:800}
+/* ===== Caption ===== */
+.caption{position:absolute;left:0;right:0;bottom:56px;display:flex;justify-content:center;z-index:20}
+.cap-pill{display:flex;align-items:center;gap:16px;background:#fff;color:#0F172A;border-radius:16px;
+  padding:16px 26px;box-shadow:0 24px 60px -20px rgba(0,0,0,.6);font-weight:800;font-size:22px;
+  opacity:0;transform:translateY(20px)}
+.cap-num{width:40px;height:40px;border-radius:11px;background:#0F172A;color:#fff;display:flex;
+  align-items:center;justify-content:center;font-size:19px}
+.cap-pill.step2 .cap-num{background:#2563EB}.cap-pill.step3 .cap-num{background:#10B981}
+.cap-pill.step4 .cap-num{background:#8B5CF6}
+/* ===== End card ===== */
+.endcard{position:absolute;inset:0;z-index:40;display:flex;flex-direction:column;align-items:center;
+  justify-content:center;gap:26px;opacity:0;pointer-events:none;backdrop-filter:blur(12px);
+  background:radial-gradient(1100px 640px at 50% 45%, rgba(10,17,32,.92), rgba(4,6,12,.985))}
+.endcard .lock{display:flex;align-items:center;gap:20px}
+.endcard .sym{width:88px;height:88px;display:flex;align-items:center;justify-content:center}
+.endcard .sym svg{width:88px;height:88px}
+.endcard .name{font-size:56px;font-weight:800;letter-spacing:-.02em}
+.endcard .name .a{color:#5b9bff}
+.endcard .tag{font-size:26px;color:#aebbd6;font-weight:600}
+.endcard .url{flex:none;height:auto;margin-left:0;font-size:20px;color:#5b9bff;font-weight:700;
+  background:rgba(91,155,255,.1);border:1px solid rgba(91,155,255,.3);padding:9px 20px;border-radius:99px}
+/* progress bar */
+.progress{position:absolute;bottom:0;left:0;height:4px;background:linear-gradient(90deg,#2563EB,#10B981);width:0;z-index:50}
+</style>
+</head>
+<body>
+<div id="viewport">
+  <div id="stage">
+    <!-- Topbar -->
+    <div class="topbar">
+      <div class="brand"><span class="sym"><svg viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg"><circle cx="18.5" cy="20.5" r="12" fill="none" stroke="#34D399" stroke-width="2.6"/><path d="M6.5 20.5h24" stroke="#34D399" stroke-width="2"/><path d="M18.5 8.5c5.6 3.6 5.6 20.4 0 24M18.5 8.5c-5.6 3.6-5.6 20.4 0 24" stroke="#34D399" stroke-width="2" fill="none"/><circle cx="31" cy="9" r="3.8" fill="#FF9900"/></svg></span>Atlas <span class="accent">Seller</span></div>
+      <div class="center">Sincronização Amazon — em tempo real</div>
+      <div class="live"><span class="dot"></span>AO VIVO</div>
+    </div>
+
+    <div class="split">
+      <!-- LEFT: Amazon phone -->
+      <div class="phone">
+        <div class="notch"></div>
+        <div class="phone-screen">
+          <div class="amz-head">
+            <div class="amz-logo"><svg viewBox="0 0 40 18"><path d="M2 13c8 5 28 5 36 0" stroke="#FF9900" stroke-width="3.4" fill="none" stroke-linecap="round"/><path d="M33 10c3 2 3 4 2 5" stroke="#FF9900" stroke-width="3" fill="none" stroke-linecap="round"/></svg></div>
+            <div><div class="amz-title">Amazon Seller</div><div class="amz-sub">Pedidos • Brasil</div></div>
+          </div>
+          <div class="orders" id="orders">
+            <div class="order" data-i="0"><div class="oic"><svg viewBox="0 0 40 18"><path d="M2 13c8 5 28 5 36 0" stroke="#FF9900" stroke-width="3.4" fill="none" stroke-linecap="round"/></svg></div><div class="obody"><div class="osku">MFS-0032</div><div class="oname">Kit Organizador Multiuso</div></div><div><div class="oval">R$ 129,90</div><div class="otime">agora</div></div></div>
+            <div class="order" data-i="1"><div class="oic"><svg viewBox="0 0 40 18"><path d="M2 13c8 5 28 5 36 0" stroke="#FF9900" stroke-width="3.4" fill="none" stroke-linecap="round"/></svg></div><div class="obody"><div class="osku">MFS-0018</div><div class="oname">Suporte Articulado</div></div><div><div class="oval">R$ 89,90</div><div class="otime">agora</div></div></div>
+            <div class="order" data-i="2"><div class="oic"><svg viewBox="0 0 40 18"><path d="M2 13c8 5 28 5 36 0" stroke="#FF9900" stroke-width="3.4" fill="none" stroke-linecap="round"/></svg></div><div class="obody"><div class="osku">MFS-0047</div><div class="oname">Cabo Premium 2m</div></div><div><div class="oval">R$ 54,90</div><div class="otime">1 min</div></div></div>
+            <div class="order" data-i="3"><div class="oic"><svg viewBox="0 0 40 18"><path d="M2 13c8 5 28 5 36 0" stroke="#FF9900" stroke-width="3.4" fill="none" stroke-linecap="round"/></svg></div><div class="obody"><div class="osku">MFS-0025</div><div class="oname">Kit Ferramentas 12p</div></div><div><div class="oval">R$ 214,00</div><div class="otime">2 min</div></div></div>
+            <div class="order" data-i="4"><div class="oic"><svg viewBox="0 0 40 18"><path d="M2 13c8 5 28 5 36 0" stroke="#FF9900" stroke-width="3.4" fill="none" stroke-linecap="round"/></svg></div><div class="obody"><div class="osku">MFS-0009</div><div class="oname">Luminária LED</div></div><div><div class="oval">R$ 149,90</div><div class="otime">3 min</div></div></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- RIGHT: Atlas browser -->
+      <div class="browser">
+        <div class="chrome">
+          <span class="dot r"></span><span class="dot y"></span><span class="dot g"></span>
+          <div class="url"><svg viewBox="0 0 24 24" fill="none"><path d="M6 10V8a6 6 0 1112 0v2" stroke="#9fb0d0" stroke-width="2"/><rect x="4" y="10" width="16" height="10" rx="2" stroke="#9fb0d0" stroke-width="2"/></svg><span id="urltext">atlasseller.mundofs.cloud/vendas</span></div>
+        </div>
+        <div class="app">
+          <div class="side">
+            <div class="lg"></div>
+            <div class="it" data-nav="dash"><svg viewBox="0 0 24 24" fill="none"><path d="M4 13h6V4H4v9zM14 20h6V4h-6v16zM4 20h6v-4H4v4z" stroke="currentColor" stroke-width="1.7"/></svg></div>
+            <div class="it" data-nav="vendas"><svg viewBox="0 0 24 24" fill="none"><path d="M4 7h16M4 12h16M4 17h10" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></div>
+            <div class="it" data-nav="analytics"><svg viewBox="0 0 24 24" fill="none"><path d="M4 19V5m0 14h16M8 15l3-4 3 2 4-6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+          </div>
+          <div class="content">
+            <!-- VENDAS -->
+            <div class="screen" id="s-vendas">
+              <div class="vhead"><div><h2>Vendas Amazon</h2><div class="sub">Pedidos, taxas, líquido e reembolsos pela Amazon SP-API</div></div></div>
+              <div class="vkpis">
+                <div class="vkpi"><div class="l">Receita Bruta</div><div class="v" data-count="188430" data-fmt="brl">R$ 0</div></div>
+                <div class="vkpi"><div class="l">Pedidos</div><div class="v" data-count="1914" data-fmt="int">0</div></div>
+                <div class="vkpi"><div class="l">Unidades</div><div class="v" data-count="2380" data-fmt="int">0</div></div>
+                <div class="vkpi"><div class="l">Ticket Médio</div><div class="v" data-count="9845" data-fmt="brlc">R$ 0</div></div>
+              </div>
+              <div class="salecard" id="salecard">
+                <div class="sc-head">
+                  <div class="sc-thumb"><svg viewBox="0 0 24 24" fill="none"><path d="M3 7l9-4 9 4-9 4-9-4z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M3 7v10l9 4 9-4V7" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg></div>
+                  <div class="sc-h-body"><div class="sc-sku">MFS-0032 · Kit Organizador Multiuso</div><div class="sc-name">Pedido 701-4423188 · FBA · <span class="sc-tag">● amazon.com.br</span></div></div>
+                  <div class="sc-gross">R$ 129,90<small>Receita bruta</small></div>
+                </div>
+                <div class="breakdown" id="breakdown">
+                  <div class="bd-row" data-b="0"><span class="lbl"><span class="ic" style="background:#EFF6FF;color:#2563EB">%</span>Comissão Amazon (15%)</span><span class="bd-neg">− R$ 19,49</span></div>
+                  <div class="bd-row" data-b="1"><span class="lbl"><span class="ic" style="background:#FFF7ED;color:#EA580C">▣</span>Tarifa FBA</span><span class="bd-neg">− R$ 5,00</span></div>
+                  <div class="bd-row" data-b="2"><span class="lbl"><span class="ic" style="background:#F5F3FF;color:#7C3AED">§</span>Imposto (Simples 6%)</span><span class="bd-neg">− R$ 7,79</span></div>
+                  <div class="bd-row" data-b="3"><span class="lbl"><span class="ic" style="background:#F1F5F9;color:#475569">⌗</span>Custo do produto</span><span class="bd-neg">− R$ 48,00</span></div>
+                  <div class="bd-profit" id="bdprofit"><span class="pl">Lucro real</span><span style="display:flex;align-items:center"><span class="pv">R$ 49,62</span><span class="margin-badge">margem 38,2%</span></span></div>
+                </div>
+              </div>
+            </div>
+
+            <!-- DASHBOARD -->
+            <div class="screen" id="s-dash">
+              <div><h2>Dashboard E-commerce</h2><div class="sub">KPIs comerciais da Amazon · vendas item-a-item · últimos 30 dias</div></div>
+              <div class="dkpis">
+                <div class="dkpi green" data-k="0"><div class="l">Faturamento</div><div class="v" data-count="248910" data-fmt="brl">R$ 0</div><div class="d" style="color:#059669">▲ 18%</div></div>
+                <div class="dkpi green" data-k="1"><div class="l">Líq. Marketplace</div><div class="v" data-count="205120" data-fmt="brl">R$ 0</div><div class="d" style="color:#059669">▲ 15%</div></div>
+                <div class="dkpi blue" data-k="2"><div class="l">Lucro Bruto</div><div class="v" data-count="58240" data-fmt="brl">R$ 0</div><div class="d" style="color:#059669">▲ 22%</div></div>
+                <div class="dkpi blue" data-k="3"><div class="l">Margem</div><div class="v" data-count="234" data-fmt="pct1">0%</div><div class="d" style="color:#64748B">saudável</div></div>
+              </div>
+              <div class="chartbox">
+                <div class="ct"><h3>Resumo de receitas</h3><div class="legend"><span><i style="background:#8B5CF6"></i>Faturamento</span><span><i style="background:#2563EB"></i>Líq. Marketplace</span><span><i style="background:#10B981"></i>Lucro</span></div></div>
+                <div class="chartwrap">
+                  <svg id="chartsvg" viewBox="0 0 900 170" preserveAspectRatio="none">
+                    <path id="area1" d="" fill="rgba(139,92,246,.18)" stroke="#8B5CF6" stroke-width="2.5"/>
+                    <path id="area2" d="" fill="rgba(37,99,235,.16)" stroke="#2563EB" stroke-width="2.5"/>
+                    <path id="area3" d="" fill="rgba(16,185,129,.20)" stroke="#10B981" stroke-width="2.5"/>
+                  </svg>
+                </div>
+              </div>
+            </div>
+
+            <!-- ANALYTICS -->
+            <div class="screen" id="s-analytics">
+              <div><h2>Marketplace Analytics</h2><div class="sub">Tráfego, conversão e publicidade · Brand Analytics</div></div>
+              <div class="akpis">
+                <div class="akpi" data-a="0"><div class="l">Sessões (30d)</div><div class="v" data-count="42100" data-fmt="int">0</div><div class="foot">page views 61.240</div></div>
+                <div class="akpi" data-a="1"><div class="l">Conversão / sessão</div><div class="v" data-count="128" data-fmt="pct1">0%</div><div class="foot">unit session rate</div></div>
+                <div class="akpi" data-a="2"><div class="l">Buy Box</div><div class="v" data-count="960" data-fmt="pct0">0%</div><div class="foot">posse média</div></div>
+                <div class="akpi" data-a="3"><div class="l">ACOS</div><div class="v" data-count="141" data-fmt="pct1">0%</div><div class="foot">publicidade</div></div>
+              </div>
+              <div class="abars">
+                <h3>Desempenho por SKU</h3>
+                <div class="row"><div class="rl">MFS-0032</div><div class="track"><div class="fill" data-w="92" style="background:#10B981"></div></div><div class="rv">R$ 61k</div></div>
+                <div class="row"><div class="rl">MFS-0025</div><div class="track"><div class="fill" data-w="74" style="background:#2563EB"></div></div><div class="rv">R$ 48k</div></div>
+                <div class="row"><div class="rl">MFS-0018</div><div class="track"><div class="fill" data-w="58" style="background:#8B5CF6"></div></div><div class="rv">R$ 33k</div></div>
+                <div class="row"><div class="rl">MFS-0047</div><div class="track"><div class="fill" data-w="41" style="background:#F59E0B"></div></div><div class="rv">R$ 22k</div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Caption -->
+    <div class="caption"><div class="cap-pill" id="cap"><span class="cap-num" id="capnum">01</span><span id="captext">A venda cai da Amazon</span></div></div>
+
+    <!-- End card -->
+    <div class="endcard" id="endcard">
+      <div class="lock">
+        <span class="sym"><svg viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg"><circle cx="18.5" cy="20.5" r="12" fill="none" stroke="#34D399" stroke-width="2.6"/><path d="M6.5 20.5h24" stroke="#34D399" stroke-width="2"/><path d="M18.5 8.5c5.6 3.6 5.6 20.4 0 24M18.5 8.5c-5.6 3.6-5.6 20.4 0 24" stroke="#34D399" stroke-width="2" fill="none"/><circle cx="31" cy="9" r="3.8" fill="#FF9900"/></svg></span>
+        <span class="name">Atlas <span class="a">Seller</span></span>
+      </div>
+      <div class="tag">Saiba o lucro real de cada venda — automático.</div>
+      <div class="url">atlasseller.mundofs.cloud</div>
+    </div>
+
+    <div class="progress" id="progress"></div>
+  </div>
+</div>
+
+<script src="demo.js"></script>
+</body>
+</html>

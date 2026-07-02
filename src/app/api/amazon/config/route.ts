@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { handle, ok } from "@/lib/api";
 import { auditLog, redactForAudit } from "@/lib/audit";
 import { requireRole, UsuarioRole } from "@/lib/auth";
+import { db } from "@/lib/db";
 import {
   AMAZON_CONFIG_KEYS,
   getAmazonConfig,
@@ -12,7 +13,7 @@ import {
 export const dynamic = "force-dynamic";
 
 export const GET = handle(async () => {
-  await requireRole(UsuarioRole.ADMIN);
+  const session = await requireRole(UsuarioRole.ADMIN);
   const config = await getAmazonConfig();
   // Mascarar chaves secretas na resposta. NUNCA expor sufixo dos segredos —
   // valor mascarado fixo sem comprimento real.
@@ -28,7 +29,31 @@ export const GET = handle(async () => {
       safe[key] = val;
     }
   }
-  return ok({ config: safe, configurado: isAmazonConfigured(config) });
+  // Status da conta OAuth da empresa (F02) — mesmo espelho de /api/amazon/ads/config.
+  const conta = session.empresaId
+    ? await db.amazonAccount.findFirst({
+        where: { empresaId: session.empresaId, ativa: true },
+        orderBy: { updatedAt: "desc" },
+        select: {
+          refreshTokenEnc: true,
+          sellerId: true,
+          status: true,
+          conectadoEm: true,
+        },
+      })
+    : null;
+  return ok({
+    config: safe,
+    configurado: isAmazonConfigured(config),
+    conta: conta
+      ? {
+          oauthConectado: !!conta.refreshTokenEnc,
+          status: conta.status,
+          sellerId: conta.sellerId,
+          conectadoEm: conta.conectadoEm,
+        }
+      : null,
+  });
 });
 
 export const POST = handle(async (req: NextRequest) => {

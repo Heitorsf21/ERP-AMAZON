@@ -8,7 +8,6 @@ import {
   Package,
   ShoppingCart,
   PiggyBank,
-  Globe,
   BarChart3,
   Home,
   ShoppingBag,
@@ -19,7 +18,6 @@ import {
   Store,
   Cog,
   Megaphone,
-  Activity,
   CalendarClock,
 } from "lucide-react";
 import type { Route } from "next";
@@ -161,18 +159,6 @@ export const NAV_GROUPS: NavGroup[] = [
     icon: Cog,
     items: [
       {
-        href: "/amazon" as Route,
-        label: "Conector Amazon",
-        icon: Globe,
-        keywords: ["sp-api", "sincronizar", "api", "credenciais", "marketplace"],
-      },
-      {
-        href: "/sistema" as Route,
-        label: "Saúde do Sistema",
-        icon: Activity,
-        keywords: ["worker", "fila", "jobs", "quotas", "heartbeat", "health"],
-      },
-      {
         href: "/perfil" as Route,
         label: "Meu Perfil",
         icon: UserCircle,
@@ -182,7 +168,16 @@ export const NAV_GROUPS: NavGroup[] = [
         href: "/configuracoes" as Route,
         label: "Configurações",
         icon: Settings,
-        keywords: ["sistema", "preferencias", "config"],
+        keywords: [
+          "sistema",
+          "preferencias",
+          "config",
+          "integracoes",
+          "amazon",
+          "conectar",
+          "assinatura",
+          "imposto",
+        ],
       },
     ],
   },

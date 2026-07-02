@@ -114,6 +114,24 @@ Em `/configuracoes` → Integracoes → "WhatsApp - Resumo de estoque":
 A API key e armazenada criptografada (`whatsapp_estoque_waha_api_key`,
 AES-256-GCM). Apos salvar, use "Enviar teste agora" para validar.
 
+Em producao, a mesma URL tambem precisa estar autorizada no `.env` do ERP:
+
+```bash
+WAHA_ALLOWED_HOSTS="127.0.0.1:3002,localhost:3002"
+```
+
+Depois de alterar o `.env`, reinicie separadamente os processos que enviam pelo
+WAHA:
+
+```bash
+sudo -u erp pm2 reload erp-web --update-env
+sudo -u erp pm2 reload erp-worker --update-env
+```
+
+O erro `WAHA_ALLOWED_HOSTS nao configurado no servidor` indica variavel ausente.
+O erro `URL do WAHA invalida ou fora de WAHA_ALLOWED_HOSTS` indica divergencia
+entre a URL salva no ERP e a lista acima.
+
 > Se o WAHA e o ERP estiverem na mesma rede Docker, use o hostname do
 > container (ex: `http://waha:3000`) em vez de `127.0.0.1:3002`.
 

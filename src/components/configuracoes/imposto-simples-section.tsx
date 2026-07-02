@@ -2,13 +2,7 @@
 
 import * as React from "react";
 import { Landmark, Loader2 } from "lucide-react";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 
@@ -31,6 +25,8 @@ function percentToBps(input: string): number | null {
   return Math.round(n * 100);
 }
 
+// Card compacto de propósito: é uma configuração de "definir e esquecer" —
+// uma linha de controles, sem ocupar a tela.
 export function ImpostoSimplesSection() {
   const [carregando, setCarregando] = React.useState(true);
   const [salvando, setSalvando] = React.useState(false);
@@ -85,10 +81,7 @@ export function ImpostoSimplesSection() {
       const data = (await res.json()) as ConfigImpostoSimples;
       setPercent(bpsToPercentString(data.aliquotaBps));
       setAtivo(data.ativo);
-      toast.success(
-        "Configuracao salva. Vendas futuras gravam imposto com nova aliquota; " +
-          "rode o backfill para atualizar o historico.",
-      );
+      toast.success("Aliquota salva. Vendas futuras ja usam o novo percentual.");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Erro ao salvar");
     } finally {
@@ -98,75 +91,56 @@ export function ImpostoSimplesSection() {
 
   return (
     <Card>
-      <CardHeader>
+      <CardContent className="flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-start gap-3">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-rose-500/10 text-rose-600 dark:text-rose-400">
-            <Landmark className="h-5 w-5" />
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-rose-500/10 text-rose-600 dark:text-rose-400">
+            <Landmark className="h-4 w-4" />
           </div>
           <div>
-            <CardTitle className="text-base">Imposto Simples Nacional</CardTitle>
-            <CardDescription>
-              Aliquota sobre o valor bruto de cada venda Amazon. Default 6%
-              (Anexo I do Simples). Reembolsos zeram automaticamente.
-            </CardDescription>
+            <p className="text-sm font-semibold">Imposto sobre vendas (Simples Nacional)</p>
+            <p className="text-xs text-muted-foreground">
+              Aliquota aplicada ao valor bruto de cada venda Amazon no calculo de
+              margens. Reembolsos zeram automaticamente.
+            </p>
           </div>
         </div>
-      </CardHeader>
-      <CardContent className="space-y-4">
+
         {carregando ? (
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
             <Loader2 className="h-3.5 w-3.5 animate-spin" /> Carregando...
           </div>
         ) : (
-          <>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-1.5">
-                <label
-                  htmlFor="imposto-aliquota"
-                  className="text-xs font-medium uppercase tracking-wider text-muted-foreground"
-                >
-                  Aliquota (%)
-                </label>
-                <div className="flex items-center gap-2">
-                  <input
-                    id="imposto-aliquota"
-                    type="text"
-                    inputMode="decimal"
-                    value={percent}
-                    onChange={(e) => setPercent(e.target.value)}
-                    className="h-9 w-24 rounded-md border bg-background px-3 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                  />
-                  <span className="text-sm text-muted-foreground">%</span>
-                </div>
-              </div>
-              <div className="space-y-1.5">
-                <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                  Status
-                </p>
-                <label className="inline-flex cursor-pointer items-center gap-2 text-sm">
-                  <input
-                    type="checkbox"
-                    checked={ativo}
-                    onChange={(e) => setAtivo(e.target.checked)}
-                    className="h-4 w-4 rounded border-input"
-                  />
-                  {ativo ? "Ativo" : "Desativado (margens sem imposto)"}
-                </label>
-              </div>
+          <div className="flex shrink-0 flex-wrap items-center gap-3">
+            <div className="flex items-center gap-1.5">
+              <label htmlFor="imposto-aliquota" className="sr-only">
+                Aliquota (%)
+              </label>
+              <input
+                id="imposto-aliquota"
+                type="text"
+                inputMode="decimal"
+                value={percent}
+                onChange={(e) => setPercent(e.target.value)}
+                className="h-9 w-20 rounded-md border bg-background px-3 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-ring"
+              />
+              <span className="text-sm text-muted-foreground">%</span>
             </div>
-            <div className="flex items-center gap-3">
-              <Button onClick={salvar} disabled={salvando} size="sm">
-                {salvando ? (
-                  <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-                ) : null}
-                Salvar
-              </Button>
-              <p className="text-xs text-muted-foreground">
-                Apos salvar, rode <code className="font-mono">npx tsx scripts/backfill-imposto-simples.ts --apply</code>{" "}
-                para recalcular vendas existentes.
-              </p>
-            </div>
-          </>
+            <label className="inline-flex cursor-pointer items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={ativo}
+                onChange={(e) => setAtivo(e.target.checked)}
+                className="h-4 w-4 rounded border-input"
+              />
+              {ativo ? "Ativo" : "Desativado"}
+            </label>
+            <Button onClick={salvar} disabled={salvando} size="sm">
+              {salvando ? (
+                <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+              ) : null}
+              Salvar
+            </Button>
+          </div>
         )}
       </CardContent>
     </Card>

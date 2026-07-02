@@ -55,6 +55,9 @@ Foi removido em 2c349dc. Sistema opera 100% standalone com VendaAmazon + Produto
 ### Abas removidas (Genius Pro, Expedição)
 Removidas em `feat/melhorias-ux-6-frentes`: código, item de menu (`nav-routes.ts`) e prefixos (`proxy.ts`). As tabelas `FbmPickingBatch`/`FbmPickingItem` foram **MANTIDAS** no schema (órfãs — zero perda de dados); constantes `StatusFbmPicking*` e `TipoAuditLog.FBM_PICKING_*` em `shared/domain.ts` também ficam.
 
+### UI cliente final (páginas dev removidas — 2026-07-01)
+Páginas `/amazon` (Conector) e `/sistema` (Saúde) **removidas da UI tenant** — cliente final não vê ops. TODOS os endpoints/jobs/dados ficam (`/api/amazon/*`, `/api/sistema/*`, AmazonSyncLog, AmazonApiQuota); prefixos do `proxy.ts` mantidos. Conexão Amazon virou card OAuth em Configurações → Integrações (`amazon-section.tsx`: Conectar → `/api/amazon/oauth/iniciar`; GET `/api/amazon/config` devolve `conta` espelhando o padrão do ads/config). Callbacks OAuth (SP-API + Ads) redirecionam para `/configuracoes?tab=integracoes&...` (a página lê `?tab=` e toasts via Suspense+useSearchParams). Configurações: aba "Sistema"→"Geral" (Imposto compacto + Assinatura); cards Aparência/Sistema/Drive saíram; tema vive SÓ no `ThemeToggle` do rodapé da sidebar (menu Sistema/Claro/Escuro). Ads: bloco manual + instruções só com `modoManualPermitido` (empresa da plataforma). Notificações JOB_FALHANDO/QUOTA_BLOQUEADA sem linkRef. Spec: `docs/superpowers/specs/2026-07-01-ui-cliente-final-design.md`.
+
 ### Vendas (`/vendas` — UI redesenhada V5)
 - Cards expansíveis substituem a tabela. Um card = uma linha `VendaAmazon` (chave `amazonOrderId+sku`). Pedidos multi-SKU viram múltiplos cards.
 - Header do card: status + data/hora + logística + `MarketplaceTag` (pílula com smile da Amazon). Layout interno do item em 2 linhas responsivas (md:grid-cols-5 / sm:grid-cols-3 / mobile:grid-cols-2) — **zero scroll horizontal**.

@@ -175,7 +175,9 @@ export function AmazonAdsSection() {
   const podeListarProfiles =
     oauthConectado ||
     (!!formValues.amazon_ads_client_id && !!formValues.amazon_ads_refresh_token);
-  const modoManualPermitido = configData?.modoManualPermitido ?? true;
+  // Modo manual (credenciais coladas na mão) é ferramenta da plataforma —
+  // clientes conectam só via OAuth, então o bloco inteiro fica oculto.
+  const modoManualPermitido = configData?.modoManualPermitido === true;
 
   return (
     <Card>
@@ -200,24 +202,26 @@ export function AmazonAdsSection() {
         </div>
       </CardHeader>
       <CardContent className="space-y-5">
-        <div className="rounded-lg border border-primary/20 bg-primary/5 p-4 text-xs text-muted-foreground">
-          <p className="mb-1 flex items-center gap-1.5 font-medium text-foreground">
-            <ShieldCheck className="h-3.5 w-3.5 text-primary" />
-            Como obter as credenciais
-          </p>
-          <ol className="list-inside list-decimal space-y-1 leading-relaxed">
-            <li>
-              Aplicacao Ads API aprovada (separada da SP-API) com scope{" "}
-              <code className="rounded bg-muted px-1 font-mono">
-                advertising::campaign_management
-              </code>
-              .
-            </li>
-            <li>Refresh token gerado apos o consent flow do anunciante.</li>
-            <li>Salve clientId/secret/refreshToken e clique &quot;Listar profiles&quot;.</li>
-            <li>Selecione o profile do BR (marketplace A2Q3Y263D00KWC) e salve.</li>
-          </ol>
-        </div>
+        {modoManualPermitido && (
+          <div className="rounded-lg border border-primary/20 bg-primary/5 p-4 text-xs text-muted-foreground">
+            <p className="mb-1 flex items-center gap-1.5 font-medium text-foreground">
+              <ShieldCheck className="h-3.5 w-3.5 text-primary" />
+              Como obter as credenciais
+            </p>
+            <ol className="list-inside list-decimal space-y-1 leading-relaxed">
+              <li>
+                Aplicacao Ads API aprovada (separada da SP-API) com scope{" "}
+                <code className="rounded bg-muted px-1 font-mono">
+                  advertising::campaign_management
+                </code>
+                .
+              </li>
+              <li>Refresh token gerado apos o consent flow do anunciante.</li>
+              <li>Salve clientId/secret/refreshToken e clique &quot;Listar profiles&quot;.</li>
+              <li>Selecione o profile do BR (marketplace A2Q3Y263D00KWC) e salve.</li>
+            </ol>
+          </div>
+        )}
 
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-background p-3">
           <div className="space-y-1">
@@ -255,7 +259,8 @@ export function AmazonAdsSection() {
           </div>
         </div>
 
-        {isLoading ? (
+        {modoManualPermitido &&
+          (isLoading ? (
           <div className="space-y-3">
             {Array.from({ length: 5 }).map((_, i) => (
               <Skeleton key={i} className="h-10 w-full" />
@@ -303,7 +308,7 @@ export function AmazonAdsSection() {
               </div>
             ))}
           </div>
-        )}
+        ))}
 
         {profiles && profiles.length > 0 && (
           <div className="rounded-lg border bg-muted/30 p-3">
@@ -353,13 +358,15 @@ export function AmazonAdsSection() {
         )}
 
         <div className="flex flex-wrap gap-3">
-          <Button
-            onClick={() => salvar.mutate(formValues)}
-            disabled={salvar.isPending || isLoading || !modoManualPermitido}
-          >
-            {salvar.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            Salvar credenciais Ads
-          </Button>
+          {modoManualPermitido && (
+            <Button
+              onClick={() => salvar.mutate(formValues)}
+              disabled={salvar.isPending || isLoading}
+            >
+              {salvar.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Salvar credenciais Ads
+            </Button>
+          )}
           <Button
             variant="outline"
             onClick={() => carregarProfiles.mutate()}

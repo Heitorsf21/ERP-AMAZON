@@ -231,7 +231,7 @@ export function WhatsappEstoqueSection() {
                 <Input
                   id="wa-url"
                   type="text"
-                  placeholder="http://127.0.0.1:3000"
+                  placeholder="http://127.0.0.1:3002"
                   value={wahaUrl}
                   onChange={(e) => setWahaUrl(e.target.value)}
                 />

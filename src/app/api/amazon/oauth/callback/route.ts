@@ -68,7 +68,9 @@ export const GET = handle(async (req: Request) => {
       });
     }
 
-    return NextResponse.redirect(new URL("/amazon?conectado=1", req.url));
+    return NextResponse.redirect(
+      new URL("/configuracoes?tab=integracoes&amazon=conectado", req.url),
+    );
   } catch (err) {
     logger.error(
       { err: err instanceof Error ? err.message : String(err) },
@@ -77,6 +79,8 @@ export const GET = handle(async (req: Request) => {
     await db.amazonAccount
       .updateMany({ where: { empresaId: state.empresaId }, data: { status: "ERRO" } })
       .catch(() => {});
-    return NextResponse.redirect(new URL("/amazon?erro=oauth", req.url));
+    return NextResponse.redirect(
+      new URL("/configuracoes?tab=integracoes&amazon=erro", req.url),
+    );
   }
 });

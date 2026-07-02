@@ -3,6 +3,7 @@ import { enviarTextoWaha, mascararDestino, normalizarChatId } from "./waha-clien
 
 afterEach(() => {
   vi.unstubAllEnvs();
+  vi.unstubAllGlobals();
 });
 
 describe("normalizarChatId", () => {
@@ -46,7 +47,7 @@ describe("enviarTextoWaha SSRF guard", () => {
     const result = await enviarTextoWaha({ ...input, baseUrl: "http://127.0.0.1:3002" });
 
     expect(result.ok).toBe(false);
-    expect(result.erro).toContain("bloqueada");
+    expect(result.erro).toBe("WAHA_ALLOWED_HOSTS nao configurado no servidor");
   });
 
   it("em producao bloqueia host fora da allowlist", async () => {
@@ -56,6 +57,26 @@ describe("enviarTextoWaha SSRF guard", () => {
     const result = await enviarTextoWaha(input);
 
     expect(result.ok).toBe(false);
-    expect(result.erro).toContain("bloqueada");
+    expect(result.erro).toBe(
+      "URL do WAHA invalida ou fora de WAHA_ALLOWED_HOSTS",
+    );
+  });
+
+  it("em producao permite o host presente na allowlist", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("WAHA_ALLOWED_HOSTS", "127.0.0.1:3002");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ id: "msg-1" }), { status: 200 }),
+      ),
+    );
+
+    const result = await enviarTextoWaha({
+      ...input,
+      baseUrl: "http://127.0.0.1:3002",
+    });
+
+    expect(result).toMatchObject({ ok: true, status: 200, idMensagem: "msg-1" });
   });
 });
