@@ -142,7 +142,13 @@
   }
 
   function mostrarErroSubmissao(msg){
-    erroSubmissaoEl.innerHTML = msg + ' Tente de novo ou <a href="index.html#contato">fale com a gente</a>.';
+    erroSubmissaoEl.textContent = msg + ' Tente de novo ou ';
+    var link = document.createElement('a');
+    link.href = 'index.html#contato';
+    link.textContent = 'fale com a gente';
+    erroSubmissaoEl.appendChild(link);
+    erroSubmissaoEl.appendChild(document.createTextNode('.'));
+    erroSubmissaoEl.hidden = false;
   }
 
   formDados.addEventListener('submit', function(e){
@@ -196,20 +202,31 @@
   });
 
   function iniciarPagamento(clientSecret, publishableKey){
-    stripe = Stripe(publishableKey);
-    elements = stripe.elements({
-      clientSecret: clientSecret,
-      appearance: {
-        theme: 'stripe',
-        variables: { colorPrimary: '#2563EB', fontFamily: 'Inter, system-ui, sans-serif', borderRadius: '8px' }
-      }
-    });
-    var paymentElement = elements.create('payment');
-    paymentElement.mount('#payment-element');
+    if (typeof Stripe === 'undefined') {
+      mostrarErroSubmissao('Não foi possível carregar o pagamento seguro. Desative bloqueadores de anúncio para esta página e tente novamente.');
+      setBotao(btnContinuar, false, 'Continuar para pagamento');
+      return;
+    }
 
-    travarEtapa1();
-    formPagamento.hidden = false;
-    formPagamento.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    try {
+      stripe = Stripe(publishableKey);
+      elements = stripe.elements({
+        clientSecret: clientSecret,
+        appearance: {
+          theme: 'stripe',
+          variables: { colorPrimary: '#2563EB', fontFamily: 'Inter, system-ui, sans-serif', borderRadius: '8px' }
+        }
+      });
+      var paymentElement = elements.create('payment');
+      paymentElement.mount('#payment-element');
+
+      travarEtapa1();
+      formPagamento.hidden = false;
+      formPagamento.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    } catch (err) {
+      mostrarErroSubmissao('Não foi possível carregar o pagamento seguro. Desative bloqueadores de anúncio para esta página e tente novamente.');
+      setBotao(btnContinuar, false, 'Continuar para pagamento');
+    }
   }
 
   btnAlterarPlano.addEventListener('click', function(e){
