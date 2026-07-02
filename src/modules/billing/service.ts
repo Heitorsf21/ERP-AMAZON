@@ -312,8 +312,16 @@ export async function processarEventoStripe(event: Stripe.Event): Promise<void> 
       break;
     }
     case "customer.subscription.created":
-    case "customer.subscription.updated":
+    case "customer.subscription.updated": {
+      // Eventos podem chegar fora de ordem (created/incomplete depois do
+      // invoice.paid/active). Aplicamos o estado FRESCO da API, não o snapshot.
+      const evSub = event.data.object as Stripe.Subscription;
+      const subscription = await stripe.subscriptions.retrieve(evSub.id);
+      await aplicarAssinaturaStripe(subscription);
+      break;
+    }
     case "customer.subscription.deleted": {
+      // Estado terminal — o snapshot do evento é definitivo.
       await aplicarAssinaturaStripe(event.data.object as Stripe.Subscription);
       break;
     }

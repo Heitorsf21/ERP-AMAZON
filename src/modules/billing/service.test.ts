@@ -270,3 +270,60 @@ describe("processarEventoStripe / invoice.paid", () => {
     expect(dbMock.empresa.updateMany).toHaveBeenCalled();
   });
 });
+
+describe("processarEventoStripe / customer.subscription.*", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    dbMock.empresa.updateMany.mockResolvedValue({ count: 1 });
+  });
+
+  function eventoSubscription(
+    type: "customer.subscription.created" | "customer.subscription.updated" | "customer.subscription.deleted",
+    status: string,
+  ): Stripe.Event {
+    return {
+      type,
+      data: {
+        object: {
+          id: "sub_1",
+          customer: "cus_1",
+          status,
+          items: { data: [{ price: { id: "price_1" } }] },
+          metadata: { empresaId: "emp_1", plano: "pro", ciclo: "anual" },
+        },
+      },
+    } as unknown as Stripe.Event;
+  }
+
+  it("customer.subscription.updated busca o estado FRESCO via retrieve em vez do snapshot do evento (eventos fora de ordem)", async () => {
+    // Payload do evento diz "incomplete" (entregue fora de ordem), mas o
+    // estado real na Stripe já avançou para "active" — não podemos regredir.
+    stripeMock.subscriptions.retrieve.mockResolvedValue({
+      id: "sub_1",
+      customer: "cus_1",
+      status: "active",
+      items: { data: [{ price: { id: "price_1" } }] },
+      metadata: { empresaId: "emp_1", plano: "pro", ciclo: "anual" },
+    });
+
+    await processarEventoStripe(eventoSubscription("customer.subscription.updated", "incomplete"));
+
+    expect(stripeMock.subscriptions.retrieve).toHaveBeenCalledWith("sub_1");
+    expect(dbMock.empresa.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ assinaturaStatus: "ACTIVE" }),
+      }),
+    );
+  });
+
+  it("customer.subscription.deleted aplica o snapshot do evento diretamente (estado terminal, retrieve NÃO chamado)", async () => {
+    await processarEventoStripe(eventoSubscription("customer.subscription.deleted", "canceled"));
+
+    expect(stripeMock.subscriptions.retrieve).not.toHaveBeenCalled();
+    expect(dbMock.empresa.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ assinaturaStatus: "CANCELED" }),
+      }),
+    );
+  });
+});

@@ -159,10 +159,15 @@ function withSecurityHeaders(res: NextResponse): NextResponse {
   return res;
 }
 
+// x-real-ip é setado pelo Nginx com $remote_addr (confiável, o cliente não
+// consegue forjar). O X-Forwarded-For usa $proxy_add_x_forwarded_for, que
+// APPENDA o IP real ao header recebido do cliente — logo o PRIMEIRO hop do
+// XFF pode ser forjado pelo próprio atacante. Preferir x-real-ip sempre que
+// presente.
 function getClientIp(req: NextRequest): string {
   return (
-    req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
     req.headers.get("x-real-ip") ||
+    req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
     "unknown"
   );
 }
