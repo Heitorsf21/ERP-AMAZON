@@ -1,19 +1,12 @@
 "use client";
 
 import * as React from "react";
+import { useRouter } from "next/navigation";
+import type { Route } from "next";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-  AlertTriangle,
-  BellOff,
-  CheckCheck,
-  Package,
-  RefreshCw,
-  ShoppingBag,
-  TrendingDown,
-  Zap,
-  Clock,
-  DollarSign,
-} from "lucide-react";
+import { ArrowUpRight, BellOff, Check, CheckCheck, RefreshCw } from "lucide-react";
+import { format, formatDistanceToNow, isToday, isYesterday } from "date-fns";
+import { ptBR } from "date-fns/locale";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -22,6 +15,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { fetchJSON } from "@/lib/fetcher";
+import { getTipoNotificacaoVisual } from "@/components/notificacoes/tipo-notificacao-config";
 
 type Notificacao = {
   id: string;
@@ -33,31 +27,47 @@ type Notificacao = {
   criadaEm: string;
 };
 
-const TIPO_CONFIG: Record<
-  string,
-  { label: string; icon: React.ComponentType<{ className?: string }>; color: string }
-> = {
-  ESTOQUE_CRITICO: { label: "Estoque Crítico", icon: Package, color: "text-red-500" },
-  BUYBOX_PERDIDO: { label: "Buybox Perdida", icon: TrendingDown, color: "text-orange-500" },
-  REEMBOLSO_ALTO: { label: "Reembolso Alto", icon: ShoppingBag, color: "text-yellow-600" },
-  REIMBURSEMENT_FBA_RECEBIDO: { label: "FBA Reimbursement", icon: DollarSign, color: "text-emerald-600" },
-  ACOS_ALTO: { label: "ACoS Elevado", icon: Zap, color: "text-purple-500" },
-  LIQUIDACAO_ATRASADA: { label: "Liquidação Atrasada", icon: Clock, color: "text-blue-500" },
-  CUSTO_AUSENTE: { label: "Custo Ausente", icon: DollarSign, color: "text-gray-500" },
-};
-
-function formatarData(iso: string) {
+function labelDoDia(iso: string) {
   const d = new Date(iso);
-  return d.toLocaleDateString("pt-BR", {
+  if (Number.isNaN(d.getTime())) return "Sem data";
+  if (isToday(d)) return "Hoje";
+  if (isYesterday(d)) return "Ontem";
+  return format(d, "d 'de' MMMM", { locale: ptBR });
+}
+
+function tempoRelativo(iso: string) {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return formatDistanceToNow(d, { locale: ptBR, addSuffix: true });
+}
+
+function dataCompleta(iso: string) {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleString("pt-BR", {
     day: "2-digit",
-    month: "short",
+    month: "2-digit",
+    year: "numeric",
     hour: "2-digit",
     minute: "2-digit",
   });
 }
 
+/** Agrupa preservando a ordem vinda da API (mais recentes primeiro). */
+function agruparPorDia(itens: Notificacao[]) {
+  const grupos: Array<{ label: string; itens: Notificacao[] }> = [];
+  for (const n of itens) {
+    const label = labelDoDia(n.criadaEm);
+    const ultimo = grupos[grupos.length - 1];
+    if (ultimo && ultimo.label === label) ultimo.itens.push(n);
+    else grupos.push({ label, itens: [n] });
+  }
+  return grupos;
+}
+
 export default function NotificacoesPage() {
   const queryClient = useQueryClient();
+  const router = useRouter();
 
   const { data: notificacoes, isLoading } = useQuery<Notificacao[]>({
     queryKey: ["notificacoes"],
@@ -101,12 +111,22 @@ export default function NotificacoesPage() {
   });
 
   const naoLidas = notificacoes?.filter((n) => !n.lida).length ?? 0;
+  const grupos = agruparPorDia(notificacoes ?? []);
+
+  function abrirNotificacao(n: Notificacao) {
+    if (!n.lida) marcarLidaMut.mutate(n.id);
+    if (n.linkRef) router.push(n.linkRef as Route);
+  }
 
   return (
-    <div className="flex flex-col gap-6 p-6">
+    <div className="flex flex-col gap-6">
       <PageHeader
         title="Notificações"
-        description="Alertas automáticos gerados pelo ERP"
+        description={
+          naoLidas > 0
+            ? `${naoLidas} não ${naoLidas === 1 ? "lida" : "lidas"} · alertas automáticos do sistema`
+            : "Alertas automáticos do sistema"
+        }
       >
         <div className="flex gap-2">
           <Button
@@ -154,64 +174,111 @@ export default function NotificacoesPage() {
           </CardContent>
         </Card>
       ) : (
-        <div className="flex flex-col gap-2">
-          {notificacoes.map((n) => {
-            const config = TIPO_CONFIG[n.tipo] ?? {
-              label: n.tipo,
-              icon: AlertTriangle,
-              color: "text-muted-foreground",
-            };
-            const Icon = config.icon;
+        <div className="flex flex-col gap-5">
+          {grupos.map((grupo) => (
+            <section key={grupo.label} className="space-y-2">
+              <h2 className="px-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                {grupo.label}
+              </h2>
+              {grupo.itens.map((n) => {
+                const visual = getTipoNotificacaoVisual(n.tipo);
+                const Icon = visual.icon;
+                const clicavel = !!n.linkRef;
 
-            return (
-              <Card
-                key={n.id}
-                className={cn(
-                  "transition-opacity",
-                  n.lida && "opacity-60",
-                )}
-              >
-                <CardContent className="flex items-start gap-4 py-4">
-                  <div
+                return (
+                  <Card
+                    key={n.id}
+                    role={clicavel ? "button" : undefined}
+                    tabIndex={clicavel ? 0 : undefined}
+                    onClick={clicavel ? () => abrirNotificacao(n) : undefined}
+                    onKeyDown={
+                      clicavel
+                        ? (e) => {
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.preventDefault();
+                              abrirNotificacao(n);
+                            }
+                          }
+                        : undefined
+                    }
                     className={cn(
-                      "mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted",
-                      config.color,
+                      "border-l-4 transition-all",
+                      n.lida
+                        ? "border-l-transparent opacity-60"
+                        : visual.acento,
+                      clicavel &&
+                        "cursor-pointer hover:-translate-y-px hover:shadow-md",
                     )}
                   >
-                    <Icon className="h-4 w-4" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-start justify-between gap-2">
-                      <div>
-                        <p className={cn("text-sm font-medium", !n.lida && "font-semibold")}>
-                          {n.titulo}
-                        </p>
-                        <p className="mt-0.5 text-xs text-muted-foreground">{n.descricao}</p>
-                      </div>
-                      <div className="flex shrink-0 items-center gap-2">
-                        <Badge variant="outline" className="text-xs">
-                          {config.label}
-                        </Badge>
-                        {!n.lida && (
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-7 w-7"
-                            onClick={() => marcarLidaMut.mutate(n.id)}
-                          >
-                            <CheckCheck className="h-3.5 w-3.5" />
-                          </Button>
+                    <CardContent className="flex items-start gap-4 py-4">
+                      <div
+                        className={cn(
+                          "mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg",
+                          visual.pastilha,
                         )}
+                      >
+                        <Icon className="h-4 w-4" />
                       </div>
-                    </div>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      {formatarData(n.criadaEm)}
-                    </p>
-                  </div>
-                </CardContent>
-              </Card>
-            );
-          })}
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p
+                              className={cn(
+                                "text-sm",
+                                n.lida ? "font-medium" : "font-semibold",
+                              )}
+                            >
+                              {n.titulo}
+                            </p>
+                            <p className="mt-0.5 text-xs text-muted-foreground">
+                              {n.descricao}
+                            </p>
+                          </div>
+                          <div className="flex shrink-0 items-center gap-2">
+                            {!n.lida && (
+                              <span
+                                className="h-2 w-2 rounded-full bg-primary"
+                                aria-hidden="true"
+                              />
+                            )}
+                            <Badge variant="outline" className="text-xs">
+                              {visual.label}
+                            </Badge>
+                            {!n.lida && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-7 w-7"
+                                aria-label="Marcar como lida"
+                                title="Marcar como lida"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  marcarLidaMut.mutate(n.id);
+                                }}
+                              >
+                                <Check className="h-3.5 w-3.5" />
+                              </Button>
+                            )}
+                          </div>
+                        </div>
+                        <div className="mt-1.5 flex items-center gap-2 text-xs text-muted-foreground">
+                          <span title={dataCompleta(n.criadaEm)}>
+                            {tempoRelativo(n.criadaEm)}
+                          </span>
+                          {clicavel && (
+                            <span className="inline-flex items-center gap-0.5 font-medium text-primary">
+                              Abrir
+                              <ArrowUpRight className="h-3 w-3" />
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </section>
+          ))}
         </div>
       )}
     </div>
