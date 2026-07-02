@@ -68,6 +68,8 @@ type RecommendationStatus =
   | "FAILED"
   | "STALE";
 
+type SkuAttributionCandidate = { adId: string; sku: string; asin: string | null };
+
 type Recommendation = {
   id: string;
   status: RecommendationStatus;
@@ -91,6 +93,7 @@ type Recommendation = {
   asin: string | null;
   skuAttributionStatus: "RESOLVED" | "UNRESOLVED";
   skuAttributionSource: string;
+  skuAttributionCandidates: SkuAttributionCandidate[];
   isExecutable: boolean;
   blockedReason: string | null;
   actionType: string;
@@ -121,6 +124,7 @@ type Recommendation = {
 type Observation = {
   recommendationId: string;
   sku: string | null;
+  skuAttributionCandidates: SkuAttributionCandidate[];
   displayLabel: string;
   actionType: string;
   executadoEm: string;
@@ -318,11 +322,14 @@ function AdsOptimizerPageInner() {
   );
   const historyLabel = "Historico disponivel";
   // Contagem de pendentes por SKU para os badges do painel de investimento.
+  // Recomendações de ad group compartilhado contam para cada produto candidato.
   const recPendentesPorSku = React.useMemo(() => {
     const map = new Map<string, number>();
     for (const rec of recommendations) {
-      if (rec.status !== "PROPOSED" || !rec.sku) continue;
-      map.set(rec.sku, (map.get(rec.sku) ?? 0) + 1);
+      if (rec.status !== "PROPOSED") continue;
+      for (const sku of skusAtribuidos(rec)) {
+        map.set(sku, (map.get(sku) ?? 0) + 1);
+      }
     }
     return map;
   }, [recommendations]);
@@ -333,32 +340,36 @@ function AdsOptimizerPageInner() {
   const obsPorSku = React.useMemo(() => {
     const map = new Map<string, number>();
     for (const obs of observations) {
-      if (!obs.sku) continue;
-      map.set(obs.sku, (map.get(obs.sku) ?? 0) + 1);
+      for (const sku of skusAtribuidos(obs)) {
+        map.set(sku, (map.get(sku) ?? 0) + 1);
+      }
     }
     return map;
   }, [observations]);
   const obsDoProduto = React.useMemo(
-    () => observations.filter((obs) => obs.sku === skuSelecionado),
+    () =>
+      skuSelecionado
+        ? observations.filter((obs) => pertenceAoSku(obs, skuSelecionado))
+        : [],
     [observations, skuSelecionado],
   );
   const obsSemSku = React.useMemo(
-    () => observations.filter((obs) => !obs.sku),
+    () => observations.filter((obs) => skusAtribuidos(obs).length === 0),
     [observations],
   );
-  // Pendências sem produto identificado — vivem no rodapé discreto da pizza.
+  // Pendências realmente órfãs (sem SKU nem candidatos) — rodapé da pizza.
+  // As de ad group compartilhado aparecem sob cada produto candidato.
   const unresolvedPendentes = React.useMemo(
     () =>
       recommendations.filter(
-        (rec) =>
-          rec.status === "PROPOSED" &&
-          (rec.skuAttributionStatus === "UNRESOLVED" || !rec.sku),
+        (rec) => rec.status === "PROPOSED" && skusAtribuidos(rec).length === 0,
       ),
     [recommendations],
   );
   const filtered = recommendations.filter((rec) => {
-    // Seleção de produto no donut: foca as recomendações daquele SKU.
-    if (skuSelecionado && rec.sku !== skuSelecionado) return false;
+    // Seleção de produto no donut: foca as recomendações daquele SKU
+    // (incluindo as compartilhadas em que ele é um dos candidatos).
+    if (skuSelecionado && !pertenceAoSku(rec, skuSelecionado)) return false;
     if (statusFilter !== "ALL" && rec.status !== statusFilter) return false;
     if (actionFilter !== "ALL" && rec.actionType !== actionFilter) return false;
     if (severityFilter !== "ALL" && rec.severity !== severityFilter) return false;
@@ -391,7 +402,10 @@ function AdsOptimizerPageInner() {
   const matchTypeOptions = unique(
     recommendations.map((rec) => rec.matchType).filter(Boolean) as string[],
   );
-  const grouped = React.useMemo(() => groupRecommendations(filtered), [filtered]);
+  const grouped = React.useMemo(
+    () => groupRecommendations(filtered, skuSelecionado),
+    [filtered, skuSelecionado],
+  );
   const isBusy =
     runMutation.isPending ||
     executeMutation.isPending ||
@@ -667,6 +681,14 @@ function ObservacaoItem({ obs }: { obs: Observation }) {
           <span className="rounded-full bg-blue-500/10 px-2 py-0.5 text-[10px] font-semibold text-blue-700 dark:text-blue-400">
             {ACTION_LABEL[obs.actionType] ?? obs.actionType}
           </span>
+          {!obs.sku && obs.skuAttributionCandidates.length > 1 && (
+            <span
+              className="rounded-full border border-blue-200 px-2 py-0.5 text-[10px] font-medium text-blue-700 dark:border-blue-900 dark:text-blue-400"
+              title={`Ad group anuncia: ${obs.skuAttributionCandidates.map((candidate) => candidate.sku).join(", ")}`}
+            >
+              {obs.skuAttributionCandidates.length} produtos
+            </span>
+          )}
           <span className="ml-auto text-right">
             {temEfeito ? (
               <>
@@ -975,6 +997,15 @@ function RecommendationCard({
               {rec.campaignTargetingType && (
                 <Badge variant="outline">{campaignTypeLabel(rec.campaignTargetingType)}</Badge>
               )}
+              {!rec.sku && rec.skuAttributionCandidates.length > 1 && (
+                <Badge
+                  variant="outline"
+                  className="border-blue-200 bg-blue-50 text-blue-900 dark:border-blue-900 dark:bg-blue-950 dark:text-blue-200"
+                  title={`Ad group anuncia: ${rec.skuAttributionCandidates.map((candidate) => candidate.sku).join(", ")}`}
+                >
+                  Vale para {rec.skuAttributionCandidates.length} produtos
+                </Badge>
+              )}
               {!rec.isExecutable && (
                 <Badge variant="outline" className="border-amber-300 bg-amber-50 text-amber-900">
                   Execucao bloqueada
@@ -1065,6 +1096,12 @@ function RecommendationDetailsDialog({
               value={rec.matchType ? matchTypeLabel(rec.matchType) : "-"}
             />
             <DetailRow label="Origem do SKU" value={skuSourceLabel(rec.skuAttributionSource)} />
+            {rec.skuAttributionCandidates.length > 1 && (
+              <DetailRow
+                label="Produtos do ad group"
+                value={rec.skuAttributionCandidates.map((candidate) => candidate.sku).join(", ")}
+              />
+            )}
             <DetailRow label="Campanha" value={rec.campaignName ?? rec.campaignId} />
             <DetailRow label="Grupo" value={rec.adGroupName ?? rec.adGroupId ?? "-"} />
           </div>
@@ -1463,25 +1500,58 @@ function unique(values: string[]) {
   return [...new Set(values)].sort((a, b) => a.localeCompare(b));
 }
 
-function groupRecommendations(recommendations: Recommendation[]) {
+// SKUs aos quais um item pertence: o atribuído diretamente, ou — em ad group
+// com mais de um produto ativo — todos os candidatos do ad group.
+function skusAtribuidos(item: {
+  sku: string | null;
+  skuAttributionCandidates: SkuAttributionCandidate[];
+}): string[] {
+  if (item.sku) return [item.sku];
+  return [...new Set(item.skuAttributionCandidates.map((candidate) => candidate.sku))];
+}
+
+function pertenceAoSku(
+  item: { sku: string | null; skuAttributionCandidates: SkuAttributionCandidate[] },
+  sku: string,
+): boolean {
+  return skusAtribuidos(item).includes(sku);
+}
+
+function groupRecommendations(
+  recommendations: Recommendation[],
+  skuSelecionado: string | null,
+) {
   const groups = new Map<string, Recommendation[]>();
   const unresolved: Recommendation[] = [];
 
   for (const rec of recommendations) {
-    if (rec.skuAttributionStatus === "UNRESOLVED" || !rec.sku) {
-      unresolved.push(rec);
+    if (rec.skuAttributionStatus !== "UNRESOLVED" && rec.sku) {
+      const current = groups.get(rec.sku) ?? [];
+      current.push(rec);
+      groups.set(rec.sku, current);
       continue;
     }
-    const current = groups.get(rec.sku) ?? [];
-    current.push(rec);
-    groups.set(rec.sku, current);
+    // Ad group compartilhado: com um produto selecionado que seja candidato,
+    // a recomendação entra no grupo dele (a ação keyword-level vale para todos).
+    if (skuSelecionado && pertenceAoSku(rec, skuSelecionado)) {
+      const current = groups.get(skuSelecionado) ?? [];
+      current.push(rec);
+      groups.set(skuSelecionado, current);
+      continue;
+    }
+    unresolved.push(rec);
   }
 
   const resolvedGroups = [...groups.entries()]
     .map(([sku, items]) => ({
       key: sku,
       sku,
-      asin: items.find((item) => item.asin)?.asin ?? null,
+      asin:
+        items.find((item) => item.asin)?.asin ??
+        items
+          .flatMap((item) => item.skuAttributionCandidates)
+          .find((candidate) => candidate.sku === sku)?.asin ??
+        null,
       recommendations: items,
       totals30d: aggregateMetrics(metricContributors(items).map((item) => item.metrics30d)),
       criticalCount: items.filter((item) => item.severity === "CRITICAL").length,
@@ -1634,7 +1704,7 @@ function stateLabel(value: string | null) {
 function skuSourceLabel(value: string) {
   if (value === "REPORT") return "Relatorio Amazon";
   if (value === "SINGLE_ACTIVE_PRODUCT_AD") return "Product ad unico ativo";
-  if (value === "UNRESOLVED_MULTI_SKU") return "Multiplos SKUs ativos";
+  if (value === "UNRESOLVED_MULTI_SKU") return "Compartilhado (ad group com varios produtos)";
   if (value === "UNRESOLVED_NO_ACTIVE_PRODUCT_AD") return "Sem product ad ativo";
   if (value === "UNRESOLVED_MISSING_AD_GROUP") return "Ad group ausente";
   return value;

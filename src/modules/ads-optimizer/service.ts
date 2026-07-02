@@ -352,6 +352,7 @@ export const adsOptimizerService = {
           evidence.skuAttributionStatus ?? (rec.sku ? "RESOLVED" : "UNRESOLVED"),
         skuAttributionSource:
           evidence.skuAttributionSource ?? (rec.sku ? "REPORT" : "UNRESOLVED_NO_ACTIVE_PRODUCT_AD"),
+        skuAttributionCandidates: evidence.skuAttributionCandidates ?? [],
         isExecutable: !blockedReason,
         blockedReason,
         actionType: rec.actionType,
@@ -1879,6 +1880,7 @@ async function buildObservations(
     return [{
       recommendationId: rec.id,
       sku: rec.sku,
+      skuAttributionCandidates: evidence.skuAttributionCandidates ?? [],
       displayLabel: evidence.displayLabel ?? evidence.label ?? rec.searchTerm ?? rec.entityId,
       actionType: rec.actionType,
       executadoEm: rec.executadoEm.toISOString(),
@@ -2205,6 +2207,13 @@ function getEvidenceBlockedReason(
   evidence: RecommendationEvidence,
   rec: { sku: string | null; entityType: string },
 ) {
+  // Ad group com mais de um SKU ativo: a acao e keyword-level (bid/keyword/
+  // negativa valem para o ad group inteiro) e a decisao do funil usa metricas
+  // da propria keyword — a ambiguidade e apenas de EXIBICAO (a qual produto
+  // atribuir), nao de execucao. Com os candidatos conhecidos, nao bloqueia.
+  // Precisa vir ANTES do evidence.blockedReason: recomendacoes antigas tem o
+  // motivo multi-SKU persistido no evidence e ficariam travadas para sempre.
+  if (isSharedMultiSkuAttribution(evidence)) return null;
   if (evidence.blockedReason) return evidence.blockedReason;
   if (evidence.skuAttributionStatus === "UNRESOLVED") {
     return "Recomendacao sem SKU atribuido com seguranca.";
@@ -2213,6 +2222,13 @@ function getEvidenceBlockedReason(
     return "Recomendacao sem SKU atribuido com seguranca.";
   }
   return null;
+}
+
+function isSharedMultiSkuAttribution(evidence: RecommendationEvidence) {
+  return (
+    evidence.skuAttributionSource === "UNRESOLVED_MULTI_SKU" &&
+    (evidence.skuAttributionCandidates?.length ?? 0) >= 2
+  );
 }
 
 async function getDuplicateActionReason(
