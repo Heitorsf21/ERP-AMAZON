@@ -60,17 +60,39 @@ export async function enviarTextoWaha(
   }
   // SSRF guard: a URL do WAHA vem de config (ADMIN). Em produção exigimos
   // allowlist explícita; sem ela, um host arbitrário vira canal de SSRF.
+  const allowedHosts = parseHostAllowlistEnv(process.env.WAHA_ALLOWED_HOSTS);
+  if (process.env.NODE_ENV === "production" && allowedHosts.length === 0) {
+    log.error(
+      { codigo: "WAHA_ALLOWED_HOSTS_AUSENTE" },
+      "WAHA_ALLOWED_HOSTS nao configurado em producao",
+    );
+    return {
+      ok: false,
+      status: 0,
+      erro: "WAHA_ALLOWED_HOSTS nao configurado no servidor",
+    };
+  }
+
   try {
-    const allowedHosts = parseHostAllowlistEnv(process.env.WAHA_ALLOWED_HOSTS);
-    if (process.env.NODE_ENV === "production" && allowedHosts.length === 0) {
-      throw new Error("WAHA_ALLOWED_HOSTS obrigatório em produção");
-    }
     assertSafeHttpUrl(urlBase, {
       allowedHosts,
     });
   } catch {
-    log.error({}, "URL do WAHA bloqueada pelo guard de SSRF (esquema/host invalido)");
-    return { ok: false, status: 0, erro: "URL do WAHA invalida ou bloqueada" };
+    let host = "invalido";
+    try {
+      host = new URL(urlBase).host;
+    } catch {
+      // Mantem apenas um marcador seguro; nao registra a URL bruta.
+    }
+    log.error(
+      { codigo: "WAHA_URL_NAO_PERMITIDA", host },
+      "URL do WAHA bloqueada pelo guard de SSRF",
+    );
+    return {
+      ok: false,
+      status: 0,
+      erro: "URL do WAHA invalida ou fora de WAHA_ALLOWED_HOSTS",
+    };
   }
   const chatId = normalizarChatId(destino);
   const url = `${urlBase}/api/sendText`;
