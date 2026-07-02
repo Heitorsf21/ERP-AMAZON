@@ -9,6 +9,7 @@ const INTERVALO_MS = 3000;
 export function AtivarClient({ sessionId }: { sessionId: string }) {
   const [fase, setFase] = useState<Fase>("validando");
   const tentativas = useRef(0);
+  const timeoutId = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (!sessionId) {
@@ -33,7 +34,7 @@ export function AtivarClient({ sessionId }: { sessionId: string }) {
             return;
           }
           setFase("processando");
-          setTimeout(tentar, INTERVALO_MS);
+          timeoutId.current = setTimeout(tentar, INTERVALO_MS);
           return;
         }
         if (res.status === 402) {
@@ -45,7 +46,7 @@ export function AtivarClient({ sessionId }: { sessionId: string }) {
           return;
         }
         const data = (await res.json()) as { status: string; redirectTo?: string };
-        if (data.status === "pronto" && data.redirectTo) {
+        if (data.status === "pronto" && data.redirectTo && data.redirectTo.startsWith("/")) {
           window.location.assign(data.redirectTo);
           return;
         }
@@ -62,6 +63,7 @@ export function AtivarClient({ sessionId }: { sessionId: string }) {
     tentar();
     return () => {
       cancelado = true;
+      if (timeoutId.current) clearTimeout(timeoutId.current);
     };
   }, [sessionId]);
 
@@ -76,7 +78,7 @@ export function AtivarClient({ sessionId }: { sessionId: string }) {
 
   if (fase === "validando" || fase === "processando") {
     return (
-      <div style={estilos}>
+      <div style={estilos} role="status" aria-live="polite">
         <h2>Pagamento confirmado 🎉</h2>
         <p>
           Estamos preparando sua conta no Atlas Seller. Isso leva só alguns
