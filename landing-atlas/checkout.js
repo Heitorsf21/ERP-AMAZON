@@ -11,7 +11,7 @@
     scale:   { nome: 'Scale',   base: 21999, features: ['Até 10.000+ vendas/mês', 'Multi-conta', 'Tudo do Pro', 'Suporte premium'] }
   };
   // [meses, desconto, rótulo] — MESMA fórmula do app.js; bate com os prices do Stripe.
-  var CICLOS = { mensal: [1, 0, '/mês'], trimestral: [3, .05, '/trimestre'], semestral: [6, .10, '/semestre'], anual: [12, .20, '/ano'] };
+  var CICLOS = { mensal: [1, 0, '/mês'], trimestral: [3, .05, '/trimestre'], semestral: [6, .10, '/semestre'], anual: [12, .15, '/ano'] };
 
   var qs = new URLSearchParams(location.search);
   var plano = PLANOS[qs.get('plano')] ? qs.get('plano') : 'pro';
