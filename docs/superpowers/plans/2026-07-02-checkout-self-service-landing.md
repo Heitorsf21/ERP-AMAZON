@@ -2164,7 +2164,7 @@ Pré-requisitos iguais à Task 11 original (`.env` completo com os 12 price IDs 
 7. **WhatsApp flutuante**: manter `wa.me/551151085002` do design (CONFIRMAR número com o Heitor antes do deploy — anotar no report).
 8. **Acessibilidade/motion**: preservar tudo do V5 (skip-link, tablists com setas, aria-live, reveal com failsafe de 1.2s, reduced-motion).
 
-**Verificação**: `npx html-validate landing-atlas/index.html` (0 erros); `node --check landing-atlas/app.js`; browser (Playwright): hero+ticket animando, abas de produto, calculadora reagindo aos sliders, toggle de preços (anual mostra R$ 863,90/ano p/ Starter → bate com Stripe), botões Contratar com href correto por ciclo, vídeo hero tocando, grade #videos com fallbacks, FAQ acordeão, WhatsApp flutuante, barra de progresso. Console sem erros. Screenshot.
+**Verificação**: `npx html-validate landing-atlas/index.html` (0 erros); `node --check landing-atlas/app.js`; browser (Playwright): hero+ticket animando, abas de produto, calculadora reagindo aos sliders, toggle de preços (anual mostra R$ 917,90/ano p/ Starter → bate com Stripe), botões Contratar com href correto por ciclo, vídeo hero tocando, grade #videos com fallbacks, FAQ acordeão, WhatsApp flutuante, barra de progresso. Console sem erros. Screenshot.
 
 **Commit**: `feat(landing): redesign V5 (produto, calculadora, comparativo, videos) preservando checkout`
 

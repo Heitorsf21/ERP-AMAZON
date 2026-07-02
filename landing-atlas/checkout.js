@@ -144,7 +144,7 @@
   function mostrarErroSubmissao(msg){
     erroSubmissaoEl.textContent = msg + ' Tente de novo ou ';
     var link = document.createElement('a');
-    link.href = 'index.html#contato';
+    link.href = 'contato.html';
     link.textContent = 'fale com a gente';
     erroSubmissaoEl.appendChild(link);
     erroSubmissaoEl.appendChild(document.createTextNode('.'));
