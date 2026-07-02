@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Contratar — Atlas Seller</title>
+  <meta name="description" content="Contrate o Atlas Seller: escolha o plano e pague com segurança via Stripe.">
+  <meta name="robots" content="noindex">
+  <link rel="icon" href="assets/img/atlas-symbol.png">
+  <link rel="stylesheet" href="styles.css?v=6">
+  <style>
+    /* Estilos locais da página de checkout (segue tokens do styles.css) */
+    .checkout-wrap{display:grid;grid-template-columns:380px 1fr;gap:32px;align-items:start;padding:40px 0 80px}
+    @media (max-width:900px){.checkout-wrap{grid-template-columns:1fr}}
+    .resumo{position:sticky;top:92px}
+    .resumo .plan{cursor:default}
+    .resumo .plan:hover{transform:none;box-shadow:var(--shadow-card)}
+    .troca-plano{display:flex;gap:8px;margin:0 0 14px}
+    .troca-plano button{flex:1;padding:9px 0;border-radius:var(--radius-sm);border:1px solid var(--border);
+      background:var(--surface);font-weight:700;font-size:13px;cursor:pointer;color:var(--text-2)}
+    .troca-plano button.active{border-color:var(--primary);color:var(--primary);background:rgba(37,99,235,.06)}
+    .price-toggle.compacto{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin:0 0 18px}
+    .price-toggle.compacto button{padding:8px 0;border-radius:var(--radius-sm);border:1px solid var(--border);
+      background:var(--surface);font-weight:600;font-size:12.5px;cursor:pointer;color:var(--text-2)}
+    .price-toggle.compacto button.active{border-color:var(--primary);color:var(--primary);background:rgba(37,99,235,.06)}
+    .pagamento{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:20px;min-height:520px}
+    .pagamento .aviso{padding:40px 20px;text-align:center;color:var(--text-2)}
+    .pagamento .aviso a{color:var(--primary);font-weight:700}
+    .selo-seguro{display:flex;align-items:center;gap:8px;justify-content:center;margin-top:14px;
+      font-size:12.5px;color:var(--muted);font-weight:600}
+  </style>
+</head>
+<body>
+  <header class="site-header">
+    <div class="container nav">
+      <a class="brand" href="index.html"><span class="sym" aria-hidden="true"><svg viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg"><circle cx="18.5" cy="20.5" r="12" fill="none" stroke="#10B981" stroke-width="2.6"/><path d="M6.5 20.5h24" stroke="#10B981" stroke-width="2"/><path d="M18.5 8.5c5.6 3.6 5.6 20.4 0 24M18.5 8.5c-5.6 3.6-5.6 20.4 0 24" stroke="#10B981" stroke-width="2" fill="none"/><circle cx="31" cy="9" r="3.8" fill="#FF9900"/></svg></span>Atlas <span class="accent">Seller</span></a>
+      <nav class="nav-links" aria-label="Navegação">
+        <a href="index.html#precos">Voltar aos planos</a>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <div class="container checkout-wrap">
+      <aside class="resumo" aria-label="Resumo do plano">
+        <div class="troca-plano" id="trocaPlano" role="group" aria-label="Escolher plano">
+          <button type="button" data-plan="starter">Starter</button>
+          <button type="button" data-plan="pro">Pro</button>
+          <button type="button" data-plan="scale">Scale</button>
+        </div>
+        <div class="price-toggle compacto" id="trocaCiclo" role="group" aria-label="Ciclo de cobrança">
+          <button type="button" data-period="mensal">Mensal</button>
+          <button type="button" data-period="trimestral">Trimestral</button>
+          <button type="button" data-period="semestral">Semestral</button>
+          <button type="button" data-period="anual">Anual</button>
+        </div>
+        <div class="plan" id="cardResumo">
+          <h3 id="resumoNome">Pro</h3>
+          <div class="price"><span class="amount" id="resumoValor">R$ 159,99</span><small class="per" id="resumoPer">/mês</small><div class="equiv" id="resumoEquiv"></div></div>
+          <ul id="resumoFeatures"></ul>
+          <p class="selo-seguro" style="margin:0">✓ Cancele quando quiser · Pagamento seguro via Stripe</p>
+        </div>
+      </aside>
+
+      <section aria-label="Pagamento">
+        <div class="pagamento">
+          <div class="aviso" id="estadoPagamento">Carregando pagamento seguro…</div>
+          <div id="checkout-embed"></div>
+        </div>
+        <p class="selo-seguro">🔒 Processado pelo Stripe. Não armazenamos os dados do seu cartão.</p>
+      </section>
+    </div>
+  </main>
+
+  <script src="https://js.stripe.com/v3/"></script>
+  <script src="checkout.js"></script>
+</body>
+</html>
