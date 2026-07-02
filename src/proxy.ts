@@ -21,6 +21,7 @@ const PUBLIC_PATHS = [
   "/api/auth/2fa/verificar",
   "/api/auth/recuperar-senha",
   "/api/auth/redefinir-senha",
+  "/api/stripe/webhook",
   // Health check público para watchdog/load balancer/Nginx checar saúde do app
   // sem precisar manter sessão. Não vaza nada sensível (só status agregado).
   "/api/health",

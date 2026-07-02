@@ -28,6 +28,15 @@ model Empresa {
   // Identificador curto usado no login/seletor de empresa (ex: "mundofs").
   slug      String   @unique
   ativa     Boolean  @default(true)
+  plano                     String?
+  cicloAssinatura           String?
+  assinaturaStatus          String    @default("PENDENTE")
+  assinaturaAtualizadaEm    DateTime?
+  stripeCustomerId          String?   @unique
+  stripeSubscriptionId      String?   @unique
+  stripePriceId             String?
+  stripeCheckoutSessionId   String?
+  stripeCurrentPeriodEnd    DateTime?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -35,6 +44,8 @@ model Empresa {
   amazonAccounts AmazonAccount[]
 
   @@index([ativa])
+  @@index([assinaturaStatus])
+  @@index([plano])
 }
 
 model AmazonAccount {
