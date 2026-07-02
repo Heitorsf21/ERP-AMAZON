@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { handle } from "@/lib/api";
 import { consumeRateLimit, getClientIp } from "@/lib/auth-rate-limit";
+import { logger } from "@/lib/logger";
 import { parseBillingPeriod, parseBillingPlanId } from "@/modules/billing/plans";
 import { criarCheckoutPublicoLanding } from "@/modules/billing/service";
 
@@ -31,7 +32,9 @@ function corsHeaders(origem: string): Record<string, string> {
 export async function OPTIONS(req: Request) {
   const permitida = origemPermitida();
   const origin = req.headers.get("origin");
-  if (!permitida || origin !== permitida) return new Response(null, { status: 403 });
+  if (!permitida || origin !== permitida) {
+    return new Response(null, { status: 403, headers: { Vary: "Origin" } });
+  }
   return new Response(null, { status: 204, headers: corsHeaders(permitida) });
 }
 
@@ -42,7 +45,10 @@ export const POST = handle(async (req: Request) => {
   // (curl/server-to-server) segue — CORS é proteção de navegador, e o
   // rate-limit abaixo cobre abuso direto.
   if (origin && origin !== permitida) {
-    return NextResponse.json({ erro: "ORIGEM_INVALIDA" }, { status: 403 });
+    return NextResponse.json(
+      { erro: "ORIGEM_INVALIDA" },
+      { status: 403, headers: { Vary: "Origin" } },
+    );
   }
   const headers = origin && permitida ? corsHeaders(permitida) : undefined;
 
@@ -55,13 +61,27 @@ export const POST = handle(async (req: Request) => {
     );
   }
 
-  const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
-  const planId = parseBillingPlanId(body.plano);
-  const period = parseBillingPeriod(body.ciclo ?? "mensal");
+  // A partir daqui qualquer exceção (JSON inválido, plano/ciclo inválido,
+  // env do Stripe ausente, falha na API do Stripe) precisa devolver os
+  // mesmos headers de CORS — senão o navegador da landing (cross-origin)
+  // vê uma falha de CORS opaca em vez do JSON de erro. O `handle` externo
+  // continua como rede de segurança para qualquer coisa que escape daqui.
+  try {
+    const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
+    const planId = parseBillingPlanId(body.plano);
+    const period = parseBillingPeriod(body.ciclo ?? "mensal");
 
-  const clientSecret = await criarCheckoutPublicoLanding({ planId, period });
-  const publishableKey = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY?.trim();
-  if (!publishableKey) throw new Error("NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY não configurada");
+    const clientSecret = await criarCheckoutPublicoLanding({ planId, period });
+    const publishableKey = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY?.trim();
+    if (!publishableKey) throw new Error("NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY não configurada");
 
-  return NextResponse.json({ clientSecret, publishableKey }, { headers });
+    return NextResponse.json({ clientSecret, publishableKey }, { headers });
+  } catch (e) {
+    if (e instanceof Error) {
+      logger.warn({ err: e.message }, "[checkout-publico] falha ao criar sessao");
+      return NextResponse.json({ erro: "requisicao invalida" }, { status: 400, headers });
+    }
+    logger.error({ err: e }, "[checkout-publico] erro inesperado na sessao");
+    return NextResponse.json({ erro: "erro inesperado" }, { status: 500, headers });
+  }
 });
