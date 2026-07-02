@@ -2141,3 +2141,41 @@ Pré-requisitos iguais à Task 11 original (`.env` completo com os 12 price IDs 
   payment methods do dashboard = cartão (SEM boleto — gate OR da ativação), CSP do vhost
   da landing permitindo `js.stripe.com` (script) e `*.stripe.com` (frame/connect),
   publicar `landing-atlas/`, depoimentos reais no lugar dos placeholders.
+
+---
+
+# APÊNDICE — Iteração 3 (2026-07-02): port do redesign V5 (Claude Design)
+
+> Handoff em `<scratchpad>/v5/design_handoff_atlas_landing/` (fonte: Downloads/V5.zip).
+> README do handoff é a especificação de design (14 seções, tokens, a11y, motion).
+> Ordem: executar APÓS a Task 17 (E2E), antes da Task 18 (encerramento).
+
+### Task 19: Portar landing V5 para `landing-atlas/` (preservando integrações)
+
+**Files:** Rewrite `landing-atlas/index.html`, `landing-atlas/styles.css`, `landing-atlas/app.js` a partir de `site/` do handoff; Create `landing-atlas/assets/demo.mp4` (copiar do handoff) e pasta `landing-atlas/assets/videos/` (vazia + `.gitkeep`); NÃO tocar: `privacidade.html`, `termos.html`, `contato.html`, `sitemap.xml`, `robots.txt`, `.well-known/`, `checkout.html`, `checkout.js`.
+
+**Adaptações obrigatórias sobre o V5 (o resto é cópia fiel):**
+1. **Fontes**: adicionar os 4 `@font-face` Inter (400/600/700/800) apontando para `assets/fonts/Inter-{Regular,SemiBold,Bold,ExtraBold}.woff2` (existentes) no topo do styles.css portado; `font-display:swap`.
+2. **Head/SEO**: portar do index ATUAL → canonical, OG/Twitter metas, favicon existente, e os 3 blocos JSON-LD (Organization, SoftwareApplication com offers, FAQPage — atualizar as perguntas do FAQPage para as 6 do V5). `<link rel="stylesheet" href="styles.css?v=7">`.
+3. **CTAs dos planos**: "Começar"/mailto → **"Contratar"** com `href="checkout.html?plano={starter|pro|scale}&ciclo=mensal"` + `data-plan`; no app.js, a função de pricing atualiza os 3 hrefs com o ciclo ativo (mesma mecânica da Task 9). Manter os demais CTAs ("Agendar demo") como mailto **admfsmundo@gmail.com** (e-mail real em uso — NÃO contato@mundofs.com.br).
+4. **Descontos**: anual = **0.20 / "Economize 20% pagando uma vez ao ano"** (V5 diz 15% — DIVERGÊNCIA DELIBERADA: precisa bater com os prices reais do Stripe e com o checkout). Trimestral 5% e semestral 10% ficam.
+5. **Vídeos**: hero usa `assets/demo.mp4` (copiado do handoff, 2.1MB). Grade `#videos` mantém os 4 `assets/videos/*.mp4` ausentes → fallback visual do próprio V5 (JS `.no-src`) fica ativo até exportarem os clipes.
+6. **Footer**: link "Contato" → `contato.html` (não mailto); manter disclaimer Amazon obrigatório; Política/Termos apontam para as páginas ATUAIS (não substituí-las — as do V5 exigem revisão jurídica).
+7. **WhatsApp flutuante**: manter `wa.me/551151085002` do design (CONFIRMAR número com o Heitor antes do deploy — anotar no report).
+8. **Acessibilidade/motion**: preservar tudo do V5 (skip-link, tablists com setas, aria-live, reveal com failsafe de 1.2s, reduced-motion).
+
+**Verificação**: `npx html-validate landing-atlas/index.html` (0 erros); `node --check landing-atlas/app.js`; browser (Playwright): hero+ticket animando, abas de produto, calculadora reagindo aos sliders, toggle de preços (anual mostra R$ 863,90/ano p/ Starter → bate com Stripe), botões Contratar com href correto por ciclo, vídeo hero tocando, grade #videos com fallbacks, FAQ acordeão, WhatsApp flutuante, barra de progresso. Console sem erros. Screenshot.
+
+**Commit**: `feat(landing): redesign V5 (produto, calculadora, comparativo, videos) preservando checkout`
+
+### Task 20: Harmonizar `checkout.html`/`checkout.js` com o DS novo
+
+**Files:** Modify `landing-atlas/checkout.html` (+`checkout.js` se necessário).
+
+1. Atualizar `styles.css?v=6`→`?v=7`.
+2. Substituir o header antigo (`.nav`/`.brand` com SVG bússola) pelo header novo do V5 (logo 10 listras SVG inline + wordmark; sem a nav completa — só "Voltar aos planos" → `index.html#precos`).
+3. Conferir classes usadas que não existem mais no styles novo (ex.: `.eyebrow`) e cobrir no `<style>` local da página (prefixo ck-) sem tocar styles.css.
+4. Ajustar tokens locais se algum usado sumiu (--radius-sm etc. — conferir `:root` novo; cobrir com fallback local).
+5. Verificação: html-validate 0 erros; browser: página carrega com visual coerente ao novo DS, resumo correto, form ok, "Continuar para pagamento" monta o Payment Element (1 sessão só — rate-limit). Console limpo. Screenshot.
+
+**Commit**: `fix(landing): harmonizar checkout com o design system V5`
