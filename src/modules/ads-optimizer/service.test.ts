@@ -351,6 +351,61 @@ describe("adsOptimizerService.getSnapshot", () => {
     expect(snapshot.recommendations[0]?.metrics65d?.acos).toBe(0.53);
     expect(snapshot.recommendations[0]?.metricsLifetime?.acos).toBe(0.32);
   });
+
+  it("exposes shared multi-SKU recommendations as executable with their candidates", async () => {
+    const rec = {
+      ...approvedKeywordRecommendation(),
+      id: "rec-shared",
+      status: "PROPOSED",
+      sku: null,
+      asin: null,
+      campaignName: "Campanha",
+      portfolioId: null,
+      portfolioName: null,
+      adGroupName: "Grupo",
+      searchTerm: null,
+      severity: "LOW",
+      ruleId: "RULE",
+      motivo: "Motivo",
+      risco: null,
+      confianca: 80,
+      beforeState: "enabled",
+      proposedState: null,
+      metrics7dJson: JSON.stringify({}),
+      metrics30dJson: JSON.stringify({}),
+      metricsLifetimeJson: JSON.stringify({}),
+      // Espelha o que a rodada grava em prod: motivo multi-SKU persistido no
+      // evidence NAO pode travar — a acao e keyword-level e vale para o grupo.
+      evidenceJson: JSON.stringify({
+        skuAttributionStatus: "UNRESOLVED",
+        skuAttributionSource: "UNRESOLVED_MULTI_SKU",
+        skuAttributionCandidates: [
+          { adId: "ad-1", sku: "SKU-A", asin: "ASIN-A" },
+          { adId: "ad-2", sku: "SKU-B", asin: "ASIN-B" },
+        ],
+        blockedReason: "Este ad group possui mais de um SKU ativo.",
+      }),
+      amazonPayloadJson: null,
+      criadoEm: new Date("2026-06-01T12:00:00.000Z"),
+      aprovadoEm: null,
+      executadoEm: null,
+      staleReason: null,
+      errorMessage: null,
+    };
+    mocks.db.adsOptimizationRecommendation.findMany.mockResolvedValue([rec]);
+    mocks.db.adsOptimizationRecommendation.count.mockResolvedValue(0);
+    mocks.db.adsOptimizationRun.findFirst.mockResolvedValue(null);
+
+    const snapshot = await adsOptimizerService.getSnapshot();
+
+    const item = snapshot.recommendations[0];
+    expect(item?.isExecutable).toBe(true);
+    expect(item?.blockedReason).toBeNull();
+    expect(item?.skuAttributionCandidates).toEqual([
+      { adId: "ad-1", sku: "SKU-A", asin: "ASIN-A" },
+      { adId: "ad-2", sku: "SKU-B", asin: "ASIN-B" },
+    ]);
+  });
 });
 
 describe("adsOptimizerService.runOptimization", () => {
@@ -719,6 +774,55 @@ describe("adsOptimizerService.approveRecommendation", () => {
           keywords: [{ keywordId: "kw-1", bid: 0.88 }],
         }),
       }),
+    });
+  });
+
+  it("approves a keyword action from an ad group shared by multiple SKUs", async () => {
+    mocks.db.adsOptimizationRecommendation.findFirst.mockResolvedValue({
+      ...approvedKeywordRecommendation(),
+      status: "PROPOSED",
+      sku: null,
+      evidenceJson: JSON.stringify({
+        skuAttributionStatus: "UNRESOLVED",
+        skuAttributionSource: "UNRESOLVED_MULTI_SKU",
+        skuAttributionCandidates: [
+          { adId: "ad-1", sku: "SKU-A", asin: "ASIN-A" },
+          { adId: "ad-2", sku: "SKU-B", asin: "ASIN-B" },
+        ],
+        blockedReason:
+          "Este ad group possui mais de um SKU ativo. A Amazon nao atribui o termo pesquisado a um SKU especifico neste relatorio.",
+      }),
+    });
+
+    await adsOptimizerService.approveRecommendation("rec-1", session);
+
+    expect(mocks.db.adsOptimizationRecommendation.update).toHaveBeenCalledWith({
+      where: { id: "rec-1" },
+      data: expect.objectContaining({ status: "APPROVED" }),
+    });
+  });
+
+  it("still blocks approval when the ad group has no active product ad (no candidates)", async () => {
+    mocks.db.adsOptimizationRecommendation.findFirst.mockResolvedValue({
+      ...approvedKeywordRecommendation(),
+      status: "PROPOSED",
+      sku: null,
+      evidenceJson: JSON.stringify({
+        skuAttributionStatus: "UNRESOLVED",
+        skuAttributionSource: "UNRESOLVED_NO_ACTIVE_PRODUCT_AD",
+        skuAttributionCandidates: [],
+        blockedReason:
+          "Nao foi encontrado SKU ativo neste ad group para atribuir a recomendacao com seguranca.",
+      }),
+    });
+
+    await expect(
+      adsOptimizerService.approveRecommendation("rec-1", session),
+    ).rejects.toThrow();
+
+    expect(mocks.db.adsOptimizationRecommendation.update).toHaveBeenCalledWith({
+      where: { id: "rec-1" },
+      data: expect.objectContaining({ status: "STALE" }),
     });
   });
 });
