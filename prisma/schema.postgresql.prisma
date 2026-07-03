@@ -62,6 +62,13 @@ model AmazonAccount {
   tokenExpiresAt  DateTime?
   lwaScopes       String?
   conectadoEm     DateTime?
+  // App LWA PRÓPRIO do seller (self-authorization no Developer Console dele).
+  // Cifrados AES-256-GCM (crypto.ts, formato enc:v1:). NULL = a conta usa o
+  // app global (env AMAZON_OAUTH_LWA_CLIENT_ID/SECRET ou ConfiguracaoSistema).
+  // O refresh token SEMPRE pertence ao app que o emitiu — quando estes campos
+  // existem, o resolver NUNCA cai no app global (fail-closed).
+  lwaClientIdEnc     String?
+  lwaClientSecretEnc String?
   // Amazon Ads OAuth por seller. App credential (client_id/secret) continua
   // global; estes campos armazenam o grant individual do anunciante.
   adsRefreshTokenEnc String?

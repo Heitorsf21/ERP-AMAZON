@@ -1,5 +1,9 @@
 import { db } from "@/lib/db";
-import { cursorKeyParaEmpresa } from "@/lib/tenant-context";
+import {
+  configKeyParaEmpresa,
+  cursorKeyParaEmpresa,
+  getEmpresaId,
+} from "@/lib/tenant-context";
 import {
   decryptConfigValue,
   encryptConfigValue,
@@ -248,7 +252,38 @@ function buildCredentials(
   };
 }
 
+/**
+ * Empresa sem conta Amazon própria conectada. O worker converte em job
+ * `skipped` (não é falha) — espelha o gate de fallback do processJob.
+ */
+export class AmazonContaNaoConectadaError extends Error {
+  constructor(public empresaId: string) {
+    super(
+      `[amazon] empresa ${empresaId} sem conta Amazon conectada — job pulado (sem fallback global).`,
+    );
+    this.name = "AmazonContaNaoConectadaError";
+  }
+}
+
+/**
+ * Credenciais SP-API do TENANT corrente. Ordem: conta da empresa do contexto →
+ * (apenas para a empresa primária) config global legado. Empresa secundária sem
+ * conta própria NUNCA cai na credencial global — isso sincronizaria dados da
+ * conta Amazon da mundofs para dentro do tenant errado (classe do bug que
+ * contaminou as reviews da UDN em 2026-06-18).
+ */
 async function getCredentialsOrThrow(): Promise<SPAPICredentials> {
+  const empresaId = getEmpresaId();
+  const primary = process.env.WORKER_EMPRESA_ID || "mundofs";
+  if (empresaId) {
+    try {
+      return await resolverCredenciaisDaConta(empresaId);
+    } catch {
+      // sem conta própria ativa — decide abaixo se pode usar o legado global
+    }
+    if (empresaId !== primary) throw new AmazonContaNaoConectadaError(empresaId);
+  }
+
   const config = await getAmazonConfig();
   const creds = buildCredentials(config);
 
@@ -323,7 +358,23 @@ export async function resolverCredenciaisDaConta(empresaId: string): Promise<SPA
   if (!conta?.refreshTokenEnc) {
     throw new Error(`[amazon] empresa ${empresaId} sem conta Amazon conectada`);
   }
-  const app = await getOAuthAppCredentials();
+
+  // Precedência do app LWA: app PRÓPRIO da conta (self-authorization) → app
+  // global. Fail-closed quando a conta declara app próprio: um refresh_token
+  // só funciona com o client que o emitiu — cair no global geraria
+  // invalid_grant confuso ou mascararia mistura de contas.
+  let app: { clientId: string; clientSecret: string };
+  if (conta.lwaClientIdEnc || conta.lwaClientSecretEnc) {
+    const clientId = decryptConfigValue(conta.lwaClientIdEnc) ?? "";
+    const clientSecret = decryptConfigValue(conta.lwaClientSecretEnc) ?? "";
+    if (!clientId || !clientSecret) {
+      throw new Error(`[amazon] empresa ${empresaId}: app LWA da conta incompleto`);
+    }
+    app = { clientId, clientSecret };
+  } else {
+    app = await getOAuthAppCredentials();
+  }
+
   return montarCredenciais(app, {
     refreshToken: decryptConfigValue(conta.refreshTokenEnc) ?? "",
     marketplaceId: conta.marketplaceId,
@@ -431,7 +482,13 @@ export async function syncBackfillOrders(): Promise<
     completo: boolean;
   }
 > {
-  const inicioPadrao = new Date(AMAZON_LOJA_ABERTA_EM);
+  // Data de abertura da loja POR EMPRESA (chave escopada; primária mantém a
+  // nua). Sem config → const de código (mundofs). Evita a UDN backfillar
+  // desde a data de abertura da loja de outra empresa.
+  const lojaAbertaIso = await getSystemConfig(
+    configKeyParaEmpresa("amazon_loja_aberta_em"),
+  );
+  const inicioPadrao = new Date(lojaAbertaIso ?? AMAZON_LOJA_ABERTA_EM);
   const fim = subDays(new Date(), 2);
   // F02: cursor de backfill escopado por empresa (mundofs mantém a chave nua).
   const backfillCursorKey = cursorKeyParaEmpresa(BACKFILL_CURSOR_KEY);
@@ -1432,23 +1489,48 @@ type ProdutoListingFallback = {
   amazonPrecoListagemCentavos: number | null;
 };
 
+/**
+ * sellerId (merchant token) do TENANT corrente. Ordem:
+ *  1. `AmazonAccount.sellerId` da conta ativa da empresa do contexto;
+ *  2. chave global `amazon_seller_id` — SÓ para a empresa primária (legado);
+ *  3. auto-resolve via SP-API, persistindo NA CONTA do tenant (nunca na chave
+ *     global — antes o LISTING_PRICE_SYNC de um tenant sobrescrevia o
+ *     merchant token global de outro).
+ */
+export async function resolverSellerIdDoTenant(
+  creds: SPAPICredentials,
+): Promise<string | null> {
+  const empresaId = getEmpresaId();
+  const primary = process.env.WORKER_EMPRESA_ID || "mundofs";
+  const conta = empresaId
+    ? await db.amazonAccount.findFirst({
+        where: { empresaId, ativa: true, status: "ATIVA" },
+        select: { id: true, sellerId: true },
+      })
+    : null;
+  if (conta?.sellerId) return conta.sellerId;
+
+  if (!empresaId || empresaId === primary) {
+    const row = await db.configuracaoSistema.findUnique({
+      where: { chave: "amazon_seller_id" },
+    });
+    if (row?.valor) return row.valor;
+  }
+
+  const sellerId = await getSellerId(creds).catch(() => null);
+  if (sellerId && conta) {
+    await db.amazonAccount.update({
+      where: { id: conta.id },
+      data: { sellerId },
+    });
+  }
+  return sellerId;
+}
+
 async function resolveSellerIdForListingFallback(
   creds: SPAPICredentials,
 ): Promise<string | null> {
-  const row = await db.configuracaoSistema.findUnique({
-    where: { chave: "amazon_seller_id" },
-  });
-  if (row?.valor) return row.valor;
-
-  const sellerId = await getSellerId(creds).catch(() => null);
-  if (!sellerId) return null;
-
-  await db.configuracaoSistema.upsert({
-    where: { chave: "amazon_seller_id" },
-    create: { chave: "amazon_seller_id", valor: sellerId },
-    update: { valor: sellerId },
-  });
-  return sellerId;
+  return resolverSellerIdDoTenant(creds);
 }
 
 async function refreshListingPricesForOrderFallback(
@@ -2500,36 +2582,40 @@ export type ReviewAutomationConfig = {
 };
 
 export async function getReviewAutomationConfig(): Promise<ReviewAutomationConfig> {
+  // Config POR EMPRESA (chave escopada; primária mantém chave nua = retrocompat).
+  const kAutomacao = configKeyParaEmpresa(REVIEWS_CONFIG_AUTOMACAO);
+  const kAutomacaoLegacy = configKeyParaEmpresa(REVIEWS_CONFIG_AUTOMACAO_LEGACY);
+  const kUltima = configKeyParaEmpresa(REVIEWS_CONFIG_ULTIMA);
+  const kBackfillStart = configKeyParaEmpresa(REVIEWS_CONFIG_BACKFILL_START);
+  const kDelayDays = configKeyParaEmpresa(REVIEWS_CONFIG_DELAY_DAYS);
+  const kDailyBatch = configKeyParaEmpresa(REVIEWS_CONFIG_DAILY_BATCH_SIZE);
   const registros = await db.configuracaoSistema.findMany({
     where: {
       chave: {
-        in: [
-          REVIEWS_CONFIG_AUTOMACAO,
-          REVIEWS_CONFIG_AUTOMACAO_LEGACY,
-          REVIEWS_CONFIG_ULTIMA,
-          REVIEWS_CONFIG_BACKFILL_START,
-          REVIEWS_CONFIG_DELAY_DAYS,
-          REVIEWS_CONFIG_DAILY_BATCH_SIZE,
-        ],
+        in: [kAutomacao, kAutomacaoLegacy, kUltima, kBackfillStart, kDelayDays, kDailyBatch],
       },
     },
   });
   const mapa = new Map(registros.map((r) => [r.chave, r.valor]));
 
+  // Default do toggle: true SÓ para a primária (comportamento histórico).
+  // Empresa nova sem chave escopada nasce DESLIGADA — opt-in explícito na UI,
+  // senão o deploy ligaria solicitations sozinho para todo tenant plugado.
+  const isPrimaria = kAutomacao === REVIEWS_CONFIG_AUTOMACAO;
   const automacaoAtiva =
-    (mapa.get(REVIEWS_CONFIG_AUTOMACAO) ??
-      mapa.get(REVIEWS_CONFIG_AUTOMACAO_LEGACY) ??
-      "true") === "true";
-  const ultimaStr = mapa.get(REVIEWS_CONFIG_ULTIMA);
+    (mapa.get(kAutomacao) ??
+      mapa.get(kAutomacaoLegacy) ??
+      (isPrimaria ? "true" : "false")) === "true";
+  const ultimaStr = mapa.get(kUltima);
   const ultimaExecucao = ultimaStr ? new Date(ultimaStr) : null;
   const backfillStartDate =
-    mapa.get(REVIEWS_CONFIG_BACKFILL_START) ?? REVIEWS_DEFAULT_BACKFILL_START;
+    mapa.get(kBackfillStart) ?? REVIEWS_DEFAULT_BACKFILL_START;
   const delayDays = parsePositiveInt(
-    mapa.get(REVIEWS_CONFIG_DELAY_DAYS),
+    mapa.get(kDelayDays),
     REVIEWS_DEFAULT_DELAY_DAYS,
   );
   const dailyBatchSize = parsePositiveInt(
-    mapa.get(REVIEWS_CONFIG_DAILY_BATCH_SIZE),
+    mapa.get(kDailyBatch),
     REVIEWS_DEFAULT_BATCH_SIZE,
   );
 
@@ -2543,19 +2629,21 @@ export async function getReviewAutomationConfig(): Promise<ReviewAutomationConfi
 }
 
 export async function setReviewAutomationActive(ativo: boolean) {
+  const kAutomacao = configKeyParaEmpresa(REVIEWS_CONFIG_AUTOMACAO);
+  const kAutomacaoLegacy = configKeyParaEmpresa(REVIEWS_CONFIG_AUTOMACAO_LEGACY);
   await Promise.all([
     db.configuracaoSistema.upsert({
-      where: { chave: REVIEWS_CONFIG_AUTOMACAO },
+      where: { chave: kAutomacao },
       create: {
-        chave: REVIEWS_CONFIG_AUTOMACAO,
+        chave: kAutomacao,
         valor: ativo ? "true" : "false",
       },
       update: { valor: ativo ? "true" : "false" },
     }),
     db.configuracaoSistema.upsert({
-      where: { chave: REVIEWS_CONFIG_AUTOMACAO_LEGACY },
+      where: { chave: kAutomacaoLegacy },
       create: {
-        chave: REVIEWS_CONFIG_AUTOMACAO_LEGACY,
+        chave: kAutomacaoLegacy,
         valor: ativo ? "true" : "false",
       },
       update: { valor: ativo ? "true" : "false" },
@@ -2583,7 +2671,7 @@ export async function setReviewAutomationSettings(updates: {
     const parsed = parseConfigDate(updates.backfillStartDate);
     writes.push(
       setSystemConfig(
-        REVIEWS_CONFIG_BACKFILL_START,
+        configKeyParaEmpresa(REVIEWS_CONFIG_BACKFILL_START),
         parsed.toISOString().slice(0, 10),
       ),
     );
@@ -2592,7 +2680,7 @@ export async function setReviewAutomationSettings(updates: {
   if (updates.delayDays != null) {
     writes.push(
       setSystemConfig(
-        REVIEWS_CONFIG_DELAY_DAYS,
+        configKeyParaEmpresa(REVIEWS_CONFIG_DELAY_DAYS),
         String(Math.max(1, Math.floor(updates.delayDays))),
       ),
     );
@@ -2601,7 +2689,7 @@ export async function setReviewAutomationSettings(updates: {
   if (updates.dailyBatchSize != null) {
     writes.push(
       setSystemConfig(
-        REVIEWS_CONFIG_DAILY_BATCH_SIZE,
+        configKeyParaEmpresa(REVIEWS_CONFIG_DAILY_BATCH_SIZE),
         String(Math.max(1, Math.floor(updates.dailyBatchSize))),
       ),
     );
@@ -2612,9 +2700,10 @@ export async function setReviewAutomationSettings(updates: {
 }
 
 async function markAutomationRun(em: Date) {
+  const kUltima = configKeyParaEmpresa(REVIEWS_CONFIG_ULTIMA);
   await db.configuracaoSistema.upsert({
-    where: { chave: REVIEWS_CONFIG_ULTIMA },
-    create: { chave: REVIEWS_CONFIG_ULTIMA, valor: em.toISOString() },
+    where: { chave: kUltima },
+    create: { chave: kUltima, valor: em.toISOString() },
     update: { valor: em.toISOString() },
   });
 }
@@ -3360,7 +3449,10 @@ export async function runReviewDiscovery() {
   const creds = await getCredentialsOrThrow();
   const now = new Date();
   const backfillStart = parseConfigDate(config.backfillStartDate);
-  const cursor = await getSystemConfig(REVIEWS_DISCOVERY_CURSOR_KEY);
+  // Cursor POR EMPRESA (primária mantém chave nua) — antes era compartilhado
+  // e a descoberta de um tenant avançava o cursor do outro.
+  const reviewsCursorKey = cursorKeyParaEmpresa(REVIEWS_DISCOVERY_CURSOR_KEY);
+  const cursor = await getSystemConfig(reviewsCursorKey);
   const cursorDate = cursor ? new Date(cursor) : null;
   const startDate =
     cursorDate && Number.isFinite(cursorDate.getTime())
@@ -3387,7 +3479,7 @@ export async function runReviewDiscovery() {
 
     if (descoberta.maxOrderCreatedAt && !descoberta.rateLimited) {
       await setSystemConfig(
-        REVIEWS_DISCOVERY_CURSOR_KEY,
+        reviewsCursorKey,
         new Date(descoberta.maxOrderCreatedAt.getTime() + 1).toISOString(),
       );
     }
@@ -3735,9 +3827,9 @@ export type SyncBuyboxResult = {
 };
 
 export async function syncBuybox(produtoIds?: string[]): Promise<SyncBuyboxResult> {
-  const config = await getAmazonConfig();
-  const creds = buildCredentials(config);
-  if (!creds) throw new Error("Amazon SP-API não configurada");
+  // Credenciais + sellerId do TENANT corrente (antes: config global mundofs).
+  const creds = await getCredentialsOrThrow();
+  const sellerIdDoTenant = await resolverSellerIdDoTenant(creds);
 
   const where = {
     ativo: true,
@@ -3776,7 +3868,7 @@ export async function syncBuybox(produtoIds?: string[]): Promise<SyncBuyboxResul
         produto.amazonPrecoListagemCentavos ?? produto.precoVenda;
       const snapshot = extractProductOfferSnapshot(
         offers,
-        config.amazon_seller_id ?? null,
+        sellerIdDoTenant,
         precoNosso,
       );
 

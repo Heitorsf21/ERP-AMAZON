@@ -478,21 +478,30 @@ export async function failAmazonSyncJob({
 
 // Cache curto (30s) do toggle master de reviews — `ensureRecurringAmazonJobs`
 // roda a cada loop do worker (~30s default). Sem cache seria 1 SELECT por loop.
-let reviewToggleCache: { value: boolean; at: number } | null = null;
+// POR EMPRESA: o toggle agora é config escopada; um cache único vazaria o
+// estado de um tenant para o outro dentro do mesmo processo.
+const reviewToggleCache = new Map<string, { value: boolean; at: number }>();
 const REVIEW_TOGGLE_CACHE_TTL_MS = 30_000;
 
 export function invalidateReviewToggleCache() {
-  reviewToggleCache = null;
+  reviewToggleCache.clear();
 }
 
-async function getReviewAutomacaoAtivaCached(now: number): Promise<boolean> {
-  if (reviewToggleCache && now - reviewToggleCache.at < REVIEW_TOGGLE_CACHE_TTL_MS) {
-    return reviewToggleCache.value;
+async function getReviewAutomacaoAtivaCached(
+  empresaId: string,
+  now: number,
+): Promise<boolean> {
+  const hit = reviewToggleCache.get(empresaId);
+  if (hit && now - hit.at < REVIEW_TOGGLE_CACHE_TTL_MS) {
+    return hit.value;
   }
+  // Chamado sob runWithTenant(empresaId) — getReviewAutomationConfig resolve a
+  // chave escopada da própria empresa. Em erro de leitura, preserva o
+  // comportamento histórico só para a primária (ligado); demais ficam off.
   const value = await getReviewAutomationConfig()
     .then((c) => c.automacaoAtiva)
-    .catch(() => true);
-  reviewToggleCache = { value, at: now };
+    .catch(() => empresaId === WORKER_EMPRESA_ID);
+  reviewToggleCache.set(empresaId, { value, at: now });
   return value;
 }
 
@@ -531,7 +540,10 @@ async function agendarRecorrentesDaEmpresa(empresaId: string, now: Date) {
   // Toggle master da automação de reviews. Se desativado, não enfileiramos
   // REVIEWS_DISCOVERY/SEND para manter a fila limpa (os handlers também têm
   // a checagem como defesa em profundidade).
-  const reviewAutomacaoAtiva = await getReviewAutomacaoAtivaCached(now.getTime());
+  const reviewAutomacaoAtiva = await getReviewAutomacaoAtivaCached(
+    empresaId,
+    now.getTime(),
+  );
 
   for (const schedule of SCHEDULES) {
     if (

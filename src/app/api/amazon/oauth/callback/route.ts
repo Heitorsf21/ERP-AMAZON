@@ -53,6 +53,11 @@ export const GET = handle(async (req: Request) => {
           status: "ATIVA",
           ativa: true,
           conectadoEm: new Date(),
+          // O token deste fluxo pertence ao app GLOBAL — limpa o app próprio
+          // (self-auth) para manter o invariante "refreshTokenEnc sempre
+          // pareado com o app que o emitiu".
+          lwaClientIdEnc: null,
+          lwaClientSecretEnc: null,
         },
       });
     } else {

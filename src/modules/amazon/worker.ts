@@ -12,6 +12,7 @@ import {
   parseJobPayload,
 } from "@/modules/amazon/jobs";
 import {
+  AmazonContaNaoConectadaError,
   runReviewDiscovery,
   runReviewSendBatch,
   syncFinances,
@@ -134,6 +135,17 @@ async function processAmazonSyncJobsInner(options: WorkerOptions = {}) {
       );
       results.push({ jobId: job.id, tipo: job.tipo, empresaId, status: "SUCCESS", result });
     } catch (error) {
+      // Empresa sem conta Amazon própria: NÃO é falha — job pulado, sem retry
+      // (mesmo shape do gate de fallback do processJob). Cobre os fluxos que
+      // resolvem credencial internamente (reviews, syncs do service).
+      if (error instanceof AmazonContaNaoConectadaError) {
+        const result = { ok: false, skipped: true, mensagem: error.message };
+        await runWithTenant(SUPERADMIN_WORKER, () =>
+          completeAmazonSyncJob(job.id, result),
+        );
+        results.push({ jobId: job.id, tipo: job.tipo, empresaId, status: "SKIPPED", result });
+        continue;
+      }
       const retryAt = getRetryAt(error);
       const message = error instanceof Error ? error.message : String(error);
       await runWithTenant(SUPERADMIN_WORKER, () =>

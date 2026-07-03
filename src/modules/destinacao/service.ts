@@ -12,6 +12,7 @@
  */
 import { db } from "@/lib/db";
 import { logger } from "@/lib/logger";
+import { configKeyParaEmpresa } from "@/lib/tenant-context";
 
 // Bolsas fixas suportadas. Ordem importa para UI.
 export const BOLSAS = [
@@ -81,8 +82,10 @@ export const BOLSA_META: Record<
 
 const CHAVE_PREFIX = "destinacao_percent_";
 
+// Percentuais de destinação são preferência de NEGÓCIO por empresa — chave
+// escopada (primária mantém a nua). Leituras e escritas passam todas por aqui.
 function chaveDe(bolsa: Bolsa): string {
-  return `${CHAVE_PREFIX}${bolsa}`;
+  return configKeyParaEmpresa(`${CHAVE_PREFIX}${bolsa}`);
 }
 
 function parsePercent(valor: string | null | undefined): number | null {

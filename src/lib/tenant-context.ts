@@ -66,18 +66,49 @@ export function getEmpresaId(): string | null {
 }
 
 /**
- * Escopa uma chave de CURSOR de sincronização por empresa (multi-seller F02).
- * A empresa primária (WORKER_EMPRESA_ID) mantém a chave NUA — preserva os
- * cursores já existentes em produção e garante zero mudança de comportamento
- * para a mundofs. Demais sellers usam `chave::empresaId` para não colidir no
- * mesmo cursor global de ConfiguracaoSistema (backfills/sync de um seller
- * sobrescrevendo os do outro). Use SOMENTE em chaves de cursor.
+ * Núcleo do escopo de chaves de ConfiguracaoSistema por empresa. A empresa
+ * primária (WORKER_EMPRESA_ID) mantém a chave NUA — preserva as linhas já
+ * existentes em produção e garante zero mudança de comportamento para a
+ * mundofs. Demais empresas usam `chave::empresaId` para não colidir na mesma
+ * linha global (ConfiguracaoSistema é GLOBAL_MODEL — nunca auto-filtrada).
  */
-export function cursorKeyParaEmpresa(baseKey: string): string {
+function scopedKeyParaEmpresa(baseKey: string): string {
   const empresaId = getEmpresaId();
   const primary = process.env.WORKER_EMPRESA_ID || "mundofs";
   if (!empresaId || empresaId === primary) return baseKey;
   return `${baseKey}::${empresaId}`;
+}
+
+/**
+ * Escopa uma chave de CURSOR de sincronização por empresa (multi-seller F02).
+ * Use SOMENTE em chaves de cursor.
+ */
+export function cursorKeyParaEmpresa(baseKey: string): string {
+  return scopedKeyParaEmpresa(baseKey);
+}
+
+/**
+ * Escopa uma chave de CONFIGURAÇÃO DE NEGÓCIO por empresa (reviews, imposto,
+ * WhatsApp, seller id, destinação…). Mesma semântica de cursorKeyParaEmpresa
+ * (primária mantém chave nua), separada por intenção: config de negócio de um
+ * tenant nunca deve ser lida/escrita na linha de outro. Chaves de INFRA ou de
+ * PLATAFORMA (heartbeat, app OAuth global, fee-estimator do marketplace)
+ * continuam nuas de propósito — não escope essas.
+ */
+export function configKeyParaEmpresa(baseKey: string): string {
+  return scopedKeyParaEmpresa(baseKey);
+}
+
+/**
+ * A empresa é a PRIMÁRIA (dona das integrações globais legado — credencial
+ * Amazon da ConfiguracaoSistema, Gmail, conciliação bancária)? Gate para rotas
+ * que operam recursos globais: um ADMIN de outra empresa não pode ler nem
+ * sobrescrever a integração da primária.
+ */
+export function isEmpresaPrimaria(
+  empresaId: string | null | undefined,
+): boolean {
+  return empresaId === (process.env.WORKER_EMPRESA_ID || "mundofs");
 }
 
 /**

@@ -1,5 +1,5 @@
 import { handleAuth, ok, erro } from "@/lib/api";
-import { UsuarioRole } from "@/lib/auth";
+import { assertTenantPrimario, UsuarioRole } from "@/lib/auth";
 import { buscarEmailsComAnexos, marcarProcessado } from "@/lib/gmail";
 import { processarAnexo } from "@/lib/email-processor";
 import { db } from "@/lib/db";
@@ -7,6 +7,8 @@ import { db } from "@/lib/db";
 export const dynamic = "force-dynamic";
 
 export const POST = handleAuth([UsuarioRole.ADMIN], async (req: Request) => {
+  // Integracao Gmail e GLOBAL (caixa da empresa primaria) — gate anti cross-tenant.
+  assertTenantPrimario();
   const body = (await req.json().catch(() => ({}))) as { diasAtras?: number };
   const diasAtras = body.diasAtras ?? 14;
 

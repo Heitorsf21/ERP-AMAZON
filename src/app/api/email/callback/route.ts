@@ -1,14 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { consumirEstadoOAuth, trocarCodigo } from "@/lib/gmail";
-import { requireRole, UsuarioRole } from "@/lib/auth";
+import { assertEmpresaPrimaria, requireRole, UsuarioRole } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
   try {
-    // Apenas ADMIN sincroniza Gmail. O Google redireciona aqui com o cookie
-    // de sessao do admin que iniciou o flow.
-    await requireRole(UsuarioRole.ADMIN);
+    // Apenas ADMIN da empresa PRIMARIA sincroniza Gmail (integracao global).
+    // O Google redireciona aqui com o cookie de sessao do admin que iniciou o flow.
+    const session = await requireRole(UsuarioRole.ADMIN);
+    assertEmpresaPrimaria(session);
   } catch (e) {
     if (e instanceof Response) {
       const url = new URL("/login?next=/configuracoes", req.url);

@@ -117,7 +117,10 @@ export function isMaskedSecret(value: string): boolean {
  * em ConfiguracaoSistema deve ser criptografado em repouso.
  */
 export function isSecretConfigKey(key: string): boolean {
-  const k = key.toLowerCase();
+  // Chaves escopadas por empresa têm sufixo "::<empresaId>" — a decisão de
+  // segredo é pelo NOME BASE (senão "..._key::emp" não bate em endsWith("_key")
+  // e a api key iria para o banco em texto puro).
+  const k = key.toLowerCase().split("::")[0] ?? "";
   return (
     k.includes("secret") ||
     k.includes("token") ||

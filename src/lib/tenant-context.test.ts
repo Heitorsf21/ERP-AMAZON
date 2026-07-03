@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  configKeyParaEmpresa,
   getEmpresaId,
   getTenantContext,
   runWithTenant,
@@ -53,6 +54,26 @@ describe("tenant-context", () => {
     runWithTenant(ctx(null, true), () => {
       expect(getEmpresaId()).toBeNull();
       expect(getTenantContext()?.isSuperAdmin).toBe(true);
+    });
+  });
+});
+
+describe("configKeyParaEmpresa", () => {
+  it("sem contexto: chave nua", () => {
+    expect(configKeyParaEmpresa("imposto_simples_ativo")).toBe("imposto_simples_ativo");
+  });
+
+  it("empresa primária: chave nua", () => {
+    runWithTenant(ctx("mundofs"), () => {
+      expect(configKeyParaEmpresa("imposto_simples_ativo")).toBe("imposto_simples_ativo");
+    });
+  });
+
+  it("empresa secundária: chave sufixada", () => {
+    runWithTenant(ctx("emp_udn"), () => {
+      expect(configKeyParaEmpresa("imposto_simples_ativo")).toBe(
+        "imposto_simples_ativo::emp_udn",
+      );
     });
   });
 });

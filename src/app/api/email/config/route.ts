@@ -1,5 +1,5 @@
 import { handleAuth, ok } from "@/lib/api";
-import { UsuarioRole } from "@/lib/auth";
+import { assertTenantPrimario, UsuarioRole } from "@/lib/auth";
 import { salvarCredenciais, getStatus } from "@/lib/gmail";
 import { z } from "zod";
 
@@ -12,6 +12,8 @@ const schema = z.object({
 });
 
 export const POST = handleAuth([UsuarioRole.ADMIN], async (req: Request) => {
+  // Integracao Gmail e GLOBAL (caixa da empresa primaria) — gate anti cross-tenant.
+  assertTenantPrimario();
   const body = await req.json();
   const { clientId, clientSecret, redirectUri } = schema.parse(body);
   await salvarCredenciais(clientId, clientSecret, redirectUri);
@@ -19,6 +21,8 @@ export const POST = handleAuth([UsuarioRole.ADMIN], async (req: Request) => {
 });
 
 export const GET = handleAuth([UsuarioRole.ADMIN], async () => {
+  // Integracao Gmail e GLOBAL (caixa da empresa primaria) — gate anti cross-tenant.
+  assertTenantPrimario();
   const status = await getStatus();
   // Mask client_id (only show last 8 chars)
   const { db } = await import("@/lib/db");
