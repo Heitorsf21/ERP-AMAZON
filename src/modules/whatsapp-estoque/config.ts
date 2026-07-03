@@ -4,6 +4,12 @@ import {
   encryptConfigValue,
   isSecretConfigKey,
 } from "@/lib/crypto";
+import { configKeyParaEmpresa } from "@/lib/tenant-context";
+
+// Config POR EMPRESA: cada tenant tem o próprio destinatário/WAHA. Chave
+// escopada via configKeyParaEmpresa (primária mantém a nua — retrocompat).
+// Sem escopo, o job WHATSAPP_ESTOQUE_RESUMO — agendado por empresa — enviaria
+// o estoque de um tenant para o telefone configurado por outro.
 
 export const WHATSAPP_ESTOQUE_KEYS = {
   ATIVO: "whatsapp_estoque_ativo",
@@ -50,11 +56,15 @@ function parseBool(valor: string | undefined | null): boolean {
 const TODAS_KEYS = Object.values(WHATSAPP_ESTOQUE_KEYS);
 
 export async function getWhatsappEstoqueConfig(): Promise<WhatsappEstoqueConfig> {
+  const escopadas = new Map(TODAS_KEYS.map((k) => [k, configKeyParaEmpresa(k)]));
   const registros = await db.configuracaoSistema.findMany({
-    where: { chave: { in: TODAS_KEYS } },
+    where: { chave: { in: [...escopadas.values()] } },
     select: { chave: true, valor: true },
   });
-  const mapa = new Map(registros.map((r) => [r.chave, r.valor]));
+  const porChave = new Map(registros.map((r) => [r.chave, r.valor]));
+  const mapa = new Map(
+    TODAS_KEYS.map((k) => [k, porChave.get(escopadas.get(k)!)]),
+  );
 
   return {
     ativo: parseBool(mapa.get(WHATSAPP_ESTOQUE_KEYS.ATIVO)),
@@ -82,16 +92,16 @@ export async function getWhatsappEstoqueScheduleConfig(): Promise<{
   ativo: boolean;
   horario: string;
 }> {
+  const kAtivo = configKeyParaEmpresa(WHATSAPP_ESTOQUE_KEYS.ATIVO);
+  const kHorario = configKeyParaEmpresa(WHATSAPP_ESTOQUE_KEYS.HORARIO);
   const registros = await db.configuracaoSistema.findMany({
-    where: {
-      chave: { in: [WHATSAPP_ESTOQUE_KEYS.ATIVO, WHATSAPP_ESTOQUE_KEYS.HORARIO] },
-    },
+    where: { chave: { in: [kAtivo, kHorario] } },
     select: { chave: true, valor: true },
   });
   const mapa = new Map(registros.map((r) => [r.chave, r.valor]));
   return {
-    ativo: parseBool(mapa.get(WHATSAPP_ESTOQUE_KEYS.ATIVO)),
-    horario: mapa.get(WHATSAPP_ESTOQUE_KEYS.HORARIO)?.trim() || HORARIO_DEFAULT,
+    ativo: parseBool(mapa.get(kAtivo)),
+    horario: mapa.get(kHorario)?.trim() || HORARIO_DEFAULT,
   };
 }
 
@@ -100,12 +110,14 @@ export async function saveWhatsappEstoqueConfig(
 ): Promise<void> {
   const writes: Array<Promise<unknown>> = [];
 
-  const setKey = (chave: string, valor: string) => {
+  const setKey = (baseKey: string, valor: string) => {
+    // Cifragem decidida pelo NOME BASE; a linha gravada usa a chave escopada.
+    const chave = configKeyParaEmpresa(baseKey);
     if (!valor) {
       writes.push(db.configuracaoSistema.deleteMany({ where: { chave } }));
       return;
     }
-    const armazenado = isSecretConfigKey(chave)
+    const armazenado = isSecretConfigKey(baseKey)
       ? encryptConfigValue(valor)
       : valor;
     writes.push(

@@ -9,6 +9,9 @@ import { UsuarioRole, type UsuarioRole as UsuarioRoleType } from "@/modules/shar
 import { db } from "./db";
 import {
   enterWithTenant,
+  getEmpresaId,
+  isEmpresaPrimaria,
+  isTenantIsolationEnforce,
   runWithTenant,
   type TenantContext,
   type TenantSource,
@@ -42,10 +45,7 @@ export async function getSession(): Promise<SessionPayload | null> {
   // como não autenticada → força re-login, que reemite o cookie já com empresaId.
   // Auto-curável: evita fail-closed em massa de cookies antigos ao virar o enforce.
   // Inócuo em modo off (a condição nunca dispara porque não checamos a flag lá).
-  if (
-    process.env.TENANT_ISOLATION?.toLowerCase() === "enforce" &&
-    !payload.empresaId
-  ) {
+  if (isTenantIsolationEnforce() && !payload.empresaId) {
     return null;
   }
 
@@ -85,6 +85,41 @@ export async function requireRole(
     status: 403,
     headers: { "content-type": "application/json" },
   });
+}
+
+/**
+ * Gate de recurso GLOBAL legado (credencial Amazon da ConfiguracaoSistema,
+ * integração Gmail, etc.): essas integrações pertencem à empresa PRIMÁRIA.
+ * Um ADMIN de outra empresa não pode lê-las nem operá-las — receberia/afetaria
+ * dados de outro tenant. 403 para não-primária.
+ */
+export function assertEmpresaPrimaria(session: SessionPayload): void {
+  if (isEmpresaPrimaria(session.empresaId)) return;
+  throw new Response(
+    JSON.stringify({
+      erro: "SOMENTE_EMPRESA_PRIMARIA",
+      mensagem:
+        "Esta integração global pertence à empresa primária. Configure a integração da sua própria empresa em Configurações.",
+    }),
+    { status: 403, headers: { "content-type": "application/json" } },
+  );
+}
+
+/**
+ * Variante de assertEmpresaPrimaria para handlers `handleAuth`, que não
+ * recebem a sessão: valida pelo empresaId do CONTEXTO de tenant (populado por
+ * withTenantContextFromSession antes do handler rodar).
+ */
+export function assertTenantPrimario(): void {
+  if (isEmpresaPrimaria(getEmpresaId())) return;
+  throw new Response(
+    JSON.stringify({
+      erro: "SOMENTE_EMPRESA_PRIMARIA",
+      mensagem:
+        "Esta integração global pertence à empresa primária. Configure a integração da sua própria empresa em Configurações.",
+    }),
+    { status: 403, headers: { "content-type": "application/json" } },
+  );
 }
 
 /**

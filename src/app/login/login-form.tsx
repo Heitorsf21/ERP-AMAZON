@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useTransition, Suspense } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useState, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import {
   Eye,
@@ -29,7 +29,6 @@ type LoginResponse =
     };
 
 function LoginFormInner({ nextPath }: { nextPath?: string }) {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const [email, setEmail] = useState(searchParams.get("email") ?? "");
   const [senha, setSenha] = useState("");
@@ -37,7 +36,6 @@ function LoginFormInner({ nextPath }: { nextPath?: string }) {
   const [mostrarSenha, setMostrarSenha] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const [enviando, setEnviando] = useState(false);
-  const [, startTransition] = useTransition();
 
   // Estado 2FA
   const [challenge, setChallenge] = useState<{
@@ -86,12 +84,12 @@ function LoginFormInner({ nextPath }: { nextPath?: string }) {
         return;
       }
 
-      // Login direto
-      const destino = safeNextPath(nextPath);
-      startTransition(() => {
-        router.replace(destino);
-        router.refresh();
-      });
+      // Login direto. Navegação FULL PAGE (não SPA) de propósito: o QueryClient
+      // do React Query vive no layout raiz e sobrevive a router.replace — ao
+      // trocar de conta no mesmo browser, o cache da sessão anterior (inclusive
+      // de OUTRA empresa) continuaria sendo exibido até revalidar. O reload
+      // completo recria o QueryClient e zera qualquer estado client-side.
+      window.location.assign(safeNextPath(nextPath));
     } catch {
       setErro("Falha de conexão. Verifique sua internet.");
       setEnviando(false);
@@ -99,11 +97,8 @@ function LoginFormInner({ nextPath }: { nextPath?: string }) {
   }
 
   function onVerificado() {
-    const destino = safeNextPath(nextPath);
-    startTransition(() => {
-      router.replace(destino);
-      router.refresh();
-    });
+    // Mesma razão do login direto: full reload para não herdar cache de outra sessão.
+    window.location.assign(safeNextPath(nextPath));
   }
 
   return (

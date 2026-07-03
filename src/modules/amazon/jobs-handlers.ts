@@ -15,12 +15,12 @@ import {
   getListingsItem,
   getMyFeesEstimateForSKU,
   getProductOffers,
-  getSellerId,
   getSettlementReports,
   listFinancialTransactions,
   type SPAPICredentials,
   type SPCatalogItem,
 } from "@/lib/amazon-sp-api";
+import { resolverSellerIdDoTenant } from "@/modules/amazon/service";
 import { parseAllOrdersTsv } from "@/modules/amazon/parsers/all-orders-tsv";
 import { parseFbaReimbursementsTsv } from "@/modules/amazon/parsers/fba-reimbursements-tsv";
 import { parseFbaReturnsTsv } from "@/modules/amazon/parsers/fba-returns-tsv";
@@ -158,13 +158,10 @@ export async function syncSettlementReports(creds: SPAPICredentials) {
 const BUYBOX_BATCH_SIZE = 25;
 
 export async function runBuyboxCheck(creds: SPAPICredentials) {
-  // Lê `amazon_seller_id` salvo na config para comparar diretamente o
-  // sellerId do buybox winner com o nosso. Se não houver (config legado
-  // ou sync ainda não executado), caímos no fallback de preço.
-  const sellerIdRow = await db.configuracaoSistema.findUnique({
-    where: { chave: "amazon_seller_id" },
-  });
-  const ourSellerId = sellerIdRow?.valor ?? null;
+  // sellerId do TENANT do job (AmazonAccount.sellerId → chave global só para a
+  // primária → auto-resolve). Antes lia a chave global direto: o buybox da UDN
+  // compararia o winner com o merchant token da mundofs (falso perdido/ganho).
+  const ourSellerId = await resolverSellerIdDoTenant(creds);
 
   // Pega SKUs ativos com ASIN, escolhendo os de maior tempo desde o último check.
   const produtos = await db.produto.findMany({
@@ -471,7 +468,7 @@ const ORDERS_HISTORY_PENDING_TIMEOUT_MS = 24 * 60 * 60 * 1000;
 // lifecycle) é POR SELLER. Sem escopar, dois sellers colidiriam no mesmo cursor
 // global E — pior — um job poderia baixar o report pendente do outro (vazamento
 // cross-tenant). Escopamos por empresa via cursorKeyParaEmpresa (mundofs mantém
-// a chave nua). NÃO escopamos chaves de config geral (ex: amazon_loja_aberta_em).
+// a chave nua).
 const PER_SELLER_SYNC_KEY_PREFIXES = [
   "amazon_orders_history_",
   "amazon_finances_backfill_",
@@ -482,8 +479,14 @@ const PER_SELLER_SYNC_KEY_PREFIXES = [
   "amazon_traffic_",
 ];
 
+// Configs de NEGÓCIO por empresa (não são cursores, mas também não podem ser
+// compartilhadas): a data de abertura da loja é de cada seller — sem escopo, o
+// backfill de um tenant começaria na data de abertura da loja do outro.
+const PER_SELLER_CONFIG_KEYS = new Set([LOJA_ABERTA_EM_KEY]);
+
 function scopeSyncKey(chave: string): string {
-  return PER_SELLER_SYNC_KEY_PREFIXES.some((p) => chave.startsWith(p))
+  return PER_SELLER_SYNC_KEY_PREFIXES.some((p) => chave.startsWith(p)) ||
+    PER_SELLER_CONFIG_KEYS.has(chave)
     ? cursorKeyParaEmpresa(chave)
     : chave;
 }
@@ -1760,29 +1763,18 @@ function addMonthsUTC(d: Date, months: number) {
 const LISTING_PRICE_BATCH_SIZE = 100;
 
 export async function runListingPriceSync(creds: SPAPICredentials) {
+  // sellerId do TENANT do job. O auto-resolve persiste em AmazonAccount.sellerId
+  // da empresa do contexto — antes gravava a chave GLOBAL amazon_seller_id, e o
+  // job de um tenant sobrescrevia o merchant token do outro.
   let sellerId: string | null = null;
-  const sellerIdRow = await db.configuracaoSistema.findUnique({
-    where: { chave: "amazon_seller_id" },
-  });
-  sellerId = sellerIdRow?.valor ?? null;
-  // Auto-descobre via SP-API se ainda nao estiver salvo (rota Sellers/v1).
-  if (!sellerId) {
-    try {
-      sellerId = await getSellerId(creds);
-      if (sellerId) {
-        await db.configuracaoSistema.upsert({
-          where: { chave: "amazon_seller_id" },
-          create: { chave: "amazon_seller_id", valor: sellerId },
-          update: { valor: sellerId },
-        });
-      }
-    } catch (err) {
-      return {
-        ok: false,
-        skipped: true,
-        mensagem: `Falha ao resolver amazon_seller_id: ${err instanceof Error ? err.message : String(err)}`,
-      };
-    }
+  try {
+    sellerId = await resolverSellerIdDoTenant(creds);
+  } catch (err) {
+    return {
+      ok: false,
+      skipped: true,
+      mensagem: `Falha ao resolver amazon_seller_id: ${err instanceof Error ? err.message : String(err)}`,
+    };
   }
   if (!sellerId) {
     return {
@@ -1844,16 +1836,10 @@ const FEE_ESTIMATE_MAX_PER_RUN = 5;
 const FEE_ESTIMATE_DELAY_MS = 3000;
 
 export async function runAmazonFeeEstimateSync(creds: SPAPICredentials) {
-  // Usa cache em ConfiguracaoSistema.amazon_seller_id (povoado por
-  // scripts/sync-seller-id.ts). Evita estourar rate limit SELLERS_GET
-  // (0.016 rps = 1 req/60s) quando este job concorre com outros.
-  const sellerIdCfg = await db.configuracaoSistema.findUnique({
-    where: { chave: "amazon_seller_id" },
-  });
-  let sellerId = sellerIdCfg?.valor ?? null;
-  if (!sellerId) {
-    sellerId = await getSellerId(creds);
-  }
+  // sellerId do TENANT do job (AmazonAccount.sellerId; chave global só para a
+  // primária; auto-resolve com persistência na conta — cacheia e evita estourar
+  // o rate limit SELLERS_GET de 1 req/60s quando este job concorre com outros).
+  const sellerId = await resolverSellerIdDoTenant(creds);
   if (!sellerId) {
     return { ok: false, mensagem: "sellerId nao disponivel — pulando." };
   }

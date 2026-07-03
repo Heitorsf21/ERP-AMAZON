@@ -1,11 +1,13 @@
 import { handle, ok, erro } from "@/lib/api";
-import { requireRole, UsuarioRole } from "@/lib/auth";
+import { assertEmpresaPrimaria, requireRole, UsuarioRole } from "@/lib/auth";
 import { gerarUrlAutorizacao } from "@/lib/gmail";
 
 export const dynamic = "force-dynamic";
 
 export const GET = handle(async () => {
-  await requireRole(UsuarioRole.ADMIN);
+  const session = await requireRole(UsuarioRole.ADMIN);
+  // Integracao Gmail e GLOBAL (caixa da empresa primaria) — gate anti cross-tenant.
+  assertEmpresaPrimaria(session);
   try {
     const url = await gerarUrlAutorizacao();
     return ok({ url });

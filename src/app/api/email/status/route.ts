@@ -1,11 +1,13 @@
 import { handleAuth, ok } from "@/lib/api";
-import { UsuarioRole } from "@/lib/auth";
+import { assertTenantPrimario, UsuarioRole } from "@/lib/auth";
 import { getStatus, verificarConexao } from "@/lib/gmail";
 import { db } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
 export const GET = handleAuth([UsuarioRole.ADMIN], async () => {
+  // Integracao Gmail e GLOBAL (caixa da empresa primaria) — gate anti cross-tenant.
+  assertTenantPrimario();
   const base = await getStatus();
 
   let emailConta: string | undefined;

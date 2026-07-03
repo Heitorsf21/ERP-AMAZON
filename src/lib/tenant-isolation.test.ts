@@ -515,3 +515,41 @@ describe("classificacao dos models novos (A+B)", () => {
     expect(TENANT_MODEL_NAMES.has("AuditPlataforma")).toBe(false);
   });
 });
+
+describe("normalização da flag TENANT_ISOLATION (trim + case)", () => {
+  // Regressão: a comparação crua (sem trim) fazia "enforce\r" (CRLF de .env
+  // editado no Windows) ou "enforce " degradar SILENCIOSAMENTE para off —
+  // isolamento desligado com o operador acreditando que está ligado.
+  const VARIANTES = ["enforce\r", "enforce ", " ENFORCE ", "Enforce\n"];
+
+  for (const variante of VARIANTES) {
+    it(`${JSON.stringify(variante)} ainda aplica isolamento (enforce)`, async () => {
+      process.env.TENANT_ISOLATION = variante;
+      const { query, seen } = makeQuery();
+      await runWithTenant(ctx("emp_1"), () =>
+        applyTenantIsolation({
+          model: "Notificacao",
+          operation: "findMany",
+          args: {},
+          query,
+        }),
+      );
+      expect((seen[0] as { where: { empresaId: string } }).where.empresaId).toBe(
+        "emp_1",
+      );
+    });
+  }
+
+  it("valor diferente de enforce continua sendo off (no-op)", async () => {
+    process.env.TENANT_ISOLATION = "on";
+    const { query, seen } = makeQuery();
+    const args = { where: {} };
+    await applyTenantIsolation({
+      model: "Notificacao",
+      operation: "findMany",
+      args,
+      query,
+    });
+    expect(seen[0]).toBe(args);
+  });
+});
