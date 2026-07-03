@@ -9,6 +9,7 @@ import { UsuarioRole, type UsuarioRole as UsuarioRoleType } from "@/modules/shar
 import { db } from "./db";
 import {
   enterWithTenant,
+  isTenantIsolationEnforce,
   runWithTenant,
   type TenantContext,
   type TenantSource,
@@ -42,10 +43,7 @@ export async function getSession(): Promise<SessionPayload | null> {
   // como não autenticada → força re-login, que reemite o cookie já com empresaId.
   // Auto-curável: evita fail-closed em massa de cookies antigos ao virar o enforce.
   // Inócuo em modo off (a condição nunca dispara porque não checamos a flag lá).
-  if (
-    process.env.TENANT_ISOLATION?.toLowerCase() === "enforce" &&
-    !payload.empresaId
-  ) {
+  if (isTenantIsolationEnforce() && !payload.empresaId) {
     return null;
   }
 

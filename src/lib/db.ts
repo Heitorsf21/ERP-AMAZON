@@ -1,5 +1,5 @@
 import { PrismaClient } from "@prisma/client";
-import { getTenantContext } from "./tenant-context";
+import { getTenantContext, isTenantIsolationEnforce } from "./tenant-context";
 import { resolveEmpresaIdFromRequestCookie } from "./tenant-request";
 import { logger } from "./logger";
 
@@ -151,8 +151,7 @@ export const GLOBAL_MODEL_NAMES: ReadonlySet<string> = GLOBAL_MODELS;
 type TenantMode = "off" | "enforce";
 
 function tenantMode(): TenantMode {
-  const raw = process.env.TENANT_ISOLATION?.toLowerCase();
-  return raw === "enforce" ? "enforce" : "off";
+  return isTenantIsolationEnforce() ? "enforce" : "off";
 }
 
 // Log deduplicado (1x por model.operation por processo) quando o fallback de

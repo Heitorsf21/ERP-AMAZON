@@ -53,11 +53,14 @@ export function NotificationBell() {
   const [tocando, setTocando] = React.useState(false);
   const totalAnterior = React.useRef<number | null>(null);
 
+  // refetchOnWindowFocus:true: aba antiga aberta após troca de conta no mesmo
+  // browser revalida ao ganhar foco (evita exibir notificações de outra empresa).
   const { data: count } = useQuery<{ total: number }>({
     queryKey: ["notificacoes-count"],
     queryFn: () => fetchJSON("/api/notificacoes/contar"),
     refetchInterval: 60_000,
     staleTime: 30_000,
+    refetchOnWindowFocus: true,
   });
 
   const total = count?.total ?? 0;
@@ -79,6 +82,7 @@ export function NotificationBell() {
     queryFn: () => fetchJSON("/api/notificacoes?naoLidas=true&limit=10"),
     enabled: aberto,
     staleTime: 10_000,
+    refetchOnWindowFocus: true,
   });
 
   const marcarLida = useMutation({

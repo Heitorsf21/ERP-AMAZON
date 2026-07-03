@@ -27,6 +27,19 @@ export type TenantContext = {
 const storage = new AsyncLocalStorage<TenantContext>();
 
 /**
+ * Leitura NORMALIZADA da flag TENANT_ISOLATION. Único ponto de verdade para
+ * "o isolamento está em enforce?" — com trim, porque um `.env` editado no
+ * Windows (CRLF) ou com espaço acidental ("enforce\r", "enforce ") faria a
+ * comparação crua falhar e o isolamento degradar SILENCIOSAMENTE para off,
+ * vazando dados entre empresas com o operador acreditando que está ligado.
+ */
+export function isTenantIsolationEnforce(): boolean {
+  return (
+    (process.env.TENANT_ISOLATION ?? "").trim().toLowerCase() === "enforce"
+  );
+}
+
+/**
  * Executa `fn` com o contexto de tenant amarrado ao escopo assíncrono. Tudo o
  * que rodar dentro de `fn` (incluindo awaits) enxerga o mesmo contexto via
  * getTenantContext(). Reentrante: chamadas aninhadas substituem o contexto

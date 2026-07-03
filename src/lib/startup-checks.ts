@@ -38,7 +38,9 @@ export function checkTenantIsolation(
   tenantIsolation: string | undefined,
 ): GuardIssue | null {
   if (empresaCount <= 1) return null;
-  const mode = tenantIsolation?.toLowerCase();
+  // Mesma normalização (trim) de isTenantIsolationEnforce — o boot guard e o
+  // runtime precisam concordar sobre o que conta como "enforce".
+  const mode = tenantIsolation?.trim().toLowerCase();
   if (mode === "enforce") return null;
   return {
     level: "fatal",

@@ -77,19 +77,26 @@ const ONE_HOUR_MS = 60 * 60 * 1000;
 const MAX_ALERTAS = 5;
 
 export function AlertasCriticos() {
+  // refetchOnWindowFocus:true (override do default global false) nas queries
+  // deste painel: uma aba do /home aberta antes de uma troca de conta no mesmo
+  // browser exibiria alertas da empresa anterior indefinidamente (não há poll
+  // aqui) — ao focar a aba, revalida com o cookie da sessão corrente.
   const vencidasQuery = useQuery<Conta[]>({
     queryKey: ["alertas", "contas-vencidas"],
     queryFn: () => fetchJSON<Conta[]>("/api/contas?status=VENCIDA"),
+    refetchOnWindowFocus: true,
   });
 
   const estoqueQuery = useQuery<Produto[]>({
     queryKey: ["alertas", "estoque-repor"],
     queryFn: () => fetchJSON<Produto[]>("/api/estoque/produtos?ativo=true"),
+    refetchOnWindowFocus: true,
   });
 
   const amazonQuery = useQuery<SyncLog[]>({
     queryKey: ["alertas", "amazon-status"],
     queryFn: () => fetchJSON<SyncLog[]>("/api/amazon/status"),
+    refetchOnWindowFocus: true,
   });
 
   // /api/notificacoes retorna { notificacoes } (objeto), NÃO um array cru.
@@ -98,6 +105,7 @@ export function AlertasCriticos() {
     queryKey: ["alertas", "notificacoes-nao-lidas"],
     queryFn: () =>
       fetchJSON<{ notificacoes: Notificacao[] }>("/api/notificacoes?naoLidas=true"),
+    refetchOnWindowFocus: true,
   });
 
   const isLoading =

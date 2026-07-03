@@ -69,12 +69,15 @@ export default function NotificacoesPage() {
   const queryClient = useQueryClient();
   const router = useRouter();
 
+  // refetchOnWindowFocus:true: aba antiga aberta após troca de conta no mesmo
+  // browser revalida ao ganhar foco (evita exibir notificações de outra empresa).
   const { data: notificacoes, isLoading } = useQuery<Notificacao[]>({
     queryKey: ["notificacoes"],
     queryFn: () =>
       fetchJSON<{ notificacoes: Notificacao[] }>("/api/notificacoes").then(
         (r) => r.notificacoes,
       ),
+    refetchOnWindowFocus: true,
   });
 
   const gerarMut = useMutation({
