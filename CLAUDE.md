@@ -38,6 +38,8 @@ CSV Unified Transaction: 9 linhas cabeçalho + nomes + 24 campos. Status Liberad
 ### VendaAmazon (independente de Gestor Seller)
 Chave única `(amazonOrderId, sku)`. `liquidoMarketplaceCentavos = valorBruto - taxasCentavos - fretesCentavos`. Filtro **`whereVendaAmazonEspelhoGestorSeller()`** em `src/modules/vendas/filtros.ts` filtra cancelados + Removal Orders + Pending sem valor. Backfill: `REPORTS_BACKFILL` em janelas de 30d, cursor `amazon_orders_history_cursor`, início `amazon_loja_aberta_em` (default 2025-07-28). `Produto.custoUnitario Int?` (fallback) + `ProdutoCustoHistorico` (vigências por data — fonte de verdade do custo). Custo resolvido via `resolverCustoUnitario(produtoId, dataVenda)`.
 
+**Fallback de preço p/ Pending sem ItemPrice** (`resolverPrecoVendaAmazon` em `vendas/valores.ts`): 1º **preço unitário real mais recente do SKU** (vendas `sp-api` ≤7d, `buscarPrecoRealRecentePorSku` no sync de Orders) — acompanha ofertas/deals ativos que a Listings API NÃO expõe em `purchasable_offer` (o cache `amazonPrecoListagemCentavos` fica no preço cheio durante a oferta); 2º cache do listing. Sempre `precoOrigem="listing"` (excluído da contabilidade estrita) até o ItemPrice real chegar via Orders/Finance.
+
 **Invariante crítico — `VendaAmazon.taxasCentavos` é APENAS REAL** (Finance API ou SP-API Orders). Estimativas NUNCA são persistidas aqui — vivem apenas em memória no service do dashboard. DRE/Contas a Receber estão protegidos via `whereVendaAmazonContabilizavelEstrito()` que exclui PENDENTE. Write sites em `service.ts`: bloco de Orders (~L788 e L882-884) e bloco de Finance (~L1127/L1202).
 
 ### Fee Estimator (taxas Amazon estimadas, v2)
