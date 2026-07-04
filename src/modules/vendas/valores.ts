@@ -149,6 +149,13 @@ export type ResolverPrecoVendaInput = {
   };
   /** `Produto.amazonPrecoListagemCentavos` — base do fallback estimado. */
   precoListagemCentavos?: number | null;
+  /**
+   * Preco unitario REAL mais recente do SKU (vendas `sp-api` dos ultimos dias).
+   * Fallback PREFERIDO sobre o listing: acompanha ofertas ativas que a Listings
+   * API nao expoe (deals do console de Promocoes nao aparecem em
+   * `purchasable_offer.discounted_price`).
+   */
+  precoRealRecenteCentavos?: number | null;
   existente?: {
     valorBrutoCentavos?: number | null;
     precoOrigem?: string | null;
@@ -177,7 +184,9 @@ export type PrecoVendaResolvido = {
  *    cliente). Marca `precoOrigem = "replacement"` e NUNCA estima via listing.
  *    Uma venda que ja era reposicao permanece reposicao.
  * 2. ItemPrice real da SP-API (> 0) → `sp-api`.
- * 3. Sem ItemPrice, mas com preco de listagem → fallback `listing` (estimado).
+ * 3. Sem ItemPrice → fallback `listing` (estimado), preferindo o preco REAL
+ *    recente do SKU (acompanha ofertas ativas) e caindo no preco de listagem
+ *    quando nao ha venda real recente.
  * 4. Sem nada novo → preserva o que ja existia.
  * 5. Nunca regride `sp-api` para `listing`.
  */
@@ -204,10 +213,15 @@ export function resolverPrecoVendaAmazon(
   let fretesFinal = item.fretesCentavos;
   let liquidoFinal = item.liquidoMarketplaceCentavos;
 
+  const precoEstimadoCentavos =
+    input.precoRealRecenteCentavos && input.precoRealRecenteCentavos > 0
+      ? input.precoRealRecenteCentavos
+      : input.precoListagemCentavos;
+
   if (valorBrutoFinal > 0) {
     precoOrigemFinal = PRECO_ORIGEM_SPAPI;
-  } else if (input.precoListagemCentavos && input.precoListagemCentavos > 0) {
-    valorBrutoFinal = input.precoListagemCentavos * item.quantidade;
+  } else if (precoEstimadoCentavos && precoEstimadoCentavos > 0) {
+    valorBrutoFinal = precoEstimadoCentavos * item.quantidade;
     precoOrigemFinal = PRECO_ORIGEM_LISTING;
     taxasFinal = 0;
     fretesFinal = 0;

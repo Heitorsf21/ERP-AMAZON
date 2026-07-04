@@ -64,6 +64,7 @@ import {
   TipoMovimentacaoEstoque,
 } from "@/modules/shared/domain";
 import { agruparLinhasVendaAmazon } from "@/modules/vendas/agrupamento";
+import { PRECO_ORIGEM_SPAPI } from "@/modules/vendas/filtros";
 import {
   calcularImpostoSimplesCentavos,
   calcularPrecoUnitarioCentavos,
@@ -900,6 +901,9 @@ async function syncOrdersInternal(
       skusSemPrecoConfirmado,
       produtosPorSku,
     );
+    const precoRealRecentePorSku = await buscarPrecoRealRecentePorSku(
+      skusSemPrecoConfirmado,
+    );
 
     for (const order of orders) {
       const amazonOrderId = getAmazonOrderId(order);
@@ -1003,6 +1007,7 @@ async function syncOrdersInternal(
             liquidoMarketplaceCentavos: item.liquidoMarketplaceCentavos,
           },
           precoListagemCentavos: produto?.amazonPrecoListagemCentavos ?? null,
+          precoRealRecenteCentavos: precoRealRecentePorSku.get(sku) ?? null,
           existente,
         });
 
@@ -1572,6 +1577,41 @@ async function refreshListingPricesForOrderFallback(
       );
     }
   }
+}
+
+// Janela de busca do preco unitario REAL mais recente por SKU. Curta de
+// proposito: preco de oferta muda rapido — com giro diario, a venda real de
+// ontem e o melhor estimador do preco de hoje. Sem venda real na janela, o
+// fallback volta ao cache do listing.
+const FALLBACK_PRECO_REAL_JANELA_DIAS = 7;
+
+// Preco unitario real mais recente por SKU (precoOrigem "sp-api"). Fallback
+// PREFERIDO para pedidos Pending sem ItemPrice: reflete ofertas/deals ativos
+// que a Listings API nao expoe em purchasable_offer — o cache
+// amazonPrecoListagemCentavos fica no preco cheio durante a oferta.
+async function buscarPrecoRealRecentePorSku(
+  skus: string[],
+): Promise<Map<string, number>> {
+  const porSku = new Map<string, number>();
+  const uniqueSkus = [...new Set(skus.filter(Boolean))];
+  if (uniqueSkus.length === 0) return porSku;
+
+  const vendas = await db.vendaAmazon.findMany({
+    where: {
+      sku: { in: uniqueSkus },
+      precoOrigem: PRECO_ORIGEM_SPAPI,
+      precoUnitarioCentavos: { gt: 0 },
+      dataVenda: { gte: subDays(new Date(), FALLBACK_PRECO_REAL_JANELA_DIAS) },
+    },
+    orderBy: { dataVenda: "desc" },
+    select: { sku: true, precoUnitarioCentavos: true },
+  });
+  for (const venda of vendas) {
+    if (!porSku.has(venda.sku)) {
+      porSku.set(venda.sku, venda.precoUnitarioCentavos);
+    }
+  }
+  return porSku;
 }
 
 function getAmazonOrderId(order: SPOrder): string | undefined {

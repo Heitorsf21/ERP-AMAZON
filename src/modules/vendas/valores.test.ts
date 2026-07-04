@@ -66,6 +66,79 @@ describe("resolverPrecoVendaAmazon", () => {
     expect(r.liquidoMarketplaceCentavos).toBe(8794);
   });
 
+  it("sem ItemPrice, prefere o preco real recente do SKU sobre o listing (oferta ativa)", () => {
+    // Cenario da almofada: listing cacheado R$78,97 mas oferta ativa vendendo
+    // a R$67,97 — o preco real recente reflete a oferta, o listing nao.
+    const r = resolverPrecoVendaAmazon({
+      isReplacement: false,
+      item: itemBase,
+      precoListagemCentavos: 7897,
+      precoRealRecenteCentavos: 6797,
+    });
+    expect(r.precoOrigem).toBe("listing");
+    expect(r.valorBrutoCentavos).toBe(6797);
+    expect(r.liquidoMarketplaceCentavos).toBe(6797);
+  });
+
+  it("preco real recente multiplica pela quantidade, como o listing", () => {
+    const r = resolverPrecoVendaAmazon({
+      isReplacement: false,
+      item: { ...itemBase, quantidade: 2 },
+      precoListagemCentavos: 7897,
+      precoRealRecenteCentavos: 6797,
+    });
+    expect(r.valorBrutoCentavos).toBe(13594);
+    expect(r.liquidoMarketplaceCentavos).toBe(13594);
+  });
+
+  it("sem preco real recente (null/0), cai no listing normalmente", () => {
+    const r = resolverPrecoVendaAmazon({
+      isReplacement: false,
+      item: itemBase,
+      precoListagemCentavos: 7897,
+      precoRealRecenteCentavos: 0,
+    });
+    expect(r.precoOrigem).toBe("listing");
+    expect(r.valorBrutoCentavos).toBe(7897);
+  });
+
+  it("reposicao ignora o preco real recente (continua R$0)", () => {
+    const r = resolverPrecoVendaAmazon({
+      isReplacement: true,
+      item: itemBase,
+      precoListagemCentavos: 7897,
+      precoRealRecenteCentavos: 6797,
+    });
+    expect(r.precoOrigem).toBe("replacement");
+    expect(r.valorBrutoCentavos).toBe(0);
+  });
+
+  it("ItemPrice real vence o preco real recente (nao e fallback)", () => {
+    const r = resolverPrecoVendaAmazon({
+      isReplacement: false,
+      item: {
+        ...itemBase,
+        valorBrutoCentavos: 6500,
+        liquidoMarketplaceCentavos: 6500,
+      },
+      precoRealRecenteCentavos: 6797,
+    });
+    expect(r.precoOrigem).toBe("sp-api");
+    expect(r.valorBrutoCentavos).toBe(6500);
+  });
+
+  it("nao regride 'sp-api' existente mesmo com preco real recente disponivel", () => {
+    const r = resolverPrecoVendaAmazon({
+      isReplacement: false,
+      item: itemBase,
+      precoListagemCentavos: 7897,
+      precoRealRecenteCentavos: 6797,
+      existente: { precoOrigem: "sp-api", valorBrutoCentavos: 6500 },
+    });
+    expect(r.precoOrigem).toBe("sp-api");
+    expect(r.valorBrutoCentavos).toBe(6500);
+  });
+
   it("nunca regride 'sp-api' existente para 'listing'", () => {
     const r = resolverPrecoVendaAmazon({
       isReplacement: false,
