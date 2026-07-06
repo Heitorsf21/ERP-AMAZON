@@ -2,6 +2,7 @@ import {
   PRECO_ORIGEM_LISTING,
   PRECO_ORIGEM_REPLACEMENT,
   PRECO_ORIGEM_SPAPI,
+  STATUS_PEDIDO_CANCELADO_NORMALIZADO,
   STATUS_PEDIDO_REEMBOLSADO_NORMALIZADO,
   STATUS_FINANCEIRO_NAO_CONTABILIZAVEL_NORMALIZADO,
   normalizarStatus,
@@ -32,6 +33,9 @@ export type ImpostoSimplesInput = {
  * - Retorna 0 quando a venda esta marcada como REEMBOLSADA (em qualquer um
  *   dos dois campos de status), refletindo que o DAS e abatido no proximo
  *   mes.
+ * - Retorna 0 quando o pedido esta CANCELADO — nao houve receita, nao ha
+ *   fato gerador (higiene de dado: cancelados ficam fora dos agregados, mas
+ *   o campo gravado nao deve carregar imposto fantasma).
  * - Caso contrario, aplica `valorBruto * aliquotaBps / 10_000` com
  *   arredondamento half-away-from-zero (Math.round).
  *
@@ -49,6 +53,7 @@ export function calcularImpostoSimplesCentavos(
   const statusFinanceiro = normalizarStatus(input.statusFinanceiro ?? "");
   if (
     STATUS_PEDIDO_REEMBOLSADO_NORMALIZADO.has(statusPedido) ||
+    STATUS_PEDIDO_CANCELADO_NORMALIZADO.has(statusPedido) ||
     STATUS_FINANCEIRO_NAO_CONTABILIZAVEL_NORMALIZADO.has(statusFinanceiro)
   ) {
     return 0;
@@ -254,6 +259,67 @@ export function resolverPrecoVendaAmazon(
     taxasCentavos: taxasFinal,
     fretesCentavos: fretesFinal,
     liquidoMarketplaceCentavos: liquidoFinal,
+  };
+}
+
+export type PreservarFinanceiroInput = {
+  /** `precoOrigem` decidido pelo resolver para ESTA re-visita do Orders. */
+  precoOrigem: string | null;
+  /** Bruto decidido pelo resolver (novo valor a gravar). */
+  valorBrutoNovoCentavos: number;
+  /** Taxas trazidas pelo Orders (ItemTax+ShippingTax — ~R$0 no BR). */
+  taxasOrdersCentavos: number;
+  existente?: {
+    statusFinanceiro?: string | null;
+    valorBrutoCentavos?: number | null;
+    taxasCentavos?: number | null;
+    fretesCentavos?: number | null;
+    liquidoMarketplaceCentavos?: number | null;
+  } | null;
+};
+
+/**
+ * Decide se a RE-VISITA do ORDERS_SYNC deve preservar taxas/frete/líquido
+ * REAIS já gravados pelo Finance. A Orders API só expõe ItemTax/ShippingTax
+ * (~R$0 no BR); reescrever com isso apagava a taxa real (Commission+FBA+
+ * parcelamento) sempre que o pedido era re-tocado (mudança de status/refund),
+ * inflando o líquido até o próximo FINANCES_SYNC.
+ *
+ * Preserva SOMENTE quando: preço real ("sp-api") + Finance já confirmou a
+ * venda (statusFinanceiro != PENDENTE) com taxa real > 0 + Orders não trouxe
+ * taxa maior + o bruto NÃO mudou (bruto novo ⇒ deixa o Finance re-reconciliar
+ * no próximo ciclo em vez de casar taxa velha com bruto novo).
+ */
+export function preservarFinanceiroRealNaRevisita(
+  input: PreservarFinanceiroInput,
+): {
+  taxasCentavos: number;
+  fretesCentavos: number;
+  liquidoMarketplaceCentavos: number;
+} | null {
+  const existente = input.existente;
+  if (!existente) return null;
+  if (input.precoOrigem !== PRECO_ORIGEM_SPAPI) return null;
+
+  const statusFinanceiro = normalizarStatus(existente.statusFinanceiro ?? "");
+  if (!statusFinanceiro || statusFinanceiro === "PENDENTE") return null;
+
+  const taxasReais = normalizarCentavos(existente.taxasCentavos);
+  if (taxasReais <= 0) return null;
+  if (normalizarCentavos(input.taxasOrdersCentavos) > taxasReais) return null;
+
+  const brutoExistente = normalizarCentavos(existente.valorBrutoCentavos);
+  if (brutoExistente !== normalizarCentavos(input.valorBrutoNovoCentavos)) {
+    return null;
+  }
+
+  return {
+    taxasCentavos: taxasReais,
+    fretesCentavos: normalizarCentavos(existente.fretesCentavos),
+    liquidoMarketplaceCentavos:
+      existente.liquidoMarketplaceCentavos == null
+        ? brutoExistente - taxasReais
+        : normalizarCentavos(existente.liquidoMarketplaceCentavos),
   };
 }
 

@@ -3,9 +3,10 @@ import { enqueueAmazonSyncJob } from "@/modules/amazon/jobs";
 import { TipoAmazonSyncJob } from "@/modules/shared/domain";
 
 async function main() {
-  // Limpa cooldown atual de inventory pra rodar agora.
+  // Limpa cooldown atual de inventory pra rodar agora (por empresa — o unique
+  // agora é composto [empresaId, operation]; updateMany é auto-escopado).
   await db.amazonApiQuota
-    .update({
+    .updateMany({
       where: { operation: "INVENTORY_SUMMARIES" },
       data: { nextAllowedAt: null },
     })

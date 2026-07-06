@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   agruparValoresFinanceirosVendaAmazon,
+  extrairPromoRebatesProdutoDoItemCentavos,
   reconciliarFinanceiroParaBrutoCheio,
 } from "./finance-aggregation";
 
@@ -111,5 +112,90 @@ describe("reconciliarFinanceiroParaBrutoCheio", () => {
     });
     expect(r.taxasCentavos).toBe(0);
     expect(r.liquidoMarketplaceCentavos).toBe(0);
+  });
+
+  it("re-escala o frete do evento pelo mesmo fator das taxas (multi-unidade)", () => {
+    const r = reconciliarFinanceiroParaBrutoCheio({
+      brutoCheioCentavos: 17978,
+      taxasCentavos: 1714,
+      baseBrutoCentavos: 8989,
+      fretesCentavos: 410,
+    });
+    expect(r.fretesCentavos).toBe(820);
+  });
+
+  it("frete ausente vira 0 sem afetar taxas/liquido", () => {
+    const r = reconciliarFinanceiroParaBrutoCheio({
+      brutoCheioCentavos: 17994,
+      taxasCentavos: 3430,
+      baseBrutoCentavos: 17994,
+    });
+    expect(r.fretesCentavos).toBe(0);
+    expect(r.taxasCentavos + r.liquidoMarketplaceCentavos).toBe(17994);
+  });
+});
+
+describe("extrairPromoRebatesProdutoDoItemCentavos", () => {
+  const itemComBreakdowns = (breakdowns: unknown[]) => ({ breakdowns });
+
+  it("deal sem PromoRebates (ProductCharges ja liquido): desconto 0", () => {
+    const item = itemComBreakdowns([
+      {
+        breakdownType: "ProductCharges",
+        breakdownAmount: { currencyAmount: 67.97 },
+      },
+      { breakdownType: "AmazonFees", breakdownAmount: { currencyAmount: -14.18 } },
+    ]);
+    expect(extrairPromoRebatesProdutoDoItemCentavos(item)).toBe(0);
+  });
+
+  it("cupom: PromoRebates destacado vira desconto de produto", () => {
+    const item = itemComBreakdowns([
+      {
+        breakdownType: "ProductCharges",
+        breakdownAmount: { currencyAmount: 79.99 },
+      },
+      {
+        breakdownType: "PromoRebates",
+        breakdownAmount: { currencyAmount: -8.0 },
+        breakdowns: [],
+      },
+    ]);
+    expect(extrairPromoRebatesProdutoDoItemCentavos(item)).toBe(800);
+  });
+
+  it("exclui o sub-desconto de FRETE do desconto de produto", () => {
+    const item = itemComBreakdowns([
+      {
+        breakdownType: "PromoRebates",
+        breakdownAmount: { currencyAmount: -12.0 },
+        breakdowns: [
+          {
+            breakdownType: "ShippingPromotionDiscount",
+            breakdownAmount: { currencyAmount: -4.0 },
+          },
+          {
+            breakdownType: "PromotionDiscount",
+            breakdownAmount: { currencyAmount: -8.0 },
+          },
+        ],
+      },
+    ]);
+    expect(extrairPromoRebatesProdutoDoItemCentavos(item)).toBe(800);
+  });
+
+  it("PromoRebateAccrued tambem conta; item sem breakdowns retorna 0", () => {
+    expect(
+      extrairPromoRebatesProdutoDoItemCentavos(
+        itemComBreakdowns([
+          {
+            breakdownType: "PromoRebateAccrued",
+            breakdownAmount: { currencyAmount: -3.5 },
+          },
+        ]),
+      ),
+    ).toBe(350);
+    expect(extrairPromoRebatesProdutoDoItemCentavos({})).toBe(0);
+    expect(extrairPromoRebatesProdutoDoItemCentavos(null)).toBe(0);
   });
 });

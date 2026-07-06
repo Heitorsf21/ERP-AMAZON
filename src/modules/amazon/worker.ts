@@ -190,8 +190,9 @@ async function processAmazonSyncJobsInner(options: WorkerOptions = {}) {
   // para detectar worker travado. ConfiguracaoSistema é GLOBAL — sem tenant.
   await writeHeartbeat();
 
-  // SQS + reconciliação sob a empresa primária (single-tenant por ora).
-  // SQS drena notificações push do SP-API; reconciliação Nubank ↔ ContaReceber.
+  // SQS: a fila é ÚNICA da plataforma — o poll roda sob a primária, mas o
+  // roteamento por empresa acontece POR NOTIFICATION dentro do dispatch
+  // (sellerId → AmazonAccount → runWithTenant da empresa dona).
   await runWithTenant(
     { empresaId: WORKER_EMPRESA_ID, isSuperAdmin: false, source: "worker" },
     async () => {
@@ -200,13 +201,26 @@ async function processAmazonSyncJobsInner(options: WorkerOptions = {}) {
       } catch (e) {
         console.warn("pollSqsNotifications erro:", e);
       }
-      try {
-        await reconciliarRecebimentosAmazon();
-      } catch (e) {
-        console.warn("reconciliarRecebimentosAmazon erro:", e);
-      }
     },
   );
+
+  // Reconciliação bancária (Nubank ↔ ContaReceber) roda POR EMPRESA ativa —
+  // Movimentacao/ContaReceber são TENANT; rodar só na primária deixava a
+  // ContaReceber das demais empresas eternamente PENDENTE.
+  const empresasAtivas = await db.empresa.findMany({
+    where: { ativa: true },
+    select: { id: true },
+  });
+  for (const empresa of empresasAtivas) {
+    try {
+      await runWithTenant(
+        { empresaId: empresa.id, isSuperAdmin: false, source: "worker" },
+        () => reconciliarRecebimentosAmazon(),
+      );
+    } catch (e) {
+      console.warn(`reconciliarRecebimentosAmazon erro (${empresa.id}):`, e);
+    }
+  }
 
   return { processed: results.length, results };
 }

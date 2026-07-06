@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import {
   configKeyParaEmpresa,
+  currentEmpresaIdOrDefault,
   cursorKeyParaEmpresa,
   getEmpresaId,
 } from "@/lib/tenant-context";
@@ -34,6 +35,7 @@ import {
 import { gunzipSync } from "zlib";
 import {
   agruparValoresFinanceirosVendaAmazon,
+  extrairPromoRebatesProdutoDoItemCentavos,
   reconciliarFinanceiroParaBrutoCheio,
   type LinhaFinanceiraVendaAmazon,
 } from "@/modules/amazon/finance-aggregation";
@@ -68,6 +70,7 @@ import { PRECO_ORIGEM_SPAPI } from "@/modules/vendas/filtros";
 import {
   calcularImpostoSimplesCentavos,
   calcularPrecoUnitarioCentavos,
+  preservarFinanceiroRealNaRevisita,
   resolverPrecoVendaAmazon,
   valorBrutoDaVenda,
   valorBrutoFinanceiroPodeAtualizar,
@@ -1020,6 +1023,15 @@ async function syncOrdersInternal(
           statusFinanceiro: statusFinanceiroFinal,
         });
 
+        // Re-visita NÃO pode apagar taxas reais do Finance com ItemTax≈0 do
+        // Orders (regras em preservarFinanceiroRealNaRevisita).
+        const financeiroPreservado = preservarFinanceiroRealNaRevisita({
+          precoOrigem: precoOrigemFinal,
+          valorBrutoNovoCentavos: valorBrutoFinal,
+          taxasOrdersCentavos: taxasFinal,
+          existente,
+        });
+
         const data = {
           orderItemId: item.OrderItemId ?? null,
           asin: item.ASIN ?? produto?.asin ?? null,
@@ -1030,9 +1042,10 @@ async function syncOrdersInternal(
             item.quantidade,
           ),
           valorBrutoCentavos: valorBrutoFinal,
-          taxasCentavos: taxasFinal,
-          fretesCentavos: fretesFinal,
-          liquidoMarketplaceCentavos: liquidoFinal,
+          taxasCentavos: financeiroPreservado?.taxasCentavos ?? taxasFinal,
+          fretesCentavos: financeiroPreservado?.fretesCentavos ?? fretesFinal,
+          liquidoMarketplaceCentavos:
+            financeiroPreservado?.liquidoMarketplaceCentavos ?? liquidoFinal,
           impostoSimplesCentavos,
           marketplace:
             getOrderMarketplaceName(order) ??
@@ -1284,8 +1297,18 @@ async function syncFinancialEvents(
         ]);
         const fretesCentavos = Math.abs(fretesTop || sumBreakdowns(item, "shipping"));
 
-        // valorBruto = ProductCharges (preço cheio antes de deduzir taxas Amazon).
-        const valorBrutoCentavos = findBreakdownAmount(item, "ProductCharges");
+        // valorBruto = ProductCharges − PromoRebates de PRODUTO. Deals já
+        // chegam líquidos em ProductCharges; CUPOM vem com ProductCharges
+        // cheio + PromoRebates destacado — sem a dedução, venda com cupom
+        // inflava o bruto vs Seller Central. Espelha o Orders (ItemPrice −
+        // PromotionDiscount). Desconto de FRETE fica fora (linha de frete).
+        const productChargesCentavos = findBreakdownAmount(item, "ProductCharges");
+        const promoProdutoCentavos =
+          extrairPromoRebatesProdutoDoItemCentavos(item);
+        const valorBrutoCentavos = Math.max(
+          0,
+          productChargesCentavos - promoProdutoCentavos,
+        );
 
         const settlementId =
           findSettlementId(transaction) ??
@@ -1339,6 +1362,7 @@ async function syncFinancialEvents(
                 brutoCheioCentavos,
                 taxasCentavos: linha.taxasCentavos,
                 baseBrutoCentavos: linha.valorBrutoCentavos,
+                fretesCentavos: linha.fretesCentavos,
               })
             : null;
 
@@ -1363,7 +1387,9 @@ async function syncFinancialEvents(
               taxasCentavos: reconciliado
                 ? reconciliado.taxasCentavos
                 : linha.taxasCentavos,
-              fretesCentavos: linha.fretesCentavos,
+              fretesCentavos: reconciliado
+                ? reconciliado.fretesCentavos
+                : linha.fretesCentavos,
               ...(atualizarBruto
                 ? {
                     valorBrutoCentavos: linha.valorBrutoCentavos,
@@ -4013,8 +4039,10 @@ export async function syncSettlementReports(): Promise<SyncSettlementResult> {
   let erros = 0;
 
   for (const report of doneReports) {
-    const existing = await db.amazonSettlementReport.findUnique({
+    // findFirst auto-escopado — reportId é único POR EMPRESA agora.
+    const existing = await db.amazonSettlementReport.findFirst({
       where: { reportId: report.reportId },
+      select: { processadoEm: true },
     });
     if (existing?.processadoEm) continue;
 
@@ -4055,7 +4083,12 @@ export async function syncSettlementReports(): Promise<SyncSettlementResult> {
       const periodoFim = summary.endDate ? new Date(summary.endDate) : null;
 
       await db.amazonSettlementReport.upsert({
-        where: { reportId: report.reportId },
+        where: {
+          empresaId_reportId: {
+            empresaId: currentEmpresaIdOrDefault(),
+            reportId: report.reportId,
+          },
+        },
         create: {
           reportId: report.reportId,
           reportDocumentId: report.reportDocumentId,

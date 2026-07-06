@@ -7,8 +7,11 @@ import { PeriodoPreset, resolverPeriodo } from "@/lib/periodo";
 import {
   dataVendaPeriodoSP,
   normalizarVisaoVendas,
+  whereVendaAmazonEspelhoGestorSeller,
   whereVendaAmazonPorVisao,
 } from "@/modules/vendas/filtros";
+import { separarVendasReembolsadas } from "@/modules/dashboard-ecommerce/reembolso-faturamento";
+import { chaveVendaReembolso } from "@/modules/dashboard-ecommerce/reembolso-faturamento";
 import { valorBrutoDaVenda } from "@/modules/vendas/valores";
 
 export const dynamic = "force-dynamic";
@@ -56,21 +59,29 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       ]);
     }
 
-    const where = whereVendaAmazonPorVisao(visao, filtros);
+    // Visão DEFAULT (principal, sem chips de status): usa a MESMA definição do
+    // card Faturamento do dashboard — base EspelhoGestorSeller + remoção apenas
+    // das vendas TOTALMENTE reembolsadas cujo AmazonReembolso caiu DENTRO da
+    // janela. Antes, os KPIs daqui excluíam reembolsadas para sempre e os dois
+    // lugares mostravam números diferentes para o mesmo período. Com visão ou
+    // status explícitos, mantém o recorte deliberado do usuário.
+    const alinharComDashboard = visao === "principal" && statusesArr.length === 0;
+    const where = alinharComDashboard
+      ? whereVendaAmazonEspelhoGestorSeller(filtros)
+      : whereVendaAmazonPorVisao(visao, filtros);
 
-    const [vendas, agg, ultimaImportacao] = await Promise.all([
+    const [vendasBase, ultimaImportacao] = await Promise.all([
       db.vendaAmazon.findMany({
         where,
         select: {
           amazonOrderId: true,
+          sku: true,
           quantidade: true,
           precoUnitarioCentavos: true,
           valorBrutoCentavos: true,
+          statusPedido: true,
+          statusFinanceiro: true,
         },
-      }),
-      db.vendaAmazon.aggregate({
-        where,
-        _sum: { quantidade: true },
       }),
       db.amazonSyncLog.findFirst({
         orderBy: { createdAt: "desc" },
@@ -78,11 +89,38 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       }),
     ]);
 
+    let vendas = vendasBase;
+    if (alinharComDashboard) {
+      const dataVenda = filtros.dataVenda as
+        | { gte?: Date; lte?: Date }
+        | undefined;
+      const reembolsos = await db.amazonReembolso.findMany({
+        where: dataVenda
+          ? { dataReembolso: { gte: dataVenda.gte, lte: dataVenda.lte } }
+          : {},
+        select: { amazonOrderId: true, sku: true },
+      });
+      const reembolsoKeys = new Set(
+        reembolsos
+          .filter((r) => r.sku)
+          .map((r) =>
+            chaveVendaReembolso({
+              amazonOrderId: r.amazonOrderId,
+              sku: r.sku as string,
+            }),
+          ),
+      );
+      vendas = separarVendasReembolsadas(vendasBase, reembolsoKeys).faturaveis;
+    }
+
     const receitaBrutaCentavos = vendas.reduce(
       (acc, venda) => acc + valorBrutoDaVenda(venda),
       0,
     );
-    const unidadesVendidas = agg._sum.quantidade ?? 0;
+    const unidadesVendidas = vendas.reduce(
+      (acc, venda) => acc + venda.quantidade,
+      0,
+    );
     const quantidadePedidos = new Set(vendas.map((venda) => venda.amazonOrderId))
       .size;
     const ticketMedioCentavos =

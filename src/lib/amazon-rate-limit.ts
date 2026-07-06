@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { currentEmpresaIdOrDefault } from "@/lib/tenant-context";
 
 export const AmazonSpApiOperation = {
   ORDERS_SEARCH: "ORDERS_SEARCH",
@@ -224,12 +225,21 @@ export function isAmazonQuotaCooldownError(
   return error instanceof AmazonQuotaCooldownError;
 }
 
-// Cache em memória do rps efetivo por operação (default ou observado).
-// Reduz round-trip ao banco em hot path.
+// Cache em memória do rps efetivo POR EMPRESA+operação (default ou observado).
+// Reduz round-trip ao banco em hot path. A chave inclui a empresa porque o
+// worker processa os DOIS tenants no mesmo processo e cada app LWA tem a sua
+// calibração — antes o observado de um contaminava o outro.
 const effectiveRpsCache = new Map<string, number>();
 
+function rpsCacheKey(operation: AmazonSpApiOperation): string {
+  return `${currentEmpresaIdOrDefault()}:${operation}`;
+}
+
 function getEffectiveRps(operation: AmazonSpApiOperation): number {
-  return effectiveRpsCache.get(operation) ?? OPERATION_LIMITS[operation].rateLimitPerSecond;
+  return (
+    effectiveRpsCache.get(rpsCacheKey(operation)) ??
+    OPERATION_LIMITS[operation].rateLimitPerSecond
+  );
 }
 
 function getEffectiveDelayMs(operation: AmazonSpApiOperation): number {
@@ -242,11 +252,13 @@ export async function reserveAmazonOperationSlot(
   now = new Date(),
 ) {
   const limit = OPERATION_LIMITS[operation];
-  const current = await db.amazonApiQuota.findUnique({ where: { operation } });
+  // findFirst auto-escopado por empresa (cooldown é POR app LWA — um 429 da
+  // UDN não pode cegar a mundofs, e vice-versa).
+  const current = await db.amazonApiQuota.findFirst({ where: { operation } });
 
   // Sincroniza o cache com observedRps salvo no banco (na primeira chamada).
-  if (current?.observedRps && !effectiveRpsCache.has(operation)) {
-    effectiveRpsCache.set(operation, current.observedRps);
+  if (current?.observedRps && !effectiveRpsCache.has(rpsCacheKey(operation))) {
+    effectiveRpsCache.set(rpsCacheKey(operation), current.observedRps);
   }
 
   if (current?.nextAllowedAt && current.nextAllowedAt > now) {
@@ -255,7 +267,12 @@ export async function reserveAmazonOperationSlot(
 
   const nextAllowedAt = new Date(now.getTime() + getEffectiveDelayMs(operation));
   await db.amazonApiQuota.upsert({
-    where: { operation },
+    where: {
+      empresaId_operation: {
+        empresaId: currentEmpresaIdOrDefault(),
+        operation,
+      },
+    },
     create: {
       operation,
       nextAllowedAt,
@@ -305,7 +322,7 @@ export async function getAmazonOperationCooldown(
   operation: AmazonSpApiOperation,
   now = new Date(),
 ): Promise<Date | null> {
-  const current = await db.amazonApiQuota.findUnique({ where: { operation } });
+  const current = await db.amazonApiQuota.findFirst({ where: { operation } });
   if (current?.nextAllowedAt && current.nextAllowedAt > now) {
     return current.nextAllowedAt;
   }
@@ -318,7 +335,12 @@ export async function markAmazonOperationSuccess(
 ) {
   const limit = OPERATION_LIMITS[operation];
   await db.amazonApiQuota.upsert({
-    where: { operation },
+    where: {
+      empresaId_operation: {
+        empresaId: currentEmpresaIdOrDefault(),
+        operation,
+      },
+    },
     create: {
       operation,
       rateLimitPerSecond: limit.rateLimitPerSecond,
@@ -352,7 +374,12 @@ export async function markAmazonOperationRateLimited({
   const limit = OPERATION_LIMITS[operation];
 
   await db.amazonApiQuota.upsert({
-    where: { operation },
+    where: {
+      empresaId_operation: {
+        empresaId: currentEmpresaIdOrDefault(),
+        operation,
+      },
+    },
     create: {
       operation,
       nextAllowedAt,
@@ -395,17 +422,17 @@ export async function adoptObservedRateLimit(
   const effective = Math.min(Math.max(observed, default_), cap);
 
   // Se já está cacheado com o mesmo valor, nada a fazer.
-  if (Math.abs((effectiveRpsCache.get(operation) ?? 0) - effective) < 1e-6) return;
-
-  effectiveRpsCache.set(operation, effective);
-  try {
-    await db.amazonApiQuota.update({
-      where: { operation },
-      data: { observedRps: effective },
-    });
-  } catch {
-    // Sem registro ainda — ignoramos; reserveAmazonOperationSlot vai criar.
+  if (Math.abs((effectiveRpsCache.get(rpsCacheKey(operation)) ?? 0) - effective) < 1e-6) {
+    return;
   }
+
+  effectiveRpsCache.set(rpsCacheKey(operation), effective);
+  // updateMany auto-escopado: sem registro ainda, count=0 (sem erro) —
+  // reserveAmazonOperationSlot cria a linha da empresa na próxima reserva.
+  await db.amazonApiQuota.updateMany({
+    where: { operation },
+    data: { observedRps: effective },
+  });
 }
 
 export async function getAmazonQuotaSnapshot() {

@@ -85,14 +85,25 @@ export function reconciliarFinanceiroParaBrutoCheio(input: {
   taxasCentavos: number;
   /** Bruto (ProductCharges) que as `taxasCentavos` representam no evento. */
   baseBrutoCentavos: number;
-}): { taxasCentavos: number; liquidoMarketplaceCentavos: number } {
+  /**
+   * Frete trazido pelo evento Finance (mesma base do evento). Re-escalado pelo
+   * MESMO fator das taxas — antes o frete de 1 unidade era gravado contra o
+   * bruto de N unidades no multi-unidade.
+   */
+  fretesCentavos?: number;
+}): {
+  taxasCentavos: number;
+  fretesCentavos: number;
+  liquidoMarketplaceCentavos: number;
+} {
   const brutoCheio = normalizarCentavos(input.brutoCheioCentavos);
   if (brutoCheio <= 0) {
-    return { taxasCentavos: 0, liquidoMarketplaceCentavos: 0 };
+    return { taxasCentavos: 0, fretesCentavos: 0, liquidoMarketplaceCentavos: 0 };
   }
 
   const taxas = normalizarCentavos(input.taxasCentavos);
   const base = normalizarCentavos(input.baseBrutoCentavos);
+  const fretes = normalizarCentavos(input.fretesCentavos);
 
   // Sem base confiável para derivar a taxa: mantém as taxas (clampadas a [0,bruto])
   // e apenas garante o invariante liquido = bruto - taxas.
@@ -100,14 +111,86 @@ export function reconciliarFinanceiroParaBrutoCheio(input: {
     const taxasClamp = Math.min(Math.max(taxas, 0), brutoCheio);
     return {
       taxasCentavos: taxasClamp,
+      fretesCentavos: Math.max(fretes, 0),
       liquidoMarketplaceCentavos: brutoCheio - taxasClamp,
     };
   }
 
   const taxasCheias = Math.round((brutoCheio * taxas) / base);
   const taxasClamp = Math.min(Math.max(taxasCheias, 0), brutoCheio);
+  const fretesCheios = Math.max(Math.round((brutoCheio * fretes) / base), 0);
   return {
     taxasCentavos: taxasClamp,
+    fretesCentavos: fretesCheios,
     liquidoMarketplaceCentavos: brutoCheio - taxasClamp,
   };
+}
+
+/**
+ * Desconto promocional de PRODUTO (cupom/desconto financiado pelo seller) de
+ * um item da Transactions API v2024: breakdown top-level `PromoRebates` (ou
+ * `PromoRebateAccrued`), EXCLUINDO o sub-desconto de frete (que pertence à
+ * linha de frete, não ao produto).
+ *
+ * Por quê: o bruto da venda deve ser o que o COMPRADOR pagou pelo produto.
+ * DEALS já chegam líquidos em `ProductCharges` (comprovado em prod — payload
+ * da oferta traz ProductCharges = preço da oferta, sem PromoRebates); CUPONS
+ * vêm com `ProductCharges` cheio + `PromoRebates` negativo destacado. Sem esta
+ * dedução, venda com cupom infla `valorBruto` vs Seller Central. Espelha a
+ * regra do sync de Orders (`ItemPrice - PromotionDiscount`).
+ */
+export function extrairPromoRebatesProdutoDoItemCentavos(item: unknown): number {
+  if (!isRecordFin(item)) return 0;
+  const breakdowns = (item as { breakdowns?: unknown }).breakdowns;
+  if (!Array.isArray(breakdowns)) return 0;
+
+  let promoProduto = 0;
+  for (const bd of breakdowns) {
+    if (!isRecordFin(bd)) continue;
+    const tipo = normalizarTipoBreakdown(bd.breakdownType);
+    if (tipo !== "promorebates" && tipo !== "promorebateaccrued") continue;
+
+    const total = Math.abs(amountCentavosFin(bd.breakdownAmount));
+    const subs = Array.isArray(bd.breakdowns) ? bd.breakdowns : [];
+
+    let descontoFrete = 0;
+    for (const sub of subs) {
+      if (!isRecordFin(sub)) continue;
+      const subTipo = normalizarTipoBreakdown(sub.breakdownType);
+      if (
+        subTipo === "shippingdiscount" ||
+        subTipo === "shippingpromotiondiscount" ||
+        subTipo === "shippingpromotionaldiscount"
+      ) {
+        descontoFrete += Math.abs(amountCentavosFin(sub.breakdownAmount));
+      }
+    }
+
+    promoProduto += Math.max(0, total - descontoFrete);
+  }
+  return promoProduto;
+}
+
+function normalizarTipoBreakdown(value: unknown): string {
+  return typeof value === "string"
+    ? value.toLowerCase().replace(/[^a-z]/g, "")
+    : "";
+}
+
+function amountCentavosFin(raw: unknown): number {
+  if (raw == null) return 0;
+  if (typeof raw === "number" && Number.isFinite(raw)) return Math.round(raw * 100);
+  if (typeof raw === "string") {
+    const parsed = Number(raw.replace(/,/g, "."));
+    return Number.isFinite(parsed) ? Math.round(parsed * 100) : 0;
+  }
+  if (!isRecordFin(raw)) return 0;
+  const nested =
+    raw.currencyAmount ?? raw.amount ?? raw.Amount ?? raw.value ?? raw.Value;
+  if (nested == null || nested === raw) return 0;
+  return amountCentavosFin(nested);
+}
+
+function isRecordFin(value: unknown): value is Record<string, unknown> {
+  return value != null && typeof value === "object" && !Array.isArray(value);
 }

@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { configKeyParaEmpresa, getEmpresaId } from "@/lib/tenant-context";
+import { configKeyParaEmpresa } from "@/lib/tenant-context";
 
 const KEY_ALIQUOTA = "imposto_simples_aliquota_bps";
 const KEY_ATIVO = "imposto_simples_ativo";
@@ -21,8 +21,12 @@ const cachePorEmpresa = new Map<
   ConfigImpostoSimples & { expiresAt: number }
 >();
 
+// A chave do Map é a própria chave ESCOPADA (nua para a primária e para
+// execuções sem contexto — ambas leem a MESMA linha do banco e por isso
+// compartilham a mesma entrada; `chave::empresaId` para as demais). Resolvida
+// NO MOMENTO DA CHAMADA porque o contexto de tenant muda por execução.
 function cacheKey(): string {
-  return getEmpresaId() ?? "__sem_contexto__";
+  return configKeyParaEmpresa(KEY_ALIQUOTA);
 }
 
 function parseAtivo(valor: string | null | undefined): boolean {
@@ -99,6 +103,9 @@ export async function saveConfigImpostoSimples(input: {
   return getConfigImpostoSimples();
 }
 
+// Limpa o cache de TODAS as empresas de uma vez — simples e seguro: só roda em
+// save (raro) e o custo máximo é uma releitura do banco por empresa no próximo
+// acesso; invalidação seletiva não vale o risco de errar a chave escopada.
 export function invalidateConfigImpostoSimplesCache(): void {
   cachePorEmpresa.clear();
 }

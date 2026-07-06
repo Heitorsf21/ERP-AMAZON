@@ -1,10 +1,64 @@
 import { describe, expect, it } from "vitest";
 import {
+  extrairSellerIdDaNotification,
   extractReportProcessingInfo,
   extractOrderIdsFromNotification,
   parseSqsNotificationBody,
 } from "@/lib/amazon-sqs";
 import { getMarketingStreamDataset } from "@/modules/amazon/parsers/marketing-stream-events";
+
+describe("extrairSellerIdDaNotification", () => {
+  it("ORDER_CHANGE: SellerId no nivel do OrderChangeNotification", () => {
+    expect(
+      extrairSellerIdDaNotification({
+        NotificationType: "ORDER_CHANGE",
+        Payload: {
+          OrderChangeNotification: {
+            SellerId: "A3GE607PEM4478",
+            AmazonOrderId: "702-1",
+          },
+        },
+      }),
+    ).toBe("A3GE607PEM4478");
+  });
+
+  it("ANY_OFFER_CHANGED: sellerId aninhado no trigger", () => {
+    expect(
+      extrairSellerIdDaNotification({
+        NotificationType: "ANY_OFFER_CHANGED",
+        Payload: {
+          AnyOfferChangedNotification: {
+            OfferChangeTrigger: { MarketplaceId: "A2Q3Y263D00KWC" },
+            SellerId: "AUDN123456789",
+          },
+        },
+      }),
+    ).toBe("AUDN123456789");
+  });
+
+  it("FBA_INVENTORY: sellingPartnerId em camelCase", () => {
+    expect(
+      extrairSellerIdDaNotification({
+        NotificationType: "FBA_INVENTORY_AVAILABILITY_CHANGES",
+        payload: { sellingPartnerId: "A3GE607PEM4478" },
+      }),
+    ).toBe("A3GE607PEM4478");
+  });
+
+  it("sem sellerId em lugar nenhum: null (segue na empresa do contexto)", () => {
+    expect(
+      extrairSellerIdDaNotification({
+        NotificationType: "REPORT_PROCESSING_FINISHED",
+        Payload: {
+          ReportProcessingFinishedNotification: {
+            ReportId: "123",
+            ReportType: "GET_V2_SETTLEMENT_REPORT_DATA_FLAT_FILE_V2",
+          },
+        },
+      }),
+    ).toBeNull();
+  });
+});
 
 describe("amazon-sqs", () => {
   it("parseia notificacao SP-API direta", () => {
