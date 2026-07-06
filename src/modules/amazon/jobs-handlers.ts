@@ -8,7 +8,11 @@
  * Cada handler é chamado pelo worker em src/modules/amazon/worker.ts.
  */
 import { db } from "@/lib/db";
-import { cursorKeyParaEmpresa, runWithTenant } from "@/lib/tenant-context";
+import {
+  cursorKeyParaEmpresa,
+  currentEmpresaIdOrDefault,
+  runWithTenant,
+} from "@/lib/tenant-context";
 import {
   getCatalogItem,
   getInventorySummaries,
@@ -83,9 +87,11 @@ export async function syncSettlementReports(creds: SPAPICredentials) {
     if (!report.reportType || !SETTLEMENT_TYPES.includes(report.reportType)) continue;
     if (report.processingStatus && report.processingStatus !== "DONE") continue;
 
-    // Já registrado?
-    const existente = await db.amazonSettlementReport.findUnique({
+    // Já registrado? findFirst é auto-escopado por empresa pela extensão —
+    // reportId agora é único POR EMPRESA (@@unique([empresaId, reportId])).
+    const existente = await db.amazonSettlementReport.findFirst({
       where: { reportId: report.reportId },
+      select: { processadoEm: true },
     });
     if (existente?.processadoEm) continue;
 
@@ -112,7 +118,12 @@ export async function syncSettlementReports(creds: SPAPICredentials) {
       );
 
       await db.amazonSettlementReport.upsert({
-        where: { reportId: report.reportId },
+        where: {
+          empresaId_reportId: {
+            empresaId: currentEmpresaIdOrDefault(),
+            reportId: report.reportId,
+          },
+        },
         create: {
           reportId: report.reportId,
           reportDocumentId: report.reportDocumentId,
@@ -948,8 +959,9 @@ export async function runSettlementBackfill(creds: SPAPICredentials) {
       continue;
     if (report.processingStatus && report.processingStatus !== "DONE") continue;
 
-    const existente = await db.amazonSettlementReport.findUnique({
+    const existente = await db.amazonSettlementReport.findFirst({
       where: { reportId: report.reportId },
+      select: { processadoEm: true },
     });
     if (existente?.processadoEm) continue;
 
@@ -973,7 +985,12 @@ export async function runSettlementBackfill(creds: SPAPICredentials) {
       );
 
       await db.amazonSettlementReport.upsert({
-        where: { reportId: report.reportId },
+        where: {
+          empresaId_reportId: {
+            empresaId: currentEmpresaIdOrDefault(),
+            reportId: report.reportId,
+          },
+        },
         create: {
           reportId: report.reportId,
           reportDocumentId: report.reportDocumentId,
@@ -1059,7 +1076,13 @@ export async function runInventorySnapshot(creds: SPAPICredentials) {
 
     await db.inventorySnapshot.upsert({
       where: {
-        sku_dataSnapshot: { sku: s.sellerSku, dataSnapshot: today },
+        // Unique composto por empresa: o MESMO sku pode existir nos dois
+        // tenants — o upsert nunca pode casar a linha do outro.
+        empresaId_sku_dataSnapshot: {
+          empresaId: currentEmpresaIdOrDefault(),
+          sku: s.sellerSku,
+          dataSnapshot: today,
+        },
       },
       create: { sku: s.sellerSku, dataSnapshot: today, ...data },
       update: data,
@@ -1432,12 +1455,15 @@ async function upsertFbaReimbursements(
       payloadJson: JSON.stringify(row.payload),
     };
 
-    const existing = await db.amazonReimbursement.findUnique({
+    // findFirst auto-escopado por empresa (naturalKey deriva de ASIN/report —
+    // dois sellers podem colidir); update pelo id da linha do próprio tenant.
+    const existing = await db.amazonReimbursement.findFirst({
       where: { naturalKey: row.naturalKey },
+      select: { id: true },
     });
     if (existing) {
       await db.amazonReimbursement.update({
-        where: { naturalKey: row.naturalKey },
+        where: { id: existing.id },
         data,
       });
       atualizadas++;
@@ -1496,12 +1522,13 @@ async function upsertReturns(
       payloadJson: JSON.stringify(row.payload),
     };
 
-    const existing = await db.amazonReturn.findUnique({
+    const existing = await db.amazonReturn.findFirst({
       where: { naturalKey: row.naturalKey },
+      select: { id: true },
     });
     if (existing) {
       await db.amazonReturn.update({
-        where: { naturalKey: row.naturalKey },
+        where: { id: existing.id },
         data,
       });
       atualizadas++;
@@ -1547,12 +1574,13 @@ async function upsertStorageFees(
       payloadJson: JSON.stringify(row.payload),
     };
 
-    const existing = await db.amazonStorageFee.findUnique({
+    const existing = await db.amazonStorageFee.findFirst({
       where: { naturalKey: row.naturalKey },
+      select: { id: true },
     });
     if (existing) {
       await db.amazonStorageFee.update({
-        where: { naturalKey: row.naturalKey },
+        where: { id: existing.id },
         data,
       });
       atualizadas++;
@@ -1592,12 +1620,13 @@ async function upsertTrafficRows(
       produtoId,
       payloadJson: JSON.stringify(row.payload),
     };
-    const existing = await db.amazonSkuTrafficDaily.findUnique({
-      where: { sku_data: { sku: row.sku, data: row.data } },
+    const existing = await db.amazonSkuTrafficDaily.findFirst({
+      where: { sku: row.sku, data: row.data },
+      select: { id: true },
     });
     if (existing) {
       await db.amazonSkuTrafficDaily.update({
-        where: { sku_data: { sku: row.sku, data: row.data } },
+        where: { id: existing.id },
         data,
       });
       atualizadas++;
@@ -1616,9 +1645,12 @@ async function upsertTrafficRows(
   return { criadas, atualizadas };
 }
 
-// Upsert das metricas byDate (nivel conta, 1 linha por dia). Idempotente por
-// `data` (@unique): a janela de 30d do report cobre os mesmos dias a cada
-// execucao, e cada dia e sobrescrito — NUNCA somado (ao contrario do bug byAsin).
+// Upsert das metricas byDate (nivel conta, 1 linha por dia POR EMPRESA —
+// @@unique([empresaId, data])). Idempotente: a janela de 30d do report cobre
+// os mesmos dias a cada execucao, e cada dia e sobrescrito — NUNCA somado.
+// findFirst e auto-escopado pela extensao: o job de uma empresa jamais casa
+// (nem sobrescreve) a linha da outra — era o bug que fazia o TRAFFIC_SYNC da
+// UDN reescrever os 30 dias da mundofs nos cards de trafego do dashboard.
 async function upsertTrafficByDateRows(
   rows: ReturnType<typeof parseSalesTrafficByDateJson>,
 ) {
@@ -1636,11 +1668,12 @@ async function upsertTrafficByDateRows(
       currency: row.currency,
       payloadJson: JSON.stringify(row.payload),
     };
-    const existing = await db.amazonTrafficDaily.findUnique({
+    const existing = await db.amazonTrafficDaily.findFirst({
       where: { data: row.data },
+      select: { id: true },
     });
     if (existing) {
-      await db.amazonTrafficDaily.update({ where: { data: row.data }, data: campos });
+      await db.amazonTrafficDaily.update({ where: { id: existing.id }, data: campos });
       byDateAtualizadas++;
     } else {
       await db.amazonTrafficDaily.create({ data: { data: row.data, ...campos } });

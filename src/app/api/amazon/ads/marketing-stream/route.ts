@@ -9,7 +9,7 @@
  */
 
 import { erro, handle, ok } from "@/lib/api";
-import { requireRole, UsuarioRole } from "@/lib/auth";
+import { assertEmpresaPrimaria, requireRole, UsuarioRole } from "@/lib/auth";
 import {
   ADS_REQUIRED_CONFIG_KEYS,
   buildAdsCredentials,
@@ -46,7 +46,10 @@ async function getCredentialsOrError() {
 }
 
 export const GET = handle(async () => {
-  await requireRole(UsuarioRole.ADMIN);
+  const session = await requireRole(UsuarioRole.ADMIN);
+  // Subscriptions usam a credencial Ads GLOBAL legada (ConfiguracaoSistema da
+  // empresa primária) + SQS única — só a primária lê/gerencia.
+  assertEmpresaPrimaria(session);
   const { creds } = await getCredentialsOrError();
   const states = await getMarketingStreamSubscriptionStates(creds);
   return ok({
@@ -65,7 +68,8 @@ export const GET = handle(async () => {
 });
 
 export const POST = handle(async (request: Request) => {
-  await requireRole(UsuarioRole.ADMIN);
+  const session = await requireRole(UsuarioRole.ADMIN);
+  assertEmpresaPrimaria(session);
   const { creds, response } = await getCredentialsOrError();
   if (response) return response;
 
@@ -110,7 +114,8 @@ export const POST = handle(async (request: Request) => {
 });
 
 export const DELETE = handle(async (request: Request) => {
-  await requireRole(UsuarioRole.ADMIN);
+  const session = await requireRole(UsuarioRole.ADMIN);
+  assertEmpresaPrimaria(session);
   const { creds, response } = await getCredentialsOrError();
   if (response) return response;
 

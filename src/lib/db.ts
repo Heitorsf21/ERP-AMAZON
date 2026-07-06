@@ -80,6 +80,9 @@ const TENANT_MODELS = new Set<string>([
   "AdsCampanha",
   "Notificacao",
   "Tarefa",
+  // Molde das tarefas recorrentes — ficou de fora no onboarding do 2º tenant e
+  // vazava agenda entre empresas (moldes de uma materializavam Tarefas na outra).
+  "TarefaRecorrente",
   "FbmPickingBatch",
   "FbmPickingItem",
   "AmazonSettlementReport",
@@ -90,6 +93,10 @@ const TENANT_MODELS = new Set<string>([
   "AmazonReturn",
   "AmazonStorageFee",
   "AmazonSkuTrafficDaily",
+  // Traffic byDate (Sales & Traffic) — ficou de fora no onboarding do 2º tenant
+  // e o TRAFFIC_SYNC da UDN (diasAtras 30) sobrescrevia os 30 dias da mundofs
+  // via unique global em `data` (bug dos cards Receita ordenada/Sessões).
+  "AmazonTrafficDaily",
   "AmazonAdsCampanha",
   "AmazonAdsMetricaDiaria",
   "AmazonAdsMetricaHoraria",

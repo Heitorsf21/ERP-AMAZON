@@ -838,7 +838,7 @@ model AmazonNotification {
 model AmazonApiQuota {
   id                 String    @id @default(cuid())
   empresaId          String?
-  operation          String    @unique
+  operation          String
   nextAllowedAt      DateTime?
   rateLimitPerSecond Float?
   burst              Int?
@@ -850,6 +850,9 @@ model AmazonApiQuota {
   updatedAt          DateTime  @updatedAt
 
   @@index([nextAllowedAt])
+
+  @@unique([empresaId, operation])
+  @@index([operation])
 }
 
 model AmazonReviewSolicitation {
@@ -1214,9 +1217,9 @@ model FbmPickingItem {
 model AmazonSettlementReport {
   id                  String    @id @default(cuid())
   empresaId           String?
-  reportId            String    @unique
+  reportId            String
   reportDocumentId    String?
-  settlementId        String?   @unique
+  settlementId        String?
   periodoInicio       DateTime?
   periodoFim          DateTime?
   depositDate         DateTime?
@@ -1229,6 +1232,10 @@ model AmazonSettlementReport {
   @@index([settlementId])
   @@index([depositDate])
   @@index([processadoEm])
+
+  @@unique([empresaId, reportId])
+  @@unique([empresaId, settlementId])
+  @@index([reportId])
 }
 
 // Histórico de buybox por SKU (medido em intervalos do BUYBOX_CHECK).
@@ -1302,7 +1309,7 @@ model InventorySnapshot {
 
   produto Produto? @relation(fields: [produtoId], references: [id], onDelete: SetNull)
 
-  @@unique([sku, dataSnapshot])
+  @@unique([empresaId, sku, dataSnapshot])
   @@index([sku])
   @@index([dataSnapshot])
   @@index([produtoId])
@@ -1313,7 +1320,7 @@ model InventorySnapshot {
 model AmazonReimbursement {
   id                        String    @id @default(cuid())
   empresaId                 String?
-  naturalKey                String    @unique
+  naturalKey                String
   reportId                  String?
   reimbursementId           String?
   caseId                    String?
@@ -1345,12 +1352,15 @@ model AmazonReimbursement {
   @@index([asin])
   @@index([reimbursementId])
   @@index([produtoId])
+
+  @@unique([empresaId, naturalKey])
+  @@index([naturalKey])
 }
 
 model AmazonReturn {
   id                    String    @id @default(cuid())
   empresaId             String?
-  naturalKey            String    @unique
+  naturalKey            String
   reportId              String?
   tipoReport            String
   returnDate            DateTime?
@@ -1380,12 +1390,15 @@ model AmazonReturn {
   @@index([asin])
   @@index([produtoId])
   @@index([tipoReport])
+
+  @@unique([empresaId, naturalKey])
+  @@index([naturalKey])
 }
 
 model AmazonStorageFee {
   id                            String    @id @default(cuid())
   empresaId                     String?
-  naturalKey                    String    @unique
+  naturalKey                    String
   reportId                      String?
   asin                          String?
   fnSku                         String?
@@ -1410,6 +1423,9 @@ model AmazonStorageFee {
   @@index([monthOfCharge])
   @@index([asin])
   @@index([fnSku])
+
+  @@unique([empresaId, naturalKey])
+  @@index([naturalKey])
 }
 
 model AmazonSkuTrafficDaily {
@@ -1433,7 +1449,7 @@ model AmazonSkuTrafficDaily {
 
   produto Produto? @relation(fields: [produtoId], references: [id], onDelete: SetNull)
 
-  @@unique([sku, data])
+  @@unique([empresaId, sku, data])
   @@index([data])
   @@index([sku])
   @@index([produtoId])
@@ -1446,7 +1462,7 @@ model AmazonSkuTrafficDaily {
 model AmazonTrafficDaily {
   id                     String   @id @default(cuid())
   empresaId              String?
-  data                   DateTime @unique
+  data                   DateTime
   sessoes                Int      @default(0)
   pageViews              Int      @default(0)
   unitsOrdered           Int      @default(0)
@@ -1457,6 +1473,9 @@ model AmazonTrafficDaily {
   payloadJson            String
   criadoEm               DateTime @default(now())
   atualizadoEm           DateTime @updatedAt
+
+  @@unique([empresaId, data])
+  @@index([data])
 }
 
 // ── Sprint 5.5: Amazon Advertising (Sponsored Products) ─────────────────────

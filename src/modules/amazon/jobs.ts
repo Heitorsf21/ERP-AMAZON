@@ -267,7 +267,12 @@ const SCHEDULES: Array<{
     intervalMs: 24 * 60 * 60_000,
     priority: 6,
     payload: { diasAtras: 30 },
-    gate: isReportsApiBusy,
+    // SEM gate isReportsApiBusy: com backfill/settlement mantendo REPORTS_* em
+    // cooldown quase contínuo, o gate segurava o enfileiramento o dia inteiro e
+    // este job DIÁRIO simplesmente não rodava (mundofs ficou sem Sales&Traffic
+    // desde 03/07). O handler já respeita quota via reserveAmazonOperationSlot →
+    // AmazonQuotaCooldownError → retry/backoff da fila — mecanismo certo para um
+    // job 1x/dia que PRECISA acontecer.
   },
   // Sprint 5.5: Amazon Advertising (Sponsored Products).
   // Lifecycle progressivo: cada execucao ou cria um report novo ou avanca o

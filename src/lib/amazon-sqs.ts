@@ -13,6 +13,7 @@ import {
 } from "@aws-sdk/client-sqs";
 import { createHash } from "node:crypto";
 import { db } from "@/lib/db";
+import { getEmpresaId, runWithTenant } from "@/lib/tenant-context";
 import { enqueueAmazonSyncJob } from "@/modules/amazon/jobs";
 import {
   getMarketingStreamDataset,
@@ -70,6 +71,16 @@ const ORDER_ID_KEYS = new Set([
   "amazonorderids",
   "orderid",
   "orderids",
+]);
+
+// Chaves que carregam o seller dono da notification nos payloads do SP-API
+// (ORDER_CHANGE traz SellerId; ANY_OFFER_CHANGED/FBA_INVENTORY/REPORT_* trazem
+// sellerId/sellingPartnerId conforme o shape). Usadas para rotear a notification
+// para a EMPRESA correta — cada app LWA publica na mesma fila da plataforma.
+const SELLER_ID_KEYS = new Set([
+  "sellerid",
+  "sellingpartnerid",
+  "merchantid",
 ]);
 
 const SETTLEMENT_REPORT_TYPE = "GET_V2_SETTLEMENT_REPORT_DATA_FLAT_FILE_V2";
@@ -163,6 +174,29 @@ export async function recordAndDispatchSqsMessage(
   }
 
   const notification = parseSqsNotificationBody(message.Body);
+
+  // Roteamento multi-empresa: a fila SQS é ÚNICA da plataforma, mas cada
+  // notification pertence ao seller (app LWA) que a publicou. Resolvemos a
+  // empresa pelo sellerId ANTES de qualquer escrita, para que auditoria
+  // (AmazonNotification) e jobs (AmazonSyncJob) nasçam no tenant certo — antes
+  // TUDO caía na empresa primária e a UDN nunca recebia eventos em tempo real.
+  const empresaResolvida = await resolverEmpresaDaNotification(notification);
+  if (empresaResolvida && empresaResolvida !== getEmpresaId()) {
+    return runWithTenant(
+      { empresaId: empresaResolvida, isSuperAdmin: false, source: "worker" },
+      () => processarNotificacaoSqs(notification, message),
+    );
+  }
+  return processarNotificacaoSqs(notification, message);
+}
+
+async function processarNotificacaoSqs(
+  notification: AmazonSqsNotification,
+  message: Pick<Message, "Body" | "MessageId">,
+): Promise<{ processed: boolean; notificationId: string; jobsCriadosIds: string[] }> {
+  if (!message.Body) {
+    throw new Error("Mensagem SQS sem Body.");
+  }
 
   // SNS SubscriptionConfirmation: precisa GET no SubscribeURL pra ativar o fluxo.
   // Marketing Stream entrega via SNS topics dedicados por dataset (primeira
@@ -470,6 +504,69 @@ async function confirmSnsSubscription(
     };
   }
   return { confirmed: true, topicArn };
+}
+
+/**
+ * Extrai o sellerId dono da notification (SellerId/sellingPartnerId/merchantId,
+ * em qualquer nível do payload). Pura e exportada para teste.
+ */
+export function extrairSellerIdDaNotification(
+  notification: AmazonSqsNotification,
+): string | null {
+  let sellerId: string | null = null;
+  visitNotificationRecords(getPayload(notification) ?? notification, (record) => {
+    if (sellerId) return;
+    for (const [key, value] of Object.entries(record)) {
+      if (!SELLER_ID_KEYS.has(normalizeNotificationKey(key))) continue;
+      const normalized = normalizeSingleString(value);
+      if (normalized) {
+        sellerId = normalized;
+        return;
+      }
+    }
+  });
+  return sellerId;
+}
+
+// Cache sellerId → empresaId (TTL 5min). AmazonAccount é GLOBAL_MODEL — a
+// consulta não é auto-filtrada e pode rodar antes do runWithTenant.
+const EMPRESA_POR_SELLER_TTL_MS = 5 * 60_000;
+const empresaPorSellerCache = new Map<
+  string,
+  { empresaId: string | null; expiresAt: number }
+>();
+const sellerNaoResolvidoLogged = new Set<string>();
+
+async function resolverEmpresaDaNotification(
+  notification: AmazonSqsNotification,
+): Promise<string | null> {
+  const sellerId = extrairSellerIdDaNotification(notification);
+  if (!sellerId) return null;
+
+  const cached = empresaPorSellerCache.get(sellerId);
+  if (cached && cached.expiresAt > Date.now()) return cached.empresaId;
+
+  const conta = await db.amazonAccount.findFirst({
+    where: { sellerId, ativa: true },
+    select: { empresaId: true },
+  });
+  const empresaId = conta?.empresaId ?? null;
+  empresaPorSellerCache.set(sellerId, {
+    empresaId,
+    expiresAt: Date.now() + EMPRESA_POR_SELLER_TTL_MS,
+  });
+
+  if (!empresaId) {
+    const tipo = getNotificationType(notification) ?? "?";
+    const logKey = `${tipo}:${sellerId}`;
+    if (!sellerNaoResolvidoLogged.has(logKey)) {
+      sellerNaoResolvidoLogged.add(logKey);
+      console.warn(
+        `[amazon-sqs] sellerId ${sellerId} sem AmazonAccount ativa — notification ${tipo} segue na empresa do contexto corrente.`,
+      );
+    }
+  }
+  return empresaId;
 }
 
 export function extractOrderIdsFromNotification(

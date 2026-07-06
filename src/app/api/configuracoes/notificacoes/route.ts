@@ -2,11 +2,15 @@ import { NextRequest } from "next/server";
 import { handle, ok } from "@/lib/api";
 import { requireRole, requireSession, UsuarioRole } from "@/lib/auth";
 import { db } from "@/lib/db";
+import { configKeyParaEmpresa } from "@/lib/tenant-context";
 import { TipoNotificacao } from "@/modules/shared/domain";
 
 export const dynamic = "force-dynamic";
 
-const CHAVE = "notif_preferencias";
+// Escopada por empresa via configKeyParaEmpresa: a primária mantém a chave
+// nua (retrocompat — zero mudança p/ mundofs); demais empresas usam
+// "notif_preferencias::<empresaId>" e começam no default do sistema.
+const CHAVE_BASE = "notif_preferencias";
 
 type Preferencias = Partial<Record<keyof typeof TipoNotificacao, boolean>>;
 
@@ -20,7 +24,8 @@ function defaultPreferencias(): Preferencias {
 
 export const GET = handle(async () => {
   await requireSession();
-  const row = await db.configuracaoSistema.findUnique({ where: { chave: CHAVE } });
+  const chave = configKeyParaEmpresa(CHAVE_BASE);
+  const row = await db.configuracaoSistema.findUnique({ where: { chave } });
   if (!row) return ok({ preferencias: defaultPreferencias() });
 
   let parsed: Preferencias = {};
@@ -46,9 +51,10 @@ export const POST = handle(async (req: NextRequest) => {
 
   const merged: Preferencias = { ...defaultPreferencias(), ...safe };
 
+  const chave = configKeyParaEmpresa(CHAVE_BASE);
   await db.configuracaoSistema.upsert({
-    where: { chave: CHAVE },
-    create: { chave: CHAVE, valor: JSON.stringify(merged) },
+    where: { chave },
+    create: { chave, valor: JSON.stringify(merged) },
     update: { valor: JSON.stringify(merged) },
   });
 
