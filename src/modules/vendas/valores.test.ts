@@ -3,6 +3,7 @@ import { agruparLinhasVendaAmazon } from "@/modules/vendas/agrupamento";
 import {
   calcularImpostoSimplesCentavos,
   calcularPrecoUnitarioCentavos,
+  preservarFinanceiroRealNaRevisita,
   resolverPrecoVendaAmazon,
   valorBrutoDaVenda,
   valorBrutoFinanceiroPodeAtualizar,
@@ -151,6 +152,79 @@ describe("resolverPrecoVendaAmazon", () => {
   });
 });
 
+describe("preservarFinanceiroRealNaRevisita", () => {
+  const existenteComFinance = {
+    statusFinanceiro: "DEFERRED",
+    valorBrutoCentavos: 6797,
+    taxasCentavos: 1418,
+    fretesCentavos: 0,
+    liquidoMarketplaceCentavos: 5379,
+  };
+
+  it("preserva taxas/liquido reais do Finance quando o Orders re-visita com ItemTax=0", () => {
+    const r = preservarFinanceiroRealNaRevisita({
+      precoOrigem: "sp-api",
+      valorBrutoNovoCentavos: 6797,
+      taxasOrdersCentavos: 0,
+      existente: existenteComFinance,
+    });
+    expect(r).toEqual({
+      taxasCentavos: 1418,
+      fretesCentavos: 0,
+      liquidoMarketplaceCentavos: 5379,
+    });
+  });
+
+  it("NAO preserva quando o Finance ainda nao confirmou (PENDENTE)", () => {
+    const r = preservarFinanceiroRealNaRevisita({
+      precoOrigem: "sp-api",
+      valorBrutoNovoCentavos: 6797,
+      taxasOrdersCentavos: 0,
+      existente: { ...existenteComFinance, statusFinanceiro: "PENDENTE" },
+    });
+    expect(r).toBeNull();
+  });
+
+  it("NAO preserva quando o bruto mudou (deixa o Finance re-reconciliar)", () => {
+    const r = preservarFinanceiroRealNaRevisita({
+      precoOrigem: "sp-api",
+      valorBrutoNovoCentavos: 7997,
+      taxasOrdersCentavos: 0,
+      existente: existenteComFinance,
+    });
+    expect(r).toBeNull();
+  });
+
+  it("NAO preserva para estimativa (listing) nem sem existente", () => {
+    expect(
+      preservarFinanceiroRealNaRevisita({
+        precoOrigem: "listing",
+        valorBrutoNovoCentavos: 6797,
+        taxasOrdersCentavos: 0,
+        existente: existenteComFinance,
+      }),
+    ).toBeNull();
+    expect(
+      preservarFinanceiroRealNaRevisita({
+        precoOrigem: "sp-api",
+        valorBrutoNovoCentavos: 6797,
+        taxasOrdersCentavos: 0,
+        existente: null,
+      }),
+    ).toBeNull();
+  });
+
+  it("NAO preserva quando existente nao tem taxa real (0)", () => {
+    const r = preservarFinanceiroRealNaRevisita({
+      precoOrigem: "sp-api",
+      valorBrutoNovoCentavos: 6797,
+      taxasOrdersCentavos: 0,
+      existente: { ...existenteComFinance, taxasCentavos: 0 },
+    });
+    expect(r).toBeNull();
+  });
+});
+
 describe("valores de VendaAmazon", () => {
   it("usa valor bruto salvo e calcula fallback por unidade vezes quantidade", () => {
     expect(
@@ -289,6 +363,30 @@ describe("calcularImpostoSimplesCentavos", () => {
       calcularImpostoSimplesCentavos({
         ...base,
         ativo: false,
+        valorBrutoCentavos: 10000,
+      }),
+    ).toBe(0);
+  });
+
+  it("retorna 0 para pedido CANCELADO (sem fato gerador)", () => {
+    expect(
+      calcularImpostoSimplesCentavos({
+        ...base,
+        statusPedido: "Canceled",
+        valorBrutoCentavos: 10000,
+      }),
+    ).toBe(0);
+    expect(
+      calcularImpostoSimplesCentavos({
+        ...base,
+        statusPedido: "Cancelled",
+        valorBrutoCentavos: 10000,
+      }),
+    ).toBe(0);
+    expect(
+      calcularImpostoSimplesCentavos({
+        ...base,
+        statusPedido: "Unfulfillable",
         valorBrutoCentavos: 10000,
       }),
     ).toBe(0);

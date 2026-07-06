@@ -40,6 +40,8 @@ Chave única `(amazonOrderId, sku)`. `liquidoMarketplaceCentavos = valorBruto - 
 
 **Fallback de preço p/ Pending sem ItemPrice** (`resolverPrecoVendaAmazon` em `vendas/valores.ts`): 1º **preço unitário real mais recente do SKU** (vendas `sp-api` ≤7d, `buscarPrecoRealRecentePorSku` no sync de Orders) — acompanha ofertas/deals ativos que a Listings API NÃO expõe em `purchasable_offer` (o cache `amazonPrecoListagemCentavos` fica no preço cheio durante a oferta); 2º cache do listing. Sempre `precoOrigem="listing"` (excluído da contabilidade estrita) até o ItemPrice real chegar via Orders/Finance.
 
+**Exatidão pós-Onda 3 (2026-07-05)**: (1) re-visita do ORDERS_SYNC **preserva taxas/frete/líquido reais do Finance** quando o bruto não mudou (`preservarFinanceiroRealNaRevisita` em `vendas/valores.ts` — Orders só traz ItemTax≈0 no BR e apagava a taxa real); (2) bruto do Finance = `ProductCharges − PromoRebates de produto` (`extrairPromoRebatesProdutoDoItemCentavos` — CUPOM vem destacado; deal já chega líquido); (3) `reconciliarFinanceiroParaBrutoCheio` re-escala também o **frete** no multi-unidade; (4) imposto Simples = 0 para pedidos CANCELADOS (inclusive quantidade-zero); (5) KPIs default de `/api/vendas/totais` usam a MESMA definição do card Faturamento (Espelho + reembolso-na-janela).
+
 **Invariante crítico — `VendaAmazon.taxasCentavos` é APENAS REAL** (Finance API ou SP-API Orders). Estimativas NUNCA são persistidas aqui — vivem apenas em memória no service do dashboard. DRE/Contas a Receber estão protegidos via `whereVendaAmazonContabilizavelEstrito()` que exclui PENDENTE. Write sites em `service.ts`: bloco de Orders (~L788 e L882-884) e bloco de Finance (~L1127/L1202).
 
 ### Fee Estimator (taxas Amazon estimadas, v2)
@@ -189,6 +191,14 @@ Sem redesign radical — incrementais. Protótipo HTML antes de mudanças visuai
 - `pm2 reload erp-web erp-worker erp-sqs-consumer` em UMA linha às vezes só reloada erp-web — usar 3 chamadas separadas pra garantir.
 - Após build: atualizar `GIT_SHA` em `.env` (`git rev-parse --short HEAD`) e fazer `pm2 reload erp-web --update-env` (refletir em `/api/health`).
 - Rollback: `git reset --hard <sha-anterior> && npm run prisma:generate:pg && npm run build && pm2 reload <todos>`.
+
+## Multi-tenant — isolamento por empresa (Ondas 1+2, 2026-07-05)
+- **Uniques compostos com empresaId**: AmazonTrafficDaily `[empresaId,data]` · AmazonApiQuota `[empresaId,operation]` · InventorySnapshot `[empresaId,sku,dataSnapshot]` · AmazonSkuTrafficDaily `[empresaId,sku,data]` · AmazonStorageFee/Reimbursement/Return `[empresaId,naturalKey]` · AmazonSettlementReport `[empresaId,reportId]`+`[empresaId,settlementId]`. **Padrão de write site**: `findFirst({where:{<chave natural>}})` (auto-escopado) + `update({where:{id}})`/`create`, OU `upsert` com o unique composto usando `currentEmpresaIdOrDefault()`. NUNCA `findUnique` por chave natural simples (em enforce valida pós-fetch e devolve null p/ linha de outro tenant → create → P2002).
+- `TarefaRecorrente` e `AmazonTrafficDaily` entraram em TENANT_MODELS (vazavam agenda/traffic entre empresas). Migration `20260705190000_onda1` limpa o AmazonTrafficDaily (cache corrompido pelo clobbering da UDN — regenerável por TRAFFIC_SYNC) e zera AmazonApiQuota (efêmero).
+- **TRAFFIC_SYNC sem gate** `isReportsApiBusy` (o gate segurava o job diário o dia inteiro; quota agora é respeitada via cooldown+retry da fila).
+- **SQS roteia por empresa**: `extrairSellerIdDaNotification` → AmazonAccount.sellerId → runWithTenant da empresa dona (fallback primária + warn). Reconciliação bancária roda POR empresa ativa no loop do worker.
+- Rotas de integração global legada (sync-settlement, sync-catalog, listing-diff, config POST, marketing-stream) exigem `isEmpresaPrimaria` (403 p/ demais).
+- Rate-limit: cache de rps efetivo keyed por `empresa:operação`.
 
 ## Cuidados especiais (gotchas)
 - **OneDrive corrompe `.git`** — nunca abrir o repo em pasta sincronizada (`mmap failed: Invalid argument` em fetch). Use `c:\Projects\` ou similar.

@@ -49,6 +49,9 @@ export async function marcarVendasAmazonQuantidadeZeroComoCanceladas(input: {
     },
     data: {
       statusPedido: STATUS_PEDIDO_CANCELADO_POR_QUANTIDADE_ZERO,
+      // Cancelado nao tem fato gerador — zera o imposto gravado na venda
+      // (mesma regra de calcularImpostoSimplesCentavos para cancelados).
+      impostoSimplesCentavos: 0,
       ultimaSyncEm: input.ultimaSyncEm ?? new Date(),
     },
   });
