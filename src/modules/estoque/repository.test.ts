@@ -24,7 +24,10 @@ describe("estoque repository filtros operacionais", () => {
     vi.clearAllMocks();
   });
 
-  it("monta filtro padrão de ativos MFS com estoque operacional", () => {
+  it("monta filtro padrão de ativos com estoque operacional (sem prefixo de SKU)", () => {
+    // Multi-tenant: o isolamento por empresaId (extensão de tenant) já escopa
+    // os produtos. NÃO filtrar por prefixo "MFS-" — cada empresa usa o seu
+    // padrão de SKU (UDN-*, etc.) e todos devem aparecer.
     expect(
       montarWhereProdutos({
         ativo: true,
@@ -33,7 +36,6 @@ describe("estoque repository filtros operacionais", () => {
     ).toEqual({
       AND: [
         { ativo: true },
-        { sku: { startsWith: "MFS-" } },
         {
           OR: [
             { amazonEstoqueDisponivel: { gt: 0 } },
@@ -54,7 +56,6 @@ describe("estoque repository filtros operacionais", () => {
     ).toEqual({
       AND: [
         { ativo: true },
-        { sku: { startsWith: "MFS-" } },
         {
           estoqueAtual: { lte: 0 },
           OR: [

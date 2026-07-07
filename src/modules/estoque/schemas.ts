@@ -19,11 +19,9 @@ const amazonCategoriaFeeSchema = z.preprocess(
 );
 
 export const criarProdutoSchema = z.object({
-  sku: z
-    .string()
-    .min(1, "SKU obrigatório")
-    .max(100)
-    .regex(/^MFS-/, "SKU deve comecar com 'MFS-'"),
+  // SKU livre: cada empresa usa seu próprio padrão (MFS-*, UDN-*, ...) e os
+  // SKUs da Amazon são arbitrários. O isolamento é por empresaId.
+  sku: z.string().min(1, "SKU obrigatório").max(100),
   asin: z.string().max(20).optional().nullable(),
   nome: z.string().min(1, "Nome obrigatório").max(200),
   descricao: z.string().max(500).optional().nullable(),
@@ -100,10 +98,7 @@ export type CriarMovimentacaoEstoqueInput = z.infer<
 
 export const importarProdutosSchema = z.array(
   z.object({
-    sku: z
-      .string()
-      .min(1)
-      .regex(/^MFS-/, "SKU deve comecar com 'MFS-'"),
+    sku: z.string().min(1),
     asin: z.string().optional().nullable(),
     nome: z.string().min(1),
     custoUnitario: z.number().int().min(0).optional().nullable(),

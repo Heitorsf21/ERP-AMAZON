@@ -63,7 +63,10 @@ export function montarWhereProdutos(
   const AND: Prisma.ProdutoWhereInput[] = [];
 
   if (filtros.ativo !== undefined) AND.push({ ativo: filtros.ativo });
-  if (!filtros.incluirNaoMfs) AND.push({ sku: { startsWith: "MFS-" } });
+  // Multi-tenant: o isolamento por empresaId (extensão de tenant) já escopa os
+  // produtos por empresa. NÃO filtrar por prefixo "MFS-" — cada empresa tem seu
+  // próprio padrão de SKU (UDN-*, etc.) e todos os produtos do tenant devem
+  // aparecer, inclusive os auto-registrados a partir do estoque FBA.
 
   if (filtros.estoque === EstoqueFiltroOperacional.COM_ESTOQUE) {
     AND.push({
