@@ -115,6 +115,8 @@ export interface SPInventorySummary {
   fnSku: string;
   sellerSku: string;
   condition: string;
+  /** Título do produto — presente quando o summary vem com details=true. */
+  productName?: string;
   inventoryDetails?: {
     fulfillableQuantity?: number;
     inboundWorkingQuantity?: number;

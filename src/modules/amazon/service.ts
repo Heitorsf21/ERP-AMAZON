@@ -573,7 +573,7 @@ export async function syncInventory(): Promise<{
   }> = [];
   let sincronizados = 0;
   let ajustados = 0;
-  const criados = 0;
+  let criados = 0;
 
   try {
     const summaries = await getInventorySummaries(creds);
@@ -590,12 +590,40 @@ export async function syncInventory(): Promise<{
       const inbound = item.inventoryDetails?.inboundWorkingQuantity ?? 0;
 
       if (!produto) {
-        // SKU não cadastrado no inventário: ignorado aqui (auto-registro ocorre em syncOrdersInternal)
-        naoCadastrados.push({
-          sku: item.sellerSku,
-          asin: item.asin ?? null,
-          qtdAmazon,
-        });
+        // Auto-registra SKU com estoque FBA que ainda NAO vendeu. Antes o
+        // produto so nascia no catalogo na primeira venda (auto-registro do
+        // syncOrders) — conta nova/produto recem-enviado ao FBA ficava
+        // invisivel na UI ate vender (caso UDN-0003/4/5). CATALOG_REFRESH
+        // completa titulo/imagem depois pelo ASIN.
+        try {
+          await db.produto.create({
+            data: {
+              sku: item.sellerSku,
+              nome: item.productName || item.sellerSku,
+              asin: item.asin ?? null,
+              ativo: true,
+              custoUnitario: null,
+              estoqueAtual: qtdAmazon,
+              estoqueMinimo: 0,
+              unidade: "un",
+              amazonEstoqueDisponivel: qtdAmazon,
+              amazonEstoqueReservado: reservado,
+              amazonEstoqueInbound: inbound,
+              amazonEstoqueTotal: item.totalQuantity,
+              amazonUltimaSyncEm: new Date(),
+            },
+          });
+          criados++;
+          sincronizados++;
+        } catch {
+          // Corrida com o auto-registro do syncOrders (P2002) — o proximo
+          // ciclo atualiza pelo caminho normal.
+          naoCadastrados.push({
+            sku: item.sellerSku,
+            asin: item.asin ?? null,
+            qtdAmazon,
+          });
+        }
         continue;
       }
 
