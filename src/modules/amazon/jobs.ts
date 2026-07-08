@@ -7,11 +7,17 @@ import {
   runWithTenant,
 } from "@/lib/tenant-context";
 import { TIMEZONE } from "@/lib/date";
-import { getReviewAutomationConfig } from "@/modules/amazon/service";
+import {
+  getAmazonConfig,
+  getReviewAutomationConfig,
+  isAmazonConfigured,
+} from "@/modules/amazon/service";
 import { getWhatsappEstoqueScheduleConfig } from "@/modules/whatsapp-estoque/config";
+import { diaUTC, emitirNotificacao } from "@/lib/notificacoes";
 import {
   StatusAmazonSyncJob,
   TipoAmazonSyncJob,
+  TipoNotificacao,
   type TipoAmazonSyncJob as TipoAmazonSyncJobType,
 } from "@/modules/shared/domain";
 
@@ -511,18 +517,115 @@ async function getReviewAutomacaoAtivaCached(
 }
 
 /**
- * Empresas para as quais agendar jobs recorrentes (F02 multi-seller): contas
- * Amazon conectadas (ATIVA + refreshTokenEnc). AmazonAccount é GLOBAL_MODEL, então
- * a leitura não é filtrada por tenant. Sem nenhuma conta conectada, cai no
- * fallback single-tenant (empresa primária usando a config global de credenciais).
+ * Decide o conjunto de empresas a agendar a partir das contas Amazon conectadas
+ * (AmazonAccount ATIVA) MAIS a empresa primária, quando esta ainda opera pelas
+ * credenciais legado (ConfiguracaoSistema global) e por isso NÃO tem AmazonAccount
+ * ATIVA. Função pura — extraída para teste.
+ *
+ * REGRESSÃO QUE ISTO CORRIGE (multi-tenant): a versão anterior só caía na primária
+ * quando a lista de contas ATIVA estava VAZIA (`ids.length > 0 ? ids : [primária]`).
+ * No instante em que um segundo seller conectou (UDN, 03/07/2026), a lista deixou
+ * de ser vazia e a primária (mundofs — credenciais no legado, AmazonAccount
+ * PENDENTE/sem refreshTokenEnc) SAIU do agendamento. FINANCES_SYNC/TRAFFIC_SYNC/
+ * REFUNDS_SYNC pararam de ser enfileirados para ela, deixando o faturamento preso
+ * em preço estimado (Pending sem ItemPrice real do Finance) e o tráfego congelado.
+ * ORDERS/INVENTORY mascararam a falha por virem do SQS (event-driven), fora do
+ * scheduler. O worker de execução SEMPRE tratou a primária como especial (fallback
+ * de credenciais global); o agendamento precisa espelhar isso.
  */
+export function resolverEmpresasParaAgendar(input: {
+  /** empresaIds com AmazonAccount ATIVA + refreshTokenEnc (multi-seller). */
+  contasAtivas: string[];
+  /** WORKER_EMPRESA_ID — empresa de background/single-tenant. */
+  primariaId: string;
+  /** `true` quando as credenciais legado (global) estão configuradas. */
+  primariaTemCredenciaisLegado: boolean;
+}): string[] {
+  const ids = new Set(input.contasAtivas.filter(Boolean));
+  // A primária com credenciais legado SEMPRE agenda, mesmo com outros sellers
+  // conectados — o worker resolve as credenciais dela pela config global.
+  if (input.primariaTemCredenciaisLegado) ids.add(input.primariaId);
+  // Fallback absoluto: nunca devolver lista vazia (preserva o comportamento
+  // histórico single-tenant mesmo antes de detectar o legado).
+  if (ids.size === 0) ids.add(input.primariaId);
+  return [...ids];
+}
+
 async function empresaIdsParaAgendar(): Promise<string[]> {
   const contas = await db.amazonAccount.findMany({
     where: { ativa: true, status: "ATIVA", refreshTokenEnc: { not: null } },
     select: { empresaId: true },
   });
-  const ids = [...new Set(contas.map((c) => c.empresaId))];
-  return ids.length > 0 ? ids : [WORKER_EMPRESA_ID];
+  const primariaTemCredenciaisLegado = isAmazonConfigured(await getAmazonConfig());
+  return resolverEmpresasParaAgendar({
+    contasAtivas: contas.map((c) => c.empresaId),
+    primariaId: WORKER_EMPRESA_ID,
+    primariaTemCredenciaisLegado,
+  });
+}
+
+/**
+ * Watchdog de job crítico (função pura, testável): `true` quando o último
+ * sucesso é mais antigo que `limiteHoras` — OU quando nunca houve sucesso.
+ */
+export function jobCriticoEstaAtrasado(input: {
+  ultimoSucessoEm: Date | null;
+  agora: Date;
+  limiteHoras: number;
+}): boolean {
+  if (!input.ultimoSucessoEm) return true;
+  const horas =
+    (input.agora.getTime() - input.ultimoSucessoEm.getTime()) / 3_600_000;
+  return horas >= input.limiteHoras;
+}
+
+// FINANCES_SYNC roda a cada 15min. 6h sem NENHUM sucesso = pipeline financeiro
+// degradado (faturamento preso em preço/taxas ESTIMADOS). Guard-rail nascido do
+// incidente 03–08/07: a primária saiu do agendamento e ninguém percebeu por dias.
+const FINANCES_WATCHDOG_LIMITE_HORAS = 6;
+
+/**
+ * Alerta no sino quando o FINANCES_SYNC da empresa PRIMÁRIA (MundoFS) não conclui
+ * há muito tempo. Escopado à primária de propósito — é a conta de produção real;
+ * `emitirNotificacao` roda sob `runWithTenant(MundoFS)`, então o alerta só aparece
+ * no sino dela. Nunca lança (o agendamento não pode quebrar por causa do watchdog).
+ */
+async function verificarFinancesSyncParado(now: Date): Promise<void> {
+  try {
+    const ultimo = await db.amazonSyncJob.findFirst({
+      where: {
+        empresaId: WORKER_EMPRESA_ID,
+        tipo: TipoAmazonSyncJob.FINANCES_SYNC,
+        status: StatusAmazonSyncJob.SUCCESS,
+      },
+      orderBy: { createdAt: "desc" },
+      select: { createdAt: true },
+    });
+
+    if (
+      !jobCriticoEstaAtrasado({
+        ultimoSucessoEm: ultimo?.createdAt ?? null,
+        agora: now,
+        limiteHoras: FINANCES_WATCHDOG_LIMITE_HORAS,
+      })
+    ) {
+      return;
+    }
+
+    await runWithTenant(
+      { empresaId: WORKER_EMPRESA_ID, isSuperAdmin: false, source: "worker" },
+      () =>
+        emitirNotificacao({
+          tipo: TipoNotificacao.JOB_FALHANDO,
+          titulo: "Sincronização financeira da Amazon parada",
+          descricao:
+            "O FINANCES_SYNC não conclui há mais de 6h. O faturamento pode estar preso em preço/taxas ESTIMADOS (provisórios) até a sincronização voltar.",
+          dedupeKey: `finances-sync-parado:${diaUTC(now)}`,
+        }),
+    );
+  } catch {
+    // Watchdog é best-effort — nunca derruba o ciclo de agendamento.
+  }
 }
 
 export async function ensureRecurringAmazonJobs(now = new Date()) {
@@ -536,6 +639,8 @@ export async function ensureRecurringAmazonJobs(now = new Date()) {
     );
     created.push(...lote);
   }
+  // Guard-rail: alerta no sino da MundoFS se o pipeline financeiro parou.
+  await verificarFinancesSyncParado(now);
   return created;
 }
 
