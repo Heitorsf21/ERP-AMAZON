@@ -820,8 +820,34 @@ async function syncOrdersInternal(
     }
 
     // Status-only: atualiza statusPedido para pedidos que pularam getOrderItems.
-    // O v0 já retorna OrderStatus, então podemos atualizar sem chamar getOrderItems.
+    //
+    // CANCELAMENTO (crítico p/ faturamento): a lista de pedidos (endpoint
+    // /orders/2026-01-01/orders) NÃO retorna OrderStatus — getOrderStatus caía
+    // sempre em "UNKNOWN" e este update virava no-op. Resultado: um pedido que
+    // já tinha preço real (sp-api) e era CANCELADO na Amazon ficava preso em
+    // "Pending" e seguia contando no faturamento (inflando vs Seller Central).
+    // Correção: a própria lista já traz `orderItems` com `quantityOrdered = 0`
+    // quando o item foi cancelado — detectamos isso pelo order summary, SEM
+    // chamada extra de getOrderItems, e marcamos como cancelado (zero-quantity).
     for (const { amazonOrderId, order } of pedidosSoPraStatusUpdate) {
+      const itensSummary = orderItemsFromOrderSummary(order).filter(
+        (item) => !!item.SellerSKU,
+      );
+      const skusZero = skusSomenteComQuantidadeZero(
+        itensSummary.map((item) => ({
+          sku: item.SellerSKU,
+          quantidade: getOrderItemQuantityOrdered(item),
+        })),
+      );
+      if (skusZero.length > 0) {
+        atualizadas += await marcarVendasAmazonQuantidadeZeroComoCanceladas({
+          amazonOrderId,
+          skus: skusZero,
+          ultimaSyncEm: new Date(),
+        });
+        continue;
+      }
+
       const novoStatus = getOrderStatus(order, "UNKNOWN");
       if (novoStatus && novoStatus !== "UNKNOWN") {
         await db.vendaAmazon.updateMany({

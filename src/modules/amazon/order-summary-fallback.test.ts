@@ -11,6 +11,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { orderItemsFromOrderSummary } from "./service";
+import { skusSomenteComQuantidadeZero } from "./zero-quantity-cancellation";
 
 describe("orderItemsFromOrderSummary — ItemPrice como total da linha", () => {
   it("multiplica product.price unitário pela quantidade (qty=3)", () => {
@@ -102,5 +103,58 @@ describe("orderItemsFromOrderSummary — ItemPrice como total da linha", () => {
 
     expect(items[0]?.QuantityOrdered).toBe(0);
     expect(items[0]?.ItemPrice).toBeUndefined();
+  });
+});
+
+/**
+ * Regressão: pedido CANCELADO que já tinha preço real (precoOrigem "sp-api")
+ * pulava o getOrderItems (otimização "dadosCompletos") e o status-only update
+ * era no-op (o endpoint /orders/2026-01-01/orders NÃO retorna OrderStatus).
+ * O pedido ficava preso em "Pending" e seguia contando no faturamento.
+ *
+ * A lista JÁ traz `orderItems` com `quantityOrdered = 0` no cancelamento — a
+ * detecção precisa vir dela. Reproduz o payload real de 702-1000699-0957830.
+ */
+describe("detecção de cancelamento pelo order summary (endpoint 2026-01-01)", () => {
+  it("payload real do cancelado (sku em product, quantityOrdered 0) → marca SKU cancelado", () => {
+    const order = {
+      orderId: "702-1000699-0957830",
+      orderItems: [
+        {
+          product: {
+            sellerSku: "MFS-0034",
+            price: { unitPrice: { amount: "35.97", currencyCode: "BRL" } },
+          },
+          quantityOrdered: 0,
+        },
+      ],
+    } as never;
+
+    const itens = orderItemsFromOrderSummary(order).filter((i) => !!i.SellerSKU);
+    const skusZero = skusSomenteComQuantidadeZero(
+      itens.map((i) => ({ sku: i.SellerSKU, quantidade: i.QuantityOrdered ?? 0 })),
+    );
+    expect(skusZero).toEqual(["MFS-0034"]);
+  });
+
+  it("pedido ativo (quantityOrdered > 0) NÃO é marcado como cancelado", () => {
+    const order = {
+      orderId: "111-2222222-3333333",
+      orderItems: [
+        {
+          product: {
+            sellerSku: "MFS-0017",
+            price: { unitPrice: { amount: "65.97", currencyCode: "BRL" } },
+          },
+          quantityOrdered: 1,
+        },
+      ],
+    } as never;
+
+    const itens = orderItemsFromOrderSummary(order).filter((i) => !!i.SellerSKU);
+    const skusZero = skusSomenteComQuantidadeZero(
+      itens.map((i) => ({ sku: i.SellerSKU, quantidade: i.QuantityOrdered ?? 0 })),
+    );
+    expect(skusZero).toEqual([]);
   });
 });
