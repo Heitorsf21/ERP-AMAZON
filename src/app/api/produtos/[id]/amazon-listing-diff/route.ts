@@ -1,6 +1,6 @@
 import { handle, ok } from "@/lib/api";
 import { auditLog } from "@/lib/audit";
-import { assertEmpresaPrimaria, requireRole, UsuarioRole } from "@/lib/auth";
+import { requireRole, UsuarioRole } from "@/lib/auth";
 import { getProdutoAmazonListingDiff } from "@/modules/amazon/listings-diff";
 import { TipoAuditLog } from "@/modules/shared/domain";
 
@@ -15,9 +15,8 @@ export const GET = handle(async (req: Request, { params }: Params) => {
     UsuarioRole.FINANCEIRO,
     UsuarioRole.LEITURA,
   );
-  // O diff consulta a Listings API com a credencial SP-API GLOBAL legada
-  // (ConfiguracaoSistema da empresa primária) — outra empresa não a usa.
-  assertEmpresaPrimaria(session);
+  // getProdutoAmazonListingDiff resolve a credencial do TENANT (OAuth/self-auth
+  // da conta; fallback global só para a primária) — qualquer empresa conectada usa.
   const { id } = await params;
   const diff = await getProdutoAmazonListingDiff(id);
 

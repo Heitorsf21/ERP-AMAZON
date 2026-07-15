@@ -276,7 +276,7 @@ export class AmazonContaNaoConectadaError extends Error {
  * conta Amazon da mundofs para dentro do tenant errado (classe do bug que
  * contaminou as reviews da UDN em 2026-06-18).
  */
-async function getCredentialsOrThrow(): Promise<SPAPICredentials> {
+export async function getCredentialsOrThrow(): Promise<SPAPICredentials> {
   const empresaId = getEmpresaId();
   const primary = process.env.WORKER_EMPRESA_ID || "mundofs";
   if (empresaId) {
@@ -3864,9 +3864,10 @@ export type SyncCatalogResult = {
 };
 
 export async function syncCatalog(produtoIds?: string[]): Promise<SyncCatalogResult> {
-  const config = await getAmazonConfig();
-  const creds = buildCredentials(config);
-  if (!creds) throw new Error("Amazon SP-API não configurada");
+  // Credenciais do TENANT corrente (OAuth/self-auth da conta; fallback global só
+  // para a primária). Antes usava a config global — quebrava para não-primárias
+  // (a UDN levava 403 no botão "Sinc. catálogo"). Espelha o syncBuybox.
+  const creds = await getCredentialsOrThrow();
 
   const where = {
     ativo: true,

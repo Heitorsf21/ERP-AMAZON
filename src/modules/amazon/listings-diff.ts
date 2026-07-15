@@ -1,11 +1,13 @@
 import { db } from "@/lib/db";
 import {
   getListingsItem,
-  getSellerId,
   type SPAPICredentials,
   type SPListingsItem,
 } from "@/lib/amazon-sp-api";
-import { getAmazonConfig, isAmazonConfigured } from "@/modules/amazon/service";
+import {
+  getCredentialsOrThrow,
+  resolverSellerIdDoTenant,
+} from "@/modules/amazon/service";
 import { extractAmazonListingEffectivePriceCentavos } from "@/modules/amazon/pricing";
 
 export type ListingDiffField = {
@@ -60,20 +62,13 @@ export async function getProdutoAmazonListingDiff(
     throw new Error("Produto nao encontrado.");
   }
 
-  const config = await getAmazonConfig();
-  if (!isAmazonConfigured(config)) {
-    throw new Error("Amazon SP-API nao configurada.");
+  // Credenciais + sellerId do TENANT corrente (OAuth/self-auth da conta; fallback
+  // global só para a primária). Antes usava a config global — 403 p/ não-primária.
+  const creds: SPAPICredentials = await getCredentialsOrThrow();
+  const sellerId = await resolverSellerIdDoTenant(creds);
+  if (!sellerId) {
+    throw new Error("Nao foi possivel resolver o sellerId da conta Amazon.");
   }
-
-  const creds: SPAPICredentials = {
-    clientId: config.amazon_client_id!,
-    clientSecret: config.amazon_client_secret!,
-    refreshToken: config.amazon_refresh_token!,
-    marketplaceId: config.amazon_marketplace_id!,
-    endpoint: config.amazon_endpoint || undefined,
-  };
-
-  const sellerId = await resolveSellerId(creds, config.amazon_seller_id);
   const listing = await getListingsItem(creds, sellerId, produto.sku);
   const summary =
     listing.summaries?.find((s) => s.marketplaceId === creds.marketplaceId) ??
@@ -141,26 +136,6 @@ export async function getProdutoAmazonListingDiff(
     diffs,
     raw: listing,
   };
-}
-
-async function resolveSellerId(
-  creds: SPAPICredentials,
-  configuredSellerId?: string | null,
-): Promise<string> {
-  if (configuredSellerId) return configuredSellerId;
-
-  const sellerId = await getSellerId(creds);
-  if (!sellerId) {
-    throw new Error("Nao foi possivel resolver o sellerId da conta Amazon.");
-  }
-
-  await db.configuracaoSistema.upsert({
-    where: { chave: "amazon_seller_id" },
-    create: { chave: "amazon_seller_id", valor: sellerId },
-    update: { valor: sellerId },
-  });
-
-  return sellerId;
 }
 
 function firstAttributeString(
