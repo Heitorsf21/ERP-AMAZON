@@ -5,6 +5,8 @@ import { assertEmpresaPrimaria, requireRole, UsuarioRole } from "@/lib/auth";
 export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
+  // Redirect pós-OAuth pelo host público (APP_URL); atrás do Nginx req.url é localhost:3000.
+  const appBase = process.env.APP_URL || new URL(req.url).origin;
   try {
     // Apenas ADMIN da empresa PRIMARIA sincroniza Gmail (integracao global).
     // O Google redireciona aqui com o cookie de sessao do admin que iniciou o flow.
@@ -12,7 +14,7 @@ export async function GET(req: NextRequest) {
     assertEmpresaPrimaria(session);
   } catch (e) {
     if (e instanceof Response) {
-      const url = new URL("/login?next=/configuracoes", req.url);
+      const url = new URL("/login?next=/configuracoes", appBase);
       return NextResponse.redirect(url);
     }
     throw e;
@@ -25,13 +27,13 @@ export async function GET(req: NextRequest) {
 
   if (errorParam) {
     return NextResponse.redirect(
-      new URL(`/configuracoes?gmail_erro=${encodeURIComponent(errorParam)}`, req.url),
+      new URL(`/configuracoes?gmail_erro=${encodeURIComponent(errorParam)}`, appBase),
     );
   }
 
   if (!code) {
     return NextResponse.redirect(
-      new URL("/configuracoes?gmail_erro=code_missing", req.url),
+      new URL("/configuracoes?gmail_erro=code_missing", appBase),
     );
   }
 
@@ -39,17 +41,17 @@ export async function GET(req: NextRequest) {
   const stateOk = await consumirEstadoOAuth(state);
   if (!stateOk) {
     return NextResponse.redirect(
-      new URL("/configuracoes?gmail_erro=state_invalido", req.url),
+      new URL("/configuracoes?gmail_erro=state_invalido", appBase),
     );
   }
 
   try {
     await trocarCodigo(code);
-    return NextResponse.redirect(new URL("/configuracoes?gmail_ok=1", req.url));
+    return NextResponse.redirect(new URL("/configuracoes?gmail_ok=1", appBase));
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Erro desconhecido";
     return NextResponse.redirect(
-      new URL(`/configuracoes?gmail_erro=${encodeURIComponent(msg)}`, req.url),
+      new URL(`/configuracoes?gmail_erro=${encodeURIComponent(msg)}`, appBase),
     );
   }
 }

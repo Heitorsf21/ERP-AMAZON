@@ -18,13 +18,15 @@ export const dynamic = "force-dynamic";
 export const GET = handle(async (req: Request) => {
   const session = await requireRole(UsuarioRole.ADMIN);
   const url = new URL(req.url);
+  // Redirect pós-OAuth pelo host público (APP_URL); atrás do Nginx req.url é localhost:3000.
+  const appBase = process.env.APP_URL || url.origin;
   const code = url.searchParams.get("code");
   const stateToken = url.searchParams.get("state");
   const oauthError = url.searchParams.get("error");
 
   if (oauthError) {
     return NextResponse.redirect(
-      new URL("/configuracoes?tab=integracoes&ads=erro", req.url),
+      new URL("/configuracoes?tab=integracoes&ads=erro", appBase),
     );
   }
 
@@ -105,7 +107,7 @@ export const GET = handle(async (req: Request) => {
       status === "ATIVA"
         ? "/configuracoes?tab=integracoes&ads=conectado"
         : "/configuracoes?tab=integracoes&ads=profile_required";
-    return NextResponse.redirect(new URL(destino, req.url));
+    return NextResponse.redirect(new URL(destino, appBase));
   } catch (err) {
     logger.error(
       { err: err instanceof Error ? err.message : String(err) },
@@ -118,7 +120,7 @@ export const GET = handle(async (req: Request) => {
       })
       .catch(() => {});
     return NextResponse.redirect(
-      new URL("/configuracoes?tab=integracoes&ads=erro", req.url),
+      new URL("/configuracoes?tab=integracoes&ads=erro", appBase),
     );
   }
 });

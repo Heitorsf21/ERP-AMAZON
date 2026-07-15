@@ -31,6 +31,11 @@ export const GET = handle(async (req: Request) => {
     return erro(400, "STATE_INVALIDO");
   }
 
+  // Redirect pós-OAuth SEMPRE pelo host público (APP_URL). Atrás do Nginx o Next
+  // enxerga req.url como localhost:3000 → sem isto o cliente cai em
+  // ERR_CONNECTION_REFUSED ao voltar do consent da Amazon.
+  const appBase = process.env.APP_URL || url.origin;
+
   try {
     const app = await getOAuthAppCredentials();
     const redirectUri = `${process.env.APP_URL ?? ""}/api/amazon/oauth/callback`;
@@ -74,7 +79,7 @@ export const GET = handle(async (req: Request) => {
     }
 
     return NextResponse.redirect(
-      new URL("/configuracoes?tab=integracoes&amazon=conectado", req.url),
+      new URL("/configuracoes?tab=integracoes&amazon=conectado", appBase),
     );
   } catch (err) {
     logger.error(
@@ -85,7 +90,7 @@ export const GET = handle(async (req: Request) => {
       .updateMany({ where: { empresaId: state.empresaId }, data: { status: "ERRO" } })
       .catch(() => {});
     return NextResponse.redirect(
-      new URL("/configuracoes?tab=integracoes&amazon=erro", req.url),
+      new URL("/configuracoes?tab=integracoes&amazon=erro", appBase),
     );
   }
 });
