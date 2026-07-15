@@ -20,10 +20,15 @@ import {
   getMyFeesEstimateForSKU,
   getProductOffers,
   getSettlementReports,
+  isAmazonSpApiQuotaError,
   listFinancialTransactions,
   type SPAPICredentials,
   type SPCatalogItem,
 } from "@/lib/amazon-sp-api";
+import {
+  forEachWithRateLimit,
+  withAmazonRateLimitRetry,
+} from "@/lib/rate-limit-retry";
 import { resolverSellerIdDoTenant } from "@/modules/amazon/service";
 import { parseAllOrdersTsv } from "@/modules/amazon/parsers/all-orders-tsv";
 import { parseFbaReimbursementsTsv } from "@/modules/amazon/parsers/fba-reimbursements-tsv";
@@ -196,68 +201,80 @@ export async function runBuyboxCheck(creds: SPAPICredentials) {
   let perdidos = 0;
   let recuperados = 0;
 
-  for (const p of produtos) {
-    if (!p.asin) continue;
-    const offers = await getProductOffers(creds, p.asin);
-    checados++;
+  // Espaça as chamadas ao Product Pricing (0.5 rps → o gate reserva 1 slot a
+  // cada ~2s e LANÇA se chamado antes de liberar). Sem isso, o 2º produto em
+  // diante derrubava o job inteiro (cooldown local auto-infligido). O retry
+  // aguarda o slot liberar; quota residual (429 real) pausa o lote até o
+  // próximo ciclo — os não-checados voltam antes (orderBy buyboxUltimaSyncEm).
+  const { pausadoPorQuota } = await forEachWithRateLimit(
+    produtos,
+    async (p) => {
+      if (!p.asin) return;
+      const offers = await getProductOffers(creds, p.asin);
+      checados++;
 
-    if (!offers) {
-      await db.produto.update({
-        where: { id: p.id },
-        data: { buyboxUltimaSyncEm: new Date() },
-      });
-      continue;
-    }
+      if (!offers) {
+        await db.produto.update({
+          where: { id: p.id },
+          data: { buyboxUltimaSyncEm: new Date() },
+        });
+        return;
+      }
 
-    const precoNosso = p.amazonPrecoListagemCentavos ?? p.precoVenda;
-    const {
-      buyboxPriceCentavos,
-      sellerBuybox,
-      numeroOfertas,
-      somosBuybox,
-    } = extractProductOfferSnapshot(offers, ourSellerId, precoNosso);
+      const precoNosso = p.amazonPrecoListagemCentavos ?? p.precoVenda;
+      const {
+        buyboxPriceCentavos,
+        sellerBuybox,
+        numeroOfertas,
+        somosBuybox,
+      } = extractProductOfferSnapshot(offers, ourSellerId, precoNosso);
 
-    await db.$transaction([
-      db.produto.update({
-        where: { id: p.id },
-        data: {
-          buyboxGanho: somosBuybox,
-          buyboxPreco: buyboxPriceCentavos,
-          buyboxConcorrentes: numeroOfertas,
-          buyboxUltimaSyncEm: new Date(),
-        },
-      }),
-      db.buyBoxSnapshot.create({
-        data: {
-          produtoId: p.id,
+      await db.$transaction([
+        db.produto.update({
+          where: { id: p.id },
+          data: {
+            buyboxGanho: somosBuybox,
+            buyboxPreco: buyboxPriceCentavos,
+            buyboxConcorrentes: numeroOfertas,
+            buyboxUltimaSyncEm: new Date(),
+          },
+        }),
+        db.buyBoxSnapshot.create({
+          data: {
+            produtoId: p.id,
+            sku: p.sku,
+            asin: p.asin,
+            somosBuybox: !!somosBuybox,
+            precoNosso,
+            precoBuybox: buyboxPriceCentavos,
+            sellerBuybox,
+            numeroOfertas,
+          },
+        }),
+      ]);
+
+      // Notificações de transição
+      if (somosBuybox === false && p.buyboxGanho !== false) {
+        perdidos++;
+        await notificarBuyboxPerdido({
           sku: p.sku,
-          asin: p.asin,
-          somosBuybox: !!somosBuybox,
           precoNosso,
           precoBuybox: buyboxPriceCentavos,
           sellerBuybox,
-          numeroOfertas,
-        },
-      }),
-    ]);
+        });
+      }
+      if (somosBuybox === true && p.buyboxGanho === false) {
+        recuperados++;
+        await notificarBuyboxRecuperado(p.sku);
+      }
+    },
+    {
+      retry: (fn) => withAmazonRateLimitRetry(fn),
+      isQuotaError: isAmazonSpApiQuotaError,
+    },
+  );
 
-    // Notificações de transição
-    if (somosBuybox === false && p.buyboxGanho !== false) {
-      perdidos++;
-      await notificarBuyboxPerdido({
-        sku: p.sku,
-        precoNosso,
-        precoBuybox: buyboxPriceCentavos,
-        sellerBuybox,
-      });
-    }
-    if (somosBuybox === true && p.buyboxGanho === false) {
-      recuperados++;
-      await notificarBuyboxRecuperado(p.sku);
-    }
-  }
-
-  return { ok: true, checados, perdidos, recuperados };
+  return { ok: true, checados, perdidos, recuperados, pausadoPorQuota };
 }
 
 // ─────────────────────────────────────────────────────────────────────

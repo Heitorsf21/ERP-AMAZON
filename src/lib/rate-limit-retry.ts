@@ -53,3 +53,48 @@ export async function withAmazonRateLimitRetry<T>(
     }
   }
 }
+
+export type ForEachWithRateLimitOptions = {
+  /** Envolve cada item; default `withAmazonRateLimitRetry`. Espera o cooldown
+   *  LOCAL liberar (ex: 0.5 rps do Product Pricing) em vez de derrubar o lote. */
+  retry?: <R>(fn: () => Promise<R>) => Promise<R>;
+  /** Detecta erro de quota residual (429 real / cooldown longo). Ao dispará-lo,
+   *  o lote PARA graciosamente em vez de virar FALHA. */
+  isQuotaError: (error: unknown) => boolean;
+};
+
+/**
+ * Processa `itens` em SEQUÊNCIA respeitando o rate-limit da SP-API.
+ *
+ * Cada item passa por `retry` (default `withAmazonRateLimitRetry`), que aguarda
+ * o slot local liberar entre chamadas em vez de lançar. Se um item ainda assim
+ * bater em quota — 429 real, cujo cooldown excede o orçamento de espera — o lote
+ * PARA graciosamente e reporta `pausadoPorQuota: true`; os itens restantes ficam
+ * para o próximo ciclo (o caller ordena por "mais antigo primeiro"). Um erro que
+ * NÃO seja de quota propaga normalmente (falha real).
+ *
+ * Corrige o padrão em que um loop de chamadas SP-API sem espaçamento derruba o
+ * job inteiro a partir da 2ª chamada (o gate reserva 1 slot a cada ~2s e lança).
+ */
+export async function forEachWithRateLimit<T>(
+  itens: T[],
+  processar: (item: T) => Promise<void>,
+  options: ForEachWithRateLimitOptions,
+): Promise<{ processados: number; pausadoPorQuota: boolean }> {
+  const retry = options.retry ?? withAmazonRateLimitRetry;
+  let processados = 0;
+
+  for (const item of itens) {
+    try {
+      await retry(() => processar(item));
+    } catch (error) {
+      if (options.isQuotaError(error)) {
+        return { processados, pausadoPorQuota: true };
+      }
+      throw error;
+    }
+    processados += 1;
+  }
+
+  return { processados, pausadoPorQuota: false };
+}

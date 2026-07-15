@@ -6,7 +6,7 @@ vi.mock("@/lib/amazon-rate-limit", () => ({
   isAmazonQuotaCooldownError: (error: unknown) => isCooldown(error),
 }));
 
-import { withAmazonRateLimitRetry } from "./rate-limit-retry";
+import { forEachWithRateLimit, withAmazonRateLimitRetry } from "./rate-limit-retry";
 
 function cooldownError(nextAllowedAtMs: number) {
   return { name: "AmazonQuotaCooldownError", nextAllowedAt: new Date(nextAllowedAtMs) };
@@ -109,5 +109,67 @@ describe("withAmazonRateLimitRetry", () => {
 
     expect(result).toBe("ok");
     expect(sleep).toHaveBeenCalledWith(50);
+  });
+});
+
+describe("forEachWithRateLimit", () => {
+  const passthroughRetry = <R>(fn: () => Promise<R>) => fn();
+
+  it("processes every item in order when none fail", async () => {
+    const vistos: number[] = [];
+
+    const resultado = await forEachWithRateLimit(
+      [1, 2, 3],
+      async (n) => {
+        vistos.push(n);
+      },
+      { retry: passthroughRetry, isQuotaError: () => false },
+    );
+
+    expect(vistos).toEqual([1, 2, 3]);
+    expect(resultado).toEqual({ processados: 3, pausadoPorQuota: false });
+  });
+
+  it("stops gracefully at the first quota error, leaving the rest untouched", async () => {
+    const vistos: number[] = [];
+    const quota = new Error("SP-API quota PRODUCT_PRICING_GET_OFFERS ...");
+
+    const resultado = await forEachWithRateLimit(
+      [1, 2, 3],
+      async (n) => {
+        if (n === 2) throw quota;
+        vistos.push(n);
+      },
+      { retry: passthroughRetry, isQuotaError: (e) => e === quota },
+    );
+
+    // item 1 processado; item 2 bateu em quota e parou; item 3 nunca foi tocado
+    expect(vistos).toEqual([1]);
+    expect(resultado).toEqual({ processados: 1, pausadoPorQuota: true });
+  });
+
+  it("propagates a non-quota error", async () => {
+    const boom = new Error("boom");
+
+    await expect(
+      forEachWithRateLimit([1, 2], async () => {
+        throw boom;
+      }, { retry: passthroughRetry, isQuotaError: () => false }),
+    ).rejects.toBe(boom);
+  });
+
+  it("runs each processed item through the retry wrapper", async () => {
+    let chamadasDoRetry = 0;
+    const retry = <R>(fn: () => Promise<R>): Promise<R> => {
+      chamadasDoRetry += 1;
+      return fn();
+    };
+
+    await forEachWithRateLimit([1, 2], async () => {}, {
+      retry,
+      isQuotaError: () => false,
+    });
+
+    expect(chamadasDoRetry).toBe(2);
   });
 });
