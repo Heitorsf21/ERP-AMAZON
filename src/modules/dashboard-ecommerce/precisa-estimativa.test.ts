@@ -8,10 +8,14 @@ describe("precisaEstimativaTaxas (dashboard — estimativa de taxa in-memory)", 
     ).toBe(true);
   });
 
-  it("estima DEFERRED sem taxa real (bug que inflava o dashboard)", () => {
+  it("NÃO estima DEFERRED: a Amazon já enviou a transação (taxa real, 0 se conta isenta)", () => {
+    // statusFinanceiro só vira DEFERRED quando a AmazonFinanceTransaction chega.
+    // Nesse ponto a taxa (mesmo 0, por isenção da conta) é REAL — estimar
+    // inventaria uma comissão/FBA fantasma e reduziria a margem falsamente,
+    // divergindo da aba de vendas (que usa a transação real).
     expect(
       precisaEstimativaTaxas({ taxasCentavos: 0, statusFinanceiro: "DEFERRED" }),
-    ).toBe(true);
+    ).toBe(false);
   });
 
   it("NÃO estima quando já há taxa real (mesmo DEFERRED)", () => {

@@ -695,16 +695,15 @@ function resumirCategoriasTaxaEstimada(vendas: VendaDashboard[]) {
   );
 }
 
-// Plug do fee-estimator: para vendas PENDENTE sem taxa real (Amazon nao
-// settled ainda), aplica a estimativa Comissao+FBA. Quando settle, taxa real
-// vem do FINANCES_SYNC e sobrescreve no banco — nao mexemos no banco aqui.
-// Parcelamento NAO e estimado — vem do real quando aplicavel.
-// Vendas que ainda NÃO liquidaram na Amazon (taxa real ausente, taxas<=0) e que
-// portanto recebem estimativa de taxas IN-MEMORY no dashboard: PENDENTE e DEFERRED.
-// RELEASED já liquidou (taxa final); REEMBOLSADO não leva estimativa de fee.
-// (Antes só PENDENTE era estimado → vendas DEFERRED sem taxa entravam com ZERO
-// taxa de marketplace, inflando lucro/margem do dashboard vs o card da venda.)
-const STATUS_TAXA_NAO_LIQUIDADA = new Set(["PENDENTE", "DEFERRED"]);
+// Plug do fee-estimator: SÓ estima taxa enquanto a venda é PENDENTE (a Amazon
+// ainda NÃO enviou nenhuma transação Finance). `statusFinanceiro` vem do
+// `transactionStatus` da AmazonFinanceTransaction (service.ts) — então DEFERRED
+// e RELEASED significam que a Amazon JÁ mandou os dados: a taxa real vale, mesmo
+// que seja 0 (conta com isenção de tarifas). Estimar DEFERRED inventava uma
+// comissão/FBA fantasma e reduzia a margem falsamente vs a aba de vendas (que lê
+// a transação real). REEMBOLSADO também não leva estimativa. Parcelamento nunca
+// é estimado.
+const STATUS_TAXA_NAO_LIQUIDADA = new Set(["PENDENTE"]);
 export function precisaEstimativaTaxas(v: {
   taxasCentavos: number;
   statusFinanceiro?: string;
