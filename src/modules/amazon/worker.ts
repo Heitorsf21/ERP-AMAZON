@@ -355,8 +355,14 @@ async function processJob(
         overlapMinutes: payload.overlapMinutes,
       });
     case TipoAmazonSyncJob.FINANCES_SYNC:
+      // maxPages=8 (era 1): a Finances API devolve 500 tx/página em ordem
+      // CRESCENTE, então 1 página lê só as mais ANTIGAS da janela de 14d e nunca
+      // materializa a taxa das vendas RECENTES — elas ficam PENDENTE/taxa-0, e o
+      // dashboard estima em vez de usar o real da transação, divergindo da aba
+      // /vendas. 14d ≈ 2 páginas hoje (mundofs ~576 tx); teto de 8 dá folga e
+      // para no nextToken. FINANCES_LIST_TRANSACTIONS tem burst 10 (sem estouro).
       return syncFinances(payload.diasAtras ?? 14, {
-        maxPages: payload.maxPages ?? 1,
+        maxPages: payload.maxPages ?? 8,
       });
     case TipoAmazonSyncJob.REFUNDS_SYNC:
       return syncRefunds(payload.diasAtras ?? 90, {
