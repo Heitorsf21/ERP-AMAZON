@@ -407,6 +407,46 @@ function montarUma(
     descontoFreteCentavos = parsed.descontoFreteCentavos;
     freteRecebidoCentavos = parsed.freteRecebidoCentavos;
     fretePagoCentavos = parsed.fretePagoCentavos;
+
+    // Ancoragem no total REAL reconciliado. A Amazon republica o MESMO envio
+    // como par DEFERRED_RELEASED + RELEASED (~7d depois), gerando 2 linhas
+    // Shipment idênticas na tabela crua; `agregarBreakdownDeTransacoes` soma
+    // AMBAS (não reconcilia contra o bruto como o sync faz) e DOBRA a taxa —
+    // inflando comissão/FBA e derrubando a margem do card. O total correto já
+    // vive em `VendaAmazon.taxasCentavos` (o sync aplica
+    // `reconciliarFinanceiroParaBrutoCheio`). Aqui usamos o parser só para o
+    // SPLIT proporcional (comissão : FBA : parcelamento : closing) e escalamos
+    // para bater EXATO com o real — o resto de arredondamento cai em "não
+    // detalhadas". Só quando o real já materializou (taxa>0); com taxa 0 (lag
+    // ou conta isenta) preserva o parser para não zerar indevidamente. Espelha
+    // o card do Dashboard, que já lê `taxasCentavos` direto.
+    const totalTaxasParser =
+      comissaoCentavos +
+      taxaFbaCentavos +
+      taxaParcelamentoCentavos +
+      closingFeeCentavos +
+      taxasAmazonNaoDetalhadasCentavos;
+    if (
+      taxasRealCentavos > 0 &&
+      totalTaxasParser > 0 &&
+      totalTaxasParser !== taxasRealCentavos
+    ) {
+      const fator = taxasRealCentavos / totalTaxasParser;
+      comissaoCentavos = Math.round(comissaoCentavos * fator);
+      taxaFbaCentavos = Math.round(taxaFbaCentavos * fator);
+      taxaParcelamentoCentavos = Math.round(taxaParcelamentoCentavos * fator);
+      closingFeeCentavos = Math.round(closingFeeCentavos * fator);
+      // Fecha a soma no real EXATO (absorve o resíduo de arredondamento e
+      // qualquer "não detalhada" original).
+      taxasAmazonNaoDetalhadasCentavos = Math.max(
+        0,
+        taxasRealCentavos -
+          comissaoCentavos -
+          taxaFbaCentavos -
+          taxaParcelamentoCentavos -
+          closingFeeCentavos,
+      );
+    }
   } else if (isCancelado && taxasRealCentavos <= 0 && freteAgregadoCentavos <= 0) {
     origem = "no_data";
   } else if (taxasRealCentavos > 0) {

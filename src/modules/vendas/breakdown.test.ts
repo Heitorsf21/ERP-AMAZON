@@ -330,6 +330,124 @@ describe("montarBreakdownVendas · settled (com Finance payload)", () => {
   });
 });
 
+describe("montarBreakdownVendas · duplicata de Shipment (DEFERRED_RELEASED + RELEASED)", () => {
+  // A Amazon republica o MESMO envio como par DEFERRED_RELEASED + RELEASED (~7d
+  // depois), gerando 2 linhas Shipment idênticas na tabela crua. O parser soma
+  // AMBAS (Math.abs, sem reconciliar contra o bruto) → dobra comissão/FBA/etc.
+  // O sync JÁ reconcilia e grava o total REAL (single) em VendaAmazon.taxasCentavos.
+  it("ancora o total de taxa no VendaAmazon.taxasCentavos e NÃO dobra comissão/FBA", async () => {
+    mockDb.produto.findMany.mockResolvedValue([
+      {
+        id: "prod-dup",
+        sku: SKU_OK,
+        asin: null,
+        amazonImagemUrl: null,
+        imagemUrl: null,
+        amazonCategoriaFee: null,
+        custoUnitario: 2000,
+      },
+    ]);
+    const payload = shipmentPayload({ commission: -9.6, fba: -5.0, parcelamento: -1.2 });
+    mockDb.amazonFinanceTransaction.findMany.mockResolvedValue([
+      { amazonOrderId: ORDER_ID, transactionType: "Shipment", payload }, // DEFERRED_RELEASED
+      { amazonOrderId: ORDER_ID, transactionType: "Shipment", payload }, // RELEASED (republicada)
+    ]);
+
+    const venda = vendaBase({
+      taxasCentavos: 1580, // total REAL reconciliado (single), não 3160
+      fretesCentavos: 0,
+      statusPedido: "Shipped",
+      statusFinanceiro: "RELEASED",
+    });
+
+    const { breakdownPorVenda } = await montarBreakdownVendas([venda]);
+    const b = breakdownPorVenda.get(venda.id)!;
+
+    // Sem o fix: comissao 1920, fba 1000, parcelamento 240 (dobro). Com o fix:
+    // ancora em 1580 preservando a proporção do parser (fator 0.5).
+    expect(b.comissaoCentavos).toBe(960);
+    expect(b.taxaFbaCentavos).toBe(500);
+    expect(b.taxaParcelamentoCentavos).toBe(120);
+    const totalTaxa =
+      b.comissaoCentavos +
+      b.taxaFbaCentavos +
+      b.taxaParcelamentoCentavos +
+      b.closingFeeCentavos +
+      b.taxasAmazonNaoDetalhadasCentavos;
+    expect(totalTaxa).toBe(1580); // == VendaAmazon.taxasCentavos, não 3160
+  });
+
+  it("preserva a soma EXATA no real mesmo com arredondamento (resto vai p/ não detalhadas)", async () => {
+    mockDb.produto.findMany.mockResolvedValue([
+      {
+        id: "prod-dup2",
+        sku: SKU_OK,
+        asin: null,
+        amazonImagemUrl: null,
+        imagemUrl: null,
+        amazonCategoriaFee: null,
+        custoUnitario: 2000,
+      },
+    ]);
+    const payload = shipmentPayload({ commission: -9.6, fba: -5.0, parcelamento: -1.2 });
+    mockDb.amazonFinanceTransaction.findMany.mockResolvedValue([
+      { amazonOrderId: ORDER_ID, transactionType: "Shipment", payload },
+      { amazonOrderId: ORDER_ID, transactionType: "Shipment", payload },
+    ]);
+
+    // Total real ÍMPAR para forçar arredondamento no rateio.
+    const venda = vendaBase({
+      taxasCentavos: 1013,
+      statusPedido: "Shipped",
+      statusFinanceiro: "RELEASED",
+    });
+
+    const { breakdownPorVenda } = await montarBreakdownVendas([venda]);
+    const b = breakdownPorVenda.get(venda.id)!;
+    const totalTaxa =
+      b.comissaoCentavos +
+      b.taxaFbaCentavos +
+      b.taxaParcelamentoCentavos +
+      b.closingFeeCentavos +
+      b.taxasAmazonNaoDetalhadasCentavos;
+    expect(totalTaxa).toBe(1013);
+  });
+
+  it("NÃO ancora quando a taxa real ainda não materializou (taxasCentavos=0)", async () => {
+    // Lag pré-materialização (ou conta isenta): manter o parser cru — ancorar em
+    // 0 zeraria a taxa indevidamente. Aqui o parser tem fee mas o real é 0.
+    mockDb.produto.findMany.mockResolvedValue([
+      {
+        id: "prod-zero",
+        sku: SKU_OK,
+        asin: null,
+        amazonImagemUrl: null,
+        imagemUrl: null,
+        amazonCategoriaFee: null,
+        custoUnitario: 2000,
+      },
+    ]);
+    mockDb.amazonFinanceTransaction.findMany.mockResolvedValue([
+      {
+        amazonOrderId: ORDER_ID,
+        transactionType: "Shipment",
+        payload: shipmentPayload({ commission: -9.6, fba: -5.0 }),
+      },
+    ]);
+
+    const venda = vendaBase({
+      taxasCentavos: 0,
+      statusPedido: "Shipped",
+      statusFinanceiro: "DEFERRED",
+    });
+
+    const { breakdownPorVenda } = await montarBreakdownVendas([venda]);
+    const b = breakdownPorVenda.get(venda.id)!;
+    expect(b.comissaoCentavos).toBe(960);
+    expect(b.taxaFbaCentavos).toBe(500);
+  });
+});
+
 describe("montarBreakdownVendas · estimated (pendente sem Finance)", () => {
   it("usa calcularFeesLocal com a categoria do produto", async () => {
     mockDb.produto.findMany.mockResolvedValue([
