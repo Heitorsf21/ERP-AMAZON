@@ -20,6 +20,28 @@ import {
   type SPReport,
 } from "@/lib/amazon-sp-api";
 
+/**
+ * Um reportId pendente pode ficar ILEGIVEL de forma permanente: a Amazon expira
+ * reports antigos e responde 403/404 ao consultar, e um report criado por OUTRA
+ * aplicacao LWA tambem devolve 403 ("Access to the resource is forbidden").
+ *
+ * Sem tratar isso, o `pendingReportId` gravado em ConfiguracaoSistema nunca era
+ * limpo: o job repetia o mesmo GET para sempre e NUNCA criava report novo. Foi
+ * o que travou o TRAFFIC_SYNC das duas empresas por ~45 dias (KPIs de trafego
+ * congelados). Aqui o erro permanente vira FAILED, e o handler limpa as chaves
+ * e recria o report no ciclo seguinte.
+ */
+const HTTP_PERMANENTE_REPORT = [400, 403, 404, 410];
+
+export function isReportIlegivelPermanente(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  // 429 (quota) e 5xx sao transitorios — precisam continuar propagando para o
+  // retry/cooldown normal do worker.
+  const match = message.match(/->\s*(\d{3})/);
+  const status = match?.[1] ? Number(match[1]) : null;
+  return status != null && HTTP_PERMANENTE_REPORT.includes(status);
+}
+
 export type ReportLifecycleResult =
   | { status: "PENDING_NEW"; reportId: string }
   | {
@@ -64,7 +86,19 @@ export async function stepReportLifecycle(
   args: ReportLifecycleArgs,
 ): Promise<ReportLifecycleResult> {
   if (args.pendingReportId) {
-    const report = await getReport(creds, args.pendingReportId);
+    let report: SPReport;
+    try {
+      report = await getReport(creds, args.pendingReportId);
+    } catch (e) {
+      if (isReportIlegivelPermanente(e)) {
+        return {
+          status: "FAILED",
+          reportId: args.pendingReportId,
+          processingStatus: "ILEGIVEL",
+        };
+      }
+      throw e;
+    }
     const status = report.processingStatus ?? "UNKNOWN";
 
     if (status === "IN_QUEUE" || status === "IN_PROGRESS") {

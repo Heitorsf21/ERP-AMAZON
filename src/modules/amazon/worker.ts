@@ -8,6 +8,7 @@ import {
   completeAmazonSyncJob,
   ensureRecurringAmazonJobs,
   failAmazonSyncJob,
+  requeueRateLimitedAmazonSyncJob,
   claimNextAmazonSyncJob,
   parseJobPayload,
 } from "@/modules/amazon/jobs";
@@ -130,6 +131,27 @@ async function processAmazonSyncJobsInner(options: WorkerOptions = {}) {
       const result = await runWithTenant(jobTenant, () =>
         processJob(job.tipo, job.payload),
       );
+
+      // Sync que bateu no cooldown de quota e ENGOLIU o erro (devolve
+      // `rateLimited: true` em vez de lancar). Marcar SUCCESS aqui esconderia
+      // um job que nao leu nada e so voltaria no intervalo normal — foi assim
+      // que o REFUNDS_SYNC de um dos tenants passou a falhar em toda rodada,
+      // sempre despachado dentro do cooldown deixado pelo FINANCES_SYNC.
+      if (isResultadoRateLimited(result)) {
+        const runAfter = new Date(Date.now() + RATE_LIMIT_REQUEUE_MS);
+        await runWithTenant(SUPERADMIN_WORKER, () =>
+          requeueRateLimitedAmazonSyncJob(job.id, runAfter),
+        );
+        results.push({
+          jobId: job.id,
+          tipo: job.tipo,
+          empresaId,
+          status: "RATE_LIMITED",
+          runAfter: runAfter.toISOString(),
+        });
+        continue;
+      }
+
       await runWithTenant(SUPERADMIN_WORKER, () =>
         completeAmazonSyncJob(job.id, result),
       );
@@ -437,6 +459,21 @@ async function processJob(
     default:
       throw new Error(`Tipo de job Amazon desconhecido: ${tipo}`);
   }
+}
+
+/**
+ * Espera antes de reprocessar um job que bateu no cooldown de quota. Curto o
+ * bastante para nao atrasar o dado, longo o bastante para sair da janela do job
+ * que consumiu o slot (a operacao mais restritiva hoje libera 1 req a cada 2s).
+ */
+const RATE_LIMIT_REQUEUE_MS = 3 * 60_000;
+
+function isResultadoRateLimited(result: unknown): boolean {
+  return (
+    typeof result === "object" &&
+    result !== null &&
+    (result as { rateLimited?: unknown }).rateLimited === true
+  );
 }
 
 function getRetryAt(error: unknown) {

@@ -1145,6 +1145,19 @@ const TRAFFIC_PENDING_START_KEY = "amazon_traffic_pending_start";
 const TRAFFIC_PENDING_END_KEY = "amazon_traffic_pending_end";
 const DEFAULT_REIMBURSEMENT_THRESHOLD_CENTAVOS = 10_000;
 
+/**
+ * Estados de report que NAO merecem excecao: sem documento/URL (report vazio) e
+ * ILEGIVEL (pending expirado ou de outra aplicacao). Todos se resolvem sozinhos
+ * no proximo ciclo, ja que as chaves pendentes foram limpas.
+ */
+function isFalhaSilenciosaDeReport(processingStatus: string) {
+  return (
+    processingStatus === "NO_URL" ||
+    processingStatus === "NO_DOCUMENT" ||
+    processingStatus === "ILEGIVEL"
+  );
+}
+
 type Sprint3Payload = {
   diasAtras?: number;
 };
@@ -1191,7 +1204,10 @@ export async function runFbaReimbursementsSync(
       REIMBURSEMENTS_PENDING_START_KEY,
       REIMBURSEMENTS_PENDING_END_KEY,
     );
-    if (lifecycle.processingStatus === "NO_URL" || lifecycle.processingStatus === "NO_DOCUMENT") {
+    // ILEGIVEL: o reportId pendente expirou / pertence a outra app LWA (403/404).
+    // As chaves ja foram limpas acima; o proximo ciclo cria report novo. NAO
+    // lancamos — seria um JOB_FALHANDO no sino para algo que se auto-corrige.
+    if (isFalhaSilenciosaDeReport(lifecycle.processingStatus)) {
       return { ok: true, reportId: lifecycle.reportId, linhas: 0, criadas: 0, atualizadas: 0, semDados: true };
     }
     throw new Error(
@@ -1256,7 +1272,10 @@ export async function runReturnsSync(
       RETURNS_PENDING_START_KEY,
       RETURNS_PENDING_END_KEY,
     );
-    if (lifecycle.processingStatus === "NO_URL" || lifecycle.processingStatus === "NO_DOCUMENT") {
+    // ILEGIVEL: o reportId pendente expirou / pertence a outra app LWA (403/404).
+    // As chaves ja foram limpas acima; o proximo ciclo cria report novo. NAO
+    // lancamos — seria um JOB_FALHANDO no sino para algo que se auto-corrige.
+    if (isFalhaSilenciosaDeReport(lifecycle.processingStatus)) {
       return { ok: true, reportId: lifecycle.reportId, linhas: 0, criadas: 0, atualizadas: 0, semDados: true };
     }
     throw new Error(
@@ -1325,7 +1344,10 @@ export async function runFbaStorageFeesSync(creds: SPAPICredentials) {
 
   if (lifecycle.status === "FAILED") {
     await clearReportKeys(STORAGE_PENDING_KEY, STORAGE_PENDING_MONTH_KEY);
-    if (lifecycle.processingStatus === "NO_URL" || lifecycle.processingStatus === "NO_DOCUMENT") {
+    // ILEGIVEL: o reportId pendente expirou / pertence a outra app LWA (403/404).
+    // As chaves ja foram limpas acima; o proximo ciclo cria report novo. NAO
+    // lancamos — seria um JOB_FALHANDO no sino para algo que se auto-corrige.
+    if (isFalhaSilenciosaDeReport(lifecycle.processingStatus)) {
       return { ok: true, reportId: lifecycle.reportId, linhas: 0, criadas: 0, atualizadas: 0, semDados: true };
     }
     throw new Error(
@@ -1400,7 +1422,10 @@ export async function runTrafficSync(
       TRAFFIC_PENDING_START_KEY,
       TRAFFIC_PENDING_END_KEY,
     );
-    if (lifecycle.processingStatus === "NO_URL" || lifecycle.processingStatus === "NO_DOCUMENT") {
+    // ILEGIVEL: o reportId pendente expirou / pertence a outra app LWA (403/404).
+    // As chaves ja foram limpas acima; o proximo ciclo cria report novo. NAO
+    // lancamos — seria um JOB_FALHANDO no sino para algo que se auto-corrige.
+    if (isFalhaSilenciosaDeReport(lifecycle.processingStatus)) {
       return { ok: true, reportId: lifecycle.reportId, linhas: 0, criadas: 0, atualizadas: 0, semDados: true };
     }
     throw new Error(

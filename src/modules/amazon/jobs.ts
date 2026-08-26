@@ -180,7 +180,12 @@ const SCHEDULES: Array<{
     tipo: TipoAmazonSyncJob.FINANCES_SYNC,
     intervalMs: 15 * 60_000,
     priority: 10,
-    payload: { diasAtras: 14, maxPages: 1 },
+    // maxPages=8: a Finances API devolve 500 tx/pagina em ordem CRESCENTE, entao
+    // 1 pagina le so as tx mais ANTIGAS da janela de 14d e nunca materializa a
+    // taxa das vendas RECENTES (elas ficam PENDENTE/taxa-0 e o dashboard estima).
+    // O default do handler ja era 8 desde 20f3624, mas ESTE payload o sobrescrevia
+    // com 1 — o fix nunca chegou a valer no job agendado.
+    payload: { diasAtras: 14, maxPages: 8 },
   },
   {
     tipo: TipoAmazonSyncJob.REFUNDS_SYNC,
@@ -454,6 +459,33 @@ export async function completeAmazonSyncJob(
       result: encodeJobJson(result) as never,
       error: null,
       finishedAt: new Date(),
+      lockedAt: null,
+      lockedBy: null,
+    },
+  });
+}
+
+/**
+ * Reagenda um job que terminou SEM fazer o trabalho porque bateu no cooldown de
+ * quota da SP-API.
+ *
+ * Alguns syncs (refunds, finances, inventory) ENGOLEM o rate limit e devolvem
+ * `{ rateLimited: true }` em vez de lancar. O worker marcava isso como SUCCESS e
+ * o job so voltava no intervalo normal — o REFUNDS_SYNC da UDN, despachado ~1,3s
+ * depois do FINANCES_SYNC (mesma operacao, cooldown de 2s), caia nisso em TODA
+ * rodada: 127 execucoes seguidas lendo 0 transacao, todas gravadas como SUCCESS.
+ * Aqui devolvemos o job para a fila logo apos o cooldown, sem contar como falha.
+ */
+export async function requeueRateLimitedAmazonSyncJob(
+  jobId: string,
+  runAfter: Date,
+) {
+  return db.amazonSyncJob.update({
+    where: { id: jobId },
+    data: {
+      status: StatusAmazonSyncJob.QUEUED,
+      runAfter,
+      finishedAt: null,
       lockedAt: null,
       lockedBy: null,
     },

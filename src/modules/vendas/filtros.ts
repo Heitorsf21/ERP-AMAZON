@@ -419,6 +419,22 @@ export function normalizarStatus(status?: string | null): string {
   return (status ?? "").trim().toUpperCase();
 }
 
+/**
+ * Pedidos com prefixo `S01-` / canal `Non-Amazon` sao Multi-Channel Fulfillment
+ * (MCF) e Removal Orders: usam o estoque FBA, mas NAO sao vendas do marketplace
+ * Amazon. Alem de ficarem fora da receita (ver `whereRemovalOrders`), eles nao
+ * aceitam nenhuma acao da Solicitations API — a Amazon responde
+ * `400 InvalidInput: "Attempted to access a multi-channel fulfillment order"`.
+ * Por isso a fila de avaliacoes tambem precisa reconhece-los. Alias semantico de
+ * `isVendaAmazonRemovalOrder` para uso fora do dominio de vendas.
+ */
+export function isPedidoMultiChannelFulfillment(input: {
+  amazonOrderId?: string | null;
+  marketplace?: string | null;
+}): boolean {
+  return isVendaAmazonRemovalOrder(input);
+}
+
 export function isVendaAmazonRemovalOrder(input: {
   amazonOrderId?: string | null;
   marketplace?: string | null;

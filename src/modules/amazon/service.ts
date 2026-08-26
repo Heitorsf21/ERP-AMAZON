@@ -66,7 +66,11 @@ import {
   TipoMovimentacaoEstoque,
 } from "@/modules/shared/domain";
 import { agruparLinhasVendaAmazon } from "@/modules/vendas/agrupamento";
-import { PRECO_ORIGEM_SPAPI } from "@/modules/vendas/filtros";
+import { logger } from "@/lib/logger";
+import {
+  isPedidoMultiChannelFulfillment,
+  PRECO_ORIGEM_SPAPI,
+} from "@/modules/vendas/filtros";
 import {
   calcularImpostoSimplesCentavos,
   calcularPrecoUnitarioCentavos,
@@ -2483,11 +2487,12 @@ async function checkReviewSolicitationWithCreds(
       });
     }
 
-    return markReviewTechnicalError(
-      amazonOrderId,
-      checkedAt,
-      errorToMessage(e),
-    );
+    const message = errorToMessage(e);
+    if (isPedidoNaoSolicitavelError(message)) {
+      return markReviewNaoSolicitavel(amazonOrderId, checkedAt, message);
+    }
+
+    return markReviewTechnicalError(amazonOrderId, checkedAt, message);
   }
 }
 
@@ -2567,6 +2572,10 @@ async function sendReviewSolicitationWithCreds(
           rawResponse: asJson({ message }),
         },
       });
+    }
+
+    if (isPedidoNaoSolicitavelError(message)) {
+      return markReviewNaoSolicitavel(amazonOrderId, attemptedAt, message);
     }
 
     return markReviewTechnicalError(amazonOrderId, attemptedAt, message);
@@ -2870,6 +2879,9 @@ const REVIEW_RESOLVED_STATUSES = [
   StatusAmazonReviewSolicitation.ENVIADO,
   StatusAmazonReviewSolicitation.JA_SOLICITADO,
   StatusAmazonReviewSolicitation.EXPIRADO,
+  // Terminal: pedido que a Amazon nunca aceita solicitar (MCF/Removal Order).
+  // Sem isso a fila reprocessaria o registro no ciclo seguinte.
+  StatusAmazonReviewSolicitation.NAO_ELEGIVEL,
 ] as const;
 
 type ReviewAutomationResult = {
@@ -3068,8 +3080,26 @@ async function enqueueRecentReviewOrders(
   let pedidos30d = 0;
   let maxOrderCreatedAt: Date | null = null;
 
+  let ignoradosMcf = 0;
+  let falhasUpsert = 0;
+
   for (const order of orders) {
     if (!order.orderId) continue;
+
+    // Pedidos MCF / Removal Order (`S01-`, canal Non-Amazon) NAO aceitam
+    // Solicitations: a Amazon devolve 400 InvalidInput ("Attempted to access a
+    // multi-channel fulfillment order"). Antes eles entravam na fila, viravam
+    // ERRO_TECNICO e eram retentados 1x/dia ate expirar por idade (~45 dias) —
+    // queimando quota e enchendo o sino de erro. Filtramos na origem.
+    if (
+      isPedidoMultiChannelFulfillment({
+        amazonOrderId: order.orderId,
+        marketplace: getOrderFulfillmentChannel(order) ?? getOrderMarketplaceName(order),
+      })
+    ) {
+      ignoradosMcf += 1;
+      continue;
+    }
 
     const orderCreatedAt = parseDate(order.createdTime);
     if (!orderCreatedAt || orderCreatedAt < cutoff) continue;
@@ -3097,36 +3127,55 @@ async function enqueueRecentReviewOrders(
         : schedule.eligibleFrom > now
           ? schedule.eligibleFrom
           : now;
-    await upsertReviewQueueOrder(
-      creds,
-      order.orderId,
-      {
-        ...metadata,
-        orderCreatedAt,
-      },
-      {
-        origem,
-        eligibleFrom: schedule.eligibleFrom,
-        deliveryWindowStart: schedule.deliveryWindowStart,
-        deliveryWindowEnd: schedule.deliveryWindowEnd,
-        status: expirado
-          ? StatusAmazonReviewSolicitation.EXPIRADO
-          : skuPausado
-          ? StatusAmazonReviewSolicitation.AGUARDANDO
-          : StatusAmazonReviewSolicitation.PENDENTE,
-        nextCheckAt,
-        qualificationReason: expirado
-          ? "FORA_DA_JANELA_OFICIAL"
-          : skuPausado
-            ? "SKU_PAUSADO"
-            : schedule.eligibleFrom > now
-              ? "AGUARDANDO_MATURIDADE_7_DIAS"
-              : "PEDIDO_NA_FILA",
-      },
-    );
+    // Falha ao enfileirar UM pedido nunca pode derrubar a descoberta inteira.
+    // O caso concreto era P2002 em `amazonOrderId` (@unique GLOBAL num modelo
+    // tenant-scoped): quando o mesmo orderId ja existe sob OUTRA empresa, o
+    // findUnique escopado devolve null, o create colide com o unique e a
+    // excecao subia — abortando a rodada e deixando a fila inteira parada.
+    try {
+      await upsertReviewQueueOrder(
+        creds,
+        order.orderId,
+        {
+          ...metadata,
+          orderCreatedAt,
+        },
+        {
+          origem,
+          eligibleFrom: schedule.eligibleFrom,
+          deliveryWindowStart: schedule.deliveryWindowStart,
+          deliveryWindowEnd: schedule.deliveryWindowEnd,
+          status: expirado
+            ? StatusAmazonReviewSolicitation.EXPIRADO
+            : skuPausado
+            ? StatusAmazonReviewSolicitation.AGUARDANDO
+            : StatusAmazonReviewSolicitation.PENDENTE,
+          nextCheckAt,
+          qualificationReason: expirado
+            ? "FORA_DA_JANELA_OFICIAL"
+            : skuPausado
+              ? "SKU_PAUSADO"
+              : schedule.eligibleFrom > now
+                ? "AGUARDANDO_MATURIDADE_7_DIAS"
+                : "PEDIDO_NA_FILA",
+        },
+      );
+    } catch (e) {
+      falhasUpsert += 1;
+      logger.warn(
+        { amazonOrderId: order.orderId, erro: errorToMessage(e) },
+        "reviews: falha ao enfileirar pedido (ignorado, fila segue)",
+      );
+    }
   }
 
-  return { pedidos30d, rateLimited: false, maxOrderCreatedAt };
+  return {
+    pedidos30d,
+    rateLimited: false,
+    maxOrderCreatedAt,
+    ignoradosMcf,
+    falhasUpsert,
+  };
 }
 
 async function upsertReviewQueueOrder(
@@ -3369,11 +3418,48 @@ async function markReviewTechnicalError(
 }
 
 function isResolvedReviewStatus(status?: string | null) {
+  return (REVIEW_RESOLVED_STATUSES as readonly string[]).includes(status ?? "");
+}
+
+/**
+ * Erros PERMANENTES da Solicitations API: o pedido nunca vai aceitar uma
+ * solicitacao, entao retentar e desperdicio puro de quota (e ruido no sino).
+ *
+ * Caso principal em producao: pedidos Multi-Channel Fulfillment / Removal Order
+ * (`S01-`), que respondem
+ * `400 InvalidInput: "Attempted to access a multi-channel fulfillment order"`.
+ * Antes disso cair aqui, o erro virava ERRO_TECNICO com `nextCheckAt = +1 dia` e
+ * o registro era retentado ~35x ate expirar por idade.
+ */
+function isPedidoNaoSolicitavelError(message: string) {
+  const normalized = message.toLowerCase();
   return (
-    status === StatusAmazonReviewSolicitation.ENVIADO ||
-    status === StatusAmazonReviewSolicitation.JA_SOLICITADO ||
-    status === StatusAmazonReviewSolicitation.EXPIRADO
+    normalized.includes("multi-channel fulfillment") ||
+    normalized.includes("multichannel fulfillment") ||
+    normalized.includes("multi channel fulfillment")
   );
+}
+
+/** Estado terminal para pedido que a Amazon nunca vai aceitar solicitar. */
+async function markReviewNaoSolicitavel(
+  amazonOrderId: string,
+  attemptedAt: Date,
+  message: string,
+) {
+  return db.amazonReviewSolicitation.update({
+    where: { amazonOrderId },
+    data: {
+      status: StatusAmazonReviewSolicitation.NAO_ELEGIVEL,
+      checkedAt: attemptedAt,
+      lastAttemptAt: attemptedAt,
+      attempts: { increment: 1 },
+      nextCheckAt: null,
+      qualificationReason: "PEDIDO_NAO_SOLICITAVEL",
+      resolvedReason: "MCF_OU_REMOVAL_ORDER",
+      errorMessage: null,
+      rawResponse: asJson({ message }),
+    },
+  });
 }
 
 function isAlreadySolicitedError(message: string) {
