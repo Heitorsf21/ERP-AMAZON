@@ -1,13 +1,18 @@
-// Vínculo entre contas de lojas diferentes (duas lojas juntas).
+// Lojas da conta NESTE APARELHO (duas lojas juntas).
 //
-// VinculoLoja e Usuario são GLOBAIS (não auto-filtrados por tenant): todo o
-// escopo daqui sai explicitamente da conta da sessão. Nada vem do cliente.
+// O vínculo é do aparelho de quem vinculou: o chaveiro (cookie assinado, ver
+// chaveiro.ts) guarda as contas que este navegador provou com senha/2FA. Sem o
+// chaveiro — outro aparelho, outra pessoa com o mesmo login, depois de "Sair" —
+// a conta vê só a própria loja. Usuario é GLOBAL: o escopo sai da sessão e do
+// chaveiro assinado, nunca do cliente.
 
 import { db } from "@/lib/db";
-import { ordenarLojas, ordenarPar, vinculoValido, type ContaVinculo } from "./regras";
+import { temConta, type Chaveiro, type ContaNoChaveiro } from "./chaveiro";
+import { contaValidaNoChaveiro, ordenarLojas } from "./regras";
 
 export type Loja = { empresaId: string; nome: string; email: string; papel: string };
-export type LojaVinculada = Loja & { vinculoId: string; vinculadaEm: string };
+/** `vinculoId` = id da conta da outra loja (chave para desvincular neste aparelho). */
+export type LojaVinculada = Loja & { vinculoId: string };
 
 export class ErroVinculo extends Error {
   constructor(public readonly codigo: "MESMA_LOJA" | "CONTA_INVALIDA") {
@@ -40,16 +45,6 @@ type ContaComLoja = {
   empresa: { nome: string; ativa: boolean };
 };
 
-function paraContaVinculo(c: ContaComLoja): ContaVinculo {
-  return {
-    id: c.id,
-    ativo: c.ativo,
-    sessionVersion: c.sessionVersion,
-    empresaId: c.empresaId,
-    empresaAtiva: c.empresa.ativa,
-  };
-}
-
 function paraLoja(c: ContaComLoja): Loja {
   return { empresaId: c.empresaId, nome: c.empresa.nome, email: c.email, papel: c.role };
 }
@@ -58,48 +53,74 @@ async function carregarConta(id: string): Promise<ContaComLoja | null> {
   return db.usuario.findUnique({ where: { id }, select: SELECT_CONTA });
 }
 
+function versaoNoChaveiro(chaveiro: Chaveiro, uid: string): number | undefined {
+  return chaveiro.contas.find((c) => c.uid === uid)?.v;
+}
+
 /**
- * Vínculos VÁLIDOS da conta, já pelo lado oposto (a outra conta), um por
- * empresa (o mais antigo vence) e sem a própria empresa.
+ * Contas das OUTRAS lojas que este aparelho pode abrir a partir de `eu`: a
+ * própria conta precisa estar no chaveiro (e valer), e cada outra também
+ * (ativa, loja ativa, mesma versão). Uma conta por loja (a primeira guardada).
  */
-async function vinculosValidos(
+async function outrasContasDoAparelho(
   eu: ContaComLoja,
-): Promise<{ vinculoId: string; criadoEm: Date; outra: ContaComLoja }[]> {
-  const vinculos = await db.vinculoLoja.findMany({
-    where: { OR: [{ usuarioAId: eu.id }, { usuarioBId: eu.id }] },
-    include: { usuarioA: { select: SELECT_CONTA }, usuarioB: { select: SELECT_CONTA } },
-    orderBy: { criadoEm: "asc" },
-  });
-  const porEmpresa = new Map<string, { vinculoId: string; criadoEm: Date; outra: ContaComLoja }>();
-  for (const v of vinculos) {
-    if (!vinculoValido(v, paraContaVinculo(v.usuarioA), paraContaVinculo(v.usuarioB))) continue;
-    const outra = v.usuarioAId === eu.id ? v.usuarioB : v.usuarioA;
-    if (outra.empresaId === eu.empresaId || porEmpresa.has(outra.empresaId)) continue;
-    porEmpresa.set(outra.empresaId, { vinculoId: v.id, criadoEm: v.criadoEm, outra });
+  chaveiro: Chaveiro | null,
+): Promise<ContaComLoja[]> {
+  if (!chaveiro || !temConta(chaveiro, eu.id)) return [];
+  if (!contaValidaNoChaveiro(paraValidacao(eu), versaoNoChaveiro(chaveiro, eu.id))) return [];
+
+  const ids = chaveiro.contas.map((c) => c.uid).filter((uid) => uid !== eu.id);
+  if (ids.length === 0) return [];
+  const contas = await db.usuario.findMany({ where: { id: { in: ids } }, select: SELECT_CONTA });
+  const porId = new Map(contas.map((c) => [c.id, c]));
+
+  const porEmpresa = new Map<string, ContaComLoja>();
+  for (const uid of ids) {
+    const c = porId.get(uid);
+    if (!c || c.empresaId === eu.empresaId || porEmpresa.has(c.empresaId)) continue;
+    if (!contaValidaNoChaveiro(paraValidacao(c), versaoNoChaveiro(chaveiro, uid))) continue;
+    porEmpresa.set(c.empresaId, c);
   }
   return [...porEmpresa.values()];
 }
 
-/** A loja aberta e as lojas vinculadas (válidas) da conta, ordenadas por nome. */
+function paraValidacao(c: ContaComLoja) {
+  return { ativo: c.ativo, sessionVersion: c.sessionVersion, empresaAtiva: c.empresa.ativa };
+}
+
+/** A loja aberta e as lojas que ESTE aparelho abre sem senha, por nome. */
 export async function listarLojas(
   usuarioId: string,
+  chaveiro: Chaveiro | null,
 ): Promise<{ atual: Loja; vinculadas: LojaVinculada[] } | null> {
   const eu = await carregarConta(usuarioId);
   if (!eu || !eu.ativo) return null;
-  const vinculadas = (await vinculosValidos(eu)).map(({ vinculoId, criadoEm, outra }) => ({
-    ...paraLoja(outra),
-    vinculoId,
-    vinculadaEm: criadoEm.toISOString(),
+  const vinculadas = (await outrasContasDoAparelho(eu, chaveiro)).map((c) => ({
+    ...paraLoja(c),
+    vinculoId: c.id,
   }));
   return { atual: paraLoja(eu), vinculadas: ordenarLojas(vinculadas) };
 }
 
+/** A conta da loja `empresaId` que este aparelho abre sem senha (para trocar). */
+export async function contaVinculadaNaEmpresa(
+  usuarioId: string,
+  empresaId: string,
+  chaveiro: Chaveiro | null,
+): Promise<ContaComLoja | null> {
+  const eu = await carregarConta(usuarioId);
+  if (!eu || !eu.ativo || eu.empresaId === empresaId) return null;
+  return (await outrasContasDoAparelho(eu, chaveiro)).find((c) => c.empresaId === empresaId) ?? null;
+}
+
 /**
- * Cria (ou renova) o vínculo entre a conta da sessão e a conta provada por
- * senha/2FA. Renovar atualiza as versões — volta a valer depois de uma troca
- * de senha.
+ * Depois de provada a senha/2FA da outra conta: as duas contas (com a versão
+ * atual) que vão para o chaveiro deste aparelho, e a loja vinculada.
  */
-export async function criarVinculo(solicitanteId: string, alvoId: string): Promise<LojaVinculada> {
+export async function prepararVinculo(
+  solicitanteId: string,
+  alvoId: string,
+): Promise<{ contas: ContaNoChaveiro[]; loja: LojaVinculada }> {
   const [solicitante, alvo] = await Promise.all([carregarConta(solicitanteId), carregarConta(alvoId)]);
   if (!solicitante || !alvo || !solicitante.ativo || !alvo.ativo) {
     throw new ErroVinculo("CONTA_INVALIDA");
@@ -107,32 +128,11 @@ export async function criarVinculo(solicitanteId: string, alvoId: string): Promi
   if (solicitante.id === alvo.id || solicitante.empresaId === alvo.empresaId) {
     throw new ErroVinculo("MESMA_LOJA");
   }
-  const par = ordenarPar(solicitante.id, alvo.id);
-  const versao = (id: string) => (id === solicitante.id ? solicitante.sessionVersion : alvo.sessionVersion);
-  const versoes = { versaoA: versao(par.usuarioAId), versaoB: versao(par.usuarioBId) };
-  const vinculo = await db.vinculoLoja.upsert({
-    where: { usuarioAId_usuarioBId: par },
-    create: { ...par, ...versoes, criadoPorId: solicitante.id },
-    update: { ...versoes, criadoPorId: solicitante.id },
-  });
-  return { ...paraLoja(alvo), vinculoId: vinculo.id, vinculadaEm: vinculo.criadoEm.toISOString() };
-}
-
-/** Desfaz o vínculo — só se a conta for um dos dois lados. */
-export async function removerVinculo(usuarioId: string, vinculoId: string): Promise<boolean> {
-  const r = await db.vinculoLoja.deleteMany({
-    where: { id: vinculoId, OR: [{ usuarioAId: usuarioId }, { usuarioBId: usuarioId }] },
-  });
-  return r.count > 0;
-}
-
-/** A conta vinculada (válida) na empresa pedida, para trocar de loja. */
-export async function contaVinculadaNaEmpresa(
-  usuarioId: string,
-  empresaId: string,
-): Promise<ContaComLoja | null> {
-  const eu = await carregarConta(usuarioId);
-  if (!eu || !eu.ativo || eu.empresaId === empresaId) return null;
-  const achado = (await vinculosValidos(eu)).find((v) => v.outra.empresaId === empresaId);
-  return achado?.outra ?? null;
+  return {
+    contas: [
+      { uid: solicitante.id, v: solicitante.sessionVersion },
+      { uid: alvo.id, v: alvo.sessionVersion },
+    ],
+    loja: { ...paraLoja(alvo), vinculoId: alvo.id },
+  };
 }

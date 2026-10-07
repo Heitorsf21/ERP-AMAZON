@@ -1,42 +1,16 @@
-// Regras puras do vínculo entre lojas (duas lojas juntas). Sem I/O: o serviço
+// Regras puras das lojas da conta (duas lojas juntas). Sem I/O: o serviço
 // (vinculos.ts) carrega as contas e decide com estas funções.
 
-/** O que importa de cada conta para o vínculo continuar valendo. */
-export type ContaVinculo = {
-  id: string;
-  ativo: boolean;
-  sessionVersion: number;
-  empresaId: string;
-  empresaAtiva: boolean;
-};
-
-/** Par não-ordenado guardado sempre na mesma ordem: A↔B tem uma linha só. */
-export function ordenarPar(
-  x: string,
-  y: string,
-): { usuarioAId: string; usuarioBId: string } {
-  return x < y ? { usuarioAId: x, usuarioBId: y } : { usuarioAId: y, usuarioBId: x };
-}
-
 /**
- * O vínculo vale enquanto as duas contas e empresas estiverem ativas, forem de
- * lojas diferentes e ninguém tiver trocado a senha ou encerrado as sessões
- * (sessionVersion igual ao do momento do vínculo). Fail-closed.
+ * Uma conta do chaveiro do aparelho continua valendo enquanto ela e a loja
+ * estiverem ativas e ninguém tiver trocado a senha ou encerrado as sessões
+ * dela (sessionVersion igual ao do momento do vínculo). Fail-closed.
  */
-export function vinculoValido(
-  vinculo: { versaoA: number; versaoB: number },
-  a: ContaVinculo,
-  b: ContaVinculo,
+export function contaValidaNoChaveiro(
+  conta: { ativo: boolean; sessionVersion: number; empresaAtiva: boolean },
+  versaoNoChaveiro: number | undefined,
 ): boolean {
-  return (
-    a.ativo &&
-    b.ativo &&
-    a.empresaAtiva &&
-    b.empresaAtiva &&
-    a.empresaId !== b.empresaId &&
-    vinculo.versaoA === a.sessionVersion &&
-    vinculo.versaoB === b.sessionVersion
-  );
+  return conta.ativo && conta.empresaAtiva && versaoNoChaveiro === conta.sessionVersion;
 }
 
 /**
@@ -86,7 +60,7 @@ type LojaBase = { empresaId: string; nome: string; email: string; papel: string 
 export type LojaComCor = LojaBase & {
   /** É a loja aberta nesta sessão. */
   atual: boolean;
-  /** Vínculo que liga esta loja à aberta (null na própria loja aberta). */
+  /** Conta desta loja no chaveiro do aparelho (null na própria loja aberta). */
   vinculoId: string | null;
   cor: CorLoja;
 };
@@ -94,7 +68,7 @@ export type LojaComCor = LojaBase & {
 /** Lista única das lojas da conta, na ordem fixa por nome, com a cor de cada uma. */
 export function lojasComCor(
   atual: LojaBase,
-  vinculadas: readonly (LojaBase & { vinculoId: string; vinculadaEm?: string })[],
+  vinculadas: readonly (LojaBase & { vinculoId: string })[],
 ): LojaComCor[] {
   const todas = [
     { ...atual, atual: true, vinculoId: null },

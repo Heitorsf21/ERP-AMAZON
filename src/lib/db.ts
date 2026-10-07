@@ -154,9 +154,6 @@ const GLOBAL_MODELS = new Set<string>([
   // ([empresaId, endpoint]) e a limpeza de inscrição morta (410) vale para
   // todas. Escopo explícito no módulo push/dispositivos (empresaId+usuarioId).
   "PushDispositivo",
-  // Vínculo entre contas de lojas diferentes (duas lojas juntas): liga
-  // empresas por definição. Escopo explícito em src/modules/lojas (sessão).
-  "VinculoLoja",
 ]);
 
 // Exportadas para inspeção/teste. Não usar em código de produção fora daqui.

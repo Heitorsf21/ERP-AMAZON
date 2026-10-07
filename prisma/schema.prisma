@@ -135,8 +135,6 @@ model Usuario {
   convites          ConviteUsuario[]
   auditLogs         AuditLog[]
   tarefas           Tarefa[]
-  vinculosLojaA     VinculoLoja[]           @relation("VinculoLojaA")
-  vinculosLojaB     VinculoLoja[]           @relation("VinculoLojaB")
 
   @@unique([empresaId, email])
   @@index([email])
@@ -215,28 +213,6 @@ model CodigoVerificacao2FA {
   @@index([usuarioId])
   @@index([challengeId])
   @@index([expiresAt])
-}
-
-// Vínculo entre duas contas (Usuario) de lojas diferentes, criado provando a
-// senha (e o 2FA) da outra conta. Par não-ordenado guardado em ordem
-// (usuarioAId < usuarioBId). GLOBAL: escopo resolvido em src/modules/lojas.
-// Não é transitivo: A↔B e B↔C não dão acesso de A a C.
-model VinculoLoja {
-  id          String   @id @default(cuid())
-  usuarioAId  String
-  usuarioBId  String
-  // sessionVersion de cada conta na criação: troca de senha ou "encerrar
-  // sessões" de qualquer lado desfaz o vínculo (fail-closed).
-  versaoA     Int
-  versaoB     Int
-  criadoPorId String
-  criadoEm    DateTime @default(now())
-
-  usuarioA Usuario @relation("VinculoLojaA", fields: [usuarioAId], references: [id], onDelete: Cascade)
-  usuarioB Usuario @relation("VinculoLojaB", fields: [usuarioBId], references: [id], onDelete: Cascade)
-
-  @@unique([usuarioAId, usuarioBId])
-  @@index([usuarioBId])
 }
 
 model Categoria {

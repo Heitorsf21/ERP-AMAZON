@@ -1,18 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const dbMock = vi.hoisted(() => ({
-  usuario: { findUnique: vi.fn() },
-  vinculoLoja: { findMany: vi.fn(), upsert: vi.fn(), deleteMany: vi.fn() },
-}));
+const dbMock = vi.hoisted(() => ({ usuario: { findUnique: vi.fn(), findMany: vi.fn() } }));
 vi.mock("@/lib/db", () => ({ db: dbMock }));
 
-import {
-  contaVinculadaNaEmpresa,
-  criarVinculo,
-  ErroVinculo,
-  listarLojas,
-  removerVinculo,
-} from "./vinculos";
+import type { Chaveiro } from "./chaveiro";
+import { contaVinculadaNaEmpresa, ErroVinculo, listarLojas, prepararVinculo } from "./vinculos";
 
 type Conta = {
   id: string;
@@ -40,111 +32,102 @@ const conta = (id: string, empresaId: string, nomeLoja: string, over: Partial<Co
 const mfs = conta("u-mfs", "mundofs", "MundoFS");
 const udn = conta("u-udn", "udn", "UDN");
 const zeta = conta("u-zeta", "zeta", "Zeta");
+const TODAS = [mfs, udn, zeta];
 
-const vinculo = (a: Conta, b: Conta, over: Record<string, unknown> = {}) => ({
-  id: `v-${a.id}-${b.id}`,
-  usuarioAId: a.id,
-  usuarioBId: b.id,
-  versaoA: a.sessionVersion,
-  versaoB: b.sessionVersion,
-  criadoPorId: a.id,
-  criadoEm: new Date("2026-10-07T12:00:00Z"),
-  usuarioA: a,
-  usuarioB: b,
-  ...over,
-});
+function chaveiro(...contas: { uid: string; v: number }[]): Chaveiro {
+  return { contas, exp: Math.floor(Date.now() / 1000) + 3600 };
+}
 
 beforeEach(() => {
   vi.clearAllMocks();
+  dbMock.usuario.findUnique.mockImplementation(async ({ where }: { where: { id: string } }) =>
+    TODAS.find((c) => c.id === where.id) ?? null,
+  );
+  dbMock.usuario.findMany.mockImplementation(async ({ where }: { where: { id: { in: string[] } } }) =>
+    TODAS.filter((c) => where.id.in.includes(c.id)),
+  );
 });
 
-describe("listarLojas", () => {
-  it("a loja aberta e as vinculadas válidas, pelo lado oposto, ordenadas por nome", async () => {
-    dbMock.usuario.findUnique.mockResolvedValue(mfs);
-    dbMock.vinculoLoja.findMany.mockResolvedValue([vinculo(mfs, zeta), vinculo(mfs, udn)]);
-    const r = await listarLojas("u-mfs");
-    expect(r?.atual).toEqual({ empresaId: "mundofs", nome: "MundoFS", email: "u-mfs@loja.test", papel: "ADMIN" });
-    expect(r?.vinculadas.map((l) => l.nome)).toEqual(["UDN", "Zeta"]);
-    expect(r?.vinculadas[0]).toMatchObject({ vinculoId: "v-u-mfs-u-udn", empresaId: "udn", email: "u-udn@loja.test" });
+describe("listarLojas (vínculo é do aparelho)", () => {
+  it("aparelho sem chaveiro (ex.: o sócio no celular dele): só a loja do login", async () => {
+    const r = await listarLojas("u-udn", null);
+    expect(r?.atual).toMatchObject({ empresaId: "udn", nome: "UDN" });
+    expect(r?.vinculadas).toEqual([]);
+    expect(dbMock.usuario.findMany).not.toHaveBeenCalled();
   });
 
-  it("ignora o vínculo de quem trocou a senha depois de vincular", async () => {
-    dbMock.usuario.findUnique.mockResolvedValue(mfs);
-    dbMock.vinculoLoja.findMany.mockResolvedValue([vinculo(mfs, udn, { versaoB: 0, usuarioB: { ...udn, sessionVersion: 1 } })]);
-    const r = await listarLojas("u-mfs");
+  it("chaveiro de outra pessoa no mesmo navegador não vale para quem não está nele", async () => {
+    const r = await listarLojas("u-zeta", chaveiro({ uid: "u-mfs", v: 0 }, { uid: "u-udn", v: 0 }));
     expect(r?.vinculadas).toEqual([]);
   });
 
-  it("duas contas da mesma loja vinculada aparecem uma vez só", async () => {
-    const udn2 = conta("u-udn2", "udn", "UDN");
-    dbMock.usuario.findUnique.mockResolvedValue(mfs);
-    dbMock.vinculoLoja.findMany.mockResolvedValue([vinculo(mfs, udn), vinculo(mfs, udn2)]);
-    const r = await listarLojas("u-mfs");
+  it("aparelho de quem vinculou: as outras lojas do chaveiro, por nome", async () => {
+    const r = await listarLojas("u-udn", chaveiro({ uid: "u-zeta", v: 0 }, { uid: "u-mfs", v: 0 }, { uid: "u-udn", v: 0 }));
+    expect(r?.vinculadas.map((l) => l.nome)).toEqual(["MundoFS", "Zeta"]);
+    expect(r?.vinculadas[0]).toMatchObject({ vinculoId: "u-mfs", empresaId: "mundofs", email: "u-mfs@loja.test" });
+  });
+
+  it("conta que trocou a senha depois de vincular sai da lista", async () => {
+    const r = await listarLojas(
+      "u-mfs",
+      chaveiro({ uid: "u-mfs", v: 0 }, { uid: "u-udn", v: 0 }),
+    );
     expect(r?.vinculadas).toHaveLength(1);
+    dbMock.usuario.findMany.mockResolvedValueOnce([mfs, { ...udn, sessionVersion: 1 }]);
+    const depois = await listarLojas("u-mfs", chaveiro({ uid: "u-mfs", v: 0 }, { uid: "u-udn", v: 0 }));
+    expect(depois?.vinculadas).toEqual([]);
+  });
+
+  it("se a própria conta trocou a senha, o chaveiro dela não vale mais", async () => {
+    dbMock.usuario.findUnique.mockResolvedValueOnce({ ...mfs, sessionVersion: 2 });
+    const r = await listarLojas("u-mfs", chaveiro({ uid: "u-mfs", v: 0 }, { uid: "u-udn", v: 0 }));
+    expect(r?.vinculadas).toEqual([]);
+  });
+
+  it("conta ou loja desativada sai da lista", async () => {
+    dbMock.usuario.findMany.mockResolvedValueOnce([mfs, { ...udn, empresa: { nome: "UDN", ativa: false } }]);
+    const r = await listarLojas("u-mfs", chaveiro({ uid: "u-mfs", v: 0 }, { uid: "u-udn", v: 0 }));
+    expect(r?.vinculadas).toEqual([]);
   });
 
   it("conta inexistente ou inativa → null", async () => {
-    dbMock.usuario.findUnique.mockResolvedValue(null);
-    expect(await listarLojas("u-x")).toBeNull();
-    dbMock.usuario.findUnique.mockResolvedValue({ ...mfs, ativo: false });
-    expect(await listarLojas("u-mfs")).toBeNull();
-  });
-});
-
-describe("criarVinculo", () => {
-  it("grava o par em ordem com as versões atuais das duas contas", async () => {
-    const udnV = { ...udn, sessionVersion: 3 };
-    dbMock.usuario.findUnique.mockImplementation(async ({ where }: { where: { id: string } }) =>
-      where.id === "u-udn" ? udnV : mfs,
-    );
-    dbMock.vinculoLoja.upsert.mockImplementation(async ({ create }: { create: Record<string, unknown> }) => ({
-      id: "v1",
-      criadoEm: new Date("2026-10-07T12:00:00Z"),
-      ...create,
-    }));
-    const r = await criarVinculo("u-udn", "u-mfs");
-    const arg = dbMock.vinculoLoja.upsert.mock.calls[0]?.[0];
-    expect(arg.where).toEqual({ usuarioAId_usuarioBId: { usuarioAId: "u-mfs", usuarioBId: "u-udn" } });
-    expect(arg.create).toMatchObject({ usuarioAId: "u-mfs", usuarioBId: "u-udn", versaoA: 0, versaoB: 3, criadoPorId: "u-udn" });
-    expect(arg.update).toMatchObject({ versaoA: 0, versaoB: 3 });
-    expect(r).toMatchObject({ vinculoId: "v1", empresaId: "mundofs", nome: "MundoFS" });
-  });
-
-  it("recusa vincular duas contas da mesma loja", async () => {
-    const mfs2 = conta("u-mfs2", "mundofs", "MundoFS");
-    dbMock.usuario.findUnique.mockImplementation(async ({ where }: { where: { id: string } }) =>
-      where.id === "u-mfs2" ? mfs2 : mfs,
-    );
-    await expect(criarVinculo("u-mfs", "u-mfs2")).rejects.toEqual(new ErroVinculo("MESMA_LOJA"));
-    await expect(criarVinculo("u-mfs", "u-mfs")).rejects.toEqual(new ErroVinculo("MESMA_LOJA"));
-    expect(dbMock.vinculoLoja.upsert).not.toHaveBeenCalled();
-  });
-});
-
-describe("removerVinculo", () => {
-  it("só remove vínculo do qual a conta faz parte", async () => {
-    dbMock.vinculoLoja.deleteMany.mockResolvedValue({ count: 0 });
-    expect(await removerVinculo("u-zeta", "v1")).toBe(false);
-    expect(dbMock.vinculoLoja.deleteMany.mock.calls[0]?.[0]?.where).toEqual({
-      id: "v1",
-      OR: [{ usuarioAId: "u-zeta" }, { usuarioBId: "u-zeta" }],
-    });
-    dbMock.vinculoLoja.deleteMany.mockResolvedValue({ count: 1 });
-    expect(await removerVinculo("u-mfs", "v1")).toBe(true);
+    expect(await listarLojas("u-x", null)).toBeNull();
+    dbMock.usuario.findUnique.mockResolvedValueOnce({ ...mfs, ativo: false });
+    expect(await listarLojas("u-mfs", null)).toBeNull();
   });
 });
 
 describe("contaVinculadaNaEmpresa", () => {
-  it("devolve a conta da outra loja quando o vínculo vale", async () => {
-    dbMock.usuario.findUnique.mockResolvedValue(mfs);
-    dbMock.vinculoLoja.findMany.mockResolvedValue([vinculo(mfs, udn)]);
-    expect((await contaVinculadaNaEmpresa("u-mfs", "udn"))?.id).toBe("u-udn");
+  const ch = chaveiro({ uid: "u-mfs", v: 0 }, { uid: "u-udn", v: 0 });
+
+  it("devolve a conta da outra loja quando ela está no chaveiro deste aparelho", async () => {
+    expect((await contaVinculadaNaEmpresa("u-mfs", "udn", ch))?.id).toBe("u-udn");
+    expect((await contaVinculadaNaEmpresa("u-udn", "mundofs", ch))?.id).toBe("u-mfs");
   });
 
-  it("sem vínculo válido para a empresa → null", async () => {
-    dbMock.usuario.findUnique.mockResolvedValue(mfs);
-    dbMock.vinculoLoja.findMany.mockResolvedValue([vinculo(mfs, udn)]);
-    expect(await contaVinculadaNaEmpresa("u-mfs", "zeta")).toBeNull();
-    expect(await contaVinculadaNaEmpresa("u-mfs", "mundofs")).toBeNull();
+  it("sem chaveiro, loja fora dele ou a própria loja → null", async () => {
+    expect(await contaVinculadaNaEmpresa("u-udn", "mundofs", null)).toBeNull();
+    expect(await contaVinculadaNaEmpresa("u-mfs", "zeta", ch)).toBeNull();
+    expect(await contaVinculadaNaEmpresa("u-mfs", "mundofs", ch)).toBeNull();
+  });
+});
+
+describe("prepararVinculo", () => {
+  it("as duas contas com a versão atual vão para o chaveiro", async () => {
+    dbMock.usuario.findUnique.mockImplementation(async ({ where }: { where: { id: string } }) =>
+      where.id === "u-udn" ? { ...udn, sessionVersion: 3 } : mfs,
+    );
+    const r = await prepararVinculo("u-mfs", "u-udn");
+    expect(r.contas).toEqual([{ uid: "u-mfs", v: 0 }, { uid: "u-udn", v: 3 }]);
+    expect(r.loja).toMatchObject({ vinculoId: "u-udn", empresaId: "udn", nome: "UDN" });
+  });
+
+  it("recusa conta da mesma loja ou a própria conta", async () => {
+    const mfs2 = conta("u-mfs2", "mundofs", "MundoFS");
+    dbMock.usuario.findUnique.mockImplementation(async ({ where }: { where: { id: string } }) =>
+      where.id === "u-mfs2" ? mfs2 : mfs,
+    );
+    await expect(prepararVinculo("u-mfs", "u-mfs2")).rejects.toEqual(new ErroVinculo("MESMA_LOJA"));
+    await expect(prepararVinculo("u-mfs", "u-mfs")).rejects.toEqual(new ErroVinculo("MESMA_LOJA"));
   });
 });

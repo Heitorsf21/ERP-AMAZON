@@ -2,11 +2,9 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { handle } from "@/lib/api";
 import { requireSession } from "@/lib/auth";
-import { auditLog } from "@/lib/audit";
 import { originViolationResponse } from "@/lib/origin-check";
 import { conferirDesafio2FA, finalidadeVinculo } from "@/modules/auth/desafio-2fa";
-import { criarVinculo, ErroVinculo } from "@/modules/lojas/vinculos";
-import { TipoAuditLog } from "@/modules/shared/domain";
+import { concluirVinculo } from "@/modules/lojas/concluir-vinculo";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -41,21 +39,5 @@ export const POST = handle(async (req: Request) => {
     return NextResponse.json({ erro: resultado.erro }, { status: 401 });
   }
 
-  try {
-    const loja = await criarVinculo(session.uid, resultado.usuario.id);
-    await auditLog({
-      session,
-      req,
-      acao: TipoAuditLog.LOJA_VINCULADA,
-      entidade: "VinculoLoja",
-      entidadeId: loja.vinculoId,
-      metadata: { empresaVinculada: loja.empresaId, etapa: "2FA" },
-    });
-    return NextResponse.json({ loja });
-  } catch (e) {
-    if (e instanceof ErroVinculo) {
-      return NextResponse.json({ erro: e.codigo }, { status: 400 });
-    }
-    throw e;
-  }
+  return concluirVinculo({ session, alvoId: resultado.usuario.id, req, metadata: { etapa: "2FA" } });
 });

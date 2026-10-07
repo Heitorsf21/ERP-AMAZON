@@ -521,10 +521,6 @@ describe("classificacao dos models novos (A+B)", () => {
     expect(TENANT_MODEL_NAMES.has("PushEnvio")).toBe(true);
   });
 
-  it("VinculoLoja é GLOBAL: liga contas de empresas diferentes", () => {
-    expect(GLOBAL_MODEL_NAMES.has("VinculoLoja")).toBe(true);
-    expect(TENANT_MODEL_NAMES.has("VinculoLoja")).toBe(false);
-  });
 });
 
 describe("normalização da flag TENANT_ISOLATION (trim + case)", () => {

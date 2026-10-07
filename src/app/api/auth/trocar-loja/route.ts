@@ -6,6 +6,13 @@ import { auditLog } from "@/lib/audit";
 import { db } from "@/lib/db";
 import { originViolationResponse } from "@/lib/origin-check";
 import { SESSION_COOKIE_NAME, buildSessionCookieOptions, signSession } from "@/lib/session";
+import {
+  assinarChaveiro,
+  CHAVEIRO_COOKIE,
+  chaveiroDoRequest,
+  guardarContas,
+  opcoesCookieChaveiro,
+} from "@/modules/lojas/chaveiro";
 import { contaVinculadaNaEmpresa } from "@/modules/lojas/vinculos";
 import { TipoAuditLog } from "@/modules/shared/domain";
 
@@ -15,9 +22,10 @@ export const dynamic = "force-dynamic";
 const schema = z.object({ empresaId: z.string().min(1).max(64) });
 
 /**
- * Troca de loja sem novo login: reemite o cookie como a conta VINCULADA da
- * empresa pedida. O vínculo (senha + 2FA da outra conta) já provou a posse;
- * a troca não renova o prazo — o novo cookie expira junto com o atual.
+ * Troca de loja sem novo login: reemite o cookie como a conta da empresa
+ * pedida que ESTE aparelho provou com senha/2FA (chaveiro do cookie). Em outro
+ * aparelho, sem o chaveiro, não há troca. A sessão não é renovada — o novo
+ * cookie expira junto com o atual; o chaveiro, sim, renova o prazo.
  */
 export const POST = handle(async (req: Request) => {
   const origemBloqueada = originViolationResponse(req);
@@ -29,8 +37,9 @@ export const POST = handle(async (req: Request) => {
     return NextResponse.json({ erro: "DADOS_INVALIDOS" }, { status: 400 });
   }
 
-  const conta = await contaVinculadaNaEmpresa(session.uid, parsed.data.empresaId);
-  if (!conta) {
+  const chaveiro = await chaveiroDoRequest();
+  const conta = await contaVinculadaNaEmpresa(session.uid, parsed.data.empresaId, chaveiro);
+  if (!conta || !chaveiro) {
     return NextResponse.json({ erro: "LOJA_NAO_VINCULADA" }, { status: 404 });
   }
 
@@ -63,5 +72,6 @@ export const POST = handle(async (req: Request) => {
     ...buildSessionCookieOptions(),
     maxAge: restanteSeg,
   });
+  res.cookies.set(CHAVEIRO_COOKIE, await assinarChaveiro(guardarContas(chaveiro, [])), opcoesCookieChaveiro());
   return res;
 });

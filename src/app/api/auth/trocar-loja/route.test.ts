@@ -20,6 +20,12 @@ vi.mock("@/lib/auth", () => ({ requireSession: vi.fn(async () => sessao.atual) }
 const vinculos = vi.hoisted(() => ({ contaVinculadaNaEmpresa: vi.fn() }));
 vi.mock("@/modules/lojas/vinculos", () => vinculos);
 
+const CHAVEIRO = vi.hoisted(() => ({ contas: [{ uid: "u-mfs", v: 0 }, { uid: "u-udn", v: 4 }], exp: 4_000_000_000 }));
+vi.mock("@/modules/lojas/chaveiro", async (importOriginal) => {
+  const real = await importOriginal<typeof import("@/modules/lojas/chaveiro")>();
+  return { ...real, chaveiroDoRequest: vi.fn(async () => CHAVEIRO) };
+});
+
 const dbMock = vi.hoisted(() => ({ usuario: { update: vi.fn() } }));
 vi.mock("@/lib/db", () => ({ db: dbMock }));
 
@@ -72,7 +78,7 @@ describe("POST /api/auth/trocar-loja", () => {
     vinculos.contaVinculadaNaEmpresa.mockResolvedValueOnce(contaUdn);
     const res = await chamar({ empresaId: "udn" });
     expect(res.status).toBe(200);
-    expect(vinculos.contaVinculadaNaEmpresa).toHaveBeenCalledWith("u-mfs", "udn");
+    expect(vinculos.contaVinculadaNaEmpresa).toHaveBeenCalledWith("u-mfs", "udn", CHAVEIRO);
     const setCookie = res.headers.get("set-cookie");
     const payload = await verifySession(tokenDoCookie(setCookie));
     expect(payload).toMatchObject({
@@ -87,6 +93,15 @@ describe("POST /api/auth/trocar-loja", () => {
     expect(maxAge).toBeGreaterThan(3 * 24 * 3600 - 60);
     expect(maxAge).toBeLessThanOrEqual(3 * 24 * 3600);
     expect(await res.json()).toEqual({ ok: true, loja: { empresaId: "udn", nome: "UDN" } });
+  });
+
+  it("renova o prazo do chaveiro do aparelho a cada troca", async () => {
+    vinculos.contaVinculadaNaEmpresa.mockResolvedValueOnce(contaUdn);
+    const res = await chamar({ empresaId: "udn" });
+    const cookies = res.headers.getSetCookie();
+    const chaveiro = cookies.find((c) => c.startsWith("erp_lojas="));
+    expect(chaveiro).toBeDefined();
+    expect(chaveiro).toMatch(/HttpOnly/i);
   });
 
   it("registra a troca na auditoria", async () => {

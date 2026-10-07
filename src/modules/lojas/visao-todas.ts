@@ -1,9 +1,11 @@
 // Visão "Todas" do Início: em quais lojas rodar e como rodar cada uma no
-// próprio tenant. As lojas saem do BANCO a partir da conta da sessão (vínculos
-// válidos) — o cliente só pede `?lojas=todas`. Nunca superadmin.
+// próprio tenant. As lojas saem da conta da sessão + chaveiro assinado DESTE
+// aparelho (validado no banco) — o cliente só pede `?lojas=todas`. Nunca
+// superadmin.
 
 import { requireSession } from "@/lib/auth";
 import { runWithTenant } from "@/lib/tenant-context";
+import { chaveiroDoRequest } from "./chaveiro";
 import type { LojaRef } from "./consolidado";
 import { ordenarLojas } from "./regras";
 import { listarLojas } from "./vinculos";
@@ -20,7 +22,7 @@ export function pedeVisaoTodas(searchParams: URLSearchParams): boolean {
 export async function lojasDaVisaoTodas(): Promise<{ lojas: LojaRef[]; atualEmpresaId: string } | null> {
   const session = await requireSession();
   if (!session.empresaId) return null;
-  const minhas = await listarLojas(session.uid);
+  const minhas = await listarLojas(session.uid, await chaveiroDoRequest());
   if (!minhas || minhas.vinculadas.length === 0) return null;
   if (minhas.atual.empresaId !== session.empresaId) return null;
   const lojas = ordenarLojas(

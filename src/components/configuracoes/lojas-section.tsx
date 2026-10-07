@@ -77,7 +77,7 @@ function MinhasLojas() {
       <CabecalhoCartao
         icone={Layers}
         titulo="Minhas lojas"
-        descricao="Lojas que você abre neste login, sem digitar senha."
+        descricao="Lojas que este aparelho abre sem digitar senha."
       />
       <CardContent className="space-y-1 px-4 pb-4">
         {isLoading ? (
@@ -109,8 +109,8 @@ function MinhasLojas() {
           <DialogHeader>
             <DialogTitle>Desvincular {desvincular?.nome}?</DialogTitle>
             <DialogDescription>
-              A {desvincular?.nome} sai da troca rápida e da visão Todas. A loja e os dados dela
-              continuam iguais, e dá para vincular de novo quando quiser.
+              Este aparelho deixa de abrir a {desvincular?.nome} sem senha e ela sai da visão Todas.
+              A loja e os dados dela continuam iguais, e dá para vincular de novo quando quiser.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="grid grid-cols-2 gap-2 sm:space-x-0">
@@ -178,7 +178,7 @@ function VincularLoja() {
   }
 
   async function concluir(loja: { nome: string }) {
-    toast.success(`${loja.nome} vinculada. Troque de loja tocando no nome dela no topo.`);
+    toast.success(`${loja.nome} vinculada neste aparelho. Troque de loja tocando no nome dela no topo.`);
     setEmail("");
     recomecar();
     await qc.invalidateQueries({ queryKey: CHAVE_LOJAS });
@@ -222,7 +222,7 @@ function VincularLoja() {
       <CabecalhoCartao
         icone={Link2}
         titulo="Vincular outra loja"
-        descricao="Entre uma vez com a conta da outra loja. Depois a troca é na hora."
+        descricao="Entre uma vez com a conta da outra loja. Depois, neste aparelho, a troca é na hora."
       />
       <CardContent>
         <form className="space-y-4" onSubmit={(e) => void enviar(e)} noValidate>
@@ -314,8 +314,8 @@ function VincularLoja() {
 
           <p className="flex gap-2 text-xs text-muted-foreground">
             <Lock className="mt-px h-3.5 w-3.5 shrink-0" aria-hidden />
-            Cada loja continua com o próprio login, avisos de venda e permissões. Dá para desvincular
-            quando quiser.
+            Vale só neste aparelho e só para quem vinculou: quem entra pelo login de uma das lojas em
+            outro aparelho continua vendo só aquela loja. Tocar em Sair desfaz o vínculo aqui.
           </p>
         </form>
       </CardContent>

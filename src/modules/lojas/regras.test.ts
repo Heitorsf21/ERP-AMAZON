@@ -1,47 +1,21 @@
 import { describe, expect, it } from "vitest";
-import { corDaLoja, destinoAoTrocar, iniciaisLoja, lojasComCor, ordenarLojas, ordenarPar, vinculoValido, type ContaVinculo } from "./regras";
+import { contaValidaNoChaveiro, corDaLoja, destinoAoTrocar, iniciaisLoja, lojasComCor, ordenarLojas } from "./regras";
 
-const conta = (over: Partial<ContaVinculo> = {}): ContaVinculo => ({
-  id: "u-a",
-  ativo: true,
-  sessionVersion: 0,
-  empresaId: "mundofs",
-  empresaAtiva: true,
-  ...over,
-});
+describe("contaValidaNoChaveiro", () => {
+  const conta = { ativo: true, sessionVersion: 2, empresaAtiva: true };
 
-describe("ordenarPar", () => {
-  it("guarda o par sempre na mesma ordem, venha de qual lado vier", () => {
-    expect(ordenarPar("u-b", "u-a")).toEqual({ usuarioAId: "u-a", usuarioBId: "u-b" });
-    expect(ordenarPar("u-a", "u-b")).toEqual({ usuarioAId: "u-a", usuarioBId: "u-b" });
-  });
-});
-
-describe("vinculoValido", () => {
-  const a = conta({ id: "u-a", empresaId: "mundofs", sessionVersion: 2 });
-  const b = conta({ id: "u-b", empresaId: "udn", sessionVersion: 5 });
-  const v = { versaoA: 2, versaoB: 5 };
-
-  it("vale com as duas contas e empresas ativas e as versões batendo", () => {
-    expect(vinculoValido(v, a, b)).toBe(true);
+  it("vale com conta e loja ativas e a mesma versão do vínculo", () => {
+    expect(contaValidaNoChaveiro(conta, 2)).toBe(true);
   });
 
-  it("cai quando uma conta é desativada", () => {
-    expect(vinculoValido(v, { ...a, ativo: false }, b)).toBe(false);
-    expect(vinculoValido(v, a, { ...b, ativo: false })).toBe(false);
+  it("cai com conta ou loja desativada", () => {
+    expect(contaValidaNoChaveiro({ ...conta, ativo: false }, 2)).toBe(false);
+    expect(contaValidaNoChaveiro({ ...conta, empresaAtiva: false }, 2)).toBe(false);
   });
 
-  it("cai quando uma empresa é desativada", () => {
-    expect(vinculoValido(v, a, { ...b, empresaAtiva: false })).toBe(false);
-  });
-
-  it("cai quando as duas contas são da mesma empresa", () => {
-    expect(vinculoValido(v, a, { ...b, empresaId: "mundofs" })).toBe(false);
-  });
-
-  it("cai quando qualquer lado trocou a senha ou encerrou as sessões", () => {
-    expect(vinculoValido(v, { ...a, sessionVersion: 3 }, b)).toBe(false);
-    expect(vinculoValido(v, a, { ...b, sessionVersion: 6 })).toBe(false);
+  it("cai quando a conta trocou a senha ou encerrou as sessões depois do vínculo", () => {
+    expect(contaValidaNoChaveiro(conta, 1)).toBe(false);
+    expect(contaValidaNoChaveiro(conta, undefined)).toBe(false);
   });
 });
 
@@ -75,7 +49,7 @@ describe("lojasComCor", () => {
   it("junta a aberta e as vinculadas, ordena por nome e dá a cor pela posição", () => {
     const r = lojasComCor(
       { empresaId: "udn", nome: "UDN", email: "u@x", papel: "ADMIN" },
-      [{ empresaId: "mundofs", nome: "MundoFS", email: "m@x", papel: "ADMIN", vinculoId: "v1", vinculadaEm: "" }],
+      [{ empresaId: "mundofs", nome: "MundoFS", email: "m@x", papel: "ADMIN", vinculoId: "v1" }],
     );
     expect(r.map((l) => [l.nome, l.atual, l.cor.ponto])).toEqual([
       ["MundoFS", false, "bg-blue-500"],

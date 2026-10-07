@@ -49,10 +49,12 @@ function b64urlDecode(str: string): Uint8Array {
   return arr;
 }
 
-async function hmacKey(): Promise<CryptoKey> {
+// `rotulo` separa domínios de assinatura: um token assinado com rótulo nunca
+// confere como sessão (e vice-versa), mesmo vindo do mesmo SESSION_SECRET.
+async function hmacKey(rotulo = ""): Promise<CryptoKey> {
   return crypto.subtle.importKey(
     "raw",
-    new TextEncoder().encode(getSecret()),
+    new TextEncoder().encode(rotulo ? `${getSecret()}|${rotulo}` : getSecret()),
     { name: "HMAC", hash: "SHA-256" },
     false,
     ["sign", "verify"],
@@ -100,6 +102,40 @@ export async function verifySession(
       return null;
     }
     return payload;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Assina um payload qualquer num domínio próprio (`rotulo`), separado do da
+ * sessão. Mesmo formato do token de sessão: base64url(payload).base64url(sig).
+ */
+export async function assinarComRotulo(payload: unknown, rotulo: string): Promise<string> {
+  const key = await hmacKey(rotulo);
+  const payloadBytes = new TextEncoder().encode(JSON.stringify(payload));
+  const sig = new Uint8Array(await crypto.subtle.sign("HMAC", key, asBufferSource(payloadBytes)));
+  return `${b64urlEncode(payloadBytes)}.${b64urlEncode(sig)}`;
+}
+
+/** Confere a assinatura no domínio `rotulo`. Validar o conteúdo é do chamador. */
+export async function verificarComRotulo(
+  token: string | undefined | null,
+  rotulo: string,
+): Promise<unknown | null> {
+  if (!token) return null;
+  try {
+    const [payloadPart, sigPart] = token.split(".");
+    if (!payloadPart || !sigPart) return null;
+    const payloadBytes = b64urlDecode(payloadPart);
+    const ok = await crypto.subtle.verify(
+      "HMAC",
+      await hmacKey(rotulo),
+      asBufferSource(b64urlDecode(sigPart)),
+      asBufferSource(payloadBytes),
+    );
+    if (!ok) return null;
+    return JSON.parse(new TextDecoder().decode(payloadBytes)) as unknown;
   } catch {
     return null;
   }

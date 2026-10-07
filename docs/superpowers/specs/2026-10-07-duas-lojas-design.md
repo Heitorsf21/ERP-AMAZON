@@ -2,6 +2,19 @@
 
 **Data:** 2026-10-07 · **Status:** visual aprovado pelo usuário no protótipo (canvas "Atlas: duas lojas juntas", https://claude.ai/artifact/9uimNbN3j3W7mfdem6LW5N, v2) · **Branch:** `feat/duas-lojas`
 
+> **Revisão 2 (2026-10-07, depois do 1º deploy):** o vínculo passa a ser do **aparelho de quem vinculou**, não do login. Na v1 ele ligava os dois logins nos dois sentidos, e qualquer pessoa com o login da UDN (ex.: o sócio) abria a MundoFS. Pedido do dono: "só eu, no meu telefone, vejo as duas; quem tem só a MundoFS não vê a UDN e vice-versa".
+>
+> **Como ficou:**
+> - O aparelho guarda um **chaveiro** (cookie `erp_lojas`, httpOnly, assinado com HMAC em domínio próprio, separado da sessão) com as contas que ele provou com senha/2FA, cada uma com o seu `sessionVersion`.
+> - **Listar, trocar e "Todas"** exigem o chaveiro, com a conta da sessão nele.
+> - **Sem o chaveiro**, a pessoa vê só a loja do login dela. É o caso de outro aparelho, de outra pessoa com o mesmo login, ou de depois de tocar em "Sair".
+> - **Vincular no aparelho de outra pessoa** começa um chaveiro novo, que nunca herda as lojas dela.
+> - **Prazo:** o chaveiro vale 180 dias e se renova a cada troca.
+> - **Revogação:** "Sair" apaga o chaveiro; trocar a senha ou encerrar as sessões invalida a conta dentro dele.
+> - **Banco:** a tabela `VinculoLoja` sai (migration `20261007220000_vinculo_por_aparelho`).
+>
+> As seções 3.1, 4 e 5 abaixo descrevem a v1 e ficam como histórico. Onde divergirem, vale esta revisão.
+
 ## 1. Objetivo
 
 O usuário opera duas lojas Amazon no Atlas (MundoFS e UDN), cada uma com o próprio login, e usa as duas no mesmo celular. Hoje, para ver a outra loja, ele precisa sair e entrar de novo.

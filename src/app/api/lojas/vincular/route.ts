@@ -12,7 +12,7 @@ import {
 } from "@/lib/auth-rate-limit";
 import { originViolationResponse } from "@/lib/origin-check";
 import { criarDesafio2FA, finalidadeVinculo } from "@/modules/auth/desafio-2fa";
-import { criarVinculo, ErroVinculo } from "@/modules/lojas/vinculos";
+import { concluirVinculo } from "@/modules/lojas/concluir-vinculo";
 import { TipoAuditLog } from "@/modules/shared/domain";
 
 export const runtime = "nodejs";
@@ -94,21 +94,5 @@ export const POST = handle(async (req: Request) => {
     });
   }
 
-  try {
-    const loja = await criarVinculo(session.uid, alvo.id);
-    await auditLog({
-      session,
-      req,
-      acao: TipoAuditLog.LOJA_VINCULADA,
-      entidade: "VinculoLoja",
-      entidadeId: loja.vinculoId,
-      metadata: { empresaVinculada: loja.empresaId },
-    });
-    return NextResponse.json({ loja });
-  } catch (e) {
-    if (e instanceof ErroVinculo) {
-      return NextResponse.json({ erro: e.codigo }, { status: 400 });
-    }
-    throw e;
-  }
+  return concluirVinculo({ session, alvoId: alvo.id, req });
 });
