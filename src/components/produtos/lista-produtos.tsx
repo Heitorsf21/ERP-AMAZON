@@ -9,6 +9,7 @@ import {
   type SetStateAction,
 } from "react";
 import Link from "next/link";
+import type { Route } from "next";
 import {
   AlertTriangle,
   ArrowDown,
@@ -71,6 +72,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { MarginBadge } from "@/components/ui/margin-badge";
+import { ProductThumb } from "@/components/ui/product-thumb";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Select } from "@/components/ui/select";
 import {
@@ -97,6 +99,7 @@ import { formatBRL } from "@/lib/money";
 import { resolverImagemProduto } from "@/lib/amazon-images";
 import { cn } from "@/lib/utils";
 import { StatusReposicao } from "@/modules/shared/domain";
+import { classificarFaixa, type FaixaEstoque } from "@/modules/whatsapp-estoque/schemas";
 import {
   DEFAULT_PRODUTO_FILTROS,
   EstoqueFiltroOperacional,
@@ -312,6 +315,13 @@ function getEstoqueVendavel(produto: Produto) {
   }
   return Math.max(0, produto.estoqueAtual);
 }
+
+const FAIXA_CARD: Record<FaixaEstoque, { rotulo: string; classe: string }> = {
+  CRITICO: { rotulo: "Crítico", classe: "bg-red-100 text-red-800 dark:bg-red-950/60 dark:text-red-200" },
+  ATENCAO: { rotulo: "Atenção", classe: "bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-200" },
+  ESTAVEL: { rotulo: "Estável", classe: "bg-blue-100 text-blue-800 dark:bg-blue-950/60 dark:text-blue-200" },
+  SEGURO: { rotulo: "Seguro", classe: "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-200" },
+};
 
 function getMargemPercent(produto: Produto) {
   const preco = getPrecoAmazon(produto);
@@ -1217,7 +1227,59 @@ export function ListaProdutos({
               <EmptyState busca={busca} filtros={filtrosConsulta} onLimpar={limparFiltros} />
             ) : (
               <>
-                <div className="relative overflow-hidden">
+                <ul className="divide-y md:hidden">
+                  {produtosPaginados.map((p) => {
+                    const dias = velocidadePorId.get(p.id)?.diasEstoque ?? null;
+                    const faixa = dias == null ? null : FAIXA_CARD[classificarFaixa(dias)];
+                    const preco = getPrecoAmazon(p);
+                    const thumb = p.imagemUrl
+                      ? `/api/produtos/${p.id}/imagem`
+                      : resolverImagemProduto(p.amazonImagemUrl, p.asin);
+                    return (
+                      <li key={p.id}>
+                        <Link
+                          href={`/produtos/${p.id}` as Route}
+                          className="flex flex-col gap-3 px-4 py-3 active:bg-muted/60"
+                        >
+                          <div className="flex items-start gap-3">
+                            <ProductThumb src={thumb} alt={p.nome} size={56} />
+                            <div className="min-w-0 flex-1">
+                              <p className="line-clamp-2 text-[15px] font-semibold leading-snug">{p.nome}</p>
+                              <p className="mt-0.5 text-xs text-muted-foreground">
+                                {p.sku}
+                                {p.asin ? ` · ${p.asin}` : ""}
+                              </p>
+                            </div>
+                            <ChevronRight className="mt-1 h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+                          </div>
+                          <div className="grid grid-cols-4 gap-2 pl-[68px]">
+                            <div>
+                              <p className="text-[11px] text-muted-foreground">Estoque</p>
+                              <p className="text-sm font-semibold tabular-nums">{getEstoqueVendavel(p)} un</p>
+                            </div>
+                            <div className="col-span-2">
+                              <p className="text-[11px] text-muted-foreground">Cobertura</p>
+                              {faixa && dias != null ? (
+                                <span className={cn("mt-0.5 inline-block whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-semibold", faixa.classe)}>
+                                  {Math.floor(dias)} dias · {faixa.rotulo}
+                                </span>
+                              ) : (
+                                <p className="text-sm text-muted-foreground">sem vendas</p>
+                              )}
+                            </div>
+                            <div>
+                              <p className="text-[11px] text-muted-foreground">Preço</p>
+                              <p className="text-sm font-semibold tabular-nums">
+                                {preco == null ? "—" : formatBRL(preco)}
+                              </p>
+                            </div>
+                          </div>
+                        </Link>
+                      </li>
+                    );
+                  })}
+                </ul>
+                <div className="relative hidden overflow-hidden md:block">
                   <Table className="table-fixed">
                     <TableHeader className="sticky top-0 z-20 bg-card shadow-[0_1px_0_0_hsl(var(--border))]">
                       <TableRow className="hover:bg-transparent">

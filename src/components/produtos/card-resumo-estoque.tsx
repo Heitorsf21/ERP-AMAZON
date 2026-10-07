@@ -119,8 +119,31 @@ export function CardResumoEstoque({ filtros = DEFAULT_PRODUTO_FILTROS }: Props) 
     },
   ];
 
+  const custoEstoque = data?.custoEstoqueCentavos ?? data?.valorTotalCentavos ?? 0;
+  const custoCompacto =
+    custoEstoque >= 100_000
+      ? `R$ ${(custoEstoque / 100_000).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} mil`
+      : formatBRL(custoEstoque);
+
   return (
-    <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+    <>
+    <div className="grid grid-cols-3 rounded-xl border bg-card md:hidden">
+      <div className="px-3 py-2.5">
+        <p className="text-lg font-bold tabular-nums">{data?.total ?? 0}</p>
+        <p className="text-xs text-muted-foreground">produtos</p>
+      </div>
+      <div className="border-l px-3 py-2.5">
+        <p className={`text-lg font-bold tabular-nums ${data?.countRepor ? "text-destructive" : ""}`}>
+          {data?.countRepor ?? 0}
+        </p>
+        <p className="text-xs text-muted-foreground">repor já</p>
+      </div>
+      <div className="border-l px-3 py-2.5">
+        <p className="truncate text-lg font-bold tabular-nums">{custoCompacto}</p>
+        <p className="text-xs text-muted-foreground">em estoque</p>
+      </div>
+    </div>
+    <div className="hidden grid-cols-2 gap-4 sm:grid-cols-3 md:grid">
       {cards.map((c, i) => {
         const Icon = c.icon;
         // Card ímpar (5º) ocupa a linha inteira no breakpoint de 2 colunas.
@@ -150,5 +173,6 @@ export function CardResumoEstoque({ filtros = DEFAULT_PRODUTO_FILTROS }: Props) 
         );
       })}
     </div>
+    </>
   );
 }

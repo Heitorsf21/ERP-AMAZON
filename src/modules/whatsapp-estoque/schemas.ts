@@ -34,6 +34,19 @@ export const FAIXA_CRITICO_MAX_DIAS = 15;
 export const FAIXA_ATENCAO_MAX_DIAS = 30;
 export const FAIXA_SEGURO_MIN_DIAS = 60;
 
+/**
+ * Classifica a cobertura de estoque em faixa. Opera sobre o valor arredondado
+ * para baixo (mesma logica da cobertura exibida) para alinhar mensagem e faixa.
+ * Pura (sem db): usada no servidor (resumo WhatsApp) e no cliente (cards).
+ */
+export function classificarFaixa(diasEstoque: number): FaixaEstoque {
+  const dias = Math.floor(diasEstoque);
+  if (dias <= FAIXA_CRITICO_MAX_DIAS) return FaixaEstoque.CRITICO;
+  if (dias <= FAIXA_ATENCAO_MAX_DIAS) return FaixaEstoque.ATENCAO;
+  if (dias < FAIXA_SEGURO_MIN_DIAS) return FaixaEstoque.ESTAVEL;
+  return FaixaEstoque.SEGURO;
+}
+
 // ── Validacao da configuracao (rota POST) ────────────────────────────
 const HORARIO_REGEX = /^([01]\d|2[0-3]):[0-5]\d$/;
 

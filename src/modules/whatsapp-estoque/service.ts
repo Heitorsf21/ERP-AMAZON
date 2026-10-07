@@ -1,12 +1,9 @@
 import { subDays } from "date-fns";
 import { db } from "@/lib/db";
 import { whereVendaAmazonContabilizavelEstrito } from "@/modules/vendas/filtros";
-import {
-  FaixaEstoque,
-  FAIXA_ATENCAO_MAX_DIAS,
-  FAIXA_CRITICO_MAX_DIAS,
-  FAIXA_SEGURO_MIN_DIAS,
-} from "./schemas";
+import { classificarFaixa, FaixaEstoque } from "./schemas";
+
+export { classificarFaixa };
 
 // Janela de vendas usada para estimar a velocidade media diaria.
 export const JANELA_VENDAS_DIAS = 30;
@@ -41,18 +38,6 @@ type ProdutoBase = {
   nome: string;
   estoqueAtual: number;
 };
-
-/**
- * Classifica a cobertura de estoque em faixa. Opera sobre o valor arredondado
- * para baixo (mesma logica da cobertura exibida) para alinhar mensagem e faixa.
- */
-export function classificarFaixa(diasEstoque: number): FaixaEstoque {
-  const dias = Math.floor(diasEstoque);
-  if (dias <= FAIXA_CRITICO_MAX_DIAS) return FaixaEstoque.CRITICO;
-  if (dias <= FAIXA_ATENCAO_MAX_DIAS) return FaixaEstoque.ATENCAO;
-  if (dias < FAIXA_SEGURO_MIN_DIAS) return FaixaEstoque.ESTAVEL;
-  return FaixaEstoque.SEGURO;
-}
 
 function mapItem(produto: ProdutoBase, vendas30d: number): ItemResumoEstoque {
   const mediaDia = vendas30d / JANELA_VENDAS_DIAS;
