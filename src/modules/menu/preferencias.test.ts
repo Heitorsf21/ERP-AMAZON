@@ -108,6 +108,21 @@ describe("liberadoParaQualquerPapel (menu é preferência pessoal)", () => {
     expect(liberadoParaQualquerPapel("/api/push/teste", "POST")).toBe(true);
   });
 
+  it("libera as lojas da própria conta (vincular, trocar, desvincular) para qualquer papel", () => {
+    expect(liberadoParaQualquerPapel("/api/lojas", "GET")).toBe(true);
+    expect(liberadoParaQualquerPapel("/api/lojas/vincular", "POST")).toBe(true);
+    expect(liberadoParaQualquerPapel("/api/lojas/vincular/2fa", "POST")).toBe(true);
+    expect(liberadoParaQualquerPapel("/api/lojas/vinculos/ckv123", "DELETE")).toBe(true);
+    expect(liberadoParaQualquerPapel("/api/auth/trocar-loja", "POST")).toBe(true);
+  });
+
+  it("não libera métodos ou caminhos fora do combinado nas lojas", () => {
+    expect(liberadoParaQualquerPapel("/api/lojas", "POST")).toBe(false);
+    expect(liberadoParaQualquerPapel("/api/lojas/vinculos/ckv123", "GET")).toBe(false);
+    expect(liberadoParaQualquerPapel("/api/lojas/vinculos/a/b", "DELETE")).toBe(false);
+    expect(liberadoParaQualquerPapel("/api/auth/trocar-loja", "GET")).toBe(false);
+  });
+
   it("não libera métodos nem subcaminhos fora das rotas de push", () => {
     expect(liberadoParaQualquerPapel("/api/push/config", "POST")).toBe(false);
     expect(liberadoParaQualquerPapel("/api/push/teste", "GET")).toBe(false);

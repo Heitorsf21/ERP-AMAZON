@@ -50,6 +50,9 @@ const AUTH_RATE_LIMIT_PATHS = new Set([
   "/api/auth/2fa/verificar",
   "/api/auth/recuperar-senha",
   "/api/auth/redefinir-senha",
+  // Vincular loja confere senha/2FA de outra conta: mesmo limite do login.
+  "/api/lojas/vincular",
+  "/api/lojas/vincular/2fa",
 ]);
 
 const BODY_SIZE_LIMITS = new Map<string, number>([

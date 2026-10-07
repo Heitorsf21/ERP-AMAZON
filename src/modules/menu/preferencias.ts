@@ -82,6 +82,18 @@ const ROTAS_PUSH_PESSOAIS: Record<string, ReadonlySet<string>> = {
 };
 
 /**
+ * Lojas da própria conta (duas lojas juntas): o vínculo prova a posse da outra
+ * conta por senha/2FA e a troca só reemite o cookie — não é dado de negócio.
+ */
+const ROTAS_LOJAS_PESSOAIS: Record<string, ReadonlySet<string>> = {
+  "/api/lojas": new Set(["GET"]),
+  "/api/lojas/vincular": new Set(["POST"]),
+  "/api/lojas/vincular/2fa": new Set(["POST"]),
+  "/api/auth/trocar-loja": new Set(["POST"]),
+};
+const ROTA_DESVINCULAR = /^\/api\/lojas\/vinculos\/[^/]+$/;
+
+/**
  * Rotas que QUALQUER usuário logado acessa, seja qual for o papel (inclusive
  * LEITURA), porque são preferência pessoal e não dado de negócio
  * (spec §3.1: "cada pessoa da empresa tem o seu menu"). Feito para o
@@ -91,10 +103,16 @@ const ROTAS_PUSH_PESSOAIS: Record<string, ReadonlySet<string>> = {
  * - a página `/configuracoes` (só GET/HEAD, caminho exato), onde vivem as abas
  *   Menu e Neste celular; o cliente esconde as abas de admin e
  *   `/api/configuracoes/*` continua restrita a ADMIN;
- * - as rotas de push do próprio aparelho (ativar/desativar avisos, teste).
+ * - as rotas de push do próprio aparelho (ativar/desativar avisos, teste);
+ * - as lojas da própria conta (listar, vincular, desvincular, trocar).
  */
 export function liberadoParaQualquerPapel(pathname: string, method: string): boolean {
   if (pathname === "/api/menu/preferencias") return method === "GET" || method === "PUT";
   if (pathname === "/configuracoes") return METODOS_LEITURA_PAGINA.has(method);
-  return ROTAS_PUSH_PESSOAIS[pathname]?.has(method) ?? false;
+  if (ROTA_DESVINCULAR.test(pathname)) return method === "DELETE";
+  return (
+    ROTAS_PUSH_PESSOAIS[pathname]?.has(method) ??
+    ROTAS_LOJAS_PESSOAIS[pathname]?.has(method) ??
+    false
+  );
 }
