@@ -183,7 +183,7 @@ Como a ordem não depende de qual loja está aberta, a cor não troca entre as l
   - título e subtítulo "Troca na hora, sem digitar senha.";
   - **Suas lojas:**
     - a aberta, com fundo `muted`, ✓ e "Aberta agora";
-    - as outras com o e-mail e ›; tocar troca de loja e abre o Início na visão daquela loja.
+    - as outras com o e-mail e ›; tocar troca de loja e **mantém a seção aberta** (Vendas continua em Vendas; um produto ou pedido aberto volta para a lista, porque é da loja anterior). Isso foi decidido na implementação, porque troca rápida pede ficar onde se está.
   - **Visão:** "Ver as duas juntas" (ou "Ver todas juntas", com 3 ou mais), que abre o Início na aba Todas. Só aparece com vínculo.
   - **Vincular outra loja** → `/configuracoes?tab=lojas`.
 - **Início:** as abas `Todas · Loja1 · Loja2` (`role="tablist"`) ficam entre o cabeçalho e o botão de período e só aparecem com vínculo.

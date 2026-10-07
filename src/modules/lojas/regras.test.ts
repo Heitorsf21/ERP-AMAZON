@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { corDaLoja, lojasComCor, ordenarLojas, ordenarPar, vinculoValido, type ContaVinculo } from "./regras";
+import { corDaLoja, destinoAoTrocar, iniciaisLoja, lojasComCor, ordenarLojas, ordenarPar, vinculoValido, type ContaVinculo } from "./regras";
 
 const conta = (over: Partial<ContaVinculo> = {}): ContaVinculo => ({
   id: "u-a",
@@ -83,5 +83,28 @@ describe("lojasComCor", () => {
     ]);
     expect(r[0]?.vinculoId).toBe("v1");
     expect(r[1]?.vinculoId).toBeNull();
+  });
+});
+
+describe("iniciaisLoja", () => {
+  it("usa as maiúsculas do nome ou as iniciais das palavras", () => {
+    expect(iniciaisLoja("MundoFS")).toBe("MF");
+    expect(iniciaisLoja("UDN")).toBe("UD");
+    expect(iniciaisLoja("Loja da Ana")).toBe("LD");
+    expect(iniciaisLoja("mundofs")).toBe("MU");
+    expect(iniciaisLoja("  ")).toBe("?");
+  });
+});
+
+describe("destinoAoTrocar", () => {
+  it("mantém a seção aberta, sem o item específico (que é da outra loja)", () => {
+    expect(destinoAoTrocar("/vendas")).toBe("/vendas");
+    expect(destinoAoTrocar("/produtos/ckabc123")).toBe("/produtos");
+    expect(destinoAoTrocar("/publicidade/otimizador")).toBe("/publicidade");
+  });
+
+  it("raiz ou caminho vazio vai para o Início", () => {
+    expect(destinoAoTrocar("/")).toBe("/dashboard-ecommerce");
+    expect(destinoAoTrocar("")).toBe("/dashboard-ecommerce");
   });
 });

@@ -5,7 +5,7 @@ import Link from "next/link";
 import type { Route } from "next";
 import { useQuery } from "@tanstack/react-query";
 import { Search, User, LogOut, Settings, UserCircle, Loader2 } from "lucide-react";
-import { BrandMark } from "@/components/brand-mark";
+import { SeletorLojaDesktop, SeletorLojaMobile } from "@/components/lojas/seletor-loja";
 import { NotificationBell } from "@/components/topbar/notification-bell";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -48,11 +48,14 @@ export function Topbar() {
         "supports-[backdrop-filter]:bg-background/60",
       )}
     >
-      {/* Mobile: logo (a navegação fica na barra inferior) */}
-      <div className="flex items-center gap-2 lg:hidden">
-        <Link href={"/dashboard-ecommerce" as Route} className="flex items-center gap-2">
-          <BrandMark size="sm" />
-        </Link>
+      {/* Mobile: loja aberta + troca de loja (a navegação fica na barra inferior) */}
+      <div className="flex min-w-0 items-center gap-2 lg:hidden">
+        <SeletorLojaMobile />
+      </div>
+
+      {/* Desktop: seletor de loja à esquerda da busca */}
+      <div className="hidden lg:block">
+        <SeletorLojaDesktop />
       </div>
 
       {/* Busca centralizada (desktop) */}

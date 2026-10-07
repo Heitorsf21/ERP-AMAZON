@@ -109,3 +109,24 @@ export function lojasComCor(
   ];
   return ordenarLojas(todas).map((l, i) => ({ ...l, cor: corDaLoja(i) }));
 }
+
+/** Iniciais do selo da loja: "MundoFS" → "MF", "UDN" → "UD", "Loja da Ana" → "LD". */
+export function iniciaisLoja(nome: string): string {
+  const limpo = nome.trim();
+  if (!limpo) return "?";
+  const palavras = limpo.split(/\s+/);
+  if (palavras.length >= 2) {
+    return ((palavras[0]?.[0] ?? "") + (palavras[1]?.[0] ?? "")).toUpperCase();
+  }
+  const segundaMaiuscula = [...limpo.slice(1)].find((c) => c !== c.toLowerCase());
+  return (limpo[0]! + (segundaMaiuscula ?? limpo[1] ?? "")).toUpperCase();
+}
+
+/**
+ * Para onde ir depois de trocar de loja: a mesma seção (Vendas continua em
+ * Vendas), mas sem o item aberto — um produto ou pedido é da loja anterior.
+ */
+export function destinoAoTrocar(pathname: string): string {
+  const secao = pathname.split("/").filter(Boolean)[0];
+  return secao ? `/${secao}` : "/dashboard-ecommerce";
+}
