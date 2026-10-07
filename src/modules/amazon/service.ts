@@ -69,8 +69,11 @@ import { agruparLinhasVendaAmazon } from "@/modules/vendas/agrupamento";
 import { logger } from "@/lib/logger";
 import {
   isPedidoMultiChannelFulfillment,
+  PRECO_ORIGEM_LISTING,
   PRECO_ORIGEM_SPAPI,
 } from "@/modules/vendas/filtros";
+import { notificarVendasCriadasNoSync } from "@/modules/push/vendas";
+import type { VendaCriadaNoSync } from "@/modules/push/regras";
 import {
   calcularImpostoSimplesCentavos,
   calcularPrecoUnitarioCentavos,
@@ -734,6 +737,7 @@ async function syncOrdersInternal(
   const orderIds = normalizeOrderIds(options.orderIds);
 
   let criadas = 0;
+  const vendasCriadas: VendaCriadaNoSync[] = [];
   let atualizadas = 0;
   let ignoradas = 0;
   let pedidosBrutos = 0;
@@ -1130,7 +1134,16 @@ async function syncOrdersInternal(
           },
         });
         if (existente) atualizadas++;
-        else criadas++;
+        else {
+          criadas++;
+          vendasCriadas.push({
+            amazonOrderId,
+            purchaseDate: createdAt,
+            status: statusPedido,
+            valorBrutoCentavos: valorBrutoFinal,
+            estimado: precoOrigemFinal === PRECO_ORIGEM_LISTING,
+          });
+        }
 
         pedidos.push({
           amazonOrderId,
@@ -1160,6 +1173,9 @@ async function syncOrdersInternal(
         registros: pedidos.length,
       },
     });
+
+    // Reserva do aviso de venda: o SQS normalmente já avisou (dedupe por pedido).
+    await notificarVendasCriadasNoSync(vendasCriadas);
 
     return {
       lidas: pedidos.length,

@@ -19,6 +19,7 @@ import {
   getMarketingStreamDataset,
   type MarketingStreamDataset,
 } from "@/modules/amazon/parsers/marketing-stream-events";
+import { notificarVendaDeOrderChange } from "@/modules/push/vendas";
 import { TipoAmazonSyncJob } from "@/modules/shared/domain";
 
 const STREAM_INGEST_CHUNK = 500;
@@ -330,6 +331,9 @@ export async function dispatchNotification(
 
   switch (tipo) {
     case "ORDER_CHANGE": {
+      // Aviso de venda no celular sai daqui, antes da fila do worker
+      // (compra → esta mensagem: ~13 s; fila do worker: até ~3 min no p90).
+      await notificarVendaDeOrderChange(basePayload.payload);
       const orderIds = extractOrderIdsFromNotification(notif);
       const job = await enqueueAmazonSyncJob(
         TipoAmazonSyncJob.ORDERS_SYNC,
