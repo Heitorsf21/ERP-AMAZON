@@ -3,12 +3,10 @@
 import * as React from "react";
 import Link from "next/link";
 import type { Route } from "next";
-import { useRouter } from "next/navigation";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { Search, User, LogOut, Settings, UserCircle, Loader2 } from "lucide-react";
 import { BrandMark } from "@/components/brand-mark";
 import { NotificationBell } from "@/components/topbar/notification-bell";
-import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
@@ -19,7 +17,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { SidebarMobileSheet } from "@/components/sidebar";
+import { useLogout } from "@/components/auth/use-logout";
 import { fetchJSON } from "@/lib/fetcher";
 import { useCommandPalette } from "@/components/command-palette";
 
@@ -50,9 +48,8 @@ export function Topbar() {
         "supports-[backdrop-filter]:bg-background/60",
       )}
     >
-      {/* Mobile: menu + logo */}
+      {/* Mobile: logo (a navegação fica na barra inferior) */}
       <div className="flex items-center gap-2 lg:hidden">
-        <SidebarMobileSheet />
         <Link href={"/dashboard-ecommerce" as Route} className="flex items-center gap-2">
           <BrandMark size="sm" />
         </Link>
@@ -119,9 +116,7 @@ function gerarIniciais(nome: string): string {
 }
 
 function ProfileMenu() {
-  const router = useRouter();
-  const qc = useQueryClient();
-  const [saindo, setSaindo] = React.useState(false);
+  const logout = useLogout();
 
   const { data, isLoading } = useQuery<MeResponse>({
     queryKey: ["auth-me"],
@@ -134,20 +129,6 @@ function ProfileMenu() {
   const nome = usuario?.nome ?? "";
   const email = usuario?.email ?? "";
   const iniciais = nome ? gerarIniciais(nome) : "";
-
-  async function fazerLogout() {
-    if (saindo) return;
-    setSaindo(true);
-    try {
-      await fetch("/api/auth/logout", { method: "POST" });
-    } catch {
-      // Mesmo com erro, seguimos: cookie será revalidado no próximo load.
-    }
-    qc.clear();
-    toast.success("Sessão encerrada.");
-    router.replace("/login");
-    router.refresh();
-  }
 
   return (
     <DropdownMenu>
@@ -215,12 +196,12 @@ function ProfileMenu() {
         <DropdownMenuItem
           onSelect={(e) => {
             e.preventDefault();
-            fazerLogout();
+            void logout.sair();
           }}
-          disabled={saindo}
+          disabled={logout.saindo}
           className="cursor-pointer text-destructive focus:text-destructive"
         >
-          {saindo ? (
+          {logout.saindo ? (
             <Loader2 className="mr-0 h-4 w-4 animate-spin" />
           ) : (
             <LogOut className="mr-0 h-4 w-4" />

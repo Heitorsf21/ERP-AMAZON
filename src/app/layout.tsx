@@ -2,7 +2,7 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { AppShell } from "@/components/app-shell";
 import { Providers } from "@/components/providers";
-import { Toaster } from "@/components/ui/sonner";
+import { ToasterResponsivo } from "@/components/ui/toaster-responsivo";
 
 export const metadata: Metadata = {
   title: {
@@ -40,7 +40,7 @@ export default function RootLayout({
       <body className="antialiased">
         <Providers>
           <AppShell>{children}</AppShell>
-          <Toaster richColors position="top-right" />
+          <ToasterResponsivo />
         </Providers>
       </body>
     </html>
