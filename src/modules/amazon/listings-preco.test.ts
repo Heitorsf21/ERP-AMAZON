@@ -147,24 +147,16 @@ describe("preserva o resto da oferta (promoção, travas mín./máx., B2B)", () 
     expect(r.promocaoAtivaCentavos).toBe(7990);
   });
 
-  it("aplicação real valida antes com VALIDATION_PREVIEW e não aplica se a Amazon recusar", async () => {
-    spMock.spApiRequest.mockResolvedValueOnce({
-      status: "INVALID",
-      issues: [{ severity: "ERROR", message: "Preço abaixo do mínimo." }],
+  it("somenteValidar valida o MESMO corpo (oferta inteira) com VALIDATION_PREVIEW", async () => {
+    spMock.getListingsItem.mockResolvedValue({
+      summaries: [{ marketplaceId: "A2Q3Y263D00KWC", productType: "FOOD_STORAGE_CONTAINER" }],
+      attributes: { purchasable_offer: [OFERTA_B2C] },
     });
-    await expect(
-      enviarPrecoAmazon({ sku: "MFS-0036", precoCentavos: 100, somenteValidar: false }),
-    ).rejects.toThrow(PrecoRejeitadoError);
-    expect(spMock.spApiRequest).toHaveBeenCalledTimes(1);
-    expect(spMock.spApiRequest.mock.calls[0]?.[2].params.mode).toBe("VALIDATION_PREVIEW");
-  });
-
-  it("aplicação real: preview VALID e depois o PATCH sem mode", async () => {
-    spMock.spApiRequest.mockResolvedValueOnce({ status: "VALID" }).mockResolvedValueOnce({ status: "ACCEPTED", submissionId: "s9" });
-    const r = await enviarPrecoAmazon({ sku: "MFS-0036", precoCentavos: 7700, somenteValidar: false });
-    expect(spMock.spApiRequest).toHaveBeenCalledTimes(2);
-    expect(spMock.spApiRequest.mock.calls[1]?.[2].params.mode).toBeUndefined();
-    expect(r.submissionId).toBe("s9");
+    spMock.spApiRequest.mockResolvedValue({ status: "VALID" });
+    await enviarPrecoAmazon({ sku: "MFS-0036", precoCentavos: 8490, somenteValidar: true });
+    const [, , opts] = spMock.spApiRequest.mock.calls[0] ?? [];
+    expect(opts.params.mode).toBe("VALIDATION_PREVIEW");
+    expect(opts.body.patches[0].value[0].discounted_price).toEqual(OFERTA_B2C.discounted_price);
   });
 
   it("lerPrecosDaOferta separa our_price da promoção vigente", () => {

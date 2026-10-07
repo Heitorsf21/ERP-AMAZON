@@ -181,9 +181,8 @@ export async function enviarPrecoAmazon(input: {
     return r;
   };
 
-  // Aplicação real: a Amazon valida o corpo antes (VALIDATION_PREVIEW); se
-  // recusar, nada é aplicado no anúncio.
-  if (!input.somenteValidar) await patch(true);
+  // A validação prévia (VALIDATION_PREVIEW) fica a cargo de quem chama, com
+  // somenteValidar=true, usando exatamente este mesmo corpo.
   const resultado = await patch(input.somenteValidar);
 
   const precos = lerPrecosDaOferta(ofertasAtuais, creds.marketplaceId);
