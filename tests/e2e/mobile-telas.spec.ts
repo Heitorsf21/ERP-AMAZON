@@ -146,6 +146,46 @@ test("vendas no celular: sem os cards que repetem o dashboard", async ({ context
   await semScrollLateral(page);
 });
 
+// PNG 1x1 válido: basta para a <img> carregar.
+const PNG_1X1 =
+  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
+
+test("Configurações > Integrações: WhatsApp desconectado mostra Reconectar e o QR", async ({ context, page }) => {
+  await logar(context);
+  await context.route(/\/api\/configuracoes\/whatsapp-estoque$/, (r) =>
+    r.fulfill({
+      json: {
+        config: {
+          ativo: true, horario: "10:00", destinatario: "551151085002",
+          wahaUrl: "http://127.0.0.1:3002", wahaSession: "default", wahaApiKeyDefinida: true,
+        },
+        ultimoEnvio: {
+          tipo: "DIARIO", status: "ERRO", partes: 1, erro: "WAHA respondeu 422",
+          iniciadoEm: "2026-10-06T13:05:00.000Z", concluidoEm: "2026-10-06T13:05:02.000Z",
+        },
+      },
+    }),
+  );
+  await context.route(/\/api\/configuracoes\/whatsapp-estoque\/sessao$/, (r) =>
+    r.fulfill({ json: { status: "SCAN_QR_CODE", conta: "5002" } }),
+  );
+  await context.route(/\/api\/configuracoes\/whatsapp-estoque\/sessao\/qr$/, (r) =>
+    r.fulfill({ json: { qr: PNG_1X1 } }),
+  );
+  await context.route(/\/api\/configuracoes\/whatsapp-estoque\/produtos/, (r) =>
+    r.fulfill({ json: { produtos: [] } }),
+  );
+
+  await page.goto("/configuracoes?tab=integracoes");
+  await expect(page.getByText("Conexão do WhatsApp")).toBeVisible();
+  await expect(page.getByText("Desconectado — escaneie o QR")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Reconectar" })).toBeVisible();
+  await expect(
+    page.getByRole("img", { name: "QR code para conectar o WhatsApp do resumo de estoque" }),
+  ).toBeVisible();
+  await semScrollLateral(page);
+});
+
 test("vendas > Reembolsados no celular: valores grandes dos cards não ficam cortados", async ({ context, page }) => {
   await logar(context);
   await page.goto("/vendas");
