@@ -78,7 +78,10 @@ export function custoAtualDoResumo(
     if (!atual || inicio > atual.vigenciaInicio.getTime()) atual = v;
   }
   if (!atual) {
-    return { centavos: custoCadastroCentavos, vigenteDesde: null, todoHistorico: false };
+    // Como resolverCustoUnitario: custo de cadastro 0 (ou nulo) = "sem custo".
+    const centavos =
+      custoCadastroCentavos != null && custoCadastroCentavos > 0 ? custoCadastroCentavos : null;
+    return { centavos, vigenteDesde: null, todoHistorico: false };
   }
   // "Todo histórico" grava o início na época (1970-01-01T00:00Z).
   const todoHistorico = atual.vigenciaInicio.getTime() <= 0;

@@ -133,6 +133,20 @@ describe("custoAtualDoResumo (custo exibido e a vigência que o define)", () => 
     });
   });
 
+  it("sem vigência e cadastro com custo 0: 0 é 'sem custo' (como resolverCustoUnitario)", () => {
+    const custo = custoAtualDoResumo([], 0, hoje);
+    expect(custo).toEqual({ centavos: null, vigenteDesde: null, todoHistorico: false });
+    const u = calcularUnidadeEstimada({
+      precoCentavos: 7700,
+      custoCentavos: custo.centavos,
+      comissaoCentavos: 924,
+      fbaCentavos: 600,
+      impostoBps: 600,
+    });
+    expect(u.lucroCentavos).toBeNull();
+    expect(u.margemPercentual).toBeNull();
+  });
+
   it("vigência futura não vale hoje", () => {
     const vigencias = [
       { custoCentavos: 9999, vigenciaInicio: new Date("2026-11-01T00:00:00.000Z"), vigenciaFim: null },
