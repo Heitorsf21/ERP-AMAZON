@@ -14,7 +14,9 @@ vi.mock("@/lib/db", () => ({
 }));
 
 import {
+  claimNextAmazonSyncJob,
   enqueueAmazonSyncJob,
+  filtroDeTiposDoWorker,
   jobCriticoEstaAtrasado,
   resolverEmpresasParaAgendar,
 } from "./jobs";
@@ -156,5 +158,45 @@ describe("jobCriticoEstaAtrasado — watchdog do FINANCES_SYNC", () => {
         limiteHoras: 6,
       }),
     ).toBe(true);
+  });
+});
+
+describe("claimNextAmazonSyncJob — fila dedicada por tipo (aviso de venda não espera job longo)", () => {
+  beforeEach(() => {
+    findFirstMock.mockReset().mockResolvedValue(null);
+  });
+
+  function whereDoClaim() {
+    return (findFirstMock.mock.calls[0]?.[0] as { where: Record<string, unknown> }).where;
+  }
+
+  it("sem filtro, mantém o claim global (nenhum filtro de tipo)", async () => {
+    await claimNextAmazonSyncJob("w1");
+    expect(whereDoClaim().tipo).toBeUndefined();
+  });
+
+  it("worker de pedidos só pega ORDERS_SYNC", async () => {
+    await claimNextAmazonSyncJob("w-pedidos", { tipos: [TipoAmazonSyncJob.ORDERS_SYNC] });
+    expect(whereDoClaim().tipo).toEqual({ in: [TipoAmazonSyncJob.ORDERS_SYNC] });
+  });
+
+  it("worker principal pode deixar de pegar ORDERS_SYNC", async () => {
+    await claimNextAmazonSyncJob("w1", { excluirTipos: [TipoAmazonSyncJob.ORDERS_SYNC] });
+    expect(whereDoClaim().tipo).toEqual({ notIn: [TipoAmazonSyncJob.ORDERS_SYNC] });
+  });
+});
+
+describe("filtroDeTiposDoWorker — lê AMAZON_WORKER_TIPOS / AMAZON_WORKER_EXCLUIR_TIPOS", () => {
+  it("sem env → sem filtro (comportamento atual preservado)", () => {
+    expect(filtroDeTiposDoWorker({})).toEqual({});
+  });
+
+  it("parseia CSV com espaços e ignora tipos desconhecidos", () => {
+    expect(
+      filtroDeTiposDoWorker({ AMAZON_WORKER_TIPOS: " ORDERS_SYNC , NAO_EXISTE ," }),
+    ).toEqual({ tipos: [TipoAmazonSyncJob.ORDERS_SYNC] });
+    expect(
+      filtroDeTiposDoWorker({ AMAZON_WORKER_EXCLUIR_TIPOS: "ORDERS_SYNC" }),
+    ).toEqual({ excluirTipos: [TipoAmazonSyncJob.ORDERS_SYNC] });
   });
 });

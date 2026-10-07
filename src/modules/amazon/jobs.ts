@@ -424,12 +424,53 @@ export async function getAmazonSyncQueueSummary() {
 // marca como RUNNING via updateMany com filtro de status (evita race se 2 workers
 // pegarem o mesmo). No Postgres real, trocamos isso por SELECT FOR UPDATE SKIP LOCKED
 // (versão em prisma/schema.postgresql.prisma + jobs commitada para futuro).
-export async function claimNextAmazonSyncJob(workerId: string) {
+//
+// Fila dedicada por tipo: o erp-worker roda UM job por vez e não interrompe o que
+// está rodando — um ADS_OPTIMIZER_CYCLE/backfill de 30+ min segurava o ORDERS_SYNC
+// (e com ele o aviso de venda e o /vendas?pedido=) por 20–40 min. Com o filtro, um
+// 2º processo (AMAZON_WORKER_TIPOS=ORDERS_SYNC, schedule:false) drena só pedidos e
+// o principal usa AMAZON_WORKER_EXCLUIR_TIPOS=ORDERS_SYNC. Sem filtro = claim global.
+export type FiltroTiposWorker = {
+  tipos?: readonly string[];
+  excluirTipos?: readonly string[];
+};
+
+const TIPOS_JOB_VALIDOS = new Set<string>(Object.values(TipoAmazonSyncJob));
+
+function parseTiposCsv(valor: string | undefined): string[] {
+  if (!valor) return [];
+  return valor
+    .split(",")
+    .map((t) => t.trim())
+    .filter((t) => TIPOS_JOB_VALIDOS.has(t));
+}
+
+export function filtroDeTiposDoWorker(
+  env: Record<string, string | undefined> = process.env,
+): FiltroTiposWorker {
+  const filtro: FiltroTiposWorker = {};
+  const tipos = parseTiposCsv(env.AMAZON_WORKER_TIPOS);
+  const excluirTipos = parseTiposCsv(env.AMAZON_WORKER_EXCLUIR_TIPOS);
+  if (tipos.length > 0) filtro.tipos = tipos;
+  if (excluirTipos.length > 0) filtro.excluirTipos = excluirTipos;
+  return filtro;
+}
+
+export async function claimNextAmazonSyncJob(
+  workerId: string,
+  filtro: FiltroTiposWorker = {},
+) {
   const now = new Date();
+  const filtroTipo: { in?: string[]; notIn?: string[] } = {};
+  if (filtro.tipos && filtro.tipos.length > 0) filtroTipo.in = [...filtro.tipos];
+  if (filtro.excluirTipos && filtro.excluirTipos.length > 0) {
+    filtroTipo.notIn = [...filtro.excluirTipos];
+  }
   const job = await db.amazonSyncJob.findFirst({
     where: {
       status: StatusAmazonSyncJob.QUEUED,
       runAfter: { lte: now },
+      ...(filtroTipo.in || filtroTipo.notIn ? { tipo: filtroTipo } : {}),
     },
     orderBy: [{ priority: "desc" }, { createdAt: "asc" }],
   });
