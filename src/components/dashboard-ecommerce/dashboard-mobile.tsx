@@ -2,12 +2,15 @@
 
 import Link from "next/link";
 import type { Route } from "next";
-import { ArrowUpDown } from "lucide-react";
+import { ArrowUpDown, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { MarginBadge, MPA_THRESHOLDS } from "@/components/ui/margin-badge";
 import { ProductThumb } from "@/components/ui/product-thumb";
 import { Skeleton } from "@/components/ui/skeleton";
 import { TrendIndicator } from "@/components/ui/trend-indicator";
+import { PorLojaMobile, type PorLoja } from "@/components/lojas/por-loja";
+import { SeloLoja } from "@/components/lojas/selo-loja";
+import { useLojas, useTrocarLoja } from "@/components/lojas/use-lojas";
 import { resolverImagemProduto } from "@/lib/amazon-images";
 import { formatBRL } from "@/lib/money";
 import { cn } from "@/lib/utils";
@@ -36,6 +39,8 @@ export type TopProdutoMobile = {
   custoAdsCentavos: number;
   lucroPosAdsCentavos: number | null;
   mpaPercentual: number | null;
+  /** Só na visão "Todas": de qual loja é o item. */
+  loja?: { empresaId: string; nome: string; atual: boolean };
 };
 
 const BORDA: Record<CategoriaKpiMobile, string> = {
@@ -65,7 +70,17 @@ function Metrica({
   );
 }
 
-function ItemTopProduto({ produto, posicao }: { produto: TopProdutoMobile; posicao: number }) {
+function ItemTopProduto({
+  produto,
+  posicao,
+  classeCorLoja,
+}: {
+  produto: TopProdutoMobile;
+  posicao: number;
+  /** Visão "Todas": cor do selo da loja do item. */
+  classeCorLoja?: string;
+}) {
+  const { trocar, trocandoPara } = useTrocarLoja();
   const thumb =
     produto.imagemUrl && produto.produtoId
       ? `/api/produtos/${produto.produtoId}/imagem`
@@ -80,9 +95,12 @@ function ItemTopProduto({ produto, posicao }: { produto: TopProdutoMobile; posic
         <ProductThumb src={thumb} alt={produto.nome} size={48} />
         <div className="min-w-0 flex-1">
           <p className="line-clamp-2 text-sm font-medium leading-snug">{produto.nome}</p>
-          <p className="mt-0.5 text-xs text-muted-foreground">
-            {produto.sku} · {produto.unidades} un ·{" "}
-            {formatarPercentual(produto.representatividadePercentual)} do total
+          <p className="mt-0.5 flex flex-wrap items-center gap-1 text-xs text-muted-foreground">
+            {produto.loja && <SeloLoja nome={produto.loja.nome} classeCor={classeCorLoja} />}
+            <span>
+              {produto.sku} · {produto.unidades} un ·{" "}
+              {formatarPercentual(produto.representatividadePercentual)} do total
+            </span>
           </p>
         </div>
         <span className="shrink-0 text-sm font-bold tabular-nums">
@@ -118,6 +136,29 @@ function ItemTopProduto({ produto, posicao }: { produto: TopProdutoMobile; posic
     </>
   );
 
+  // Produto de outra loja (visão "Todas"): abrir troca de loja antes.
+  const lojaDoItem = produto.loja && !produto.loja.atual ? produto.loja : null;
+  if (lojaDoItem && produto.produtoId) {
+    const produtoId = produto.produtoId;
+    return (
+      <li className="border-t">
+        <button
+          type="button"
+          disabled={trocandoPara != null}
+          onClick={() => void trocar(lojaDoItem.empresaId, { destino: `/produtos/${produtoId}` })}
+          className="relative block w-full px-4 py-3 text-left active:bg-muted/60 disabled:opacity-60"
+        >
+          {conteudo}
+          {trocandoPara === lojaDoItem.empresaId && (
+            <span className="absolute right-4 top-3 rounded-full bg-background p-1 shadow-sm">
+              <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" aria-label={`Abrindo ${lojaDoItem.nome}`} />
+            </span>
+          )}
+        </button>
+      </li>
+    );
+  }
+
   return (
     <li className="border-t">
       {produto.produtoId ? (
@@ -141,7 +182,10 @@ export function DashboardMobile({
   carregandoTop,
   ordem,
   onAlternarOrdem,
+  porLoja,
 }: {
+  /** Visão "Todas": o bloco "Por loja" (ausente na visão de uma loja). */
+  porLoja?: PorLoja[];
   kpis: KpisMobileEntrada | undefined;
   carregandoKpis: boolean;
   produtos: TopProdutoMobile[];
@@ -150,6 +194,9 @@ export function DashboardMobile({
   onAlternarOrdem: () => void;
 }) {
   const resumo = kpis ? montarKpisMobile(kpis) : null;
+  const { lojas } = useLojas();
+  const corDaLoja = new Map(lojas.map((l) => [l.empresaId, l.cor.selo]));
+  const todas = !!porLoja && porLoja.length > 1;
 
   return (
     <div className="space-y-4">
@@ -195,11 +242,16 @@ export function DashboardMobile({
         </div>
       )}
 
+      {todas && porLoja && <PorLojaMobile porLoja={porLoja} />}
+
       <section className="overflow-hidden rounded-xl border bg-card">
         <div className="flex items-center justify-between gap-2 px-4 pb-2 pt-3">
-          <div>
+          <div className="min-w-0">
             <h2 className="text-base font-semibold">Top 15 produtos</h2>
-            <p className="text-xs text-muted-foreground">por faturamento no período</p>
+            <p className="text-xs text-muted-foreground">
+              por faturamento no período
+              {todas && porLoja ? ` · ${porLoja.map((l) => l.nome).join(" + ")}` : ""}
+            </p>
           </div>
           <Button type="button" variant="outline" size="sm" className="h-10" onClick={onAlternarOrdem}>
             <ArrowUpDown className="mr-1.5 h-4 w-4" aria-hidden />
@@ -219,7 +271,12 @@ export function DashboardMobile({
         ) : (
           <ol>
             {produtos.map((p, idx) => (
-              <ItemTopProduto key={p.sku} produto={p} posicao={idx + 1} />
+              <ItemTopProduto
+                key={`${p.loja?.empresaId ?? ""}:${p.sku}`}
+                produto={p}
+                posicao={idx + 1}
+                classeCorLoja={p.loja ? corDaLoja.get(p.loja.empresaId) : undefined}
+              />
             ))}
           </ol>
         )}

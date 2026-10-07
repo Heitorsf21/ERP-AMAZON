@@ -40,6 +40,11 @@ import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { DashboardMobile } from "@/components/dashboard-ecommerce/dashboard-mobile";
+import { AbasLojas } from "@/components/lojas/abas-lojas";
+import { PorLojaTabela, type PorLoja } from "@/components/lojas/por-loja";
+import { SeloLoja } from "@/components/lojas/selo-loja";
+import { useLojas } from "@/components/lojas/use-lojas";
+import { useVisaoInicio } from "@/components/lojas/visao-inicio";
 import { BannerInstalar } from "@/components/pwa/banner-instalar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -132,6 +137,8 @@ type Kpis = {
   vendasSemCusto: number;
   origemTaxas?: "real" | "estimado" | "misto" | "nenhuma";
   delta: KpisDelta;
+  /** Só na visão "Todas" (lojas vinculadas somadas). */
+  porLoja?: PorLoja[];
 };
 
 type TimelineItem = {
@@ -161,6 +168,8 @@ type TopProduto = {
   custoAdsCentavos: number;
   lucroPosAdsCentavos: number | null;
   mpaPercentual: number | null;
+  /** Só na visão "Todas": de qual loja é o item. */
+  loja?: { empresaId: string; nome: string; atual: boolean };
 };
 
 const presets = [
@@ -471,7 +480,12 @@ function DashboardEcommerceContent() {
     }
   }, [presetAtivo, periodo, pathname, router, searchParams]);
 
-  const qs = queryString(periodo);
+  // Visão "Todas": lojas vinculadas somadas (só no Início; ver src/modules/lojas).
+  const { lojas, temVinculo } = useLojas();
+  const [visao] = useVisaoInicio();
+  const todas = temVinculo && visao === "todas";
+  const qs = queryString(periodo) + (todas ? "&lojas=todas" : "");
+  const corSeloLoja = new Map(lojas.map((l) => [l.empresaId, l.cor.selo]));
 
   const presetSelecionado = presets.find((p) => p.value === presetAtivo);
   const labelBotaoPeriodo =
@@ -480,18 +494,18 @@ function DashboardEcommerceContent() {
       : (presetSelecionado?.label ?? "Periodo");
 
   const { data: kpis, isLoading: loadingKpis } = useQuery<Kpis>({
-    queryKey: ["dashboard-ecommerce-kpis", periodo],
+    queryKey: ["dashboard-ecommerce-kpis", periodo, todas],
     queryFn: () => fetchJSON<Kpis>(`/api/dashboard-ecommerce/kpis?${qs}`),
   });
 
   const { data: timeline = [] } = useQuery<TimelineItem[]>({
-    queryKey: ["dashboard-ecommerce-timeline", periodo],
+    queryKey: ["dashboard-ecommerce-timeline", periodo, todas],
     queryFn: () =>
       fetchJSON<TimelineItem[]>(`/api/dashboard-ecommerce/timeline?${qs}`),
   });
 
   const { data: topProdutos = [], isLoading: loadingTop } = useQuery<TopProduto[]>({
-    queryKey: ["dashboard-ecommerce-top-produtos", periodo],
+    queryKey: ["dashboard-ecommerce-top-produtos", periodo, todas],
     queryFn: () =>
       fetchJSON<TopProduto[]>(
         `/api/dashboard-ecommerce/top-produtos?${qs}&limit=15`,
@@ -782,6 +796,7 @@ function DashboardEcommerceContent() {
         title="Dashboard E-commerce"
         description={`KPIs comerciais da Amazon · vendas item-a-item · ${formatPeriodoBR(periodo.de)} — ${formatPeriodoBR(periodo.ate)}`}
       >
+        <AbasLojas className="w-full sm:w-80 md:hidden" />
         <Popover
           open={periodoPopoverAberto}
           onOpenChange={(open) => {
@@ -909,6 +924,7 @@ function DashboardEcommerceContent() {
           produtos={produtosOrdenados}
           carregandoTop={loadingTop}
           ordem={sortProdutos}
+          porLoja={todas ? kpis?.porLoja : undefined}
           onAlternarOrdem={() =>
             setSortProdutos((s) => (s === "desc" ? "asc" : "desc"))
           }
@@ -952,6 +968,21 @@ function DashboardEcommerceContent() {
           </div>
         )}
       </div>
+
+      {todas && kpis?.porLoja && kpis.porLoja.length > 1 && (
+        <ErrorBoundary label="Por loja">
+          <PorLojaTabela
+            porLoja={kpis.porLoja}
+            total={{
+              faturamentoCentavos: kpis.faturamentoCentavos,
+              lucroBrutoCentavos: kpis.lucroBrutoCentavos,
+              margemPercentual: kpis.margemPercentual,
+              numeroVendas: kpis.numeroVendas,
+              mpaPercentual: kpis.mpaPercentual,
+            }}
+          />
+        </ErrorBoundary>
+      )}
 
       <ErrorBoundary label="Resumo de receitas">
         <Card>
@@ -1058,7 +1089,14 @@ function DashboardEcommerceContent() {
       <ErrorBoundary label="Top 15 produtos">
         <Card>
         <CardHeader className="flex-row items-center justify-between space-y-0">
-          <CardTitle className="text-base">Top 15 produtos</CardTitle>
+          <CardTitle className="text-base">
+            Top 15 produtos
+            {todas && kpis?.porLoja && (
+              <span className="ml-2 text-sm font-normal text-muted-foreground">
+                · {kpis.porLoja.map((l) => l.nome).join(" + ")}
+              </span>
+            )}
+          </CardTitle>
           <Button
             type="button"
             variant="outline"
@@ -1120,7 +1158,10 @@ function DashboardEcommerceContent() {
                       ? `/api/produtos/${produto.produtoId}/imagem`
                       : imagemAmazon;
                     return (
-                      <TableRow key={produto.sku} className="even:bg-muted/30">
+                      <TableRow
+                        key={`${produto.loja?.empresaId ?? ""}:${produto.sku}`}
+                        className="even:bg-muted/30"
+                      >
                         <TableCell>
                           <div className="flex items-center gap-3">
                             <ProductThumb
@@ -1131,8 +1172,14 @@ function DashboardEcommerceContent() {
                             />
                             <div className="min-w-0 max-w-[280px]">
                               <p className="truncate font-medium">{produto.nome}</p>
-                              <p className="font-mono text-xs text-muted-foreground">
-                                {produto.sku}
+                              <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                                {produto.loja && (
+                                  <SeloLoja
+                                    nome={produto.loja.nome}
+                                    classeCor={corSeloLoja.get(produto.loja.empresaId)}
+                                  />
+                                )}
+                                <span className="font-mono">{produto.sku}</span>
                               </p>
                             </div>
                           </div>
