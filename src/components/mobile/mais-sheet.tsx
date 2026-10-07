@@ -8,10 +8,15 @@ import {
   ChevronRight,
   Download,
   LogOut,
+  Monitor,
+  Moon,
+  Palette,
   Settings,
   SlidersHorizontal,
+  Sun,
   UserCircle,
 } from "lucide-react";
+import { useTheme } from "next-themes";
 import { cn } from "@/lib/utils";
 import {
   Sheet,
@@ -70,6 +75,58 @@ function Linha({
 
 const CLASSE_LINHA =
   "flex min-h-[52px] w-full items-center gap-3 rounded-lg px-2 py-1.5 text-left active:bg-muted";
+
+const TEMAS = [
+  { value: "system", label: "Sistema", icon: Monitor },
+  { value: "light", label: "Claro", icon: Sun },
+  { value: "dark", label: "Escuro", icon: Moon },
+] as const;
+
+// Abaixo de lg a sidebar (dona do ThemeToggle) some: o tema precisa morar aqui.
+function LinhaTema() {
+  const { theme, setTheme } = useTheme();
+  const [montado, setMontado] = React.useState(false);
+  React.useEffect(() => setMontado(true), []);
+
+  return (
+    <div className="flex flex-col gap-2 rounded-lg px-2 py-1.5">
+      <div className="flex items-center gap-3">
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-foreground/80">
+          <Palette className="h-[18px] w-[18px]" />
+        </span>
+        <span id="mais-tema-rotulo" className="text-[15px] font-medium">
+          Tema
+        </span>
+      </div>
+      <div
+        role="group"
+        aria-labelledby="mais-tema-rotulo"
+        className="grid grid-cols-3 gap-1 rounded-lg bg-muted p-1"
+      >
+        {TEMAS.map(({ value, label, icon: Icon }) => {
+          const ativo = montado && theme === value;
+          return (
+            <button
+              key={value}
+              type="button"
+              aria-pressed={ativo}
+              onClick={() => setTheme(value)}
+              className={cn(
+                "flex min-h-[44px] items-center justify-center gap-1.5 rounded-md text-sm font-medium transition-colors",
+                ativo
+                  ? "bg-background text-foreground shadow-sm"
+                  : "text-muted-foreground active:bg-background/60",
+              )}
+            >
+              <Icon className="h-4 w-4" aria-hidden />
+              {label}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 
 const ROTULO_SECAO =
   "px-2 pb-1 pt-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground";
@@ -173,6 +230,7 @@ export function MaisSheet({
               />
             </button>
           )}
+          <LinhaTema />
           <Link href={"/configuracoes" as Route} onClick={fechar} className={CLASSE_LINHA}>
             <Linha icone={Settings} rotulo="Configurações" />
           </Link>
