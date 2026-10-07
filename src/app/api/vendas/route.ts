@@ -11,6 +11,7 @@ import {
   normalizarVisaoVendas,
   whereVendaAmazonPorVisao,
 } from "@/modules/vendas/filtros";
+import { normalizarPedidoParam } from "@/modules/vendas/pedido-param";
 import { buildCategoriaTaxaEstimada } from "@/modules/vendas/taxas-estimadas";
 import { loadFeeEstimatorConfig } from "@/modules/produtos/fee-estimator";
 import { valorBrutoDaVenda } from "@/modules/vendas/valores";
@@ -71,6 +72,10 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
         { statusPedido: s },
         { statusFinanceiro: s },
       ]);
+    }
+    const pedido = normalizarPedidoParam(searchParams.get("pedido"));
+    if (pedido) {
+      filtros.amazonOrderId = pedido;
     }
     const where = whereVendaAmazonPorVisao(visao, filtros);
 

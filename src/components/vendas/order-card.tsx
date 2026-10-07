@@ -34,19 +34,27 @@ function logisticaLabel(fulfillment: string | null): string {
 export function OrderCard({
   venda,
   defaultExpanded = false,
+  destacado = false,
 }: {
   venda: VendaListagem;
   defaultExpanded?: boolean;
+  destacado?: boolean;
 }) {
   const [expanded, setExpanded] = React.useState(defaultExpanded);
+  const ref = React.useRef<HTMLElement>(null);
+  React.useEffect(() => {
+    if (destacado) ref.current?.scrollIntoView({ block: "center" });
+  }, [destacado]);
   const logistica = logisticaLabel(venda.fulfillmentChannel);
   const breakdown = venda.breakdown ?? null;
 
   return (
     <article
+      ref={ref}
       className={cn(
         "overflow-hidden rounded-xl border bg-card shadow-sm transition-shadow",
         expanded && "shadow-md",
+        destacado && "ring-2 ring-primary",
       )}
     >
       <OrderCardHeader

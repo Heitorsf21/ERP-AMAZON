@@ -22,6 +22,7 @@ export function OrderCardList({
   setPagina,
   onImportar,
   emptyHint,
+  destacarPedidoId,
 }: {
   isLoading: boolean;
   vendas: VendaListagem[];
@@ -31,6 +32,7 @@ export function OrderCardList({
   setPagina: React.Dispatch<React.SetStateAction<number>>;
   onImportar?: () => void;
   emptyHint?: string;
+  destacarPedidoId?: string | null;
 }) {
   if (isLoading) {
     return <DataTableSkeleton rows={4} columns={4} />;
@@ -56,7 +58,12 @@ export function OrderCardList({
   return (
     <div className="flex flex-col gap-3">
       {vendas.map((venda, idx) => (
-        <OrderCard key={venda.id} venda={venda} defaultExpanded={idx === 0} />
+        <OrderCard
+          key={venda.id}
+          venda={venda}
+          defaultExpanded={idx === 0 || venda.amazonOrderId === destacarPedidoId}
+          destacado={!!destacarPedidoId && venda.amazonOrderId === destacarPedidoId}
+        />
       ))}
 
       <Paginacao

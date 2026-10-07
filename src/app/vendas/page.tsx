@@ -11,6 +11,7 @@ import {
   ShoppingBag,
   TrendingUp,
   Upload,
+  X,
   Zap,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -42,6 +43,7 @@ import {
 import { PeriodoPreset } from "@/lib/periodo";
 import { formatBRL } from "@/lib/money";
 import { cn } from "@/lib/utils";
+import { normalizarPedidoParam } from "@/modules/vendas/pedido-param";
 
 type Totais = {
   receitaBrutaCentavos: number;
@@ -271,6 +273,24 @@ export default function VendasPage() {
   const [aba, setAba] = React.useState<AbaVendas>("principal");
   const visaoVendas = aba === "cancelados" ? "cancelados" : "principal";
 
+  // Aberto pelo aviso de venda no celular: /vendas?pedido=702-…
+  const [pedidoDestaque, setPedidoDestaque] = React.useState<string | null>(null);
+  React.useEffect(() => {
+    const pedido = normalizarPedidoParam(
+      new URLSearchParams(window.location.search).get("pedido"),
+    );
+    if (pedido) {
+      setPedidoDestaque(pedido);
+      setFiltros((f) => ({ ...f, periodo: { preset: PeriodoPreset.VITALICIO } }));
+    }
+  }, []);
+
+  function limparPedidoDestaque() {
+    setPedidoDestaque(null);
+    setFiltros(filtrosIniciais);
+    window.history.replaceState(null, "", "/vendas");
+  }
+
   React.useEffect(() => setPagina(1), [filtros, aba]);
 
   const params = React.useMemo(() => {
@@ -284,10 +304,11 @@ export default function VendasPage() {
     if (filtros.logistica) p.set("logistica", filtros.logistica);
     if (filtros.statuses.length > 0)
       p.set("statuses", filtros.statuses.join(","));
+    if (pedidoDestaque) p.set("pedido", pedidoDestaque);
     p.set("visao", visaoVendas);
     p.set("pagina", String(pagina));
     return p;
-  }, [filtros, pagina, visaoVendas]);
+  }, [filtros, pagina, visaoVendas, pedidoDestaque]);
 
   const totaisParams = React.useMemo(() => {
     const p = new URLSearchParams();
@@ -309,7 +330,7 @@ export default function VendasPage() {
     total: number;
     porPagina: number;
   }>({
-    queryKey: ["vendas", filtros, pagina, visaoVendas],
+    queryKey: ["vendas", filtros, pagina, visaoVendas, pedidoDestaque],
     queryFn: () => fetch(`/api/vendas?${params}`).then((r) => r.json()),
   });
 
@@ -456,6 +477,17 @@ export default function VendasPage() {
         </TabsList>
 
         <TabsContent value="principal" className="mt-4">
+          {pedidoDestaque && (
+            <div className="mb-3 flex items-center justify-between gap-2 rounded-lg border border-primary/30 bg-primary/5 px-3 py-2 text-sm">
+              <span>
+                Mostrando o pedido <strong className="font-mono">{pedidoDestaque}</strong>
+              </span>
+              <Button variant="ghost" size="sm" className="h-9" onClick={limparPedidoDestaque}>
+                <X className="mr-1 h-4 w-4" aria-hidden />
+                Ver todos
+              </Button>
+            </div>
+          )}
           <OrderCardList
             isLoading={vendasQuery.isLoading}
             vendas={vendas}
@@ -464,6 +496,12 @@ export default function VendasPage() {
             total={total}
             setPagina={setPagina}
             onImportar={() => setDialogAberto(true)}
+            destacarPedidoId={pedidoDestaque}
+            emptyHint={
+              pedidoDestaque
+                ? "Este pedido não está nesta conta. Se ele é da outra loja, entre na conta dela."
+                : undefined
+            }
           />
         </TabsContent>
 
@@ -476,6 +514,7 @@ export default function VendasPage() {
             total={total}
             setPagina={setPagina}
             emptyHint="Nenhum pedido cancelado no período"
+            destacarPedidoId={pedidoDestaque}
           />
         </TabsContent>
 
@@ -509,7 +548,42 @@ export default function VendasPage() {
             <DataTableSkeleton rows={6} columns={8} />
           ) : (
             <>
-              <div className="overflow-hidden rounded-md border">
+              <div className="space-y-2 md:hidden">
+                {(reembolsos?.produtos ?? []).map((produto) => (
+                  <div key={produto.sku} className="rounded-xl border bg-card p-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="line-clamp-2 text-sm font-medium">{produto.nome}</p>
+                        <p className="text-xs text-muted-foreground">{produto.sku}</p>
+                      </div>
+                      <span className="shrink-0 text-sm font-bold tabular-nums">
+                        {fmtPercentual(produto.taxaReembolso)}
+                      </span>
+                    </div>
+                    <div className="mt-2 grid grid-cols-3 gap-2 text-xs">
+                      <div>
+                        <p className="text-muted-foreground">Pedidos</p>
+                        <p className="font-medium tabular-nums">
+                          {produto.pedidosReembolsados}/{produto.pedidosVendidos}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-muted-foreground">Unidades</p>
+                        <p className="font-medium tabular-nums">
+                          {produto.unidadesReembolsadas}/{produto.unidadesVendidas}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-muted-foreground">Reembolsado</p>
+                        <p className="font-medium tabular-nums">
+                          {formatBRL(produto.valorReembolsadoCentavos)}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="hidden overflow-hidden rounded-md border md:block">
                 <Table>
                   <TableHeader>
                     <TableRow>
