@@ -102,6 +102,18 @@ test("operador abre Configurações e o atalho da folha Mais troca a aba", async
   await expect(page.getByRole("tab", { name: "Notificações" })).toHaveAttribute("aria-selected", "true");
 });
 
+test("tema Sistema/Claro/Escuro na folha Mais (a sidebar some no celular)", async ({ context, page }) => {
+  await logar(context);
+  await page.goto("/dashboard-ecommerce");
+  await page.getByRole("navigation", { name: "Navegação principal" }).getByRole("button", { name: "Mais" }).click();
+  const tema = page.getByRole("dialog").getByRole("group", { name: "Tema" });
+  await tema.getByRole("button", { name: "Escuro" }).click();
+  await expect(tema.getByRole("button", { name: "Escuro" })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator("html")).toHaveClass(/dark/);
+  await tema.getByRole("button", { name: "Claro" }).click();
+  await expect(page.locator("html")).not.toHaveClass(/dark/);
+});
+
 test("dashboard no celular: 6 KPIs, MPA e Top 15, sem gráfico nem scroll lateral", async ({ context, page }) => {
   await logar(context);
   await page.goto("/dashboard-ecommerce");
