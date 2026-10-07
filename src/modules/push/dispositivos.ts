@@ -1,3 +1,4 @@
+import { parse as parseUrlLegado } from "node:url";
 import { z } from "zod";
 import { db } from "@/lib/db";
 
@@ -24,7 +25,14 @@ export function endpointPushPermitido(endpoint: string): boolean {
   }
   if (url.protocol !== "https:" || url.username || url.password) return false;
   if (url.port && url.port !== "443") return false;
-  const host = url.hostname.toLowerCase();
+  const host = url.hostname;
+  // Só hosts DNS simples e URL já canônica (como os serviços de push entregam):
+  // barra %2E, ";", "{", aspas e afins, que o WHATWG e o url.parse leem diferente.
+  if (!/^[a-z0-9.-]+$/.test(host) || url.href !== endpoint) return false;
+  // O web-push conecta pelo url.parse LEGADO: ele precisa ver o mesmo host e porta.
+  const legado = parseUrlLegado(endpoint);
+  if ((legado.hostname ?? "").toLowerCase() !== host) return false;
+  if (legado.port && legado.port !== "443") return false;
   return HOSTS_PUSH_EXATOS.has(host) || SUFIXOS_HOSTS_PUSH.some((sufixo) => host.endsWith(sufixo));
 }
 

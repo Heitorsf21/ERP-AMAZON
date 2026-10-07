@@ -105,6 +105,15 @@ describe("endpoint só de serviço de push conhecido (anti-SSRF)", () => {
     "https://user:senha@fcm.googleapis.com/x",
     "http://fcm.googleapis.com/x",
     "não é url",
+    // O WHATWG lê estes hosts como serviço de push, mas o url.parse legado
+    // (usado pelo web-push no envio) lê outro host: o POST iria para lá.
+    "https://localhost%2E.push.apple.com/x",
+    "https://attacker.example%2E.push.apple.com/x",
+    "https://169.254.169.254%2E.notify.windows.com/x",
+    "https://attacker.example;.push.apple.com/x",
+    "https://attacker.example{.push.apple.com/x",
+    "https://attacker.example'.push.apple.com/x",
+    "https://FCM.googleapis.com/x",
   ])("rejeita %s", (endpoint) => {
     expect(endpointPushPermitido(endpoint)).toBe(false);
     expect(inscricaoSchema.safeParse({ endpoint, keys: chaves }).success).toBe(false);
