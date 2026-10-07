@@ -4,6 +4,19 @@ const nextConfig = {
   typedRoutes: true,
   // Não anunciar a stack (remove header X-Powered-By: Next.js — fingerprinting).
   poweredByHeader: false,
+  // Service worker sempre fresco (sem cache HTTP) e com CSP mínima própria.
+  async headers() {
+    return [
+      {
+        source: "/sw.js",
+        headers: [
+          { key: "Content-Type", value: "application/javascript; charset=utf-8" },
+          { key: "Cache-Control", value: "no-cache, no-store, must-revalidate" },
+          { key: "Content-Security-Policy", value: "default-src 'self'; script-src 'self'" },
+        ],
+      },
+    ];
+  },
   // Source maps off em dev: reduz uso de RAM em Windows (~30-40%).
   productionBrowserSourceMaps: false,
   // TypeScript é verificado localmente (npm run typecheck) antes do push.

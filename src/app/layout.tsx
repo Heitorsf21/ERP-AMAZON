@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { AppShell } from "@/components/app-shell";
 import { Providers } from "@/components/providers";
@@ -12,6 +12,22 @@ export const metadata: Metadata = {
   description:
     "Plataforma de gestão MundoFS — caixa, contas, estoque, compras e operação Amazon.",
   applicationName: "Atlas Seller",
+  appleWebApp: {
+    capable: true,
+    title: "Atlas",
+    statusBarStyle: "default",
+  },
+  formatDetection: { telephone: false },
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#fafafa" },
+    { media: "(prefers-color-scheme: dark)", color: "#030712" },
+  ],
 };
 
 export default function RootLayout({

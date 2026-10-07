@@ -16,6 +16,10 @@ const PUBLIC_PATHS = [
   "/redefinir-senha",
   // Politica de privacidade publica (URL exigida na submissao do app Amazon/DPP).
   "/privacidade",
+  // PWA: o navegador busca manifest e service worker SEM cookie (manifest) ou
+  // segue redirect como erro (SW). Ambos são estáticos e não vazam dados.
+  "/manifest.webmanifest",
+  "/sw.js",
   "/api/auth/login",
   "/api/auth/logout",
   "/api/auth/2fa/verificar",
