@@ -427,7 +427,8 @@ function DreCompetenciaView({ d, de, ate }: { d: DRECompetenciaData; de: string;
             </p>
           </CardHeader>
           <CardContent className="p-0">
-            <table className="w-full">
+            <div className="overflow-x-auto">
+            <table className="w-full min-w-[360px]">
               <thead>
                 <tr className="border-b border-border">
                   <th className="py-2 pl-4 text-left text-xs font-medium text-muted-foreground">
@@ -597,6 +598,7 @@ function DreCompetenciaView({ d, de, ate }: { d: DRECompetenciaData; de: string;
                 />
               </tbody>
             </table>
+            </div>
           </CardContent>
         </Card>
 
@@ -746,7 +748,8 @@ function DreCaixaView({ d, de, ate }: { d: DRECaixaData; de: string; ate: string
             </p>
           </CardHeader>
           <CardContent className="p-0">
-            <table className="w-full">
+            <div className="overflow-x-auto">
+            <table className="w-full min-w-[360px]">
               <thead>
                 <tr className="border-b border-border">
                   <th className="py-2 pl-4 text-left text-xs font-medium text-muted-foreground">
@@ -889,6 +892,7 @@ function DreCaixaView({ d, de, ate }: { d: DRECaixaData; de: string; ate: string
                 />
               </tbody>
             </table>
+            </div>
           </CardContent>
         </Card>
 

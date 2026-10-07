@@ -86,6 +86,10 @@ export function AgendaView() {
   const qc = useQueryClient();
   const hoje = React.useMemo(() => hojeSP(), []);
   const [modo, setModo] = React.useState<Modo>("semana");
+  // A grade de 7 colunas não cabe no celular: lá a agenda abre no dia.
+  React.useEffect(() => {
+    if (window.matchMedia("(max-width: 767px)").matches) setModo("dia");
+  }, []);
   const [cursor, setCursor] = React.useState<string>(hoje);
   const [tipos, setTipos] = React.useState<string[]>([]);
   const [status, setStatus] = React.useState<string[]>([]);

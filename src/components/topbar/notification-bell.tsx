@@ -259,7 +259,7 @@ export function NotificationBell() {
                           disabled={marcarLida.isPending}
                           aria-label="Marcar como lida"
                           title="Marcar como lida"
-                          className="rounded-md p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-accent hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100"
+                          className="rounded-md p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-accent hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100 [@media(hover:none)]:opacity-100"
                         >
                           <Check className="h-3.5 w-3.5" />
                         </button>
