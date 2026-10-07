@@ -10,6 +10,7 @@ vi.mock("@/modules/amazon/service", () => serviceMock);
 import {
   ehErroPermissaoListing,
   enviarPrecoAmazon,
+  lerPrecosDaOferta,
   montarPatchPreco,
   PermissaoListingNegadaError,
   PrecoRejeitadoError,
@@ -92,5 +93,85 @@ describe("enviarPrecoAmazon", () => {
   it("ehErroPermissaoListing só reconhece 403", () => {
     expect(ehErroPermissaoListing(new Error("… -> 403: {}"))).toBe(true);
     expect(ehErroPermissaoListing(new Error("… -> 400: {}"))).toBe(false);
+  });
+});
+
+describe("preserva o resto da oferta (promoção, travas mín./máx., B2B)", () => {
+  const OFERTA_B2C = {
+    marketplace_id: "A2Q3Y263D00KWC",
+    currency: "BRL",
+    audience: "ALL",
+    our_price: [{ schedule: [{ value_with_tax: 99.9 }] }],
+    discounted_price: [
+      { schedule: [{ value_with_tax: 79.9, start_at: "2026-01-01T00:00:00Z", end_at: "2099-01-01T00:00:00Z" }] },
+    ],
+    minimum_seller_allowed_price: [{ schedule: [{ value_with_tax: 60 }] }],
+    maximum_seller_allowed_price: [{ schedule: [{ value_with_tax: 150 }] }],
+  };
+  const OFERTA_B2B = {
+    marketplace_id: "A2Q3Y263D00KWC",
+    currency: "BRL",
+    audience: "B2B",
+    our_price: [{ schedule: [{ value_with_tax: 90 }] }],
+  };
+
+  it("montarPatchPreco troca só o our_price da oferta ALL e mantém o resto", () => {
+    const patch = montarPatchPreco({
+      productType: "X",
+      marketplaceId: "A2Q3Y263D00KWC",
+      precoCentavos: 8490,
+      ofertasAtuais: [OFERTA_B2C, OFERTA_B2B],
+    });
+    expect(patch.patches[0]?.value).toEqual([
+      { ...OFERTA_B2C, our_price: [{ schedule: [{ value_with_tax: 84.9 }] }] },
+      OFERTA_B2B,
+    ]);
+  });
+
+  it("enviarPrecoAmazon lê os atributos e reenvia a oferta inteira (sem apagar a promoção)", async () => {
+    spMock.getListingsItem.mockResolvedValue({
+      summaries: [{ marketplaceId: "A2Q3Y263D00KWC", productType: "FOOD_STORAGE_CONTAINER" }],
+      attributes: { purchasable_offer: [OFERTA_B2C, OFERTA_B2B] },
+    });
+    spMock.spApiRequest.mockResolvedValue({ status: "ACCEPTED" });
+    const r = await enviarPrecoAmazon({ sku: "MFS-0036", precoCentavos: 8490, somenteValidar: false });
+    expect(spMock.getListingsItem.mock.calls[0]?.[3]).toEqual(["summaries", "attributes"]);
+    const ultimo = spMock.spApiRequest.mock.calls.at(-1) ?? [];
+    const oferta = ultimo[2].body.patches[0].value[0];
+    expect(oferta.discounted_price).toEqual(OFERTA_B2C.discounted_price);
+    expect(oferta.minimum_seller_allowed_price).toEqual(OFERTA_B2C.minimum_seller_allowed_price);
+    expect(oferta.maximum_seller_allowed_price).toEqual(OFERTA_B2C.maximum_seller_allowed_price);
+    expect(oferta.our_price).toEqual([{ schedule: [{ value_with_tax: 84.9 }] }]);
+    expect(ultimo[2].body.patches[0].value[1]).toEqual(OFERTA_B2B);
+    expect(r.ourPriceAnteriorCentavos).toBe(9990);
+    expect(r.promocaoAtivaCentavos).toBe(7990);
+  });
+
+  it("aplicação real valida antes com VALIDATION_PREVIEW e não aplica se a Amazon recusar", async () => {
+    spMock.spApiRequest.mockResolvedValueOnce({
+      status: "INVALID",
+      issues: [{ severity: "ERROR", message: "Preço abaixo do mínimo." }],
+    });
+    await expect(
+      enviarPrecoAmazon({ sku: "MFS-0036", precoCentavos: 100, somenteValidar: false }),
+    ).rejects.toThrow(PrecoRejeitadoError);
+    expect(spMock.spApiRequest).toHaveBeenCalledTimes(1);
+    expect(spMock.spApiRequest.mock.calls[0]?.[2].params.mode).toBe("VALIDATION_PREVIEW");
+  });
+
+  it("aplicação real: preview VALID e depois o PATCH sem mode", async () => {
+    spMock.spApiRequest.mockResolvedValueOnce({ status: "VALID" }).mockResolvedValueOnce({ status: "ACCEPTED", submissionId: "s9" });
+    const r = await enviarPrecoAmazon({ sku: "MFS-0036", precoCentavos: 7700, somenteValidar: false });
+    expect(spMock.spApiRequest).toHaveBeenCalledTimes(2);
+    expect(spMock.spApiRequest.mock.calls[1]?.[2].params.mode).toBeUndefined();
+    expect(r.submissionId).toBe("s9");
+  });
+
+  it("lerPrecosDaOferta separa our_price da promoção vigente", () => {
+    expect(lerPrecosDaOferta([OFERTA_B2C, OFERTA_B2B], "A2Q3Y263D00KWC", new Date("2026-10-06T12:00:00Z"))).toEqual({
+      ourPriceCentavos: 9990,
+      promocaoAtivaCentavos: 7990,
+    });
+    expect(lerPrecosDaOferta(undefined, "A2Q3Y263D00KWC")).toEqual({ ourPriceCentavos: null, promocaoAtivaCentavos: null });
   });
 });
