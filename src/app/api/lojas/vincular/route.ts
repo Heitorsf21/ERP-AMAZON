@@ -80,6 +80,11 @@ export const POST = handle(async (req: Request) => {
 
   await resetLoginFailuresByKey(chaveLimite);
 
+  // Mesma loja (ou a própria conta): recusa ANTES de mandar código de 2FA.
+  if (alvo.id === session.uid || alvo.empresaId === session.empresaId) {
+    return NextResponse.json({ erro: "MESMA_LOJA" }, { status: 400 });
+  }
+
   const desafio = await criarDesafio2FA(alvo, finalidadeVinculo(session.uid));
   if (desafio) {
     return NextResponse.json({

@@ -127,3 +127,18 @@ test("Configurações > Lojas: senha errada aparece perto do campo", async ({ co
   );
   await expect(page.getByLabel("Senha")).toHaveAttribute("aria-invalid", "true");
 });
+
+test("trocar de loja vai para a mesma seção da outra loja, sem recarregar a página antiga", async ({ context, page }) => {
+  await logarComLojas(context);
+  await context.route("**/api/auth/trocar-loja", (r) =>
+    r.fulfill({ json: { ok: true, loja: { empresaId: "udn", nome: "UDN" } } }),
+  );
+  await page.goto("/configuracoes?tab=lojas");
+  await page.getByRole("button", { name: /Trocar de loja\. Loja aberta: MundoFS/ }).click();
+  await page.getByRole("dialog", { name: "Trocar de loja" }).getByText("UDN", { exact: true }).click();
+  // Destino = a seção, sem o detalhe/consulta da página anterior. Um reload
+  // disputando com a navegação manteria "?tab=lojas".
+  await page.waitForURL(/\/configuracoes$/);
+  await page.waitForTimeout(1500);
+  await expect(page).toHaveURL(/\/configuracoes$/);
+});

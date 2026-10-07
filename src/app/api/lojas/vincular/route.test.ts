@@ -63,6 +63,7 @@ const contaUdn = () => ({
   email: "udn@loja.test",
   nome: "UDN",
   senhaHash: hashSenha,
+  empresaId: "udn",
   ativo: true,
   twoFactorEnabled: false,
   twoFactorMethod: null,
@@ -113,6 +114,20 @@ describe("POST /api/lojas/vincular", () => {
     expect(await res.json()).toEqual({ requires2FA: true, challengeId: "c".repeat(32), metodo: "EMAIL" });
     expect(desafio.criarDesafio2FA).toHaveBeenCalledWith(expect.objectContaining({ id: "u-udn" }), "VINCULO:u-mfs");
     expect(vinculos.criarVinculo).not.toHaveBeenCalled();
+  });
+
+  it("conta da mesma loja com 2FA: recusa antes de mandar código", async () => {
+    dbMock.usuario.findUnique.mockResolvedValue({
+      ...contaUdn(),
+      id: "u-mfs2",
+      empresaId: "mundofs",
+      twoFactorEnabled: true,
+      twoFactorMethod: "EMAIL",
+    });
+    const res = await chamar({ email: "outro@mundofs.test", senha: "senha-certa" });
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ erro: "MESMA_LOJA" });
+    expect(desafio.criarDesafio2FA).not.toHaveBeenCalled();
   });
 
   it("mesma loja: 400 MESMA_LOJA", async () => {

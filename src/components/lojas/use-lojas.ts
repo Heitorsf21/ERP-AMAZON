@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { fetchJSON } from "@/lib/fetcher";
 import { lojasComCor, type LojaComCor } from "@/modules/lojas/regras";
 import type { Loja, LojaVinculada } from "@/modules/lojas/vinculos";
+import { avisarOutrasAbas } from "./sessao-canal";
 import { definirVisaoInicio, type VisaoInicio } from "./visao-inicio";
 
 export type LojasResposta = { atual: Loja; vinculadas: LojaVinculada[] };
@@ -32,21 +33,6 @@ export function useLojas() {
     atual,
     temVinculo: lojas.length > 1,
   };
-}
-
-// Outras abas abertas da loja antiga recarregam ao saber da troca: evita uma
-// tela com o cabeçalho de uma loja e o cache da outra.
-export const CANAL_SESSAO = "atlas-sessao";
-export type MensagemSessao = { tipo: "loja-trocada"; empresaId: string };
-
-function avisarOutrasAbas(empresaId: string) {
-  try {
-    const canal = new BroadcastChannel(CANAL_SESSAO);
-    canal.postMessage({ tipo: "loja-trocada", empresaId } satisfies MensagemSessao);
-    canal.close();
-  } catch {
-    // Navegador sem BroadcastChannel: as outras abas se acertam ao recarregar.
-  }
 }
 
 /**

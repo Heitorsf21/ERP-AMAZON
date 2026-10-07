@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { CANAL_SESSAO, type MensagemSessao } from "./use-lojas";
+import { CANAL_SESSAO, deveRecarregarPorMensagem, ID_DESTA_ABA } from "./sessao-canal";
 
 /**
  * Quando outra aba troca de loja, o cookie desta aba já é da nova loja: a tela
@@ -11,8 +11,8 @@ export function SessaoSync() {
   React.useEffect(() => {
     if (typeof BroadcastChannel === "undefined") return;
     const canal = new BroadcastChannel(CANAL_SESSAO);
-    canal.onmessage = (evento: MessageEvent<MensagemSessao>) => {
-      if (evento.data?.tipo === "loja-trocada") window.location.reload();
+    canal.onmessage = (evento: MessageEvent<unknown>) => {
+      if (deveRecarregarPorMensagem(evento.data, ID_DESTA_ABA)) window.location.reload();
     };
     return () => canal.close();
   }, []);
