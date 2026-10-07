@@ -5,3 +5,46 @@ export function normalizarPedidoParam(valor: string | null | undefined): string 
   const v = (valor ?? "").trim();
   return FORMATO_PEDIDO_AMAZON.test(v) ? v : null;
 }
+
+/** Id de empresa no `?loja=` do aviso (cuid/slug). Qualquer outra coisa é ignorada. */
+const FORMATO_LOJA = /^[A-Za-z0-9_-]{1,64}$/;
+
+export function normalizarLojaParam(valor: string | null | undefined): string | null {
+  const v = (valor ?? "").trim();
+  return FORMATO_LOJA.test(v) ? v : null;
+}
+
+/**
+ * O link do aviso diz de qual loja é o pedido; a sessão diz em qual conta o
+ * app está. Só compara as duas — nada é consultado na outra empresa.
+ */
+export function pedidoEhDeOutraLoja(
+  lojaDoLink: string | null,
+  empresaDaSessao: string | null | undefined,
+): boolean {
+  return !!lojaDoLink && !!empresaDaSessao && lojaDoLink !== empresaDaSessao;
+}
+
+/**
+ * O aviso sai do SQS ~15–30 s após a compra; a venda só é gravada pelo
+ * ORDERS_SYNC (mediana 137 s, p90 534 s). Por isso, lista vazia logo após o
+ * toque é "ainda sincronizando", não "pedido de outra loja".
+ */
+export const ESPERA_PEDIDO_MS = 10 * 60_000;
+export const INTERVALO_CONSULTA_PEDIDO_MS = 15_000;
+
+export type EstadoPedidoDestaque = "encontrado" | "aguardando" | "outra_loja" | "nao_encontrado";
+
+export function estadoPedidoDestaque(input: {
+  encontrados: number;
+  outraLoja: boolean;
+  esperaEsgotada: boolean;
+}): EstadoPedidoDestaque {
+  if (input.encontrados > 0) return "encontrado";
+  if (input.outraLoja) return "outra_loja";
+  return input.esperaEsgotada ? "nao_encontrado" : "aguardando";
+}
+
+export function intervaloConsultaPedido(estado: EstadoPedidoDestaque): number | false {
+  return estado === "aguardando" ? INTERVALO_CONSULTA_PEDIDO_MS : false;
+}

@@ -3,6 +3,8 @@
 import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  Loader2,
+  LogOut,
   Package,
   Percent,
   ReceiptText,
@@ -43,7 +45,15 @@ import {
 import { PeriodoPreset } from "@/lib/periodo";
 import { formatBRL } from "@/lib/money";
 import { cn } from "@/lib/utils";
-import { normalizarPedidoParam } from "@/modules/vendas/pedido-param";
+import { useLogout } from "@/components/auth/use-logout";
+import {
+  ESPERA_PEDIDO_MS,
+  estadoPedidoDestaque,
+  intervaloConsultaPedido,
+  normalizarLojaParam,
+  normalizarPedidoParam,
+  type EstadoPedidoDestaque,
+} from "@/modules/vendas/pedido-param";
 
 type Totais = {
   receitaBrutaCentavos: number;
@@ -265,6 +275,61 @@ function DialogImportar({
   );
 }
 
+/**
+ * Lista vazia ao abrir o pedido pelo aviso de venda. O aviso sai segundos
+ * após a compra e a venda só é gravada minutos depois: primeiro aguarda
+ * (consultando de novo a cada 15 s); só depois sugere outra conta.
+ */
+function PedidoDestaqueVazio({
+  estado,
+  consultando,
+  onConsultar,
+}: {
+  estado: Exclude<EstadoPedidoDestaque, "encontrado">;
+  consultando: boolean;
+  onConsultar: () => void;
+}) {
+  const { sair, saindo } = useLogout();
+  return (
+    <div
+      className="flex flex-col items-center gap-3 rounded-xl border border-dashed px-4 py-12 text-center"
+      role="status"
+      aria-live="polite"
+    >
+      {estado === "aguardando" ? (
+        <>
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground/60" aria-hidden />
+          <p className="font-medium">Pedido recebido agora — aguardando a Amazon sincronizar…</p>
+          <p className="text-sm text-muted-foreground">
+            Costuma levar de 2 a 10 minutos. Esta tela atualiza sozinha.
+          </p>
+        </>
+      ) : estado === "outra_loja" ? (
+        <>
+          <ShoppingBag className="h-10 w-10 text-muted-foreground/40" aria-hidden />
+          <p className="font-medium">Este pedido é de outra loja. Trocar de conta?</p>
+          <Button className="h-11" onClick={() => void sair()} disabled={saindo}>
+            <LogOut className="mr-2 h-4 w-4" aria-hidden />
+            {saindo ? "Saindo…" : "Trocar de conta"}
+          </Button>
+        </>
+      ) : (
+        <>
+          <ShoppingBag className="h-10 w-10 text-muted-foreground/40" aria-hidden />
+          <p className="font-medium">Ainda não encontramos este pedido nesta conta.</p>
+          <p className="text-sm text-muted-foreground">
+            A Amazon pode estar demorando para liberar. Se o pedido for da outra loja, entre na conta dela.
+          </p>
+          <Button variant="outline" className="h-11" onClick={onConsultar} disabled={consultando}>
+            <RefreshCw className={cn("mr-2 h-4 w-4", consultando && "animate-spin")} aria-hidden />
+            Procurar de novo
+          </Button>
+        </>
+      )}
+    </div>
+  );
+}
+
 export default function VendasPage() {
   const queryClient = useQueryClient();
   const [filtros, setFiltros] = React.useState<FiltrosVendas>(filtrosIniciais);
@@ -273,20 +338,32 @@ export default function VendasPage() {
   const [aba, setAba] = React.useState<AbaVendas>("principal");
   const visaoVendas = aba === "cancelados" ? "cancelados" : "principal";
 
-  // Aberto pelo aviso de venda no celular: /vendas?pedido=702-…
+  // Aberto pelo aviso de venda no celular: /vendas?pedido=702-…[&loja=<empresaId>]
   const [pedidoDestaque, setPedidoDestaque] = React.useState<string | null>(null);
+  const [lojaDestaque, setLojaDestaque] = React.useState<string | null>(null);
+  // O aviso chega antes de a venda ser gravada: lista vazia nos primeiros
+  // minutos = "aguardando sincronizar", não "pedido de outra loja".
+  const [esperaEsgotada, setEsperaEsgotada] = React.useState(false);
+  const [rodadaEspera, setRodadaEspera] = React.useState(0);
   React.useEffect(() => {
-    const pedido = normalizarPedidoParam(
-      new URLSearchParams(window.location.search).get("pedido"),
-    );
+    const busca = new URLSearchParams(window.location.search);
+    const pedido = normalizarPedidoParam(busca.get("pedido"));
     if (pedido) {
       setPedidoDestaque(pedido);
+      setLojaDestaque(normalizarLojaParam(busca.get("loja")));
       setFiltros((f) => ({ ...f, periodo: { preset: PeriodoPreset.VITALICIO } }));
     }
   }, []);
+  React.useEffect(() => {
+    if (!pedidoDestaque) return;
+    setEsperaEsgotada(false);
+    const t = window.setTimeout(() => setEsperaEsgotada(true), ESPERA_PEDIDO_MS);
+    return () => window.clearTimeout(t);
+  }, [pedidoDestaque, rodadaEspera]);
 
   function limparPedidoDestaque() {
     setPedidoDestaque(null);
+    setLojaDestaque(null);
     setFiltros(filtrosIniciais);
     window.history.replaceState(null, "", "/vendas");
   }
@@ -305,10 +382,11 @@ export default function VendasPage() {
     if (filtros.statuses.length > 0)
       p.set("statuses", filtros.statuses.join(","));
     if (pedidoDestaque) p.set("pedido", pedidoDestaque);
+    if (pedidoDestaque && lojaDestaque) p.set("loja", lojaDestaque);
     p.set("visao", visaoVendas);
     p.set("pagina", String(pagina));
     return p;
-  }, [filtros, pagina, visaoVendas, pedidoDestaque]);
+  }, [filtros, pagina, visaoVendas, pedidoDestaque, lojaDestaque]);
 
   const totaisParams = React.useMemo(() => {
     const p = new URLSearchParams();
@@ -329,9 +407,22 @@ export default function VendasPage() {
     vendas: VendaListagem[];
     total: number;
     porPagina: number;
+    pedidoDeOutraLoja?: boolean;
   }>({
-    queryKey: ["vendas", filtros, pagina, visaoVendas, pedidoDestaque],
+    queryKey: ["vendas", filtros, pagina, visaoVendas, pedidoDestaque, lojaDestaque],
     queryFn: () => fetch(`/api/vendas?${params}`).then((r) => r.json()),
+    // Pedido do aviso ainda não gravado: consulta de novo a cada 15 s até
+    // aparecer (ou até esgotar a espera de ~10 min).
+    refetchInterval: (query) =>
+      pedidoDestaque && query.state.data
+        ? intervaloConsultaPedido(
+            estadoPedidoDestaque({
+              encontrados: query.state.data.vendas?.length ?? 0,
+              outraLoja: !!query.state.data.pedidoDeOutraLoja,
+              esperaEsgotada,
+            }),
+          )
+        : false,
   });
 
   const totaisQuery = useQuery<Totais>({
@@ -404,6 +495,14 @@ export default function VendasPage() {
   const totalPaginas = Math.max(1, Math.ceil(total / porPagina));
   const totais = totaisQuery.data;
   const reembolsos = reembolsosQuery.data;
+  const estadoPedido: EstadoPedidoDestaque | null =
+    pedidoDestaque && vendasQuery.data
+      ? estadoPedidoDestaque({
+          encontrados: vendas.length,
+          outraLoja: !!vendasQuery.data.pedidoDeOutraLoja,
+          esperaEsgotada,
+        })
+      : null;
 
   return (
     <div className="flex flex-col gap-6 p-4 sm:p-6">
@@ -488,21 +587,28 @@ export default function VendasPage() {
               </Button>
             </div>
           )}
-          <OrderCardList
-            isLoading={vendasQuery.isLoading}
-            vendas={vendas}
-            pagina={pagina}
-            totalPaginas={totalPaginas}
-            total={total}
-            setPagina={setPagina}
-            onImportar={() => setDialogAberto(true)}
-            destacarPedidoId={pedidoDestaque}
-            emptyHint={
-              pedidoDestaque
-                ? "Este pedido não está nesta conta. Se ele é da outra loja, entre na conta dela."
-                : undefined
-            }
-          />
+          {estadoPedido && estadoPedido !== "encontrado" ? (
+            <PedidoDestaqueVazio
+              estado={estadoPedido}
+              consultando={vendasQuery.isFetching}
+              onConsultar={() => {
+                // Nova rodada de espera: volta a consultar a cada 15 s.
+                setRodadaEspera((n) => n + 1);
+                void vendasQuery.refetch();
+              }}
+            />
+          ) : (
+            <OrderCardList
+              isLoading={vendasQuery.isLoading}
+              vendas={vendas}
+              pagina={pagina}
+              totalPaginas={totalPaginas}
+              total={total}
+              setPagina={setPagina}
+              onImportar={pedidoDestaque ? undefined : () => setDialogAberto(true)}
+              destacarPedidoId={pedidoDestaque}
+            />
+          )}
         </TabsContent>
 
         <TabsContent value="cancelados" className="mt-4">
