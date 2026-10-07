@@ -44,7 +44,9 @@ import { PeriodoPreset } from "@/lib/periodo";
 import { formatBRL } from "@/lib/money";
 import { cn } from "@/lib/utils";
 import { useLogout } from "@/components/auth/use-logout";
+import { useLojas, useTrocarLoja } from "@/components/lojas/use-lojas";
 import {
+  deveTrocarParaLojaDoPedido,
   ESPERA_PEDIDO_MS,
   estadoPedidoDestaque,
   intervaloConsultaPedido,
@@ -285,12 +287,15 @@ function PedidoDestaqueVazio({
   consultando,
   onConsultar,
   destinoTrocarConta,
+  abrindoLoja,
 }: {
   estado: Exclude<EstadoPedidoDestaque, "encontrado">;
   consultando: boolean;
   onConsultar: () => void;
   /** Login que, depois de entrar na outra loja, volta para o pedido do aviso. */
   destinoTrocarConta?: string;
+  /** Loja vinculada sendo aberta sozinha (duas lojas juntas). */
+  abrindoLoja?: string | null;
 }) {
   const { sair, saindo } = useLogout({ destino: destinoTrocarConta });
   return (
@@ -306,6 +311,11 @@ function PedidoDestaqueVazio({
           <p className="text-sm text-muted-foreground">
             Costuma levar de 2 a 10 minutos. Esta tela atualiza sozinha.
           </p>
+        </>
+      ) : estado === "outra_loja" && abrindoLoja ? (
+        <>
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground/60" aria-hidden />
+          <p className="font-medium">Este pedido é da {abrindoLoja}. Abrindo a {abrindoLoja}…</p>
         </>
       ) : estado === "outra_loja" ? (
         <>
@@ -507,6 +517,36 @@ export default function VendasPage() {
         })
       : null;
 
+  // Aviso de venda de uma loja VINCULADA: abre aquela loja sozinho, uma vez.
+  const { lojas } = useLojas();
+  const { trocar, trocandoPara } = useTrocarLoja();
+  const lojasVinculadas = React.useMemo(
+    () => lojas.filter((l) => !l.atual).map((l) => l.empresaId),
+    [lojas],
+  );
+  React.useEffect(() => {
+    if (!pedidoDestaque || !estadoPedido || !lojaDestaque) return;
+    const chave = `atlas:troca-pedido:${pedidoDestaque}`;
+    let jaTentou = false;
+    try {
+      jaTentou = window.sessionStorage.getItem(chave) === "1";
+    } catch {
+      // Sem armazenamento: o guard de "em andamento" do hook evita repetir.
+    }
+    if (!deveTrocarParaLojaDoPedido({ estado: estadoPedido, lojaDoLink: lojaDestaque, lojasVinculadas, jaTentou })) {
+      return;
+    }
+    try {
+      window.sessionStorage.setItem(chave, "1");
+    } catch {
+      // idem
+    }
+    void trocar(lojaDestaque, {
+      destino: `/vendas?pedido=${encodeURIComponent(pedidoDestaque)}&loja=${encodeURIComponent(lojaDestaque)}`,
+    });
+  }, [estadoPedido, pedidoDestaque, lojaDestaque, lojasVinculadas, trocar]);
+  const nomeLojaAbrindo = trocandoPara ? lojas.find((l) => l.empresaId === trocandoPara)?.nome ?? null : null;
+
   return (
     <div className="flex flex-col gap-6 p-4 sm:p-6">
       <PageHeader
@@ -567,6 +607,7 @@ export default function VendasPage() {
           {estadoPedido && estadoPedido !== "encontrado" ? (
             <PedidoDestaqueVazio
               estado={estadoPedido}
+              abrindoLoja={nomeLojaAbrindo}
               destinoTrocarConta={
                 pedidoDestaque && lojaDestaque
                   ? loginParaAbrirPedido(pedidoDestaque, lojaDestaque)

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { safeNextPath } from "@/lib/safe-redirect";
 import {
+  deveTrocarParaLojaDoPedido,
   ESPERA_PEDIDO_MS,
   INTERVALO_CONSULTA_PEDIDO_MS,
   estadoPedidoDestaque,
@@ -89,5 +90,31 @@ describe("estadoPedidoDestaque (aviso de venda tocado logo após a compra)", () 
     expect(intervaloConsultaPedido("outra_loja")).toBe(false);
     expect(INTERVALO_CONSULTA_PEDIDO_MS).toBe(15_000);
     expect(ESPERA_PEDIDO_MS).toBe(10 * 60_000);
+  });
+});
+
+describe("deveTrocarParaLojaDoPedido (aviso de venda de loja vinculada)", () => {
+  const base = {
+    estado: "outra_loja" as const,
+    lojaDoLink: "udn",
+    lojasVinculadas: ["udn"],
+    jaTentou: false,
+  };
+
+  it("troca sozinho quando o pedido é de uma loja vinculada", () => {
+    expect(deveTrocarParaLojaDoPedido(base)).toBe(true);
+  });
+
+  it("não troca se a loja do aviso não está vinculada", () => {
+    expect(deveTrocarParaLojaDoPedido({ ...base, lojasVinculadas: [] })).toBe(false);
+  });
+
+  it("tenta uma vez só (evita laço se a troca falhar)", () => {
+    expect(deveTrocarParaLojaDoPedido({ ...base, jaTentou: true })).toBe(false);
+  });
+
+  it("não troca enquanto o pedido é da própria loja ou ainda sincroniza", () => {
+    expect(deveTrocarParaLojaDoPedido({ ...base, estado: "aguardando" })).toBe(false);
+    expect(deveTrocarParaLojaDoPedido({ ...base, estado: "encontrado" })).toBe(false);
   });
 });

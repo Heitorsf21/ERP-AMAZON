@@ -54,3 +54,22 @@ export function estadoPedidoDestaque(input: {
 export function intervaloConsultaPedido(estado: EstadoPedidoDestaque): number | false {
   return estado === "aguardando" ? INTERVALO_CONSULTA_PEDIDO_MS : false;
 }
+
+/**
+ * Aviso de venda de uma loja VINCULADA (duas lojas juntas): em vez de pedir
+ * "Trocar de conta" com login, o app troca sozinho para a loja do pedido —
+ * uma vez só (se a troca falhar, sobra o botão).
+ */
+export function deveTrocarParaLojaDoPedido(input: {
+  estado: EstadoPedidoDestaque;
+  lojaDoLink: string | null;
+  lojasVinculadas: readonly string[];
+  jaTentou: boolean;
+}): boolean {
+  return (
+    input.estado === "outra_loja" &&
+    !!input.lojaDoLink &&
+    input.lojasVinculadas.includes(input.lojaDoLink) &&
+    !input.jaTentou
+  );
+}
