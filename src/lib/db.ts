@@ -79,6 +79,7 @@ const TENANT_MODELS = new Set<string>([
   "ImportacaoLote",
   "AdsCampanha",
   "Notificacao",
+  "PushEnvio",
   "Tarefa",
   // Molde das tarefas recorrentes — ficou de fora no onboarding do 2º tenant e
   // vazava agenda entre empresas (moldes de uma materializavam Tarefas na outra).
@@ -149,6 +150,10 @@ const GLOBAL_MODELS = new Set<string>([
   // negocio; escopo resolvido explicitamente pela aplicacao.
   "ConviteUsuario",
   "AuditPlataforma",
+  // Aparelho de push: o MESMO celular pode estar inscrito em várias empresas
+  // ([empresaId, endpoint]) e a limpeza de inscrição morta (410) vale para
+  // todas. Escopo explícito no módulo push/dispositivos (empresaId+usuarioId).
+  "PushDispositivo",
 ]);
 
 // Exportadas para inspeção/teste. Não usar em código de produção fora daqui.

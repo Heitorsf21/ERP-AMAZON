@@ -514,6 +514,12 @@ describe("classificacao dos models novos (A+B)", () => {
     expect(TENANT_MODEL_NAMES.has("ConviteUsuario")).toBe(false);
     expect(TENANT_MODEL_NAMES.has("AuditPlataforma")).toBe(false);
   });
+
+  it("PushDispositivo é GLOBAL e PushEnvio é TENANT", () => {
+    expect(GLOBAL_MODEL_NAMES.has("PushDispositivo")).toBe(true);
+    expect(TENANT_MODEL_NAMES.has("PushDispositivo")).toBe(false);
+    expect(TENANT_MODEL_NAMES.has("PushEnvio")).toBe(true);
+  });
 });
 
 describe("normalização da flag TENANT_ISOLATION (trim + case)", () => {

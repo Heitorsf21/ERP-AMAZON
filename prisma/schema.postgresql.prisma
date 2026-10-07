@@ -1061,6 +1061,51 @@ model Notificacao {
   @@index([criadaEm])
 }
 
+// ── Push (Atlas mobile) ─────────────────────────────────────────────────────
+// Aparelho inscrito para receber aviso de venda. GLOBAL em db.ts: o mesmo
+// celular pode estar inscrito em várias empresas (MundoFS e UDN) — a chave é
+// [empresaId, endpoint]. Toda leitura filtra empresaId/usuarioId explicitamente.
+model PushDispositivo {
+  id                 String    @id @default(cuid())
+  empresaId          String
+  usuarioId          String
+  endpoint           String
+  p256dh             String
+  auth               String
+  userAgent          String?
+  apelido            String?
+  receberVendas      Boolean   @default(true)
+  ativo              Boolean   @default(true)
+  falhasConsecutivas Int       @default(0)
+  ultimoEnvioEm      DateTime?
+  criadoEm           DateTime  @default(now())
+  atualizadoEm       DateTime  @updatedAt
+
+  @@unique([empresaId, endpoint])
+  @@index([empresaId, ativo])
+  @@index([usuarioId])
+  @@index([endpoint])
+}
+
+// Histórico + idempotência dos avisos (TENANT). dedupeKey "venda:<orderId>":
+// o primeiro gatilho (SQS ou ORDERS_SYNC) reserva; o segundo vira no-op.
+model PushEnvio {
+  id          String    @id @default(cuid())
+  empresaId   String?
+  tipo        String
+  dedupeKey   String?
+  payloadJson String
+  status      String    @default("PENDENTE")
+  enviadosOk  Int       @default(0)
+  falhas      Int       @default(0)
+  erro        String?
+  criadoEm    DateTime  @default(now())
+  enviadoEm   DateTime?
+
+  @@unique([empresaId, dedupeKey])
+  @@index([criadoEm])
+}
+
 // ── Agenda: tarefas (empresa/pessoal) ───────────────────────────────────────
 model Tarefa {
   id            String    @id @default(cuid())
