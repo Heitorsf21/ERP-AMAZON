@@ -71,3 +71,22 @@ export function contarVisiveis(
   const set = new Set(sanitizarOcultas(ocultas, hrefsConhecidos));
   return hrefsConhecidos.filter((h) => !set.has(h)).length;
 }
+
+const METODOS_LEITURA_PAGINA = new Set(["GET", "HEAD"]);
+
+/**
+ * Rotas que QUALQUER usuário logado acessa, seja qual for o papel (inclusive
+ * LEITURA), porque o menu é preferência pessoal e não dado de negócio
+ * (spec §3.1: "cada pessoa da empresa tem o seu menu"). Feito para o
+ * `canAccessPath` do proxy consultar antes das regras por papel:
+ * - `/api/menu/preferencias` (GET/PUT): a rota só lê/grava a chave do próprio
+ *   `session.uid`;
+ * - a página `/configuracoes` (só GET/HEAD, caminho exato), onde vive a aba
+ *   Menu; o cliente esconde as abas de admin e `/api/configuracoes/*` continua
+ *   restrita a ADMIN.
+ */
+export function liberadoParaQualquerPapel(pathname: string, method: string): boolean {
+  if (pathname === "/api/menu/preferencias") return method === "GET" || method === "PUT";
+  if (pathname === "/configuracoes") return METODOS_LEITURA_PAGINA.has(method);
+  return false;
+}

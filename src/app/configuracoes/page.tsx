@@ -3,6 +3,7 @@
 import * as React from "react";
 import { Suspense } from "react";
 import { useSearchParams } from "next/navigation";
+import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Bell, LayoutList, Plug, SlidersHorizontal } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
@@ -15,8 +16,17 @@ import { ImpostoSimplesSection } from "@/components/configuracoes/imposto-simple
 import { WhatsappEstoqueSection } from "@/components/configuracoes/whatsapp-estoque-section";
 import { AssinaturaSection } from "@/components/configuracoes/assinatura-section";
 import { MenuSection } from "@/components/configuracoes/menu-section";
+import { fetchJSON } from "@/lib/fetcher";
+import { UsuarioRole } from "@/modules/shared/domain";
 
 const TABS_VALIDAS = new Set(["geral", "integracoes", "notificacoes", "menu"]);
+
+// Menu é preferência pessoal: qualquer papel abre esta página, mas só ADMIN vê
+// as abas de empresa. As APIs dessas abas (/api/configuracoes/*) seguem
+// restritas a ADMIN no servidor; aqui é só para não mostrar o que daria 403.
+const TABS_TODOS_OS_PAPEIS = new Set(["menu"]);
+
+type MeResponse = { usuario: { role: string } };
 
 /**
  * Lê `?tab=` (deep-link usado pelos callbacks OAuth) e o resultado da conexão
@@ -26,15 +36,27 @@ const TABS_VALIDAS = new Set(["geral", "integracoes", "notificacoes", "menu"]);
 function ConfiguracoesTabs() {
   const searchParams = useSearchParams();
 
+  // Mesma query (e cache) do menu de perfil da topbar.
+  const me = useQuery<MeResponse>({
+    queryKey: ["auth-me"],
+    queryFn: () => fetchJSON<MeResponse>("/api/auth/me"),
+    staleTime: 60_000,
+    retry: false,
+  });
+  const ehAdmin = me.data?.usuario.role === UsuarioRole.ADMIN;
+  const tabsDoPapel = ehAdmin ? TABS_VALIDAS : TABS_TODOS_OS_PAPEIS;
+
   const tabParam = searchParams.get("tab") ?? "";
   // O callback do Gmail redireciona sem ?tab= — os params dele implicam Integrações.
   const veioDoGmail =
     searchParams.has("gmail_ok") || searchParams.has("gmail_erro");
-  const defaultTab = TABS_VALIDAS.has(tabParam)
+  const defaultTab = tabsDoPapel.has(tabParam)
     ? tabParam
-    : veioDoGmail
-      ? "integracoes"
-      : "geral";
+    : !ehAdmin
+      ? "menu"
+      : veioDoGmail
+        ? "integracoes"
+        : "geral";
 
   const amazonParam = searchParams.get("amazon");
   const adsParam = searchParams.get("ads");
@@ -54,46 +76,57 @@ function ConfiguracoesTabs() {
     }
   }, [amazonParam, adsParam]);
 
+  // `defaultValue` só vale na montagem: espera o papel para não abrir na aba errada.
+  if (me.isLoading) return <SkeletonAbas />;
+
   return (
     <Tabs defaultValue={defaultTab} className="space-y-4">
       <TabsList className="flex h-auto flex-wrap">
-        <TabsTrigger value="geral" className="gap-2">
-          <SlidersHorizontal className="h-4 w-4" />
-          Geral
-        </TabsTrigger>
-        <TabsTrigger value="integracoes" className="gap-2">
-          <Plug className="h-4 w-4" />
-          Integracoes
-        </TabsTrigger>
-        <TabsTrigger value="notificacoes" className="gap-2">
-          <Bell className="h-4 w-4" />
-          Notificacoes
-        </TabsTrigger>
+        {ehAdmin && (
+          <>
+            <TabsTrigger value="geral" className="gap-2">
+              <SlidersHorizontal className="h-4 w-4" />
+              Geral
+            </TabsTrigger>
+            <TabsTrigger value="integracoes" className="gap-2">
+              <Plug className="h-4 w-4" />
+              Integrações
+            </TabsTrigger>
+            <TabsTrigger value="notificacoes" className="gap-2">
+              <Bell className="h-4 w-4" />
+              Notificações
+            </TabsTrigger>
+          </>
+        )}
         <TabsTrigger value="menu" className="gap-2">
           <LayoutList className="h-4 w-4" />
           Menu
         </TabsTrigger>
       </TabsList>
 
-      {/* ---- Geral ---- */}
-      <TabsContent value="geral" className="space-y-4">
-        <ImpostoSimplesSection />
+      {ehAdmin && (
+        <>
+          {/* ---- Geral ---- */}
+          <TabsContent value="geral" className="space-y-4">
+            <ImpostoSimplesSection />
 
-        <AssinaturaSection />
-      </TabsContent>
+            <AssinaturaSection />
+          </TabsContent>
 
-      {/* ---- Integracoes ---- */}
-      <TabsContent value="integracoes" className="space-y-4">
-        <AmazonSection />
-        <AmazonAdsSection />
-        <GmailSection />
-        <WhatsappEstoqueSection />
-      </TabsContent>
+          {/* ---- Integrações ---- */}
+          <TabsContent value="integracoes" className="space-y-4">
+            <AmazonSection />
+            <AmazonAdsSection />
+            <GmailSection />
+            <WhatsappEstoqueSection />
+          </TabsContent>
 
-      {/* ---- Notificacoes ---- */}
-      <TabsContent value="notificacoes" className="space-y-4">
-        <NotificacoesSection />
-      </TabsContent>
+          {/* ---- Notificações ---- */}
+          <TabsContent value="notificacoes" className="space-y-4">
+            <NotificacoesSection />
+          </TabsContent>
+        </>
+      )}
 
       {/* ---- Menu ---- */}
       <TabsContent value="menu" className="space-y-4">
@@ -103,15 +136,19 @@ function ConfiguracoesTabs() {
   );
 }
 
+function SkeletonAbas() {
+  return <div className="h-40 rounded-xl border bg-card" />;
+}
+
 export default function ConfiguracoesPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Configuracoes"
+        title="Configurações"
         description="Preferências gerais, integrações, notificações e menu."
       />
 
-      <Suspense fallback={<div className="h-40 rounded-xl border bg-card" />}>
+      <Suspense fallback={<SkeletonAbas />}>
         <ConfiguracoesTabs />
       </Suspense>
     </div>

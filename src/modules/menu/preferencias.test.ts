@@ -4,6 +4,7 @@ import {
   contarVisiveis,
   ehFixo,
   filtrarGruposVisiveis,
+  liberadoParaQualquerPapel,
   ocultasDaSugestao,
   parseOcultas,
   sanitizarOcultas,
@@ -73,5 +74,29 @@ describe("menu personalizável por usuário", () => {
 
   it("conta abas visíveis ignorando ocultas inválidas", () => {
     expect(contarVisiveis(HREFS, ["/agenda", "/vendas"])).toBe(7);
+  });
+});
+
+describe("liberadoParaQualquerPapel (menu é preferência pessoal)", () => {
+  it("libera ler e gravar a própria preferência de menu, inclusive para LEITURA", () => {
+    expect(liberadoParaQualquerPapel("/api/menu/preferencias", "GET")).toBe(true);
+    expect(liberadoParaQualquerPapel("/api/menu/preferencias", "PUT")).toBe(true);
+  });
+
+  it("não libera outros métodos nem subcaminhos da API de menu", () => {
+    expect(liberadoParaQualquerPapel("/api/menu/preferencias", "DELETE")).toBe(false);
+    expect(liberadoParaQualquerPapel("/api/menu/preferencias/x", "PUT")).toBe(false);
+  });
+
+  it("libera abrir a página Configurações (abas de admin ficam escondidas no cliente)", () => {
+    expect(liberadoParaQualquerPapel("/configuracoes", "GET")).toBe(true);
+    expect(liberadoParaQualquerPapel("/configuracoes", "HEAD")).toBe(true);
+  });
+
+  it("mantém restritas as APIs e subpáginas de Configurações", () => {
+    expect(liberadoParaQualquerPapel("/configuracoes", "POST")).toBe(false);
+    expect(liberadoParaQualquerPapel("/configuracoes/outra", "GET")).toBe(false);
+    expect(liberadoParaQualquerPapel("/api/configuracoes", "GET")).toBe(false);
+    expect(liberadoParaQualquerPapel("/api/configuracoes/whatsapp-estoque", "GET")).toBe(false);
   });
 });
