@@ -7,11 +7,9 @@ import {
   LogOut,
   Package,
   Percent,
-  ReceiptText,
   RefreshCw,
   RotateCcw,
   ShoppingBag,
-  TrendingUp,
   Upload,
   X,
   Zap,
@@ -168,12 +166,13 @@ function MetricaCard({
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <p className="text-sm text-muted-foreground">{label}</p>
-            <p className="mt-1 truncate text-2xl font-semibold tracking-tight">
+            {/* Sem truncate: no celular o valor nunca é cortado (quebra se não couber). */}
+            <p className="mt-1 break-words text-lg font-semibold tracking-tight tabular-nums sm:text-2xl">
               {valor}
             </p>
             {sub && <p className="mt-0.5 text-xs text-muted-foreground">{sub}</p>}
           </div>
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-primary/10">
+          <div className="hidden h-9 w-9 shrink-0 items-center justify-center rounded-md bg-primary/10 sm:flex">
             <Icon className="h-4 w-4 text-primary" />
           </div>
         </div>
@@ -539,32 +538,6 @@ export default function VendasPage() {
           Sincronizar
         </Button>
       </PageHeader>
-
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <MetricaCard
-          label="Receita Bruta"
-          valor={formatBRL(totais?.receitaBrutaCentavos ?? 0)}
-          icon={TrendingUp}
-        />
-        <MetricaCard
-          label="Pedidos"
-          valor={String(totais?.quantidadePedidos ?? 0)}
-          sub="pedidos únicos"
-          icon={ReceiptText}
-        />
-        <MetricaCard
-          label="Unidades"
-          valor={String(totais?.unidadesVendidas ?? 0)}
-          sub="unidades vendidas"
-          icon={Package}
-        />
-        <MetricaCard
-          label="Ticket Médio"
-          valor={formatBRL(totais?.ticketMedioCentavos ?? 0)}
-          sub="por pedido"
-          icon={ShoppingBag}
-        />
-      </div>
 
       <FiltrosToolbar filtros={filtros} onChange={setFiltros} />
 

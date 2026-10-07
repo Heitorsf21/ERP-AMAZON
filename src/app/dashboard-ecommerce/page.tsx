@@ -130,13 +130,6 @@ type Kpis = {
   trafficConversionPercent: number | null;
   trafficBuyBoxPercent: number | null;
   vendasSemCusto: number;
-  vendasComTaxaEstimada?: number;
-  categoriasTaxaEstimada?: Array<{
-    slug: string | null;
-    label: string;
-    regra: string;
-    vendas: number;
-  }>;
   origemTaxas?: "real" | "estimado" | "misto" | "nenhuma";
   delta: KpisDelta;
 };
@@ -905,29 +898,6 @@ function DashboardEcommerceContent() {
           >
             Corrigir custos →
           </Link>
-        </div>
-      )}
-
-      {kpis && (kpis.vendasComTaxaEstimada ?? 0) > 0 && (
-        <div
-          className="flex items-start gap-2.5 rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 text-sm dark:border-sky-800/50 dark:bg-sky-900/20"
-          title="Pedidos PENDENTE ainda não settled pela Amazon. Taxas reais (Comissão + FBA + parcelamento) entram quando Finance Events publica."
-        >
-          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-sky-600 dark:text-sky-500" />
-          <div className="text-sky-800 dark:text-sky-200">
-            <strong>{kpis.vendasComTaxaEstimada} venda(s)</strong> com taxa Amazon <em>estimada</em> (pedidos PENDENTE — settle em até 7 dias).
-            {(kpis.categoriasTaxaEstimada?.length ?? 0) > 0 && (
-              <div className="mt-1 text-xs">
-                {kpis.categoriasTaxaEstimada
-                  ?.slice(0, 4)
-                  .map((c) => `${c.label} ${c.regra} (${c.vendas})`)
-                  .join(" · ")}
-                {(kpis.categoriasTaxaEstimada?.length ?? 0) > 4
-                  ? ` · +${(kpis.categoriasTaxaEstimada?.length ?? 0) - 4}`
-                  : ""}
-              </div>
-            )}
-          </div>
         </div>
       )}
 
