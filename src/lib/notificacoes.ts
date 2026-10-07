@@ -22,6 +22,13 @@ type EmitirOptions = {
    * num mesmo dia). Se já existir, faz update do conteúdo (mantém ID).
    */
   dedupeKey?: string;
+  /**
+   * `false` = incidente contínuo (falha que se repete até ser resolvida): o
+   * update atualiza o texto mas NÃO volta o aviso para não lido. Junto com
+   * `resolverNotificacoes` no sucesso, vira um aviso por incidente em vez de
+   * um por dia. Padrão `true` (alertas de negócio reabrem a cada ocorrência).
+   */
+  reabrirSeLida?: boolean;
 };
 
 export async function emitirNotificacao(opts: EmitirOptions) {
@@ -54,8 +61,19 @@ export async function emitirNotificacao(opts: EmitirOptions) {
       titulo: opts.titulo,
       descricao: opts.descricao,
       linkRef: opts.linkRef,
-      lida: false,
+      ...(opts.reabrirSeLida === false ? {} : { lida: false }),
     },
+  });
+}
+
+/**
+ * Incidente resolvido (ex.: o job voltou a concluir): apaga os avisos dele na
+ * empresa atual. A próxima falha cria um aviso novo, não lido.
+ */
+export async function resolverNotificacoes(dedupeKeys: string[]): Promise<void> {
+  if (dedupeKeys.length === 0) return;
+  await db.notificacao.deleteMany({
+    where: { empresaId: currentEmpresaIdOrDefault(), dedupeKey: { in: dedupeKeys } },
   });
 }
 
