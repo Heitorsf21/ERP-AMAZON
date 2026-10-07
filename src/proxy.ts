@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { SESSION_COOKIE_NAME, verifySession } from "@/lib/session";
 import { UsuarioRole } from "@/modules/shared/domain";
+import { liberadoParaQualquerPapel } from "@/modules/menu/preferencias";
 
 const MUTATING_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 const RATE_LIMIT_WINDOW_MS = 15 * 60_000;
@@ -227,6 +228,7 @@ function matchesPrefix(pathname: string, prefixes: string[]): boolean {
 
 function canAccessPath(role: string, pathname: string, method: string): boolean {
   if (role === UsuarioRole.ADMIN) return true;
+  if (liberadoParaQualquerPapel(pathname, method)) return true;
   if (MUTATING_METHODS.has(method) && role === UsuarioRole.LEITURA) return false;
 
   const adminOnly = matchesPrefix(pathname, ADMIN_PATH_PREFIXES);

@@ -99,4 +99,19 @@ describe("liberadoParaQualquerPapel (menu é preferência pessoal)", () => {
     expect(liberadoParaQualquerPapel("/api/configuracoes", "GET")).toBe(false);
     expect(liberadoParaQualquerPapel("/api/configuracoes/whatsapp-estoque", "GET")).toBe(false);
   });
+
+  it("libera o aviso de venda no próprio aparelho (rotas pessoais de push)", () => {
+    expect(liberadoParaQualquerPapel("/api/push/config", "GET")).toBe(true);
+    for (const m of ["GET", "POST", "PATCH", "DELETE"]) {
+      expect(liberadoParaQualquerPapel("/api/push/dispositivos", m)).toBe(true);
+    }
+    expect(liberadoParaQualquerPapel("/api/push/teste", "POST")).toBe(true);
+  });
+
+  it("não libera métodos nem subcaminhos fora das rotas de push", () => {
+    expect(liberadoParaQualquerPapel("/api/push/config", "POST")).toBe(false);
+    expect(liberadoParaQualquerPapel("/api/push/teste", "GET")).toBe(false);
+    expect(liberadoParaQualquerPapel("/api/push/dispositivos/x", "DELETE")).toBe(false);
+    expect(liberadoParaQualquerPapel("/api/push", "GET")).toBe(false);
+  });
 });
