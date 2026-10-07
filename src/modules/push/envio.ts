@@ -61,12 +61,24 @@ export async function entregar(input: {
   const cfg = input.cfg === undefined ? getVapidConfig() : input.cfg;
   if (!cfg) return { destinos: 0, ok: 0, falhas: 0 };
 
+  // Aviso de venda só para quem ainda é usuário ativo da loja: PushDispositivo
+  // não tem FK para Usuario, e desligar alguém (ativo=false) não apaga os aparelhos.
+  const filtroDono = input.usuarioId
+    ? { usuarioId: input.usuarioId }
+    : {
+        receberVendas: true,
+        usuarioId: {
+          in: (
+            await db.usuario.findMany({
+              where: { empresaId: input.empresaId, ativo: true },
+              select: { id: true },
+            })
+          ).map((u) => u.id),
+        },
+      };
+
   const dispositivos = await db.pushDispositivo.findMany({
-    where: {
-      empresaId: input.empresaId,
-      ativo: true,
-      ...(input.usuarioId ? { usuarioId: input.usuarioId } : { receberVendas: true }),
-    },
+    where: { empresaId: input.empresaId, ativo: true, ...filtroDono },
     select: { id: true, endpoint: true, p256dh: true, auth: true, falhasConsecutivas: true },
   });
 

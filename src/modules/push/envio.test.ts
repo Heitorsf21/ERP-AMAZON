@@ -5,6 +5,7 @@ const { dbMock, sendMock } = vi.hoisted(() => ({
   dbMock: {
     pushEnvio: { create: vi.fn(), update: vi.fn() },
     pushDispositivo: { findMany: vi.fn(), update: vi.fn(), deleteMany: vi.fn() },
+    usuario: { findMany: vi.fn() },
   },
   sendMock: vi.fn(),
 }));
@@ -37,6 +38,7 @@ beforeEach(() => {
   dbMock.pushDispositivo.update.mockResolvedValue({});
   dbMock.pushDispositivo.deleteMany.mockResolvedValue({ count: 1 });
   dbMock.pushDispositivo.findMany.mockResolvedValue([]);
+  dbMock.usuario.findMany.mockResolvedValue([{ id: "u1" }]);
   sendMock.mockResolvedValue({ statusCode: 201 });
 });
 
@@ -67,7 +69,9 @@ describe("entregar", () => {
     dbMock.pushDispositivo.findMany.mockResolvedValue([disp("d1", "https://fcm.googleapis.com/fcm/send/1")]);
     const r = await entregar({ empresaId: "udncd", payload: PAYLOAD, cfg: CFG });
     expect(dbMock.pushDispositivo.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { empresaId: "udncd", ativo: true, receberVendas: true } }),
+      expect.objectContaining({
+        where: { empresaId: "udncd", ativo: true, receberVendas: true, usuarioId: { in: ["u1"] } },
+      }),
     );
     expect(sendMock).toHaveBeenCalledWith(
       { endpoint: "https://fcm.googleapis.com/fcm/send/1", keys: { p256dh: "p", auth: "a" } },
@@ -75,6 +79,18 @@ describe("entregar", () => {
       expect.objectContaining({ TTL: 3600, urgency: "high" }),
     );
     expect(r).toEqual({ destinos: 1, ok: 1, falhas: 0 });
+  });
+
+  it("usuário desativado (ou de outra empresa) deixa de receber os avisos de venda", async () => {
+    dbMock.usuario.findMany.mockResolvedValue([{ id: "u2" }]);
+    await entregar({ empresaId: "udncd", payload: PAYLOAD, cfg: CFG });
+    expect(dbMock.usuario.findMany).toHaveBeenCalledWith({
+      where: { empresaId: "udncd", ativo: true },
+      select: { id: true },
+    });
+    expect(dbMock.pushDispositivo.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ usuarioId: { in: ["u2"] } }) }),
+    );
   });
 
   it("teste vai só para os aparelhos do próprio usuário", async () => {
