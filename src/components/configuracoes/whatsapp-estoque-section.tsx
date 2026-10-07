@@ -1,7 +1,15 @@
 "use client";
 
 import * as React from "react";
-import { Loader2, MessageCircle, Search, Send } from "lucide-react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  Loader2,
+  MessageCircle,
+  RefreshCw,
+  Search,
+  Send,
+  Smartphone,
+} from "lucide-react";
 import {
   Card,
   CardContent,
@@ -9,9 +17,11 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { Badge, type BadgeProps } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
+import { fetchJSON } from "@/lib/fetcher";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import {
@@ -21,6 +31,28 @@ import {
 
 const API = "/api/configuracoes/whatsapp-estoque";
 const API_KEY_SENTINEL = "********";
+
+const SESSAO_QUERY_KEY = ["whatsapp-estoque-sessao"] as const;
+const QR_QUERY_KEY = ["whatsapp-estoque-sessao-qr"] as const;
+/** Consulta do status enquanto a sessão está voltando / aguardando o QR. */
+const SESSAO_POLL_MS = 3_000;
+/** O QR do WhatsApp gira a cada ~20 s: busca um novo a cada 5 s. */
+const QR_POLL_MS = 5_000;
+/** Teto do acompanhamento disparado pelo botão "Reconectar". */
+const ACOMPANHAR_TETO_MS = 2 * 60_000;
+
+type SessaoWhatsapp = { status: string | null; conta: string | null };
+
+const STATUS_SESSAO: Record<
+  string,
+  { rotulo: string; variant: BadgeProps["variant"] }
+> = {
+  WORKING: { rotulo: "Conectado", variant: "success" },
+  SCAN_QR_CODE: { rotulo: "Desconectado — escaneie o QR", variant: "warning" },
+  FAILED: { rotulo: "Sessão caiu", variant: "destructive" },
+  STOPPED: { rotulo: "Sessão caiu", variant: "destructive" },
+  STARTING: { rotulo: "Iniciando…", variant: "secondary" },
+};
 
 type ConfigPublic = {
   ativo: boolean;
@@ -59,7 +91,11 @@ const FAIXA_CLASSE: Record<FaixaEstoque, string> = {
 };
 
 export function WhatsappEstoqueSection() {
+  const qc = useQueryClient();
   const [carregando, setCarregando] = React.useState(true);
+  // URL do WAHA já SALVA (não o valor em edição): só com ela dá para
+  // consultar a conexão.
+  const [urlSalva, setUrlSalva] = React.useState(false);
   const [salvando, setSalvando] = React.useState(false);
   const [enviando, setEnviando] = React.useState(false);
 
@@ -76,6 +112,7 @@ export function WhatsappEstoqueSection() {
     setHorario(config.horario);
     setDestinatario(config.destinatario);
     setWahaUrl(config.wahaUrl);
+    setUrlSalva(config.wahaUrl.trim().length > 0);
     setWahaSession(config.wahaSession);
     setApiKey(config.wahaApiKeyDefinida ? API_KEY_SENTINEL : "");
     setUltimoEnvio(envio);
@@ -132,6 +169,8 @@ export function WhatsappEstoqueSection() {
         ultimoEnvio: UltimoEnvio;
       };
       aplicar(data.config, data.ultimoEnvio);
+      // URL/sessão/chave podem ter mudado: reconsulta a conexão.
+      qc.invalidateQueries({ queryKey: SESSAO_QUERY_KEY });
       toast.success("Configuracao salva.");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Erro ao salvar");
@@ -166,6 +205,8 @@ export function WhatsappEstoqueSection() {
       toast.error(err instanceof Error ? err.message : "Erro ao enviar teste");
     } finally {
       setEnviando(false);
+      // O envio pode ter reiniciado a sessão do WAHA: atualiza a conexão.
+      qc.invalidateQueries({ queryKey: SESSAO_QUERY_KEY });
     }
   }
 
@@ -192,6 +233,8 @@ export function WhatsappEstoqueSection() {
           </div>
         ) : (
           <>
+            <ConexaoWhatsapp urlConfigurada={urlSalva} />
+
             <div className="flex items-center justify-between rounded-lg border p-3">
               <div>
                 <p className="text-sm font-medium">Envio diario</p>
@@ -285,6 +328,206 @@ export function WhatsappEstoqueSection() {
         )}
       </CardContent>
     </Card>
+  );
+}
+
+/**
+ * Conexão da sessão do WhatsApp no WAHA: selo de status, botão "Reconectar"
+ * (reinicia a sessão caída) e o QR de pareamento quando o WhatsApp desvinculou
+ * o aparelho. Consulta o status a cada 3 s enquanto a sessão volta / aguarda o
+ * QR e para ao ficar conectada.
+ */
+function ConexaoWhatsapp({ urlConfigurada }: { urlConfigurada: boolean }) {
+  const qc = useQueryClient();
+  const [acompanhando, setAcompanhando] = React.useState(false);
+
+  const sessao = useQuery<SessaoWhatsapp>({
+    queryKey: SESSAO_QUERY_KEY,
+    queryFn: () => fetchJSON<SessaoWhatsapp>(`${API}/sessao`),
+    enabled: urlConfigurada,
+    retry: false,
+    refetchInterval: (query) => {
+      const s = query.state.data?.status;
+      if (s === "WORKING") return false;
+      if (acompanhando) return SESSAO_POLL_MS;
+      if (query.state.status === "error") return false;
+      return s === "SCAN_QR_CODE" || s === "STARTING" ? SESSAO_POLL_MS : false;
+    },
+  });
+
+  const status = sessao.data?.status ?? null;
+  const aguardandoQr = status === "SCAN_QR_CODE";
+
+  const qr = useQuery<{ qr: string }>({
+    queryKey: QR_QUERY_KEY,
+    queryFn: () => fetchJSON<{ qr: string }>(`${API}/sessao/qr`),
+    enabled: urlConfigurada && aguardandoQr,
+    refetchInterval: aguardandoQr ? QR_POLL_MS : false,
+    retry: false,
+    gcTime: 0,
+  });
+
+  const reconectar = useMutation({
+    mutationFn: () =>
+      fetchJSON<SessaoWhatsapp>(`${API}/sessao`, {
+        method: "POST",
+        body: JSON.stringify({ acao: "reconectar" }),
+      }),
+    onSuccess: (data) => {
+      qc.setQueryData(SESSAO_QUERY_KEY, data);
+      setAcompanhando(true);
+    },
+    onError: (err) =>
+      toast.error(
+        err instanceof Error ? err.message : "Erro ao reconectar o WhatsApp.",
+      ),
+  });
+
+  // Ao virar WORKING (vindo de outro status): avisa e para de consultar.
+  const statusAnterior = React.useRef<string | null>(null);
+  React.useEffect(() => {
+    if (!status) return;
+    if (
+      statusAnterior.current &&
+      statusAnterior.current !== "WORKING" &&
+      status === "WORKING"
+    ) {
+      toast.success("WhatsApp conectado");
+      setAcompanhando(false);
+      qc.removeQueries({ queryKey: QR_QUERY_KEY });
+    }
+    statusAnterior.current = status;
+  }, [status, qc]);
+
+  // O acompanhamento disparado pelo botão tem teto (não consulta para sempre).
+  React.useEffect(() => {
+    if (!acompanhando) return;
+    const t = setTimeout(() => setAcompanhando(false), ACOMPANHAR_TETO_MS);
+    return () => clearTimeout(t);
+  }, [acompanhando]);
+
+  const info = status ? STATUS_SESSAO[status] : undefined;
+
+  let descricao: string;
+  if (!urlConfigurada) {
+    descricao = "Configure e salve a URL do WAHA abaixo para ver a conexão.";
+  } else if (sessao.isLoading) {
+    descricao = "Consultando o WAHA…";
+  } else if (sessao.isError) {
+    descricao = `Não foi possível consultar o WAHA: ${
+      sessao.error instanceof Error ? sessao.error.message : "erro desconhecido"
+    }`;
+  } else if (status === "WORKING") {
+    descricao = sessao.data?.conta
+      ? `Enviando pelo número com final ${sessao.data.conta}.`
+      : "Sessão ativa.";
+  } else if (status === "SCAN_QR_CODE") {
+    descricao =
+      "O WhatsApp desvinculou este aparelho. Escaneie o QR abaixo com o celular da conta.";
+  } else if (status === "FAILED" || status === "STOPPED") {
+    descricao = "A sessão do WhatsApp parou. Clique em Reconectar.";
+  } else if (status === "STARTING") {
+    descricao = "A sessão está iniciando…";
+  } else {
+    descricao = "Status da sessão desconhecido.";
+  }
+
+  const podeReconectar =
+    urlConfigurada && !sessao.isError && !!status && status !== "WORKING";
+
+  return (
+    <div className="space-y-3 rounded-lg border p-3">
+      <div
+        className="flex flex-wrap items-start justify-between gap-2"
+        aria-live="polite"
+      >
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-medium">Conexão do WhatsApp</p>
+          <p className="break-words text-xs text-muted-foreground">
+            {descricao}
+          </p>
+        </div>
+        {urlConfigurada && sessao.isLoading ? (
+          <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+        ) : urlConfigurada && status ? (
+          <Badge variant={info?.variant ?? "outline"} className="shrink-0">
+            {info?.rotulo ?? "Desconhecido"}
+          </Badge>
+        ) : null}
+      </div>
+
+      {(podeReconectar || (urlConfigurada && sessao.isError)) && (
+        <div className="flex flex-wrap items-center gap-2">
+          {podeReconectar ? (
+            <Button
+              className="h-11"
+              variant="outline"
+              onClick={() => reconectar.mutate()}
+              disabled={reconectar.isPending}
+            >
+              {reconectar.isPending ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <RefreshCw className="mr-2 h-4 w-4" />
+              )}
+              Reconectar
+            </Button>
+          ) : (
+            <Button
+              className="h-11"
+              variant="outline"
+              onClick={() => sessao.refetch()}
+              disabled={sessao.isFetching}
+            >
+              {sessao.isFetching ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <RefreshCw className="mr-2 h-4 w-4" />
+              )}
+              Consultar de novo
+            </Button>
+          )}
+          {(acompanhando || aguardandoQr || status === "STARTING") && (
+            <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              Acompanhando a conexão…
+            </span>
+          )}
+        </div>
+      )}
+
+      {urlConfigurada && aguardandoQr && (
+        <div className="flex flex-col items-center gap-3 sm:flex-row sm:items-start">
+          <div className="flex aspect-square w-full max-w-[232px] shrink-0 items-center justify-center rounded-lg border bg-white p-2">
+            {qr.data?.qr ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={qr.data.qr}
+                alt="QR code para conectar o WhatsApp do resumo de estoque"
+                width={216}
+                height={216}
+                className="h-full w-full object-contain"
+              />
+            ) : qr.isError ? (
+              <p className="break-words p-2 text-center text-xs text-slate-600">
+                {qr.error instanceof Error
+                  ? qr.error.message
+                  : "Não foi possível carregar o QR."}
+              </p>
+            ) : (
+              <Loader2 className="h-6 w-6 animate-spin text-slate-500" />
+            )}
+          </div>
+          <div className="flex min-w-0 items-start gap-2 text-sm">
+            <Smartphone className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+            <p className="break-words">
+              No celular da conta do WhatsApp: Configurações → Aparelhos
+              conectados → Conectar um aparelho e aponte para este QR.
+            </p>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
