@@ -3,11 +3,16 @@ import type { SPAPICredentials } from "@/lib/amazon-sp-api";
 import { pollSqsNotifications } from "@/lib/amazon-sqs";
 import { db } from "@/lib/db";
 import { getEmpresaId, runWithTenant } from "@/lib/tenant-context";
-import { notificarJobFalhando } from "@/lib/notificacoes";
+import {
+  alertarFalhaDeJob,
+  classificarFalhaJob,
+  resolverAlertasDoJob,
+} from "@/modules/amazon/alertas-jobs";
 import {
   completeAmazonSyncJob,
   ensureRecurringAmazonJobs,
   failAmazonSyncJob,
+  intervaloAgendadoDoJob,
   requeueRateLimitedAmazonSyncJob,
   claimNextAmazonSyncJob,
   parseJobPayload,
@@ -155,6 +160,12 @@ async function processAmazonSyncJobsInner(options: WorkerOptions = {}) {
       await runWithTenant(SUPERADMIN_WORKER, () =>
         completeAmazonSyncJob(job.id, result),
       );
+      // Incidente encerrado: o aviso de falha/permissão desse job some do sino.
+      try {
+        await runWithTenant(jobTenant, () => resolverAlertasDoJob(job.tipo));
+      } catch {
+        // Nunca propaga erro de notificacao.
+      }
       results.push({ jobId: job.id, tipo: job.tipo, empresaId, status: "SUCCESS", result });
     } catch (error) {
       // Empresa sem conta Amazon própria: NÃO é falha — job pulado, sem retry
@@ -168,28 +179,32 @@ async function processAmazonSyncJobsInner(options: WorkerOptions = {}) {
         results.push({ jobId: job.id, tipo: job.tipo, empresaId, status: "SKIPPED", result });
         continue;
       }
-      const retryAt = getRetryAt(error);
       const message = error instanceof Error ? error.message : String(error);
+      // 403 da SP-API = falta de permissão no app: tentar de novo não muda nada
+      // (o TRAFFIC_SYNC fazia 5 tentativas/dia por meses). Encerra já.
+      const semPermissao = classificarFalhaJob(message) === "PERMISSAO";
+      const retryAt = semPermissao ? undefined : getRetryAt(error);
       await runWithTenant(SUPERADMIN_WORKER, () =>
         failAmazonSyncJob({
           jobId: job.id,
-          attempts: job.attempts,
+          attempts: semPermissao ? job.maxAttempts : job.attempts,
           maxAttempts: job.maxAttempts,
           error: message,
           runAfter: retryAt,
         }),
       );
 
-      // Notificacao no sino do ERP quando job esgota tentativas (Notificacao é
-      // TENANT — registra sob o tenant da empresa dona do job).
-      if (job.attempts >= job.maxAttempts && !retryAt) {
+      // Aviso no sino quando o job esgota tentativas (Notificacao é TENANT —
+      // registra sob o tenant da empresa dona do job). Um aviso por incidente;
+      // falha passageira (concluiu há pouco) não vai para o sino.
+      const esgotou = semPermissao || (job.attempts >= job.maxAttempts && !retryAt);
+      if (esgotou) {
         try {
           await runWithTenant(jobTenant, () =>
-            notificarJobFalhando({
-              jobId: job.id,
+            alertarFalhaDeJob({
               tipo: job.tipo,
-              attempts: job.attempts,
-              error: message,
+              erro: message,
+              intervaloMs: intervaloAgendadoDoJob(job.tipo),
             }),
           );
         } catch {
@@ -201,7 +216,7 @@ async function processAmazonSyncJobsInner(options: WorkerOptions = {}) {
         jobId: job.id,
         tipo: job.tipo,
         empresaId,
-        status: retryAt ? "RETRY" : "FAILED",
+        status: esgotou ? "FAILED" : "RETRY",
         error: message,
         runAfter: retryAt?.toISOString(),
       });

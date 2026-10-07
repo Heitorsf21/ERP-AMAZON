@@ -14,7 +14,8 @@ import {
 } from "@/modules/amazon/service";
 import { empresaRecebeOrderChange, intervaloEfetivo } from "@/modules/amazon/sqs-cobertura";
 import { getWhatsappEstoqueScheduleConfig } from "@/modules/whatsapp-estoque/config";
-import { diaUTC, emitirNotificacao } from "@/lib/notificacoes";
+import { emitirNotificacao } from "@/lib/notificacoes";
+import { CHAVE_FINANCES_PARADO } from "@/modules/amazon/alertas-jobs";
 import {
   StatusAmazonSyncJob,
   TipoAmazonSyncJob,
@@ -362,6 +363,18 @@ const SCHEDULES: Array<{
   },
 ];
 
+/**
+ * Intervalo de agendamento do tipo (o MAIOR, se agendado mais de uma vez) —
+ * base do aviso de job no sino: falha comum só avisa depois de 2 ciclos sem
+ * concluir. `null` = job não recorrente (manual/SQS).
+ */
+export function intervaloAgendadoDoJob(tipo: string): number | null {
+  const intervalos = SCHEDULES.filter((s) => s.tipo === tipo).map((s) =>
+    Math.max(s.intervalMs, s.intervalMsSemSqs ?? 0),
+  );
+  return intervalos.length > 0 ? Math.max(...intervalos) : null;
+}
+
 export async function enqueueAmazonSyncJob(
   tipo: TipoAmazonSyncJobType,
   payload: Record<string, unknown> = {},
@@ -697,7 +710,10 @@ async function verificarFinancesSyncParado(now: Date): Promise<void> {
           titulo: "Sincronização financeira da Amazon parada",
           descricao:
             "O FINANCES_SYNC não conclui há mais de 6h. O faturamento pode estar preso em preço/taxas ESTIMADOS (provisórios) até a sincronização voltar.",
-          dedupeKey: `finances-sync-parado:${diaUTC(now)}`,
+          // Um aviso por incidente: não reabre a cada ciclo e some quando o
+          // FINANCES_SYNC volta a concluir (resolverAlertasDoJob no worker).
+          dedupeKey: CHAVE_FINANCES_PARADO,
+          reabrirSeLida: false,
         }),
     );
   } catch {

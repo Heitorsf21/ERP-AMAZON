@@ -16,17 +16,21 @@ beforeEach(() => {
   dbMock.notificacao.deleteMany.mockResolvedValue({ count: 1 });
 });
 
+function updateDoUpsert(): Record<string, unknown> {
+  return (dbMock.notificacao.upsert.mock.calls[0]?.[0] as { update: Record<string, unknown> }).update;
+}
+
 describe("emitirNotificacao", () => {
   const base = { tipo: "JOB_FALHANDO" as const, titulo: "t", descricao: "d", dedupeKey: "k" };
 
   it("alerta comum volta a ficar não lido quando se repete (comportamento de sempre)", async () => {
     await emitirNotificacao(base);
-    expect(dbMock.notificacao.upsert.mock.calls[0][0].update.lida).toBe(false);
+    expect(updateDoUpsert().lida).toBe(false);
   });
 
   it("incidente que continua igual NÃO reabre o aviso que a pessoa já leu", async () => {
     await emitirNotificacao({ ...base, reabrirSeLida: false });
-    const update = dbMock.notificacao.upsert.mock.calls[0][0].update;
+    const update = updateDoUpsert();
     expect(update).not.toHaveProperty("lida");
     expect(update.descricao).toBe("d");
   });

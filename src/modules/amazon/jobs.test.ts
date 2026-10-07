@@ -17,6 +17,7 @@ import {
   claimNextAmazonSyncJob,
   enqueueAmazonSyncJob,
   filtroDeTiposDoWorker,
+  intervaloAgendadoDoJob,
   jobCriticoEstaAtrasado,
   resolverEmpresasParaAgendar,
 } from "./jobs";
@@ -198,5 +199,19 @@ describe("filtroDeTiposDoWorker — lê AMAZON_WORKER_TIPOS / AMAZON_WORKER_EXCL
     expect(
       filtroDeTiposDoWorker({ AMAZON_WORKER_EXCLUIR_TIPOS: "ORDERS_SYNC" }),
     ).toEqual({ excluirTipos: [TipoAmazonSyncJob.ORDERS_SYNC] });
+  });
+});
+
+describe("intervaloAgendadoDoJob — base do 'só avisa depois de 2 ciclos sem concluir'", () => {
+  it("job diário devolve 24 h", () => {
+    expect(intervaloAgendadoDoJob(TipoAmazonSyncJob.TRAFFIC_SYNC)).toBe(24 * 60 * 60_000);
+  });
+
+  it("job agendado mais de uma vez usa o MAIOR intervalo (mais tolerante)", () => {
+    expect(intervaloAgendadoDoJob(TipoAmazonSyncJob.ORDERS_SYNC)).toBeGreaterThanOrEqual(5 * 60_000);
+  });
+
+  it("job sem agendamento (manual/SQS) devolve null", () => {
+    expect(intervaloAgendadoDoJob("NAO_AGENDADO")).toBeNull();
   });
 });

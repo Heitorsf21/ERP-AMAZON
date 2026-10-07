@@ -130,21 +130,6 @@ export function notificarBuyboxRecuperado(sku: string) {
   });
 }
 
-export function notificarJobFalhando(args: {
-  jobId: string;
-  tipo: string;
-  attempts: number;
-  error: string;
-}) {
-  return emitirNotificacao({
-    tipo: TipoNotificacao.JOB_FALHANDO,
-    titulo: `Job ${args.tipo} falhou ${args.attempts}x`,
-    descricao: args.error.slice(0, 280),
-    // Sem linkRef: a página de saúde do sistema saiu da UI (cliente final).
-    dedupeKey: `job_falhando:${args.tipo}:${diaUTC()}`,
-  });
-}
-
 export function notificarQuotaBloqueada(args: {
   operation: string;
   proximoSlot: Date;
