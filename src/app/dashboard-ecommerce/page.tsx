@@ -39,6 +39,8 @@ import {
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
+import { DashboardMobile } from "@/components/dashboard-ecommerce/dashboard-mobile";
+import { BannerInstalar } from "@/components/pwa/banner-instalar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -929,6 +931,21 @@ function DashboardEcommerceContent() {
         </div>
       )}
 
+      <div className="space-y-4 md:hidden" data-testid="dashboard-mobile">
+        <BannerInstalar />
+        <DashboardMobile
+          kpis={kpis}
+          carregandoKpis={loadingKpis}
+          produtos={produtosOrdenados}
+          carregandoTop={loadingTop}
+          ordem={sortProdutos}
+          onAlternarOrdem={() =>
+            setSortProdutos((s) => (s === "desc" ? "asc" : "desc"))
+          }
+        />
+      </div>
+
+      <div className="hidden space-y-5 md:block">
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {heroes.map((card) => (
           <KpiCard key={card.titulo} {...card} />
@@ -1223,6 +1240,7 @@ function DashboardEcommerceContent() {
         </CardContent>
         </Card>
       </ErrorBoundary>
+      </div>
 
       <Dialog
         open={!!produtoDetalhe}
