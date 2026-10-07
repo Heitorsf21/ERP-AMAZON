@@ -1,6 +1,12 @@
 // Helpers de navegador para o aviso de venda (rodam só no cliente).
 
-export type EstadoPush = "nao-suportado" | "instalar-primeiro" | "negado" | "desligado" | "ativo";
+export type EstadoPush =
+  | "nao-suportado"
+  | "instalar-primeiro"
+  | "negado"
+  | "desligado"
+  | "pausado"
+  | "ativo";
 
 export function urlBase64ParaUint8Array(base64: string): Uint8Array {
   const padding = "=".repeat((4 - (base64.length % 4)) % 4);
@@ -14,11 +20,17 @@ export function calcularEstadoPush(input: {
   precisaInstalar: boolean;
   permissao: NotificationPermission | "indisponivel";
   inscritoNestaLoja: boolean;
+  /** "Vendas novas" deste aparelho nesta loja. Desligado = inscrito, mas sem aviso. */
+  recebeVendas?: boolean;
 }): EstadoPush {
   if (input.precisaInstalar) return "instalar-primeiro";
   if (!input.suportado) return "nao-suportado";
   if (input.permissao === "denied") return "negado";
-  if (input.permissao === "granted" && input.inscritoNestaLoja) return "ativo";
+  if (input.permissao === "granted" && input.inscritoNestaLoja) {
+    // Inscrito com vendas desligadas não pode parecer "Ativo": foi assim que a
+    // UDN ficou sem aviso enquanto o card mostrava o selo verde.
+    return input.recebeVendas === false ? "pausado" : "ativo";
+  }
   return "desligado";
 }
 

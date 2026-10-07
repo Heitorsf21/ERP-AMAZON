@@ -25,6 +25,16 @@ describe("calcularEstadoPush", () => {
   it("permitido mas inscrito só na outra loja = desligado (pode ativar aqui)", () => {
     expect(calcularEstadoPush({ ...base, permissao: "granted", inscritoNestaLoja: false })).toBe("desligado");
   });
+  it("inscrito com 'Vendas novas' desligado NÃO é ativo: é pausado (caso real da UDN)", () => {
+    expect(
+      calcularEstadoPush({ ...base, permissao: "granted", inscritoNestaLoja: true, recebeVendas: false }),
+    ).toBe("pausado");
+  });
+  it("inscrito com 'Vendas novas' ligado continua ativo", () => {
+    expect(
+      calcularEstadoPush({ ...base, permissao: "granted", inscritoNestaLoja: true, recebeVendas: true }),
+    ).toBe("ativo");
+  });
 });
 
 describe("decidirSaida", () => {

@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Bell, CheckCircle2, Info, Smartphone } from "lucide-react";
+import { Bell, BellOff, CheckCircle2, Info, Smartphone } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -99,13 +99,22 @@ export function NesteCelularSection() {
           </div>
         )}
 
-        {push.estado === "ativo" && push.desteAparelho && (
+        {(push.estado === "ativo" || push.estado === "pausado") && push.desteAparelho && (
           <div className="space-y-1">
-            <p className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-200">
-              <CheckCircle2 className="h-4 w-4" aria-hidden />
-              Ativo neste {nomeAparelho} para a {push.loja}
-            </p>
-            <label className="flex min-h-[56px] cursor-pointer items-center gap-3">
+            {push.estado === "ativo" ? (
+              <p className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-200">
+                <CheckCircle2 className="h-4 w-4 shrink-0" aria-hidden />
+                Ativo neste {nomeAparelho} para a {push.loja}
+              </p>
+            ) : (
+              <p className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
+                <BellOff className="h-4 w-4 shrink-0" aria-hidden />
+                Avisos de venda da {push.loja} desligados neste {nomeAparelho}. Ligue “Vendas novas” para voltar a receber.
+              </p>
+            )}
+            {/* Só o interruptor liga/desliga: a linha inteira clicável ficava logo
+                acima de "Enviar teste" e desligava os avisos sem querer. */}
+            <div className="flex min-h-[56px] items-center gap-3">
               <span className="flex-1">
                 <span className="block text-[15px] font-medium">Vendas novas</span>
                 <span className="block text-xs text-muted-foreground">
@@ -118,19 +127,23 @@ export function NesteCelularSection() {
                 disabled={push.alternarVendas.isPending}
                 onCheckedChange={(v) =>
                   push.alternarVendas.mutate(v, {
+                    onSuccess: () =>
+                      v
+                        ? toast.success(`Avisos de venda da ${push.loja} ligados neste ${nomeAparelho}.`)
+                        : toast.warning(`Avisos de venda da ${push.loja} desligados neste ${nomeAparelho}.`),
                     onError: (e) =>
                       toast.error(e instanceof Error ? e.message : "Não foi possível salvar."),
                   })
                 }
               />
-            </label>
+            </div>
             <Button variant="outline" className="h-11 w-full" onClick={testar} disabled={push.teste.isPending}>
               Enviar teste
             </Button>
           </div>
         )}
 
-        {(push.estado === "ativo" || push.estado === "desligado") && (
+        {(push.estado === "ativo" || push.estado === "pausado" || push.estado === "desligado") && (
           <p className="flex gap-2 rounded-lg bg-primary/5 p-3 text-xs leading-relaxed text-primary">
             <Info className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
             Tem outra loja? Entre na conta dela neste celular e ative aqui também.

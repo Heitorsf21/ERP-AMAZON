@@ -80,6 +80,7 @@ export function usePush() {
         precisaInstalar: precisaInstalarParaPush(plataforma),
         permissao,
         inscritoNestaLoja: !!desteAparelho,
+        recebeVendas: desteAparelho?.receberVendas,
       });
 
   const invalidar = () => qc.invalidateQueries({ queryKey: ["push-dispositivos"] });
