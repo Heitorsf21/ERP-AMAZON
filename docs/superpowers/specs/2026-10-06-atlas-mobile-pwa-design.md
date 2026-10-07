@@ -393,4 +393,4 @@ Hoje o Atlas só **lê** o anúncio (`getListingsItem`, `LISTINGS_GET_ITEM` sem 
    - se o menu personalizado deve valer também no desktop (proposta: sim, um menu só por usuário).
 
 ## 10. Ordem de entrega
-Fase 1 (~1 d, deploy isolado) → Fase 2 (~3–4 d) → Fase 3 (~3–4 d) → Fase 4 (~1–2 d, depois da permissão de preço). Cada fase vai em uma branch e um PR próprios, saindo da trunk que a produção usa (`feat/multitenant-fase0-seguranca`, conferido na VPS em 06/10). Depois da aprovação do protótipo visual, o próximo passo é o plano de implementação detalhado (tarefas, arquivos e testes), uma fase por vez.
+Fase 1 (~1 d, deploy isolado) → Fase 2 (~3–4 d) → Fase 3 (~3–4 d) → Fase 4 (~1–2 d, depois da permissão de preço). Entrega numa branch única (`feat/atlas-mobile`, worktree), com um commit por tarefa do plano `docs/superpowers/plans/2026-10-06-atlas-mobile.md`, publicada de uma vez na trunk de produção (`feat/multitenant-fase0-seguranca`, conferida na VPS em 06/10).

@@ -99,6 +99,16 @@ Módulo isolado `src/modules/whatsapp-estoque/` (`service.ts` cálculo · `messa
 - **Envio** (`runWhatsappEstoqueResumo`): NUNCA lança; registra `WhatsAppEstoqueEnvio` (ENVIANDO→SUCESSO/ERRO/SKIPPED). Falha no envio `DIARIO` → Notificação `CONFIG_REVIEW` (dedupe por dia). Tipo `TESTE` (botão da UI) não notifica. Endpoints sob `/api/configuracoes/whatsapp-estoque/*` (ADMIN), incluindo `enviar-teste` e gestão de produtos excluídos.
 - **WAHA**: `waha-client.ts` faz `POST {url}/api/sendText` com header `X-Api-Key`; `normalizarChatId` (número cru → `@c.us`, preserva `@g.us`/`@c.us`), `mascararDestino` (últimos 4 dígitos). Container do WAHA em `deploy/waha-whatsapp-estoque.md`.
 
+### Atlas mobile (PWA + push de venda + menu por usuário)
+Spec `docs/superpowers/specs/2026-10-06-atlas-mobile-pwa-design.md` · plano `docs/superpowers/plans/2026-10-06-atlas-mobile.md`.
+- **Instalável** sem loja de apps: `src/app/manifest.ts` + `public/sw.js` (SÓ push/clique — **sem fetch handler e sem cache**: zero dado velho e zero cache cruzado entre contas); ícones em `public/icons/` (gerar com `node scripts/gerar-icones-pwa.mjs`); `/sw.js` e `/manifest.webmanifest` são públicos no `proxy.ts`. iPhone: push só com o app instalado na Tela de Início (iOS 16.4+).
+- **Celular (< lg)**: `BottomNav` (Início/Vendas/Produtos/Mais) substitui o drawer; a folha "Mais" lista as abas visíveis + conta/app. Dashboard no celular = 6 KPIs + MPA + Top 15 (`components/dashboard-ecommerce/dashboard-mobile.tsx`; desktop intocado). Produto no celular = `components/produtos/produto-mobile.tsx` (estoque, lucro por unidade, alterar custo/preço; dados de `/api/produtos/[id]/resumo-mobile`, escopado ao tenant da sessão). Lista de produtos vira cards abaixo de `md`.
+- **Menu por usuário**: `ConfiguracaoSistema` chave `menu_abas_ocultas:u:<usuarioId>`; API `/api/menu/preferencias` (qualquer papel); aba Configurações → Menu (quem não é ADMIN só vê essa aba). Fixas: Dashboard, Vendas, Produtos, Configurações. Esconder aba NÃO desliga nada (URL e jobs seguem).
+- **Push de venda** (`src/modules/push/`): gatilho principal no consumidor SQS (`ORDER_CHANGE` → `notificarVendaDeOrderChange`, ~15–30 s após a compra); reserva no ORDERS_SYNC (`notificarVendasCriadasNoSync`). Idempotência `PushEnvio` `[empresaId, "venda:<orderId>"]`. Texto: "Nova venda na <Empresa.nome>" + valor (`~` = estimado) — **NUNCA** produto, SKU ou quantidade. Recência 2 h; cancelado não avisa; >3 de uma vez → aviso agrupado. Tocar abre `/vendas?pedido=<id>`: se a venda ainda não sincronizou, a tela espera e reconsulta (15 s, até 10 min).
+- **Aparelhos**: `PushDispositivo` é **GLOBAL** com unique `[empresaId, endpoint]` (mesmo celular em MundoFS e UDN); 404/410 apaga a inscrição; 5 falhas desativam. "Sair" pergunta se o aparelho continua recebendo os avisos daquela loja. **VAPID** no `.env` (`VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`) — **nunca rotacionar à toa** (invalida todos os aparelhos).
+- **Empresa sem ORDER_CHANGE nas últimas 24 h**: ORDERS_SYNC a cada 2 min (`modules/amazon/sqs-cobertura.ts`). Assinar por empresa: `npx tsx scripts/setup-sqs-subscriptions.ts --empresa=<empresaId>`.
+- **Preço na Amazon**: `modules/amazon/listings-preco.ts` (`patchListingsItem`, `purchasable_offer.our_price`); exige a permissão **Product Listing**; checar sem efeito com `npx tsx scripts/verificar-permissao-preco.ts --empresa=<id> --sku=<SKU>`; variação acima de ±30% pede segunda confirmação; só ADMIN.
+
 ## Worker daemon
 - Local: `npm run dev` sobe Next + worker em paralelo (`scripts/dev.mjs`). `dev:web` sem worker. `amazon:worker[:once]` avulso.
 - Prod: PM2 (`deploy/ecosystem.config.js`) — 3 processes: `erp-web` · `erp-worker` · `erp-sqs-consumer`.
@@ -107,7 +117,7 @@ Módulo isolado `src/modules/whatsapp-estoque/` (`service.ts` cálculo · `messa
 ### Schedules (`src/modules/amazon/jobs.ts`)
 | Job | Intervalo | Notas |
 |---|---|---|
-| ORDERS_SYNC | 2min | últimos 3d, 1 página |
+| ORDERS_SYNC | 2min | últimos 3d, 1 página; com SQS_PRIMARY cai para 15min, exceto empresa sem ORDER_CHANGE recente (fica em 2min) |
 | INVENTORY_SYNC | 2min | snapshot FBA |
 | FINANCES_SYNC | 15min | últimos 14d, lê `breakdownAmount` agregado de `AmazonFees` (inclui Commission+FBA+Tax+AmazonForAllFee/parcelamento) |
 | FINANCES_BACKFILL | 30min | janelas 14d, cursor `amazon_finances_backfill_cursor`. Gate em jobs.ts pula enfileiramento quando cursor ≥ `now-13d` (dentro da cobertura do FINANCES_SYNC). |
