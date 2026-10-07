@@ -1,7 +1,11 @@
 import { db } from "@/lib/db";
 import { logger } from "@/lib/logger";
 import { currentEmpresaIdOrDefault, getEmpresaId } from "@/lib/tenant-context";
-import { PRECO_ORIGEM_SPAPI } from "@/modules/vendas/filtros";
+import {
+  isPedidoMultiChannelFulfillment,
+  PRECO_ORIGEM_REPLACEMENT,
+  PRECO_ORIGEM_SPAPI,
+} from "@/modules/vendas/filtros";
 import { concluirEnvio, entregar, enviarPush, reservarEnvio, TipoPushEnvio } from "./envio";
 import { nomeDaLoja } from "./loja";
 import {
@@ -19,6 +23,23 @@ const JANELA_PRECO_REAL_DIAS = 7;
 
 function erroComoTexto(err: unknown) {
   return err instanceof Error ? err.message : String(err);
+}
+
+/**
+ * Linha criada pelo ORDERS_SYNC vira aviso de venda? Não para MCF (`S01-` /
+ * canal Non-Amazon: usa estoque FBA mas não é venda do marketplace, e a tela de
+ * Vendas nem lista o pedido) nem para reposição (R$ 0, fora do Faturamento).
+ */
+export function vendaCriadaGeraAviso(input: {
+  amazonOrderId: string;
+  marketplace?: string | null;
+  precoOrigem?: string | null;
+}): boolean {
+  if (input.precoOrigem === PRECO_ORIGEM_REPLACEMENT) return false;
+  return !isPedidoMultiChannelFulfillment({
+    amazonOrderId: input.amazonOrderId,
+    marketplace: input.marketplace ?? null,
+  });
 }
 
 /**
@@ -69,6 +90,9 @@ export async function notificarVendaDeOrderChange(
   try {
     const resumo = extrairResumoOrderChange(payload ?? null);
     if (!resumo || !pedidoNotificavel(resumo, agora)) return;
+    // O ORDER_CHANGE não traz canal nem associação de reposição: só o prefixo
+    // S01- identifica MCF aqui. Reposição é filtrada no ORDERS_SYNC.
+    if (isPedidoMultiChannelFulfillment({ amazonOrderId: resumo.amazonOrderId })) return;
     const empresaId = getEmpresaId() ?? currentEmpresaIdOrDefault();
     const [valorCentavos, loja] = await Promise.all([
       estimarValorItens(resumo.itens, agora),
@@ -98,7 +122,11 @@ export async function notificarVendasCriadasNoSync(
 ): Promise<void> {
   try {
     if (vendas.length === 0) return;
-    const pedidos = agruparPorPedido(vendas).filter((p) => pedidoNotificavel(p, agora));
+    const pedidos = agruparPorPedido(vendas).filter(
+      (p) =>
+        pedidoNotificavel(p, agora) &&
+        !isPedidoMultiChannelFulfillment({ amazonOrderId: p.amazonOrderId }),
+    );
     if (pedidos.length === 0) return;
     const empresaId = getEmpresaId() ?? currentEmpresaIdOrDefault();
     const loja = await nomeDaLoja(empresaId);

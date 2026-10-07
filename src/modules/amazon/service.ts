@@ -72,7 +72,7 @@ import {
   PRECO_ORIGEM_LISTING,
   PRECO_ORIGEM_SPAPI,
 } from "@/modules/vendas/filtros";
-import { notificarVendasCriadasNoSync } from "@/modules/push/vendas";
+import { notificarVendasCriadasNoSync, vendaCriadaGeraAviso } from "@/modules/push/vendas";
 import type { VendaCriadaNoSync } from "@/modules/push/regras";
 import {
   calcularImpostoSimplesCentavos,
@@ -1136,13 +1136,22 @@ async function syncOrdersInternal(
         if (existente) atualizadas++;
         else {
           criadas++;
-          vendasCriadas.push({
-            amazonOrderId,
-            purchaseDate: createdAt,
-            status: statusPedido,
-            valorBrutoCentavos: valorBrutoFinal,
-            estimado: precoOrigemFinal === PRECO_ORIGEM_LISTING,
-          });
+          if (
+            vendaCriadaGeraAviso({
+              amazonOrderId,
+              marketplace: data.marketplace,
+              precoOrigem: precoOrigemFinal,
+            })
+          ) {
+            // MCF e reposição não são venda do marketplace: sem aviso no celular.
+            vendasCriadas.push({
+              amazonOrderId,
+              purchaseDate: createdAt,
+              status: statusPedido,
+              valorBrutoCentavos: valorBrutoFinal,
+              estimado: precoOrigemFinal === PRECO_ORIGEM_LISTING,
+            });
+          }
         }
 
         pedidos.push({

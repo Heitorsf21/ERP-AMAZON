@@ -20,15 +20,20 @@ vi.mock("@/lib/tenant-context", () => ({
   currentEmpresaIdOrDefault: () => "mundofs",
 }));
 
-import { notificarVendaDeOrderChange, notificarVendasCriadasNoSync } from "./vendas";
+import { notificarVendaDeOrderChange, notificarVendasCriadasNoSync, vendaCriadaGeraAviso } from "./vendas";
 
 const AGORA = new Date("2026-10-06T22:35:00Z");
 const RECENTE = new Date("2026-10-06T22:33:10Z");
 
-function orderChange(status: string, data: string, itens = [{ SellerSKU: "MFS-0036", Quantity: 1 }]) {
+function orderChange(
+  status: string,
+  data: string,
+  itens = [{ SellerSKU: "MFS-0036", Quantity: 1 }],
+  amazonOrderId = "702-4417820-3391045",
+) {
   return {
     OrderChangeNotification: {
-      AmazonOrderId: "702-4417820-3391045",
+      AmazonOrderId: amazonOrderId,
       Summary: { OrderStatus: status, PurchaseDate: data, OrderItems: itens },
     },
   };
@@ -67,6 +72,14 @@ describe("gatilho SQS (ORDER_CHANGE)", () => {
     expect(envioMock.enviarPush).not.toHaveBeenCalled();
   });
 
+  it("pedido MCF (S01-) não é venda do marketplace: não avisa", async () => {
+    await notificarVendaDeOrderChange(
+      orderChange("Pending", "2026-10-06T22:33:10Z", undefined, "S01-1234567-7654321"),
+      AGORA,
+    );
+    expect(envioMock.enviarPush).not.toHaveBeenCalled();
+  });
+
   it("erro no envio nunca derruba o processamento da mensagem", async () => {
     envioMock.enviarPush.mockRejectedValue(new Error("rede caiu"));
     await expect(notificarVendaDeOrderChange(orderChange("Pending", "2026-10-06T22:33:10Z"), AGORA)).resolves.toBeUndefined();
@@ -97,8 +110,41 @@ describe("gatilho de reserva (ORDERS_SYNC)", () => {
     expect(envioMock.concluirEnvio).toHaveBeenCalledTimes(5);
   });
 
+  it("pedido MCF (S01-) que escapou do filtro do sync não avisa", async () => {
+    envioMock.reservarEnvio.mockResolvedValue("env1");
+    await notificarVendasCriadasNoSync([venda("S01-1234567-7654321")], AGORA);
+    expect(envioMock.reservarEnvio).not.toHaveBeenCalled();
+    expect(envioMock.entregar).not.toHaveBeenCalled();
+  });
+
   it("vendas antigas do backfill/primeira conexão não avisam", async () => {
     await notificarVendasCriadasNoSync([{ ...venda("A"), purchaseDate: new Date("2026-10-03T10:00:00Z") }], AGORA);
     expect(envioMock.reservarEnvio).not.toHaveBeenCalled();
+  });
+});
+
+describe("quais linhas criadas pelo ORDERS_SYNC viram aviso", () => {
+  it("venda normal do marketplace avisa", () => {
+    expect(
+      vendaCriadaGeraAviso({ amazonOrderId: "702-4417820-3391045", marketplace: "Amazon.com.br", precoOrigem: "sp-api" }),
+    ).toBe(true);
+    expect(
+      vendaCriadaGeraAviso({ amazonOrderId: "702-4417820-3391045", marketplace: "Amazon.com.br", precoOrigem: "listing" }),
+    ).toBe(true);
+  });
+
+  it("MCF não avisa (prefixo S01- ou canal Non-Amazon): a tela de Vendas nem mostra o pedido", () => {
+    expect(
+      vendaCriadaGeraAviso({ amazonOrderId: "S01-1234567-7654321", marketplace: "Amazon.com.br", precoOrigem: "listing" }),
+    ).toBe(false);
+    expect(
+      vendaCriadaGeraAviso({ amazonOrderId: "702-0000000-0000000", marketplace: "Non-Amazon", precoOrigem: "listing" }),
+    ).toBe(false);
+  });
+
+  it("reposição (R$ 0, fora do Faturamento) não avisa", () => {
+    expect(
+      vendaCriadaGeraAviso({ amazonOrderId: "702-4417820-3391045", marketplace: "Amazon.com.br", precoOrigem: "replacement" }),
+    ).toBe(false);
   });
 });
