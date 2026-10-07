@@ -56,7 +56,8 @@ describe("gatilho SQS (ORDER_CHANGE)", () => {
     expect(arg.dedupeKey).toBe("venda:702-4417820-3391045");
     expect(arg.empresaId).toBe("mundofs");
     expect(arg.payload.title).toBe("Nova venda na MundoFS");
-    expect(arg.payload.body).toContain("~R$");
+    expect(arg.payload.body.startsWith("Você realizou uma nova venda de R$")).toBe(true);
+    expect(arg.payload.body).not.toContain("~");
     expect(JSON.stringify(arg.payload)).not.toContain("MFS-0036");
   });
 

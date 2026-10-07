@@ -56,9 +56,11 @@ export function pedidoNotificavel(
   return idade <= JANELA_RECENCIA_MS && idade >= -TOLERANCIA_RELOGIO_MS;
 }
 
-export function formatarValorPush(centavos: number | null, estimado: boolean): string | null {
+// Sem "~" mesmo quando o valor é estimado (preço de listagem antes do ItemPrice
+// real): o dono pediu o valor limpo no aviso. `estimado` segue no dado.
+export function formatarValorPush(centavos: number | null): string | null {
   if (centavos == null || centavos <= 0) return null;
-  return `${estimado ? "~" : ""}${formatBRL(centavos)}`;
+  return formatBRL(centavos);
 }
 
 export function montarPayloadVenda(input: {
@@ -68,10 +70,10 @@ export function montarPayloadVenda(input: {
   amazonOrderId: string;
   empresaId: string;
 }): PayloadPush {
-  const valor = formatarValorPush(input.valorCentavos, input.estimado);
+  const valor = formatarValorPush(input.valorCentavos);
   return {
     title: `Nova venda na ${input.loja}`,
-    body: valor ? `Você teve uma nova venda de ${valor}.` : "Você teve uma nova venda.",
+    body: valor ? `Você realizou uma nova venda de ${valor}.` : "Você realizou uma nova venda.",
     tag: `venda-${input.empresaId}-${input.amazonOrderId}`,
     url: `/vendas?pedido=${encodeURIComponent(input.amazonOrderId)}&loja=${encodeURIComponent(input.empresaId)}`,
     icon: ICONE_PUSH,
@@ -86,7 +88,7 @@ export function montarPayloadAgrupado(input: {
   estimado: boolean;
   empresaId: string;
 }): PayloadPush {
-  const total = formatarValorPush(input.totalCentavos, input.estimado);
+  const total = formatarValorPush(input.totalCentavos);
   return {
     title: `${input.quantidade} novas vendas na ${input.loja}`,
     body: total ? `Total de ${total}.` : "Abra o Atlas para ver os pedidos.",

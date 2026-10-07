@@ -39,19 +39,19 @@ describe("texto do aviso", () => {
   it("título com a loja e corpo com o valor", () => {
     const p = montarPayloadVenda({ ...base, valorCentavos: 20497, estimado: false });
     expect(p.title).toBe("Nova venda na MundoFS");
-    expect(p.body).toBe(`Você teve uma nova venda de ${formatBRL(20497)}.`);
+    expect(p.body).toBe(`Você realizou uma nova venda de ${formatBRL(20497)}.`);
     // A loja vai no link: com o app logado na outra conta, /vendas avisa
     // "pedido de outra loja" em vez de procurar o pedido na conta errada.
     expect(p.url).toBe("/vendas?pedido=702-4417820-3391045&loja=mundofs");
     expect(p.tag).toBe("venda-mundofs-702-4417820-3391045");
   });
 
-  it("valor estimado ganha ~ e sem valor não inventa número", () => {
+  it("valor estimado sai sem ~ (pedido do dono) e sem valor não inventa número", () => {
     expect(montarPayloadVenda({ ...base, valorCentavos: 7700, estimado: true }).body).toBe(
-      `Você teve uma nova venda de ~${formatBRL(7700)}.`,
+      `Você realizou uma nova venda de ${formatBRL(7700)}.`,
     );
     expect(montarPayloadVenda({ ...base, valorCentavos: null, estimado: true }).body).toBe(
-      "Você teve uma nova venda.",
+      "Você realizou uma nova venda.",
     );
   });
 
@@ -64,7 +64,7 @@ describe("texto do aviso", () => {
   it("agrupado e teste", () => {
     const g = montarPayloadAgrupado({ loja: "UDN", quantidade: 4, totalCentavos: 35620, estimado: true, empresaId: "udncd" });
     expect(g.title).toBe("4 novas vendas na UDN");
-    expect(g.body).toBe(`Total de ~${formatBRL(35620)}.`);
+    expect(g.body).toBe(`Total de ${formatBRL(35620)}.`);
     expect(g.url).toBe("/vendas");
     expect(montarPayloadTeste("UDN").body).toBe("Os avisos de venda da UDN vão chegar assim.");
   });
