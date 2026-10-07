@@ -13,7 +13,7 @@ import {
 } from "@aws-sdk/client-sqs";
 import { createHash } from "node:crypto";
 import { db } from "@/lib/db";
-import { getEmpresaId, runWithTenant } from "@/lib/tenant-context";
+import { configKeyParaEmpresa, getEmpresaId, runWithTenant } from "@/lib/tenant-context";
 import { enqueueAmazonSyncJob } from "@/modules/amazon/jobs";
 import {
   getMarketingStreamDataset,
@@ -182,18 +182,74 @@ export async function recordAndDispatchSqsMessage(
   // (AmazonNotification) e jobs (AmazonSyncJob) nasçam no tenant certo — antes
   // TUDO caía na empresa primária e a UDN nunca recebia eventos em tempo real.
   const empresaResolvida = await resolverEmpresaDaNotification(notification);
+  const opcoes: OpcoesDispatch = {
+    avisarVenda: await avisoDeVendaPermitido(notification, empresaResolvida),
+  };
   if (empresaResolvida && empresaResolvida !== getEmpresaId()) {
     return runWithTenant(
       { empresaId: empresaResolvida, isSuperAdmin: false, source: "worker" },
-      () => processarNotificacaoSqs(notification, message),
+      () => processarNotificacaoSqs(notification, message, opcoes),
     );
   }
-  return processarNotificacaoSqs(notification, message);
+  return processarNotificacaoSqs(notification, message, opcoes);
+}
+
+type OpcoesDispatch = {
+  /**
+   * true = a notification pertence comprovadamente à empresa do contexto e pode
+   * gerar o aviso de venda no celular. Ausente/false: jobs seguem como antes,
+   * mas o aviso NÃO sai — iria para os aparelhos da loja errada.
+   */
+  avisarVenda?: boolean;
+};
+
+/**
+ * O aviso de venda só sai quando a notification é comprovadamente da empresa
+ * em que vai rodar: SellerId resolvido para uma AmazonAccount ativa, ou igual
+ * ao seller id configurado para a empresa do contexto (legado da primária, sem
+ * AmazonAccount.sellerId). Sem SellerId ou com SellerId desconhecido: não avisa
+ * (o ORDERS_SYNC da empresa certa avisa como reserva). Pura, exportada p/ teste.
+ */
+export function podeAvisarVendaDaNotification(input: {
+  sellerIdNotificacao: string | null;
+  empresaResolvida: string | null;
+  sellerIdDoContexto: string | null;
+}): boolean {
+  if (!input.sellerIdNotificacao) return false;
+  if (input.empresaResolvida) return true;
+  return input.sellerIdDoContexto === input.sellerIdNotificacao;
+}
+
+async function avisoDeVendaPermitido(
+  notification: AmazonSqsNotification,
+  empresaResolvida: string | null,
+): Promise<boolean> {
+  if (getNotificationType(notification) !== "ORDER_CHANGE") return false;
+  const sellerIdNotificacao = extrairSellerIdDaNotification(notification);
+  let sellerIdDoContexto: string | null = null;
+  if (sellerIdNotificacao && !empresaResolvida) {
+    try {
+      const row = await db.configuracaoSistema.findUnique({
+        where: { chave: configKeyParaEmpresa("amazon_seller_id") },
+        select: { valor: true },
+      });
+      sellerIdDoContexto = row?.valor?.trim() || null;
+    } catch {
+      // Na dúvida, sem aviso: o ORDERS_SYNC da empresa certa avisa como reserva.
+      return false;
+    }
+  }
+  return podeAvisarVendaDaNotification({
+    sellerIdNotificacao,
+    empresaResolvida,
+    sellerIdDoContexto,
+  });
 }
 
 async function processarNotificacaoSqs(
   notification: AmazonSqsNotification,
   message: Pick<Message, "Body" | "MessageId">,
+  opcoes: OpcoesDispatch = {},
 ): Promise<{ processed: boolean; notificationId: string; jobsCriadosIds: string[] }> {
   if (!message.Body) {
     throw new Error("Mensagem SQS sem Body.");
@@ -296,7 +352,7 @@ async function processarNotificacaoSqs(
           notificationId,
           streamDataset,
         )
-      : await dispatchNotification(notification, notificationId);
+      : await dispatchNotification(notification, notificationId, opcoes);
     await db.amazonNotification.update({
       where: { notificationId },
       data: {
@@ -319,6 +375,7 @@ async function processarNotificacaoSqs(
 export async function dispatchNotification(
   notif: AmazonSqsNotification,
   notificationId = getNotificationId(notif) ?? minuteSlot(),
+  opcoes: OpcoesDispatch = {},
 ): Promise<string[]> {
   const tipo = getNotificationType(notif);
   if (!tipo) return [];
@@ -333,7 +390,9 @@ export async function dispatchNotification(
     case "ORDER_CHANGE": {
       // Aviso de venda no celular sai daqui, antes da fila do worker
       // (compra → esta mensagem: ~13 s; fila do worker: até ~3 min no p90).
-      await notificarVendaDeOrderChange(basePayload.payload);
+      if (opcoes.avisarVenda === true) {
+        await notificarVendaDeOrderChange(basePayload.payload);
+      }
       const orderIds = extractOrderIdsFromNotification(notif);
       const job = await enqueueAmazonSyncJob(
         TipoAmazonSyncJob.ORDERS_SYNC,
