@@ -81,8 +81,10 @@ function ConfiguracoesTabs() {
   // `defaultValue` só vale na montagem: espera o papel para não abrir na aba errada.
   if (me.isLoading) return <SkeletonAbas />;
 
+  // `key` remonta as abas quando o `?tab=` muda com a página já aberta (atalhos
+  // da folha Mais navegam no cliente, sem recarregar).
   return (
-    <Tabs defaultValue={defaultTab} className="space-y-4">
+    <Tabs key={defaultTab} defaultValue={defaultTab} className="space-y-4">
       <TabsList className="flex h-auto flex-wrap">
         {ehAdmin && (
           <>

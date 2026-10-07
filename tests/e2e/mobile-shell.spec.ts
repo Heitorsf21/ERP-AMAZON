@@ -43,12 +43,12 @@ const TOP = [
   },
 ];
 
-async function logar(context: BrowserContext, ocultas: string[] = []) {
+async function logar(context: BrowserContext, ocultas: string[] = [], role = "ADMIN") {
   await context.addCookies([
     {
       name: "erp_session",
       value: signSession({
-        uid: "user-e2e", email: "e2e@atlas.test", nome: "E2E Admin", role: "ADMIN",
+        uid: "user-e2e", email: "e2e@atlas.test", nome: "E2E Admin", role,
         exp: Math.floor(Date.now() / 1000) + 3600, v: 0, empresaId: "empresa-e2e",
       }),
       url: baseURL,
@@ -58,10 +58,11 @@ async function logar(context: BrowserContext, ocultas: string[] = []) {
   ]);
   await context.route("**/api/menu/preferencias", (r) => r.fulfill({ json: { ocultas } }));
   await context.route("**/api/auth/me", (r) =>
-    r.fulfill({ json: { usuario: { id: "user-e2e", nome: "E2E Admin", email: "e2e@atlas.test", role: "ADMIN", avatarUrl: null } } }),
+    r.fulfill({ json: { usuario: { id: "user-e2e", nome: "E2E Admin", email: "e2e@atlas.test", role, avatarUrl: null } } }),
   );
   await context.route("**/api/notificacoes/contar", (r) => r.fulfill({ json: { total: 0 } }));
   await context.route("**/api/push/config", (r) => r.fulfill({ json: { enabled: false, publicKey: null, loja: "Loja E2E" } }));
+  await context.route("**/api/push/dispositivos", (r) => r.fulfill({ json: { dispositivos: [] } }));
   await context.route("**/api/dashboard-ecommerce/kpis**", (r) => r.fulfill({ json: KPIS }));
   await context.route("**/api/dashboard-ecommerce/timeline**", (r) => r.fulfill({ json: [] }));
   await context.route("**/api/dashboard-ecommerce/top-produtos**", (r) => r.fulfill({ json: TOP }));
@@ -88,6 +89,17 @@ test("barra inferior e folha Mais respeitam o menu do usuário", async ({ contex
   await expect(folha.getByText("Personalizar menu")).toBeVisible();
   await expect(folha.getByRole("link", { name: "Caixa", exact: true })).toBeVisible();
   await expect(folha.getByRole("link", { name: "Agenda" })).toHaveCount(0);
+});
+
+test("operador abre Configurações e o atalho da folha Mais troca a aba", async ({ context, page }) => {
+  await logar(context, [], "OPERADOR");
+  await page.goto("/configuracoes?tab=menu");
+  await expect(page.getByRole("tab", { name: "Menu" })).toHaveAttribute("aria-selected", "true");
+  // Já em Configurações: o link muda só o ?tab= (navegação no cliente, mesma página).
+  await page.getByRole("navigation", { name: "Navegação principal" }).getByRole("button", { name: "Mais" }).click();
+  await page.getByRole("dialog").getByRole("link", { name: /Notificações deste celular/ }).click();
+  await expect(page).toHaveURL(/tab=notificacoes/);
+  await expect(page.getByRole("tab", { name: "Notificações" })).toHaveAttribute("aria-selected", "true");
 });
 
 test("dashboard no celular: 6 KPIs, MPA e Top 15, sem gráfico nem scroll lateral", async ({ context, page }) => {
