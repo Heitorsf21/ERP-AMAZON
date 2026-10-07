@@ -1,0 +1,54 @@
+// Helpers de navegador para o aviso de venda (rodam só no cliente).
+
+export type EstadoPush = "nao-suportado" | "instalar-primeiro" | "negado" | "desligado" | "ativo";
+
+export function urlBase64ParaUint8Array(base64: string): Uint8Array {
+  const padding = "=".repeat((4 - (base64.length % 4)) % 4);
+  const b64 = (base64 + padding).replace(/-/g, "+").replace(/_/g, "/");
+  const bruto = atob(b64);
+  return Uint8Array.from(bruto, (c) => c.charCodeAt(0));
+}
+
+export function calcularEstadoPush(input: {
+  suportado: boolean;
+  precisaInstalar: boolean;
+  permissao: NotificationPermission | "indisponivel";
+  inscritoNestaLoja: boolean;
+}): EstadoPush {
+  if (input.precisaInstalar) return "instalar-primeiro";
+  if (!input.suportado) return "nao-suportado";
+  if (input.permissao === "denied") return "negado";
+  if (input.permissao === "granted" && input.inscritoNestaLoja) return "ativo";
+  return "desligado";
+}
+
+export function ehAppInstalado(): boolean {
+  if (typeof window === "undefined") return false;
+  const nav = navigator as Navigator & { standalone?: boolean };
+  return window.matchMedia("(display-mode: standalone)").matches || nav.standalone === true;
+}
+
+/** Inscrição do navegador, sem travar quando não há service worker. */
+export async function obterInscricaoAtual(): Promise<PushSubscription | null> {
+  if (typeof navigator === "undefined" || !("serviceWorker" in navigator)) return null;
+  const reg = await navigator.serviceWorker.getRegistration();
+  return reg ? reg.pushManager.getSubscription() : null;
+}
+
+/** Este aparelho recebe avisos da loja da sessão? (usado ao sair) */
+export async function inscricaoDestaLojaNesteAparelho(): Promise<{ endpoint: string; loja: string } | null> {
+  try {
+    const sub = await obterInscricaoAtual();
+    if (!sub) return null;
+    const [lista, config] = await Promise.all([
+      fetch("/api/push/dispositivos").then((r) => (r.ok ? r.json() : null)),
+      fetch("/api/push/config").then((r) => (r.ok ? r.json() : null)),
+    ]);
+    const inscrito = (lista?.dispositivos ?? []).some(
+      (d: { endpoint: string }) => d.endpoint === sub.endpoint,
+    );
+    return inscrito ? { endpoint: sub.endpoint, loja: config?.loja ?? "sua loja" } : null;
+  } catch {
+    return null;
+  }
+}

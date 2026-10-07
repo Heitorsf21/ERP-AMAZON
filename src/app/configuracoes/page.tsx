@@ -12,6 +12,7 @@ import { GmailSection } from "./gmail-section";
 import { AmazonSection } from "@/components/configuracoes/amazon-section";
 import { AmazonAdsSection } from "@/components/configuracoes/amazon-ads-section";
 import { NotificacoesSection } from "@/components/configuracoes/notificacoes-section";
+import { NesteCelularSection } from "@/components/configuracoes/neste-celular-section";
 import { ImpostoSimplesSection } from "@/components/configuracoes/imposto-simples-section";
 import { WhatsappEstoqueSection } from "@/components/configuracoes/whatsapp-estoque-section";
 import { AssinaturaSection } from "@/components/configuracoes/assinatura-section";
@@ -21,10 +22,11 @@ import { UsuarioRole } from "@/modules/shared/domain";
 
 const TABS_VALIDAS = new Set(["geral", "integracoes", "notificacoes", "menu"]);
 
-// Menu é preferência pessoal: qualquer papel abre esta página, mas só ADMIN vê
-// as abas de empresa. As APIs dessas abas (/api/configuracoes/*) seguem
-// restritas a ADMIN no servidor; aqui é só para não mostrar o que daria 403.
-const TABS_TODOS_OS_PAPEIS = new Set(["menu"]);
+// Menu e o aviso de venda "neste celular" são pessoais: qualquer papel abre
+// esta página, mas só ADMIN vê as abas e seções de empresa. As APIs delas
+// (/api/configuracoes/*) seguem restritas a ADMIN no servidor; aqui é só para
+// não mostrar o que daria 403. /api/push/* exige apenas sessão.
+const TABS_TODOS_OS_PAPEIS = new Set(["notificacoes", "menu"]);
 
 type MeResponse = { usuario: { role: string } };
 
@@ -92,12 +94,12 @@ function ConfiguracoesTabs() {
               <Plug className="h-4 w-4" />
               Integrações
             </TabsTrigger>
-            <TabsTrigger value="notificacoes" className="gap-2">
-              <Bell className="h-4 w-4" />
-              Notificações
-            </TabsTrigger>
           </>
         )}
+        <TabsTrigger value="notificacoes" className="gap-2">
+          <Bell className="h-4 w-4" />
+          Notificações
+        </TabsTrigger>
         <TabsTrigger value="menu" className="gap-2">
           <LayoutList className="h-4 w-4" />
           Menu
@@ -120,13 +122,14 @@ function ConfiguracoesTabs() {
             <GmailSection />
             <WhatsappEstoqueSection />
           </TabsContent>
-
-          {/* ---- Notificações ---- */}
-          <TabsContent value="notificacoes" className="space-y-4">
-            <NotificacoesSection />
-          </TabsContent>
         </>
       )}
+
+      {/* ---- Notificações ---- */}
+      <TabsContent value="notificacoes" className="space-y-4">
+        <NesteCelularSection />
+        {ehAdmin && <NotificacoesSection />}
+      </TabsContent>
 
       {/* ---- Menu ---- */}
       <TabsContent value="menu" className="space-y-4">

@@ -23,7 +23,7 @@ import { HOME_ITEM } from "@/components/nav-routes";
 import { useMenuVisivel } from "@/components/menu/use-menu-visivel";
 import { usePwa } from "@/components/pwa/pwa-provider";
 import { InstalarSheet } from "@/components/pwa/instalar-sheet";
-import { useLogout } from "@/components/auth/use-logout";
+import { DialogAvisosAoSair, useLogout } from "@/components/auth/use-logout";
 
 // Já estão na barra inferior ou na seção "Conta e app".
 const FORA_DA_LISTA = new Set([
@@ -193,6 +193,7 @@ export function MaisSheet({
         </SheetContent>
       </Sheet>
       <InstalarSheet aberto={instalarAberto} onAbertoChange={setInstalarAberto} />
+      <DialogAvisosAoSair controle={logout} />
     </>
   );
 }

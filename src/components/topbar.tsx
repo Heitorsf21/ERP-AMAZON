@@ -17,7 +17,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { useLogout } from "@/components/auth/use-logout";
+import { DialogAvisosAoSair, useLogout } from "@/components/auth/use-logout";
 import { fetchJSON } from "@/lib/fetcher";
 import { useCommandPalette } from "@/components/command-palette";
 
@@ -131,84 +131,87 @@ function ProfileMenu() {
   const iniciais = nome ? gerarIniciais(nome) : "";
 
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <button
-          type="button"
-          className={cn(
-            "flex items-center gap-2 rounded-full p-1 pr-3 transition-colors",
-            "hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-          )}
-          aria-label="Menu do usuário"
-        >
-          <span
+    <>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button
+            type="button"
             className={cn(
-              "flex h-8 w-8 items-center justify-center overflow-hidden rounded-full",
-              "bg-gradient-to-br from-primary to-primary/70 text-xs font-semibold text-primary-foreground",
-              "shadow-sm ring-2 ring-background",
+              "flex items-center gap-2 rounded-full p-1 pr-3 transition-colors",
+              "hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
             )}
+            aria-label="Menu do usuário"
           >
-            {usuario?.avatarUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src="/api/perfil/avatar"
-                alt={nome || "Avatar"}
-                className="h-full w-full object-cover"
-              />
-            ) : isLoading && !iniciais ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            ) : iniciais ? (
-              iniciais
+            <span
+              className={cn(
+                "flex h-8 w-8 items-center justify-center overflow-hidden rounded-full",
+                "bg-gradient-to-br from-primary to-primary/70 text-xs font-semibold text-primary-foreground",
+                "shadow-sm ring-2 ring-background",
+              )}
+            >
+              {usuario?.avatarUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src="/api/perfil/avatar"
+                  alt={nome || "Avatar"}
+                  className="h-full w-full object-cover"
+                />
+              ) : isLoading && !iniciais ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : iniciais ? (
+                iniciais
+              ) : (
+                <User className="h-4 w-4" />
+              )}
+            </span>
+            <span className="hidden text-sm font-medium lg:inline-block">
+              {nome || "Conta"}
+            </span>
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-60">
+          <DropdownMenuLabel>
+            <div className="flex flex-col">
+              <span className="text-sm font-medium leading-none">
+                {nome || "Sessão"}
+              </span>
+              <span className="mt-1 truncate text-xs font-normal text-muted-foreground">
+                {email || "—"}
+              </span>
+            </div>
+          </DropdownMenuLabel>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem asChild>
+            <Link href={"/perfil" as Route} className="cursor-pointer">
+              <UserCircle className="mr-0 h-4 w-4" />
+              Meu perfil
+            </Link>
+          </DropdownMenuItem>
+          <DropdownMenuItem asChild>
+            <Link href={"/configuracoes" as Route} className="cursor-pointer">
+              <Settings className="mr-0 h-4 w-4" />
+              Configurações
+            </Link>
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem
+            onSelect={(e) => {
+              e.preventDefault();
+              void logout.sair();
+            }}
+            disabled={logout.saindo}
+            className="cursor-pointer text-destructive focus:text-destructive"
+          >
+            {logout.saindo ? (
+              <Loader2 className="mr-0 h-4 w-4 animate-spin" />
             ) : (
-              <User className="h-4 w-4" />
+              <LogOut className="mr-0 h-4 w-4" />
             )}
-          </span>
-          <span className="hidden text-sm font-medium lg:inline-block">
-            {nome || "Conta"}
-          </span>
-        </button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-60">
-        <DropdownMenuLabel>
-          <div className="flex flex-col">
-            <span className="text-sm font-medium leading-none">
-              {nome || "Sessão"}
-            </span>
-            <span className="mt-1 truncate text-xs font-normal text-muted-foreground">
-              {email || "—"}
-            </span>
-          </div>
-        </DropdownMenuLabel>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem asChild>
-          <Link href={"/perfil" as Route} className="cursor-pointer">
-            <UserCircle className="mr-0 h-4 w-4" />
-            Meu perfil
-          </Link>
-        </DropdownMenuItem>
-        <DropdownMenuItem asChild>
-          <Link href={"/configuracoes" as Route} className="cursor-pointer">
-            <Settings className="mr-0 h-4 w-4" />
-            Configurações
-          </Link>
-        </DropdownMenuItem>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem
-          onSelect={(e) => {
-            e.preventDefault();
-            void logout.sair();
-          }}
-          disabled={logout.saindo}
-          className="cursor-pointer text-destructive focus:text-destructive"
-        >
-          {logout.saindo ? (
-            <Loader2 className="mr-0 h-4 w-4 animate-spin" />
-          ) : (
-            <LogOut className="mr-0 h-4 w-4" />
-          )}
-          Sair
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
+            Sair
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+      <DialogAvisosAoSair controle={logout} />
+    </>
   );
 }
