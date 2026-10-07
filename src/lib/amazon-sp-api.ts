@@ -16,6 +16,7 @@ import {
   type AmazonSpApiOperation as AmazonSpApiOperationType,
 } from "@/lib/amazon-rate-limit";
 import { assertAmazonEndpoint } from "@/lib/ssrf-guard";
+import { withAmazonRateLimitRetry } from "@/lib/rate-limit-retry";
 
 export interface SPAPICredentials {
   clientId: string;
@@ -221,7 +222,13 @@ export async function spApiRequest<T = unknown>(
 
   let lastPayload: unknown = {};
   if (options.operation) {
-    await reserveAmazonOperationSlot(options.operation);
+    const operation = options.operation;
+    // O slot local é o espaçamento que NÓS impomos (ex.: 500 ms em 2 rps).
+    // Chamadas seguidas e rápidas (catálogo item a item, 2ª página do estoque)
+    // caíam nele e o erro, lançado ANTES de enviar, derrubava o job inteiro —
+    // CATALOG_REFRESH falhava 7/7 dias. Espera curta (≤ 5 s) é aguardada;
+    // cooldown longo (429 real da Amazon) segue virando erro na hora.
+    await withAmazonRateLimitRetry(() => reserveAmazonOperationSlot(operation));
   }
 
   for (let attempt = 0; attempt < 4; attempt += 1) {
