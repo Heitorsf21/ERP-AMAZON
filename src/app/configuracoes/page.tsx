@@ -5,7 +5,7 @@ import { Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Bell, LayoutList, Plug, SlidersHorizontal } from "lucide-react";
+import { Bell, Layers, LayoutList, Plug, SlidersHorizontal } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { GmailSection } from "./gmail-section";
@@ -17,16 +17,17 @@ import { ImpostoSimplesSection } from "@/components/configuracoes/imposto-simple
 import { WhatsappEstoqueSection } from "@/components/configuracoes/whatsapp-estoque-section";
 import { AssinaturaSection } from "@/components/configuracoes/assinatura-section";
 import { MenuSection } from "@/components/configuracoes/menu-section";
+import { LojasSection } from "@/components/configuracoes/lojas-section";
 import { fetchJSON } from "@/lib/fetcher";
 import { UsuarioRole } from "@/modules/shared/domain";
 
-const TABS_VALIDAS = new Set(["geral", "integracoes", "notificacoes", "menu"]);
+const TABS_VALIDAS = new Set(["geral", "integracoes", "notificacoes", "menu", "lojas"]);
 
-// Menu e o aviso de venda "neste celular" são pessoais: qualquer papel abre
+// Menu, o aviso de venda "neste celular" e as lojas vinculadas são pessoais: qualquer papel abre
 // esta página, mas só ADMIN vê as abas e seções de empresa. As APIs delas
 // (/api/configuracoes/*) seguem restritas a ADMIN no servidor; aqui é só para
 // não mostrar o que daria 403. /api/push/* exige apenas sessão.
-const TABS_TODOS_OS_PAPEIS = new Set(["notificacoes", "menu"]);
+const TABS_TODOS_OS_PAPEIS = new Set(["notificacoes", "menu", "lojas"]);
 
 type MeResponse = { usuario: { role: string } };
 
@@ -106,6 +107,10 @@ function ConfiguracoesTabs() {
           <LayoutList className="h-4 w-4" />
           Menu
         </TabsTrigger>
+        <TabsTrigger value="lojas" className="gap-2">
+          <Layers className="h-4 w-4" />
+          Lojas
+        </TabsTrigger>
       </TabsList>
 
       {ehAdmin && (
@@ -137,6 +142,11 @@ function ConfiguracoesTabs() {
       <TabsContent value="menu" className="space-y-4">
         <MenuSection />
       </TabsContent>
+
+      {/* ---- Lojas (duas lojas juntas) ---- */}
+      <TabsContent value="lojas" className="space-y-4">
+        <LojasSection />
+      </TabsContent>
     </Tabs>
   );
 }
@@ -150,7 +160,7 @@ export default function ConfiguracoesPage() {
     <div className="space-y-6">
       <PageHeader
         title="Configurações"
-        description="Preferências gerais, integrações, notificações e menu."
+        description="Preferências gerais, integrações, notificações, menu e lojas."
       />
 
       <Suspense fallback={<SkeletonAbas />}>
