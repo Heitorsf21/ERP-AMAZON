@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { corDaLoja, ordenarLojas, ordenarPar, vinculoValido, type ContaVinculo } from "./regras";
+import { corDaLoja, lojasComCor, ordenarLojas, ordenarPar, vinculoValido, type ContaVinculo } from "./regras";
 
 const conta = (over: Partial<ContaVinculo> = {}): ContaVinculo => ({
   id: "u-a",
@@ -68,5 +68,20 @@ describe("corDaLoja", () => {
   it("cicla as cores com muitas lojas", () => {
     expect(() => corDaLoja(9)).not.toThrow();
     expect(corDaLoja(9).ponto).toMatch(/^bg-/);
+  });
+});
+
+describe("lojasComCor", () => {
+  it("junta a aberta e as vinculadas, ordena por nome e dá a cor pela posição", () => {
+    const r = lojasComCor(
+      { empresaId: "udn", nome: "UDN", email: "u@x", papel: "ADMIN" },
+      [{ empresaId: "mundofs", nome: "MundoFS", email: "m@x", papel: "ADMIN", vinculoId: "v1", vinculadaEm: "" }],
+    );
+    expect(r.map((l) => [l.nome, l.atual, l.cor.ponto])).toEqual([
+      ["MundoFS", false, "bg-blue-500"],
+      ["UDN", true, "bg-violet-500"],
+    ]);
+    expect(r[0]?.vinculoId).toBe("v1");
+    expect(r[1]?.vinculoId).toBeNull();
   });
 });

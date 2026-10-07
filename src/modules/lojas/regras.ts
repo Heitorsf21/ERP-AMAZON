@@ -80,3 +80,32 @@ export function corDaLoja(indice: number): CorLoja {
   const n = CORES_LOJA.length;
   return CORES_LOJA[((indice % n) + n) % n]!;
 }
+
+type LojaBase = { empresaId: string; nome: string; email: string; papel: string };
+
+export type LojaComCor = LojaBase & {
+  /** É a loja aberta nesta sessão. */
+  atual: boolean;
+  /** Vínculo que liga esta loja à aberta (null na própria loja aberta). */
+  vinculoId: string | null;
+  cor: CorLoja;
+};
+
+/** Lista única das lojas da conta, na ordem fixa por nome, com a cor de cada uma. */
+export function lojasComCor(
+  atual: LojaBase,
+  vinculadas: readonly (LojaBase & { vinculoId: string; vinculadaEm?: string })[],
+): LojaComCor[] {
+  const todas = [
+    { ...atual, atual: true, vinculoId: null },
+    ...vinculadas.map((l) => ({
+      empresaId: l.empresaId,
+      nome: l.nome,
+      email: l.email,
+      papel: l.papel,
+      atual: false,
+      vinculoId: l.vinculoId,
+    })),
+  ];
+  return ordenarLojas(todas).map((l, i) => ({ ...l, cor: corDaLoja(i) }));
+}

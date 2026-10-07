@@ -4,6 +4,7 @@ import * as React from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ThemeProvider } from "next-themes";
 import { PwaProvider } from "@/components/pwa/pwa-provider";
+import { SessaoSync } from "@/components/lojas/sessao-sync";
 import { deveRecarregarAoVoltar } from "@/lib/pwa/refetch";
 
 export function Providers({ children }: { children: React.ReactNode }) {
@@ -36,7 +37,10 @@ export function Providers({ children }: { children: React.ReactNode }) {
   return (
     <ThemeProvider attribute="class" defaultTheme="light" enableSystem>
       <QueryClientProvider client={client}>
-        <PwaProvider>{children}</PwaProvider>
+        <PwaProvider>
+          <SessaoSync />
+          {children}
+        </PwaProvider>
       </QueryClientProvider>
     </ThemeProvider>
   );
