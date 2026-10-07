@@ -95,12 +95,12 @@ function ItemTopProduto({
         <ProductThumb src={thumb} alt={produto.nome} size={48} />
         <div className="min-w-0 flex-1">
           <p className="line-clamp-2 text-sm font-medium leading-snug">{produto.nome}</p>
-          <p className="mt-0.5 flex flex-wrap items-center gap-1 text-xs text-muted-foreground">
-            {produto.loja && <SeloLoja nome={produto.loja.nome} classeCor={classeCorLoja} />}
-            <span>
-              {produto.sku} · {produto.unidades} un ·{" "}
-              {formatarPercentual(produto.representatividadePercentual)} do total
-            </span>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            {produto.loja && (
+              <SeloLoja nome={produto.loja.nome} classeCor={classeCorLoja} className="mr-1 align-[1px]" />
+            )}
+            {produto.sku} · {produto.unidades} un ·{" "}
+            {formatarPercentual(produto.representatividadePercentual)} do total
           </p>
         </div>
         <span className="shrink-0 text-sm font-bold tabular-nums">
