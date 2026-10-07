@@ -17,6 +17,7 @@ export const AmazonSpApiOperation = {
   PRODUCT_FEES_ESTIMATE: "PRODUCT_FEES_ESTIMATE",
   SELLERS_GET: "SELLERS_GET",
   LISTINGS_GET_ITEM: "LISTINGS_GET_ITEM",
+  LISTINGS_PATCH_ITEM: "LISTINGS_PATCH_ITEM",
   ADS_REPORTS_CREATE: "ADS_REPORTS_CREATE",
   ADS_REPORTS_GET: "ADS_REPORTS_GET",
   ADS_REPORTS_DOWNLOAD: "ADS_REPORTS_DOWNLOAD",
@@ -120,6 +121,11 @@ const OPERATION_LIMITS: Record<AmazonSpApiOperation, OperationLimit> = {
   },
   // Listings Items v2021-08-01 getListingsItem: 5 rps, burst 10.
   [AmazonSpApiOperation.LISTINGS_GET_ITEM]: {
+    rateLimitPerSecond: 5,
+    burst: 10,
+  },
+  // Listings Items v2021-08-01 patchListingsItem: 5 rps, burst 10.
+  [AmazonSpApiOperation.LISTINGS_PATCH_ITEM]: {
     rateLimitPerSecond: 5,
     burst: 10,
   },
