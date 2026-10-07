@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
+import { safeNextPath } from "@/lib/safe-redirect";
 import {
   ESPERA_PEDIDO_MS,
   INTERVALO_CONSULTA_PEDIDO_MS,
   estadoPedidoDestaque,
   intervaloConsultaPedido,
+  loginParaAbrirPedido,
   normalizarLojaParam,
   normalizarPedidoParam,
   pedidoEhDeOutraLoja,
@@ -41,6 +43,17 @@ describe("pedidoEhDeOutraLoja", () => {
     expect(pedidoEhDeOutraLoja(null, "udn")).toBe(false);
     // Sessão antiga sem empresa: não dá para afirmar que é de outra loja.
     expect(pedidoEhDeOutraLoja("udn", null)).toBe(false);
+  });
+});
+
+describe("loginParaAbrirPedido (Trocar de conta)", () => {
+  it("depois de entrar na outra loja, o login volta para o pedido do aviso", () => {
+    const url = loginParaAbrirPedido("702-4417820-3391045", "cmpy390qn0006vy7lhl9qkbzg");
+    const next = new URL(url, "https://erp.mundofs.cloud").searchParams.get("next");
+    expect(url.startsWith("/login?next=")).toBe(true);
+    expect(next).toBe("/vendas?pedido=702-4417820-3391045&loja=cmpy390qn0006vy7lhl9qkbzg");
+    // O formulário de login só aceita destinos seguros: este tem que passar.
+    expect(safeNextPath(next)).toBe(next);
   });
 });
 

@@ -33,9 +33,13 @@ export type ControleLogout = {
  * `perguntarAvisos: true` SÓ para quem renderiza `<DialogAvisosAoSair
  * controle={...} />` (topbar e "Mais"). Sem a opção, o "Sair" não pergunta:
  * encerra a sessão e mantém os avisos deste aparelho (ex.: "Trocar de conta").
+ * `destino`: para onde ir depois de sair (padrão `/login`).
  */
-export function useLogout(opcoes: { perguntarAvisos?: boolean } = {}): ControleLogout {
+export function useLogout(
+  opcoes: { perguntarAvisos?: boolean; destino?: string } = {},
+): ControleLogout {
   const perguntarAvisos = opcoes.perguntarAvisos === true;
+  const destino = opcoes.destino ?? "/login";
   const qc = useQueryClient();
   const [saindo, setSaindo] = React.useState(false);
   const [pergunta, setPergunta] = React.useState<Pergunta | null>(null);
@@ -49,8 +53,8 @@ export function useLogout(opcoes: { perguntarAvisos?: boolean } = {}): ControleL
     qc.clear();
     toast.success("Sessão encerrada.");
     // Navegação "dura": descarta todo estado de cliente da conta anterior.
-    window.location.href = "/login";
-  }, [qc]);
+    window.location.href = destino;
+  }, [qc, destino]);
 
   const sair = React.useCallback(async () => {
     if (saindo) return;

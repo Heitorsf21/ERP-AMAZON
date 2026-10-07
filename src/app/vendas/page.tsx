@@ -50,6 +50,7 @@ import {
   ESPERA_PEDIDO_MS,
   estadoPedidoDestaque,
   intervaloConsultaPedido,
+  loginParaAbrirPedido,
   normalizarLojaParam,
   normalizarPedidoParam,
   type EstadoPedidoDestaque,
@@ -284,12 +285,15 @@ function PedidoDestaqueVazio({
   estado,
   consultando,
   onConsultar,
+  destinoTrocarConta,
 }: {
   estado: Exclude<EstadoPedidoDestaque, "encontrado">;
   consultando: boolean;
   onConsultar: () => void;
+  /** Login que, depois de entrar na outra loja, volta para o pedido do aviso. */
+  destinoTrocarConta?: string;
 }) {
-  const { sair, saindo } = useLogout();
+  const { sair, saindo } = useLogout({ destino: destinoTrocarConta });
   return (
     <div
       className="flex flex-col items-center gap-3 rounded-xl border border-dashed px-4 py-12 text-center"
@@ -590,6 +594,11 @@ export default function VendasPage() {
           {estadoPedido && estadoPedido !== "encontrado" ? (
             <PedidoDestaqueVazio
               estado={estadoPedido}
+              destinoTrocarConta={
+                pedidoDestaque && lojaDestaque
+                  ? loginParaAbrirPedido(pedidoDestaque, lojaDestaque)
+                  : undefined
+              }
               consultando={vendasQuery.isFetching}
               onConsultar={() => {
                 // Nova rodada de espera: volta a consultar a cada 15 s.

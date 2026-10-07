@@ -25,6 +25,12 @@ export function pedidoEhDeOutraLoja(
   return !!lojaDoLink && !!empresaDaSessao && lojaDoLink !== empresaDaSessao;
 }
 
+/** "Trocar de conta": depois de entrar na loja do aviso, o login volta para o pedido. */
+export function loginParaAbrirPedido(pedido: string, loja: string): string {
+  const destino = `/vendas?pedido=${encodeURIComponent(pedido)}&loja=${encodeURIComponent(loja)}`;
+  return `/login?next=${encodeURIComponent(destino)}`;
+}
+
 /**
  * O aviso sai do SQS ~15–30 s após a compra; a venda só é gravada pelo
  * ORDERS_SYNC (mediana 137 s, p90 534 s). Por isso, lista vazia logo após o
