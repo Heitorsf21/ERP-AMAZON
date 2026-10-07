@@ -73,7 +73,7 @@ export function montarPayloadVenda(input: {
     title: `Nova venda na ${input.loja}`,
     body: valor ? `Você teve uma nova venda de ${valor}.` : "Você teve uma nova venda.",
     tag: `venda-${input.empresaId}-${input.amazonOrderId}`,
-    url: `/vendas?pedido=${encodeURIComponent(input.amazonOrderId)}`,
+    url: `/vendas?pedido=${encodeURIComponent(input.amazonOrderId)}&loja=${encodeURIComponent(input.empresaId)}`,
     icon: ICONE_PUSH,
     badge: BADGE_PUSH,
   };

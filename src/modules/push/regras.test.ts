@@ -40,7 +40,9 @@ describe("texto do aviso", () => {
     const p = montarPayloadVenda({ ...base, valorCentavos: 20497, estimado: false });
     expect(p.title).toBe("Nova venda na MundoFS");
     expect(p.body).toBe(`Você teve uma nova venda de ${formatBRL(20497)}.`);
-    expect(p.url).toBe("/vendas?pedido=702-4417820-3391045");
+    // A loja vai no link: com o app logado na outra conta, /vendas avisa
+    // "pedido de outra loja" em vez de procurar o pedido na conta errada.
+    expect(p.url).toBe("/vendas?pedido=702-4417820-3391045&loja=mundofs");
     expect(p.tag).toBe("venda-mundofs-702-4417820-3391045");
   });
 
