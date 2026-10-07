@@ -4,7 +4,7 @@ import * as React from "react";
 import { Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { toast } from "sonner";
-import { Bell, Plug, SlidersHorizontal } from "lucide-react";
+import { Bell, LayoutList, Plug, SlidersHorizontal } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { GmailSection } from "./gmail-section";
@@ -14,8 +14,9 @@ import { NotificacoesSection } from "@/components/configuracoes/notificacoes-sec
 import { ImpostoSimplesSection } from "@/components/configuracoes/imposto-simples-section";
 import { WhatsappEstoqueSection } from "@/components/configuracoes/whatsapp-estoque-section";
 import { AssinaturaSection } from "@/components/configuracoes/assinatura-section";
+import { MenuSection } from "@/components/configuracoes/menu-section";
 
-const TABS_VALIDAS = new Set(["geral", "integracoes", "notificacoes"]);
+const TABS_VALIDAS = new Set(["geral", "integracoes", "notificacoes", "menu"]);
 
 /**
  * Lê `?tab=` (deep-link usado pelos callbacks OAuth) e o resultado da conexão
@@ -68,6 +69,10 @@ function ConfiguracoesTabs() {
           <Bell className="h-4 w-4" />
           Notificacoes
         </TabsTrigger>
+        <TabsTrigger value="menu" className="gap-2">
+          <LayoutList className="h-4 w-4" />
+          Menu
+        </TabsTrigger>
       </TabsList>
 
       {/* ---- Geral ---- */}
@@ -89,6 +94,11 @@ function ConfiguracoesTabs() {
       <TabsContent value="notificacoes" className="space-y-4">
         <NotificacoesSection />
       </TabsContent>
+
+      {/* ---- Menu ---- */}
+      <TabsContent value="menu" className="space-y-4">
+        <MenuSection />
+      </TabsContent>
     </Tabs>
   );
 }
@@ -98,7 +108,7 @@ export default function ConfiguracoesPage() {
     <div className="space-y-6">
       <PageHeader
         title="Configuracoes"
-        description="Preferencias gerais, integracoes externas e notificacoes."
+        description="Preferências gerais, integrações, notificações e menu."
       />
 
       <Suspense fallback={<div className="h-40 rounded-xl border bg-card" />}>
