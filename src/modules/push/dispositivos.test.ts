@@ -15,8 +15,10 @@ vi.mock("@/lib/db", () => ({ db: dbMock }));
 import {
   apelidoDoUserAgent,
   atualizarPreferencia,
+  endpointPushPermitido,
   inscreverDispositivo,
   inscricaoSchema,
+  LIMITE_DISPOSITIVOS_POR_USUARIO,
   removerDispositivo,
 } from "./dispositivos";
 
@@ -28,6 +30,7 @@ beforeEach(() => {
   dbMock.pushDispositivo.upsert.mockResolvedValue({ id: "d1" });
   dbMock.pushDispositivo.deleteMany.mockResolvedValue({ count: 1 });
   dbMock.pushDispositivo.updateMany.mockResolvedValue({ count: 1 });
+  dbMock.pushDispositivo.findMany.mockResolvedValue([]);
 });
 
 describe("mesmo celular em duas lojas", () => {
@@ -74,5 +77,75 @@ describe("validação e apelido", () => {
     expect(apelidoDoUserAgent("Mozilla/5.0 (Linux; Android 14; Pixel 7) Chrome/126 Mobile")).toBe("Android");
     expect(apelidoDoUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/154")).toBe("Computador (Windows)");
     expect(apelidoDoUserAgent(null)).toBe("Navegador");
+  });
+});
+
+describe("endpoint só de serviço de push conhecido (anti-SSRF)", () => {
+  const chaves = { p256dh: "p".repeat(20), auth: "a".repeat(10) };
+
+  it.each([
+    "https://fcm.googleapis.com/fcm/send/abc:APA91b",
+    "https://updates.push.services.mozilla.com/wpush/v2/gAAAA",
+    "https://web.push.apple.com/QGx-abc",
+    "https://api.push.apple.com/3/device/abc",
+    "https://wns2-par02p.notify.windows.com/w/?token=abc",
+  ])("aceita %s", (endpoint) => {
+    expect(endpointPushPermitido(endpoint)).toBe(true);
+    expect(inscricaoSchema.safeParse({ endpoint, keys: chaves }).success).toBe(true);
+  });
+
+  it.each([
+    "https://169.254.169.254/latest/meta-data",
+    "https://localhost/x",
+    "https://127.0.0.1/x",
+    "https://evil.com/x",
+    "https://fcm.googleapis.com.evil.com/x",
+    "https://evilpush.apple.com/x",
+    "https://fcm.googleapis.com:8443/x",
+    "https://user:senha@fcm.googleapis.com/x",
+    "http://fcm.googleapis.com/x",
+    "não é url",
+  ])("rejeita %s", (endpoint) => {
+    expect(endpointPushPermitido(endpoint)).toBe(false);
+    expect(inscricaoSchema.safeParse({ endpoint, keys: chaves }).success).toBe(false);
+  });
+});
+
+describe("limite de aparelhos por usuário na loja", () => {
+  const base = {
+    empresaId: "mundofs",
+    usuarioId: "u1",
+    endpoint: "https://fcm.googleapis.com/fcm/send/novo",
+    p256dh: "p",
+    auth: "a",
+    userAgent: IPHONE,
+  };
+
+  it("abaixo do limite não remove nada", async () => {
+    dbMock.pushDispositivo.findMany.mockResolvedValue([{ id: "x1" }, { id: "x2" }]);
+    await inscreverDispositivo(base);
+    expect(dbMock.pushDispositivo.deleteMany).not.toHaveBeenCalled();
+    expect(dbMock.pushDispositivo.upsert).toHaveBeenCalledTimes(1);
+  });
+
+  it("no limite, o aparelho mais antigo do próprio usuário sai para o novo entrar", async () => {
+    const existentes = Array.from({ length: LIMITE_DISPOSITIVOS_POR_USUARIO }, (_, i) => ({ id: `d${i}` }));
+    dbMock.pushDispositivo.findMany.mockResolvedValue(existentes);
+    await inscreverDispositivo(base);
+    const consulta = dbMock.pushDispositivo.findMany.mock.calls[0]?.[0];
+    expect(consulta.where).toEqual({
+      empresaId: "mundofs",
+      usuarioId: "u1",
+      NOT: { endpoint: base.endpoint },
+    });
+    expect(consulta.orderBy).toEqual({ criadoEm: "desc" });
+    expect(dbMock.pushDispositivo.deleteMany).toHaveBeenCalledWith({
+      where: {
+        empresaId: "mundofs",
+        usuarioId: "u1",
+        id: { in: [`d${LIMITE_DISPOSITIVOS_POR_USUARIO - 1}`] },
+      },
+    });
+    expect(dbMock.pushDispositivo.upsert).toHaveBeenCalledTimes(1);
   });
 });

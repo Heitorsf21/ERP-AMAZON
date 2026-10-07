@@ -4,12 +4,37 @@ import { db } from "@/lib/db";
 // PushDispositivo é GLOBAL (db.ts): cada acesso aqui filtra empresaId e
 // usuarioId explicitamente.
 
+/**
+ * O servidor faz POST web-push no endpoint a cada venda: só aceitamos os
+ * serviços de push dos navegadores (anti-SSRF). FCM = Chrome/Edge Android/
+ * Samsung/Opera; Mozilla = Firefox; Apple = Safari/iOS; WNS = Edge Windows.
+ */
+const HOSTS_PUSH_EXATOS = new Set(["fcm.googleapis.com"]);
+const SUFIXOS_HOSTS_PUSH = [".push.services.mozilla.com", ".push.apple.com", ".notify.windows.com"];
+
+/** Até quantos aparelhos um usuário mantém por loja; o mais antigo sai para o novo entrar. */
+export const LIMITE_DISPOSITIVOS_POR_USUARIO = 10;
+
+export function endpointPushPermitido(endpoint: string): boolean {
+  let url: URL;
+  try {
+    url = new URL(endpoint);
+  } catch {
+    return false;
+  }
+  if (url.protocol !== "https:" || url.username || url.password) return false;
+  if (url.port && url.port !== "443") return false;
+  const host = url.hostname.toLowerCase();
+  return HOSTS_PUSH_EXATOS.has(host) || SUFIXOS_HOSTS_PUSH.some((sufixo) => host.endsWith(sufixo));
+}
+
 export const inscricaoSchema = z.object({
   endpoint: z
     .string()
     .url()
     .max(1000)
-    .refine((u) => u.startsWith("https://"), "endpoint precisa ser https"),
+    .refine((u) => u.startsWith("https://"), "endpoint precisa ser https")
+    .refine(endpointPushPermitido, "endpoint não é de um serviço de push conhecido"),
   keys: z.object({
     p256dh: z.string().min(10).max(200),
     auth: z.string().min(8).max(100),
@@ -46,6 +71,20 @@ export async function inscreverDispositivo(input: {
   auth: string;
   userAgent: string | null;
 }): Promise<{ id: string }> {
+  // Limite por usuário e loja: abre espaço removendo os aparelhos mais antigos
+  // do PRÓPRIO usuário (o endpoint que está sendo reinscrito não conta).
+  const outros = await db.pushDispositivo.findMany({
+    where: { empresaId: input.empresaId, usuarioId: input.usuarioId, NOT: { endpoint: input.endpoint } },
+    orderBy: { criadoEm: "desc" },
+    select: { id: true },
+  });
+  const excedentes = outros.slice(LIMITE_DISPOSITIVOS_POR_USUARIO - 1).map((d) => d.id);
+  if (excedentes.length > 0) {
+    await db.pushDispositivo.deleteMany({
+      where: { empresaId: input.empresaId, usuarioId: input.usuarioId, id: { in: excedentes } },
+    });
+  }
+
   return db.pushDispositivo.upsert({
     where: { empresaId_endpoint: { empresaId: input.empresaId, endpoint: input.endpoint } },
     update: {
