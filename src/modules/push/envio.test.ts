@@ -64,13 +64,13 @@ describe("reservarEnvio", () => {
 
 describe("entregar", () => {
   it("vai só para aparelhos ativos DA EMPRESA da venda que querem vendas", async () => {
-    dbMock.pushDispositivo.findMany.mockResolvedValue([disp("d1", "https://fcm/1")]);
+    dbMock.pushDispositivo.findMany.mockResolvedValue([disp("d1", "https://fcm.googleapis.com/fcm/send/1")]);
     const r = await entregar({ empresaId: "udncd", payload: PAYLOAD, cfg: CFG });
     expect(dbMock.pushDispositivo.findMany).toHaveBeenCalledWith(
       expect.objectContaining({ where: { empresaId: "udncd", ativo: true, receberVendas: true } }),
     );
     expect(sendMock).toHaveBeenCalledWith(
-      { endpoint: "https://fcm/1", keys: { p256dh: "p", auth: "a" } },
+      { endpoint: "https://fcm.googleapis.com/fcm/send/1", keys: { p256dh: "p", auth: "a" } },
       JSON.stringify(PAYLOAD),
       expect.objectContaining({ TTL: 3600, urgency: "high" }),
     );
@@ -85,15 +85,15 @@ describe("entregar", () => {
   });
 
   it("inscrição expirada (410) é apagada em todas as lojas daquele aparelho", async () => {
-    dbMock.pushDispositivo.findMany.mockResolvedValue([disp("d1", "https://fcm/1")]);
+    dbMock.pushDispositivo.findMany.mockResolvedValue([disp("d1", "https://fcm.googleapis.com/fcm/send/1")]);
     sendMock.mockRejectedValue(Object.assign(new Error("gone"), { statusCode: 410 }));
     const r = await entregar({ empresaId: "mundofs", payload: PAYLOAD, cfg: CFG });
-    expect(dbMock.pushDispositivo.deleteMany).toHaveBeenCalledWith({ where: { endpoint: "https://fcm/1" } });
+    expect(dbMock.pushDispositivo.deleteMany).toHaveBeenCalledWith({ where: { endpoint: "https://fcm.googleapis.com/fcm/send/1" } });
     expect(r).toEqual({ destinos: 1, ok: 0, falhas: 1 });
   });
 
   it("5ª falha seguida desativa o aparelho", async () => {
-    dbMock.pushDispositivo.findMany.mockResolvedValue([disp("d1", "https://fcm/1", 4)]);
+    dbMock.pushDispositivo.findMany.mockResolvedValue([disp("d1", "https://fcm.googleapis.com/fcm/send/1", 4)]);
     sendMock.mockRejectedValue(Object.assign(new Error("boom"), { statusCode: 500 }));
     await entregar({ empresaId: "mundofs", payload: PAYLOAD, cfg: CFG });
     expect(dbMock.pushDispositivo.update).toHaveBeenCalledWith({
@@ -106,6 +106,19 @@ describe("entregar", () => {
     const r = await entregar({ empresaId: "mundofs", payload: PAYLOAD, cfg: null });
     expect(dbMock.pushDispositivo.findMany).not.toHaveBeenCalled();
     expect(r).toEqual({ destinos: 0, ok: 0, falhas: 0 });
+  });
+
+  it("endpoint fora dos serviços de push conhecidos não recebe POST e é desativado (anti-SSRF)", async () => {
+    dbMock.pushDispositivo.findMany.mockResolvedValue([
+      disp("d9", "https://169.254.169.254/latest/meta-data"),
+    ]);
+    const r = await entregar({ empresaId: "mundofs", payload: PAYLOAD, cfg: CFG });
+    expect(sendMock).not.toHaveBeenCalled();
+    expect(dbMock.pushDispositivo.update).toHaveBeenCalledWith({
+      where: { id: "d9" },
+      data: { ativo: false },
+    });
+    expect(r).toEqual({ destinos: 1, ok: 0, falhas: 1 });
   });
 });
 
@@ -120,7 +133,7 @@ describe("enviarPush", () => {
   });
 
   it("registra ENVIADO com a contagem", async () => {
-    dbMock.pushDispositivo.findMany.mockResolvedValue([disp("d1", "https://fcm/1")]);
+    dbMock.pushDispositivo.findMany.mockResolvedValue([disp("d1", "https://fcm.googleapis.com/fcm/send/1")]);
     await enviarPush({ empresaId: "mundofs", tipo: TipoPushEnvio.VENDA_NOVA, dedupeKey: "venda:1", payload: PAYLOAD, cfg: CFG });
     expect(dbMock.pushEnvio.update).toHaveBeenCalledWith({
       where: { id: "env1" },

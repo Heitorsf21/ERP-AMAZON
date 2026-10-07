@@ -2,6 +2,7 @@ import webpush from "web-push";
 import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { logger } from "@/lib/logger";
+import { endpointPushPermitido } from "./dispositivos";
 import type { PayloadPush } from "./regras";
 
 export const TipoPushEnvio = {
@@ -72,6 +73,13 @@ export async function entregar(input: {
   const corpo = JSON.stringify(input.payload);
   const resultados = await Promise.all(
     dispositivos.map(async (d) => {
+      // Defesa em profundidade anti-SSRF: a inscrição já é validada na entrada,
+      // mas o servidor nunca faz POST fora dos serviços de push dos navegadores.
+      if (!endpointPushPermitido(d.endpoint)) {
+        await db.pushDispositivo.update({ where: { id: d.id }, data: { ativo: false } });
+        logger.warn({ dispositivoId: d.id }, "push: endpoint fora dos serviços conhecidos — aparelho desativado");
+        return false;
+      }
       try {
         await webpush.sendNotification(
           { endpoint: d.endpoint, keys: { p256dh: d.p256dh, auth: d.auth } },
