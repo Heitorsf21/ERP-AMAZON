@@ -193,3 +193,6 @@ export const ALL_NAV_ITEMS: Array<NavLeaf & { group: string }> = [
     })),
   ),
 ];
+
+/** Todos os hrefs do menu (Home + grupos), na ordem da sidebar. */
+export const HREFS_NAV: string[] = ALL_NAV_ITEMS.map((item) => item.href);

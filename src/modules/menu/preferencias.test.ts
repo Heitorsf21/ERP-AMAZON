@@ -1,0 +1,77 @@
+import { describe, expect, it } from "vitest";
+import {
+  chaveMenuUsuario,
+  contarVisiveis,
+  ehFixo,
+  filtrarGruposVisiveis,
+  ocultasDaSugestao,
+  parseOcultas,
+  sanitizarOcultas,
+} from "./preferencias";
+
+const HREFS = [
+  "/home",
+  "/agenda",
+  "/caixa",
+  "/dashboard-ecommerce",
+  "/produtos",
+  "/vendas",
+  "/perfil",
+  "/configuracoes",
+];
+
+describe("menu personalizável por usuário", () => {
+  it("chave da preferência é escopada pelo usuário", () => {
+    expect(chaveMenuUsuario("u1")).toBe("menu_abas_ocultas:u:u1");
+  });
+
+  it("as 4 abas do núcleo são fixas", () => {
+    expect(ehFixo("/dashboard-ecommerce")).toBe(true);
+    expect(ehFixo("/vendas")).toBe(true);
+    expect(ehFixo("/produtos")).toBe(true);
+    expect(ehFixo("/configuracoes")).toBe(true);
+    expect(ehFixo("/agenda")).toBe(false);
+  });
+
+  it("parse tolera vazio, lixo e tipos errados", () => {
+    expect(parseOcultas(null)).toEqual([]);
+    expect(parseOcultas("")).toEqual([]);
+    expect(parseOcultas("nao-json")).toEqual([]);
+    expect(parseOcultas('{"a":1}')).toEqual([]);
+    expect(parseOcultas('["/caixa", 3, null]')).toEqual(["/caixa"]);
+  });
+
+  it("sanitiza: descarta desconhecidos, fixos e repetidos, na ordem do menu", () => {
+    expect(
+      sanitizarOcultas(["/vendas", "/caixa", "/xpto", "/agenda", "/caixa"], HREFS),
+    ).toEqual(["/agenda", "/caixa"]);
+  });
+
+  it("PUT forjado não esconde aba fixa", () => {
+    expect(
+      sanitizarOcultas(
+        ["/dashboard-ecommerce", "/vendas", "/produtos", "/configuracoes"],
+        HREFS,
+      ),
+    ).toEqual([]);
+  });
+
+  it("sugestão esconde tudo que não é fixo", () => {
+    expect(ocultasDaSugestao(HREFS)).toEqual(["/home", "/agenda", "/caixa", "/perfil"]);
+  });
+
+  it("filtra itens ocultos e remove grupo que ficou vazio", () => {
+    const grupos = [
+      { id: "fin", items: [{ href: "/agenda" }, { href: "/caixa" }] },
+      { id: "eco", items: [{ href: "/dashboard-ecommerce" }, { href: "/vendas" }] },
+    ];
+    const r = filtrarGruposVisiveis(grupos, ["/agenda", "/caixa", "/vendas"]);
+    expect(r.map((g) => g.id)).toEqual(["eco"]);
+    // /vendas é fixa: continua mesmo pedida como oculta
+    expect(r[0]?.items.map((i) => i.href)).toEqual(["/dashboard-ecommerce", "/vendas"]);
+  });
+
+  it("conta abas visíveis ignorando ocultas inválidas", () => {
+    expect(contarVisiveis(HREFS, ["/agenda", "/vendas"])).toBe(7);
+  });
+});
