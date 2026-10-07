@@ -17,7 +17,7 @@ import {
   Zap,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { ALL_NAV_ITEMS } from "./nav-routes";
+import { useMenuVisivel } from "@/components/menu/use-menu-visivel";
 import type { BuscaResposta, BuscaResultadoItem } from "@/modules/busca/service";
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
@@ -140,6 +140,8 @@ function CommandPaletteDialog({
     };
   }, [queryAjustada, modo]);
 
+  const { itens: paginasMenu } = useMenuVisivel();
+
   // Ações rápidas (estáticas, executam callback).
   const acoesRapidas = React.useMemo<FlatItem[]>(
     () => [
@@ -220,13 +222,13 @@ function CommandPaletteDialog({
     // Páginas (filtra client-side por label/keywords/group)
     const q = normalize(queryAjustada);
     const paginas = queryAjustada
-      ? ALL_NAV_ITEMS.filter(
+      ? paginasMenu.filter(
           (it) =>
             normalize(it.label).includes(q) ||
             normalize((it.keywords ?? []).join(" ")).includes(q) ||
             normalize(it.group).includes(q),
         )
-      : ALL_NAV_ITEMS;
+      : paginasMenu;
 
     for (const p of paginas) {
       items.push({
@@ -267,7 +269,7 @@ function CommandPaletteDialog({
     }
 
     return items;
-  }, [modo, queryAjustada, dadosRemotos, acoesRapidas, router, onClose]);
+  }, [modo, queryAjustada, dadosRemotos, acoesRapidas, router, onClose, paginasMenu]);
 
   // Agrupa por group label, preservando ordem
   const grupos = React.useMemo(() => {

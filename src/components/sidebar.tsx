@@ -13,6 +13,7 @@ import { HOME_ITEM, NAV_GROUPS, type NavLeaf, type NavGroup as NavGroupT } from 
 import { cn } from "@/lib/utils";
 import { BrandMark } from "@/components/brand-mark";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { useMenuVisivel } from "@/components/menu/use-menu-visivel";
 import {
   Sheet,
   SheetContent,
@@ -250,6 +251,7 @@ function useGroupsState(pathname: string) {
 export function SidebarContent({ collapsed = false }: { collapsed?: boolean }) {
   const pathname = usePathname();
   const { state: groupsExpanded, toggle } = useGroupsState(pathname ?? "");
+  const { grupos, homeVisivel } = useMenuVisivel();
 
   // Badge de notificações migrou para `<NotificationBell>` no topbar.
   // O grupo original aqui é usado direto, sem enriquecimento.
@@ -274,21 +276,25 @@ export function SidebarContent({ collapsed = false }: { collapsed?: boolean }) {
       {/* Nav */}
       <TooltipProvider delayDuration={100}>
         <nav className={cn("flex-1 overflow-y-auto", collapsed ? "p-2" : "p-3")}>
-          {/* Home destacada */}
-          <div className="mb-3">
-            <NavLeaf
-              item={homeItem}
-              active={isActive(pathname, homeItem.href)}
-              collapsed={collapsed}
-            />
-          </div>
+          {homeVisivel && (
+            <>
+              {/* Home destacada */}
+              <div className="mb-3">
+                <NavLeaf
+                  item={homeItem}
+                  active={isActive(pathname, homeItem.href)}
+                  collapsed={collapsed}
+                />
+              </div>
 
-          {!collapsed && (
-            <div className="mb-2 h-px bg-gradient-to-r from-transparent via-[hsl(var(--sidebar-border))] to-transparent" />
+              {!collapsed && (
+                <div className="mb-2 h-px bg-gradient-to-r from-transparent via-[hsl(var(--sidebar-border))] to-transparent" />
+              )}
+            </>
           )}
 
           <div className={cn("space-y-3", collapsed && "space-y-2")}>
-            {groups.map((group, idx) => (
+            {grupos.map((group, idx) => (
               <React.Fragment key={group.id}>
                 {collapsed && idx > 0 && (
                   <div className="mx-2 h-px bg-[hsl(var(--sidebar-border))]/70" />
