@@ -35,10 +35,59 @@ export type ResumoMobileProduto = {
     rupturaEm: string | null;
   };
   preco: { centavos: number | null; sincronizadoEm: string | null };
-  custo: { centavos: number | null; vigenteDesde: string | null };
+  custo: CustoAtualResumo;
   impostoBps: number;
   unidade: UnidadeEstimada | null;
 };
+
+/**
+ * Custo exibido no detalhe e a vigência que o define.
+ * - `vigenteDesde`: início da vigência que cobre hoje; null quando nenhuma
+ *   cobre (custo vem de `Produto.custoUnitario`) ou quando vale para todo o
+ *   histórico.
+ * - `todoHistorico`: vigência com início na época (modo "Todo histórico").
+ */
+export type CustoAtualResumo = {
+  centavos: number | null;
+  vigenteDesde: string | null;
+  todoHistorico: boolean;
+};
+
+export type VigenciaCustoResumo = {
+  custoCentavos: number;
+  vigenciaInicio: Date;
+  vigenciaFim: Date | null;
+};
+
+/**
+ * Mesma regra de `resolverCustoUnitario` (custo-historico.ts): vale a vigência
+ * com maior início ≤ hoje cujo fim é nulo ou > hoje; sem nenhuma, o custo do
+ * cadastro. Assim o rótulo nunca descreve uma vigência que não é a do valor.
+ */
+export function custoAtualDoResumo(
+  vigencias: readonly VigenciaCustoResumo[],
+  custoCadastroCentavos: number | null,
+  hoje: Date,
+): CustoAtualResumo {
+  const agora = hoje.getTime();
+  let atual: VigenciaCustoResumo | null = null;
+  for (const v of vigencias) {
+    const inicio = v.vigenciaInicio.getTime();
+    if (inicio > agora) continue;
+    if (v.vigenciaFim && v.vigenciaFim.getTime() <= agora) continue;
+    if (!atual || inicio > atual.vigenciaInicio.getTime()) atual = v;
+  }
+  if (!atual) {
+    return { centavos: custoCadastroCentavos, vigenteDesde: null, todoHistorico: false };
+  }
+  // "Todo histórico" grava o início na época (1970-01-01T00:00Z).
+  const todoHistorico = atual.vigenciaInicio.getTime() <= 0;
+  return {
+    centavos: atual.custoCentavos,
+    vigenteDesde: todoHistorico ? null : atual.vigenciaInicio.toISOString(),
+    todoHistorico,
+  };
+}
 
 export function calcularUnidadeEstimada(input: {
   precoCentavos: number;

@@ -1,13 +1,13 @@
-import { handle, ok, erro } from "@/lib/api";
-import { requireSession } from "@/lib/auth";
+import { handleAuth, ok, erro } from "@/lib/api";
+import { UsuarioRole } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { resolverImagemProduto } from "@/lib/amazon-images";
 import { getConfigImpostoSimples } from "@/modules/configuracao/imposto-simples";
-import { resolverCustoUnitario } from "@/modules/produtos/custo-historico";
 import { calcularFeesLocal, loadFeeEstimatorConfig } from "@/modules/produtos/fee-estimator";
 import { calcularCobertura } from "@/modules/produtos/cobertura";
 import {
   calcularUnidadeEstimada,
+  custoAtualDoResumo,
   type ResumoMobileProduto,
 } from "@/modules/produtos/resumo-mobile";
 import { whereVendaAmazonContabilizavelEstrito } from "@/modules/vendas/filtros";
@@ -16,8 +16,11 @@ export const dynamic = "force-dynamic";
 
 type Params = { params: Promise<{ id: string }> };
 
-export const GET = handle(async (_req: Request, { params }: Params) => {
-  await requireSession();
+// handleAuth (e não handle + requireSession): amarra o contexto de tenant via
+// runWithTenant para TODO o handler. Sem isso, getConfigImpostoSimples (config
+// GLOBAL com chave por empresa) leria a alíquota da empresa primária. Papel
+// igual ao das demais rotas de produto (custo e margem: ADMIN/OPERADOR).
+export const GET = handleAuth([UsuarioRole.OPERADOR], async (_req: Request, { params }: Params) => {
   const { id } = await params;
   // findFirst: Produto é TENANT — auto-escopado à empresa da sessão.
   const produto = await db.produto.findFirst({
@@ -43,7 +46,7 @@ export const GET = handle(async (_req: Request, { params }: Params) => {
   if (!produto) return erro(404, "produto não encontrado");
 
   const hoje = new Date();
-  const [vendas, custoVigente, vigencia, cfgFees, imposto] = await Promise.all([
+  const [vendas, vigencias, cfgFees, imposto] = await Promise.all([
     db.vendaAmazon.aggregate({
       where: whereVendaAmazonContabilizavelEstrito({
         sku: produto.sku,
@@ -51,11 +54,17 @@ export const GET = handle(async (_req: Request, { params }: Params) => {
       }),
       _sum: { quantidade: true },
     }),
-    resolverCustoUnitario(produto.id, hoje),
-    db.produtoCustoHistorico.findFirst({
-      where: { produtoId: produto.id, vigenciaInicio: { lte: hoje } },
+    // Mesmo filtro de resolverCustoUnitario: a vigência que cobre HOJE define
+    // tanto o valor quanto o "Vigente desde" (uma única fonte para os dois).
+    db.produtoCustoHistorico.findMany({
+      where: {
+        produtoId: produto.id,
+        vigenciaInicio: { lte: hoje },
+        OR: [{ vigenciaFim: null }, { vigenciaFim: { gt: hoje } }],
+      },
       orderBy: { vigenciaInicio: "desc" },
-      select: { vigenciaInicio: true },
+      take: 1,
+      select: { custoCentavos: true, vigenciaInicio: true, vigenciaFim: true },
     }),
     loadFeeEstimatorConfig(),
     getConfigImpostoSimples(),
@@ -67,7 +76,8 @@ export const GET = handle(async (_req: Request, { params }: Params) => {
     vendas30d: vendas._sum.quantidade ?? 0,
     hoje,
   });
-  const custoCentavos = custoVigente ?? produto.custoUnitario ?? null;
+  const custo = custoAtualDoResumo(vigencias, produto.custoUnitario ?? null, hoje);
+  const custoCentavos = custo.centavos;
   const impostoBps = imposto.ativo ? imposto.aliquotaBps : 0;
   const preco = produto.amazonPrecoListagemCentavos;
   const fees =
@@ -99,10 +109,7 @@ export const GET = handle(async (_req: Request, { params }: Params) => {
       centavos: preco,
       sincronizadoEm: produto.amazonPrecoListagemSyncEm?.toISOString() ?? null,
     },
-    custo: {
-      centavos: custoCentavos,
-      vigenteDesde: vigencia?.vigenciaInicio.toISOString() ?? null,
-    },
+    custo,
     impostoBps,
     unidade:
       preco && fees

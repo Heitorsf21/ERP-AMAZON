@@ -185,7 +185,13 @@ export function ProdutoMobile({
               {custo.centavos == null ? "Sem custo" : formatBRL(custo.centavos)}
             </p>
             <p className="text-xs text-muted-foreground">
-              {custo.vigenteDesde ? `Vigente desde ${dataCurta(custo.vigenteDesde)}` : "Sem vigência cadastrada"}
+              {custo.todoHistorico
+                ? "Vale para todo o histórico"
+                : custo.vigenteDesde
+                  ? `Vigente desde ${dataCurta(custo.vigenteDesde)}`
+                  : custo.centavos != null
+                    ? "Custo do cadastro (sem vigência para hoje)"
+                    : "Sem vigência cadastrada"}
             </p>
           </div>
           <Button variant="outline" className="h-11 border-primary/40 text-primary" onClick={() => setCustoAberto(true)}>
