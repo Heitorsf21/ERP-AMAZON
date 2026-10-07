@@ -5,7 +5,7 @@
  * Destinations usam token grantless (client_credentials).
  * Subscriptions usam token normal (refresh_token) ligado ao seller.
  *
- * Uso: npx tsx scripts/setup-sqs-subscriptions.ts
+ * Uso: npx tsx scripts/setup-sqs-subscriptions.ts [--empresa=<id>]
  */
 import { loadEnvConfig } from "@next/env";
 import { db } from "@/lib/db";
@@ -15,11 +15,19 @@ import {
   getLWAGrantlessToken,
   type SPAPICredentials,
 } from "@/lib/amazon-sp-api";
-import { getAmazonConfig, isAmazonConfigured } from "@/modules/amazon/service";
+import {
+  getAmazonConfig,
+  getCredentialsOrThrow,
+  isAmazonConfigured,
+} from "@/modules/amazon/service";
+import { runWithTenant } from "@/lib/tenant-context";
 
 loadEnvConfig(process.cwd());
 
 const QUEUE_ARN = process.env.AMAZON_SQS_QUEUE_ARN;
+// --empresa=<id>: usa o app LWA/refresh token DA EMPRESA (ex.: udncd) em vez
+// da credencial global da primária. Sem a flag, comportamento antigo.
+const EMPRESA = process.argv.find((a) => a.startsWith("--empresa="))?.slice("--empresa=".length) || null;
 
 type NotifEntry = { type: string; body?: Record<string, unknown> };
 
@@ -48,19 +56,24 @@ async function main() {
     process.exit(1);
   }
 
-  const config = await getAmazonConfig();
-  if (!isAmazonConfigured(config)) {
-    console.error("Credenciais Amazon não configuradas.");
-    process.exit(1);
+  let creds: SPAPICredentials;
+  if (EMPRESA) {
+    creds = await getCredentialsOrThrow();
+    console.log(`→ Empresa ${EMPRESA}: credencial do app da própria conta`);
+  } else {
+    const config = await getAmazonConfig();
+    if (!isAmazonConfigured(config)) {
+      console.error("Credenciais Amazon não configuradas.");
+      process.exit(1);
+    }
+    creds = {
+      clientId: config.amazon_client_id!,
+      clientSecret: config.amazon_client_secret!,
+      refreshToken: config.amazon_refresh_token!,
+      marketplaceId: config.amazon_marketplace_id!,
+      endpoint: config.amazon_endpoint || undefined,
+    };
   }
-
-  const creds: SPAPICredentials = {
-    clientId: config.amazon_client_id!,
-    clientSecret: config.amazon_client_secret!,
-    refreshToken: config.amazon_refresh_token!,
-    marketplaceId: config.amazon_marketplace_id!,
-    endpoint: config.amazon_endpoint || undefined,
-  };
 
   const NOTIFICATION_TYPES = buildNotificationTypes();
 
@@ -153,7 +166,11 @@ async function main() {
   await db.$disconnect();
 }
 
-main().catch((err) => {
+const executar = EMPRESA
+  ? () => runWithTenant({ empresaId: EMPRESA, isSuperAdmin: false, source: "worker" }, main)
+  : main;
+
+executar().catch((err) => {
   console.error(err);
   process.exit(1);
 });

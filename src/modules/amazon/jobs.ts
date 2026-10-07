@@ -12,6 +12,7 @@ import {
   getReviewAutomationConfig,
   isAmazonConfigured,
 } from "@/modules/amazon/service";
+import { empresaRecebeOrderChange, intervaloEfetivo } from "@/modules/amazon/sqs-cobertura";
 import { getWhatsappEstoqueScheduleConfig } from "@/modules/whatsapp-estoque/config";
 import { diaUTC, emitirNotificacao } from "@/lib/notificacoes";
 import {
@@ -141,23 +142,28 @@ async function isWhatsappEstoqueResumoSkip(): Promise<boolean> {
 const SCHEDULES: Array<{
   tipo: TipoAmazonSyncJobType;
   intervalMs: number;
+  // Intervalo para a empresa SEM ORDER_CHANGE recente quando SQS_PRIMARY está
+  // ligado (ver sqs-cobertura). Ausente = usa intervalMs.
+  intervalMsSemSqs?: number;
   priority: number;
   payload?: Record<string, unknown>;
   gate?: () => Promise<boolean>;
   runAfterOffsetMs?: number;
   // Quando presente, substitui o dedupeKey baseado em slot por uma chave
   // customizada (ex: dedupe por data local em vez de janela fixa).
-  dedupeKeyOverride?: (now: Date) => string;
+  dedupeKeyOverride?: (now: Date, intervalMs: number) => string;
 }> = [
   {
     tipo: TipoAmazonSyncJob.ORDERS_SYNC,
     intervalMs: SQS_PRIMARY ? 15 * 60_000 : 2 * 60_000,
+    intervalMsSemSqs: 2 * 60_000,
     priority: 30,
     payload: { diasAtras: 3, maxPages: 1, dateFilter: "created" },
   },
   {
     tipo: TipoAmazonSyncJob.ORDERS_SYNC,
     intervalMs: SQS_PRIMARY ? 15 * 60_000 : 5 * 60_000,
+    intervalMsSemSqs: 5 * 60_000,
     priority: 25,
     payload: {
       dateFilter: "lastUpdated",
@@ -166,10 +172,8 @@ const SCHEDULES: Array<{
       cursorKey: "amazon_orders_last_updated_cursor",
     },
     runAfterOffsetMs: 70_000,
-    dedupeKeyOverride: (now) =>
-      `${TipoAmazonSyncJob.ORDERS_SYNC}:lastUpdated:${Math.floor(
-        now.getTime() / (SQS_PRIMARY ? 15 * 60_000 : 5 * 60_000),
-      )}`,
+    dedupeKeyOverride: (now, intervalMs) =>
+      `${TipoAmazonSyncJob.ORDERS_SYNC}:lastUpdated:${Math.floor(now.getTime() / intervalMs)}`,
   },
   {
     tipo: TipoAmazonSyncJob.INVENTORY_SYNC,
@@ -686,6 +690,9 @@ async function agendarRecorrentesDaEmpresa(empresaId: string, now: Date) {
     empresaId,
     now.getTime(),
   );
+  // Empresa sem ORDER_CHANGE recente não pode esperar o polling de 15 min.
+  const semSqs =
+    SQS_PRIMARY && !(await empresaRecebeOrderChange(empresaId, now).catch(() => false));
 
   for (const schedule of SCHEDULES) {
     if (
@@ -701,9 +708,10 @@ async function agendarRecorrentesDaEmpresa(empresaId: string, now: Date) {
       if (skip) continue;
     }
 
+    const intervalMs = intervaloEfetivo(schedule, semSqs);
     const dedupeBase = schedule.dedupeKeyOverride
-      ? schedule.dedupeKeyOverride(now)
-      : `${schedule.tipo}:${Math.floor(now.getTime() / schedule.intervalMs)}`;
+      ? schedule.dedupeKeyOverride(now, intervalMs)
+      : `${schedule.tipo}:${Math.floor(now.getTime() / intervalMs)}`;
     // Prefixo por empresa: evita colisão de dedupe entre sellers (cada um agenda
     // o mesmo tipo no mesmo slot).
     const dedupeKey = `${empresaId}:${dedupeBase}`;
