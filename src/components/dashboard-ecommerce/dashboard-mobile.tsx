@@ -182,15 +182,16 @@ export function DashboardMobile({
         <div className="flex items-center justify-between gap-3 rounded-xl border border-l-[3px] border-l-amber-500 bg-card px-4 py-3">
           <div className="min-w-0">
             <p className={ROTULO_KPI}>MPA · margem pós-anúncios</p>
-            <p className="mt-1 text-sm text-muted-foreground">
+            <p className="mt-1 flex flex-wrap items-center gap-x-1.5 text-sm text-muted-foreground">
               Lucro pós-Ads{" "}
               <strong className="text-foreground">{resumo.mpa.lucroPosAds}</strong>
+              <TrendIndicator
+                value={resumo.mpa.deltaLucroPosAds.valor}
+                unit={resumo.mpa.deltaLucroPosAds.tipo}
+              />
             </p>
           </div>
-          <div className="flex flex-col items-end">
-            <span className="text-2xl font-bold tabular-nums">{resumo.mpa.valor}</span>
-            <TrendIndicator value={resumo.mpa.delta.valor} unit={resumo.mpa.delta.tipo} />
-          </div>
+          <span className="text-2xl font-bold tabular-nums">{resumo.mpa.valor}</span>
         </div>
       )}
 

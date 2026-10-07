@@ -44,6 +44,12 @@ describe("KPIs do dashboard no celular", () => {
     expect(mpa.lucroPosAds).toBe(formatBRL(382_794));
   });
 
+  it("a variação do bloco MPA é do Lucro pós-Ads, não do MPA (a API não tem delta de MPA)", () => {
+    const { mpa } = montarKpisMobile(base);
+    expect(mpa).not.toHaveProperty("delta");
+    expect(mpa.deltaLucroPosAds).toEqual({ valor: base.delta.lucroPosAds, tipo: "percent" });
+  });
+
   it("gasto em anúncios subir é ruim (delta inverso); margem e ROI são pp", () => {
     const { cards } = montarKpisMobile(base);
     expect(cards.find((c) => c.chave === "ads")?.delta).toEqual({

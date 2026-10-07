@@ -43,7 +43,9 @@ function dinheiroOuNA(centavos: number | null): string {
 /** Os 6 KPIs + MPA escolhidos para o celular (o desktop continua com todos). */
 export function montarKpisMobile(k: KpisMobileEntrada): {
   cards: KpiMobile[];
-  mpa: { valor: string; lucroPosAds: string; delta: DeltaKpi };
+  // Só há delta do Lucro pós-Ads (como no card do desktop): a seta fica ao lado
+  // dele, nunca no número do MPA, que pode cair enquanto o lucro sobe.
+  mpa: { valor: string; lucroPosAds: string; deltaLucroPosAds: DeltaKpi };
 } {
   const d = k.delta;
   return {
@@ -94,7 +96,7 @@ export function montarKpisMobile(k: KpisMobileEntrada): {
     mpa: {
       valor: formatarPercentual(k.mpaPercentual),
       lucroPosAds: dinheiroOuNA(k.lucroPosAdsCentavos),
-      delta: { valor: d.lucroPosAds, tipo: "percent" },
+      deltaLucroPosAds: { valor: d.lucroPosAds, tipo: "percent" },
     },
   };
 }
