@@ -30,6 +30,7 @@ import { BadgeReposicao } from "@/components/produtos/badge-reposicao";
 import { DialogProduto } from "@/components/produtos/dialog-produto";
 import { DialogMovimentacaoEstoque } from "@/components/produtos/dialog-movimentacao-estoque";
 import { FichaAmazon, FichaAmazonKpis } from "@/components/produtos/ficha-amazon";
+import { BotaoAlterarPreco } from "@/components/produtos/alterar-preco-sheet";
 import { ProdutoMobile } from "@/components/produtos/produto-mobile";
 import { formatBRL } from "@/lib/money";
 import { fetchJSON } from "@/lib/fetcher";
@@ -165,7 +166,10 @@ export default function FichaProdutoPage({
   return (
     <>
       <div className="md:hidden">
-        <ProdutoMobile produtoId={id} />
+        <ProdutoMobile
+          produtoId={id}
+          acaoPreco={(resumo) => <BotaoAlterarPreco resumo={resumo} />}
+        />
       </div>
       <div className="hidden space-y-6 md:block">
       {/* Breadcrumb */}
