@@ -1,18 +1,10 @@
 import { handleAuth, ok } from "@/lib/api";
 import { resolverPeriodoDeBusca, type IntervaloPeriodo } from "@/lib/periodo";
 import { dashboardEcommerceService } from "@/modules/dashboard-ecommerce/service";
+import { calcularDeltasKpis, consolidarKpis } from "@/modules/lojas/consolidado";
+import { lojasDaVisaoTodas, naLoja, pedeVisaoTodas } from "@/modules/lojas/visao-todas";
 
 export const dynamic = "force-dynamic";
-
-function deltaPercent(atual: number | null, anterior: number | null): number | null {
-  if (atual == null || anterior == null || anterior === 0) return null;
-  return ((atual - anterior) / Math.abs(anterior)) * 100;
-}
-
-function deltaPP(atual: number | null, anterior: number | null): number | null {
-  if (atual == null || anterior == null) return null;
-  return atual - anterior;
-}
 
 export const GET = handleAuth(async (req: Request) => {
   const { searchParams } = new URL(req.url);
@@ -24,39 +16,35 @@ export const GET = handleAuth(async (req: Request) => {
     ate: new Date(periodo.ate.getTime() - duracaoMs),
   };
 
-  const [kpis, prev] = await Promise.all([
-    dashboardEcommerceService.obterKpis(periodo),
-    dashboardEcommerceService.obterKpis(anterior),
-  ]);
+  const todas = pedeVisaoTodas(searchParams) ? await lojasDaVisaoTodas() : null;
 
-  return ok({
-    ...kpis,
-    delta: {
-      faturamento: deltaPercent(kpis.faturamentoCentavos, prev.faturamentoCentavos),
-      frete: deltaPercent(kpis.freteCentavos, prev.freteCentavos),
-      faturamentoComFrete: deltaPercent(
-        kpis.faturamentoComFreteCentavos,
-        prev.faturamentoComFreteCentavos,
-      ),
-      faturamentoReembolsado: deltaPercent(
-        kpis.faturamentoReembolsadoCentavos,
-        prev.faturamentoReembolsadoCentavos,
-      ),
-      faturamentoComReembolsados: deltaPercent(
-        kpis.faturamentoComReembolsadosCentavos,
-        prev.faturamentoComReembolsadosCentavos,
-      ),
-      liquidoMarketplace: deltaPercent(kpis.liquidoMarketplaceCentavos, prev.liquidoMarketplaceCentavos),
-      lucroBruto: deltaPercent(kpis.lucroBrutoCentavos, prev.lucroBrutoCentavos),
-      margem: deltaPP(kpis.margemPercentual, prev.margemPercentual),
-      numeroVendas: deltaPercent(kpis.numeroVendas, prev.numeroVendas),
-      unidades: deltaPercent(kpis.unidades, prev.unidades),
-      ticketMedio: deltaPercent(kpis.ticketMedioCentavos, prev.ticketMedioCentavos),
-      roi: deltaPP(kpis.roiPercentual, prev.roiPercentual),
-      valorAds: deltaPercent(kpis.valorAdsCentavos, prev.valorAdsCentavos),
-      tacos: deltaPP(kpis.tacosPercentual, prev.tacosPercentual),
-      lucroPosAds: deltaPercent(kpis.lucroPosAdsCentavos, prev.lucroPosAdsCentavos),
-      roiPosAds: deltaPP(kpis.roiPosAdsPercentual, prev.roiPosAdsPercentual),
-    },
-  });
+  if (!todas) {
+    const [kpis, prev] = await Promise.all([
+      dashboardEcommerceService.obterKpis(periodo),
+      dashboardEcommerceService.obterKpis(anterior),
+    ]);
+    return ok({ ...kpis, delta: calcularDeltasKpis(kpis, prev) });
+  }
+
+  // Visão "Todas": cada loja calcula no próprio tenant; a soma é pura.
+  const porLoja = await Promise.all(
+    todas.lojas.map((loja) =>
+      naLoja(loja.empresaId, async () => {
+        const [kpis, prev] = await Promise.all([
+          dashboardEcommerceService.obterKpis(periodo),
+          dashboardEcommerceService.obterKpis(anterior),
+        ]);
+        return { loja, kpis, prev };
+      }),
+    ),
+  );
+  const atual = consolidarKpis(
+    porLoja.map(({ loja, kpis }) => ({ loja, kpis })),
+    todas.atualEmpresaId,
+  );
+  const prev = consolidarKpis(
+    porLoja.map(({ loja, prev: kpis }) => ({ loja, kpis })),
+    todas.atualEmpresaId,
+  );
+  return ok({ ...atual, delta: calcularDeltasKpis(atual, prev) });
 });

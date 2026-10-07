@@ -367,6 +367,15 @@ export const dashboardEcommerceService = {
   },
 
   async obterTopProdutos(periodo: IntervaloPeriodo, limit = 15) {
+    return (await dashboardEcommerceService.obterTopProdutosComTotal(periodo, limit)).produtos;
+  },
+
+  /**
+   * Top produtos + o faturamento total do período (base da representatividade).
+   * A visão "Todas" (src/modules/lojas) usa o total para recalcular a
+   * representatividade sobre a soma das lojas.
+   */
+  async obterTopProdutosComTotal(periodo: IntervaloPeriodo, limit = 15) {
     const [vendasRaw, adsPorProdutoInfo] = await Promise.all([
       buscarVendas(periodo),
       getAdsGastoPorProduto(periodo),
@@ -402,7 +411,7 @@ export const dashboardEcommerceService = {
     const { porProdutoId: adsPorProduto, gastoSemProduto: adsGeral } =
       adsPorProdutoInfo;
 
-    return [...porSku.entries()]
+    const produtosTop = [...porSku.entries()]
       .map(([sku, vendasDoProduto]) => {
         const produto = produtosPorSku.get(sku);
         const agregado = agregarVendas(vendasDoProduto);
@@ -456,6 +465,7 @@ export const dashboardEcommerceService = {
       })
       .sort((a, b) => b.faturadoCentavos - a.faturadoCentavos)
       .slice(0, limit);
+    return { produtos: produtosTop, totalFaturamentoCentavos: totalFaturamento };
   },
 
   listarAdsGastoManual(periodo: IntervaloPeriodo) {
