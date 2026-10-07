@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
-import crypto from "node:crypto";
 import { db } from "@/lib/db";
 import { auditLog } from "@/lib/audit";
 import {
@@ -10,7 +9,6 @@ import {
   buildSessionExpiry,
   signSession,
 } from "@/lib/session";
-import { enviarEmail, escapeHtml } from "@/lib/email";
 import {
   recordLoginFailureByKey,
   resetLoginFailuresByKey,
@@ -18,6 +16,7 @@ import {
 } from "@/lib/auth-rate-limit";
 import { originViolationResponse } from "@/lib/origin-check";
 import { TipoAuditLog } from "@/modules/shared/domain";
+import { criarDesafio2FA, FINALIDADE_LOGIN } from "@/modules/auth/desafio-2fa";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -105,61 +104,14 @@ export async function POST(req: Request) {
 
   await resetLoginFailuresByKey(getLoginFailureKey(req.headers, email));
 
-  // Se 2FA habilitado, gera challenge e envia código por email — NÃO cria sessão.
-  if (user.twoFactorEnabled && user.twoFactorMethod === "EMAIL") {
-    const codigo = String(crypto.randomInt(0, 1_000_000)).padStart(6, "0");
-    const codigoHash = await bcrypt.hash(codigo, 8);
-    const challengeId = crypto.randomBytes(16).toString("hex");
-    const expiresAt = new Date(Date.now() + 5 * 60_000); // 5 minutos
-
-    await db.codigoVerificacao2FA.create({
-      data: {
-        usuarioId: user.id,
-        codigoHash,
-        challengeId,
-        expiresAt,
-      },
-    });
-
-    await enviarEmail({
-      to: user.email,
-      subject: "Código de verificação — ERP Mundo F&S",
-      html: `
-        <div style="font-family: -apple-system, sans-serif; max-width: 480px; margin: 0 auto;">
-          <h2 style="color: #0b1220;">Código de verificação</h2>
-          <p>Olá ${escapeHtml(user.nome)},</p>
-          <p>Seu código de acesso ao ERP é:</p>
-          <p style="font-size: 32px; font-weight: bold; letter-spacing: 6px; background: #f3f4f6; padding: 16px; text-align: center; border-radius: 8px;">${codigo}</p>
-          <p style="color: #6b7280; font-size: 13px;">Este código expira em 5 minutos. Se você não tentou entrar, ignore este email.</p>
-        </div>
-      `,
-    });
-
+  // Com 2FA (e-mail ou app autenticador), cria o desafio — NÃO cria sessão.
+  const desafio = await criarDesafio2FA(user, FINALIDADE_LOGIN);
+  if (desafio) {
     return NextResponse.json({
       requires2FA: true,
-      challengeId,
+      challengeId: desafio.challengeId,
       lembrar,
-    });
-  }
-
-  // 2FA por TOTP (app autenticador): cria um challenge SEM enviar email. O código
-  // vem do app do usuário; o verificador valida contra o segredo cifrado.
-  if (user.twoFactorEnabled && user.twoFactorMethod === "TOTP") {
-    const challengeId = crypto.randomBytes(16).toString("hex");
-    await db.codigoVerificacao2FA.create({
-      data: {
-        usuarioId: user.id,
-        codigoHash: "-", // não usado no TOTP (validação é contra o segredo)
-        metodo: "TOTP",
-        challengeId,
-        expiresAt: new Date(Date.now() + 5 * 60_000),
-      },
-    });
-    return NextResponse.json({
-      requires2FA: true,
-      challengeId,
-      lembrar,
-      metodo: "TOTP",
+      ...(desafio.metodo === "TOTP" ? { metodo: "TOTP" } : {}),
     });
   }
 

@@ -1,10 +1,7 @@
 import { NextResponse } from "next/server";
-import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { auditLog } from "@/lib/audit";
-import { decryptConfigValue } from "@/lib/crypto";
-import { verificarTotp } from "@/lib/totp";
 import { originViolationResponse } from "@/lib/origin-check";
 import {
   SESSION_COOKIE_NAME,
@@ -13,13 +10,10 @@ import {
   signSession,
 } from "@/lib/session";
 import { TipoAuditLog } from "@/modules/shared/domain";
+import { conferirDesafio2FA, FINALIDADE_LOGIN } from "@/modules/auth/desafio-2fa";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-// Limite de tentativas por challenge. Ao atingir, o challenge eh invalidado
-// (usadoEm = now) e exige novo login (re-envia codigo por email).
-const MAX_TENTATIVAS_POR_CHALLENGE = 5;
 
 const schema = z.object({
   challengeId: z.string().min(8).max(64),
@@ -48,111 +42,48 @@ export async function POST(req: Request) {
   const { challengeId, codigo } = parsed.data;
   const lembrar = parsed.data.lembrar === true;
 
-  const challenge = await db.codigoVerificacao2FA.findUnique({
-    where: { challengeId },
-    include: { usuario: true },
+  const resultado = await conferirDesafio2FA({
+    challengeId,
+    codigo,
+    finalidade: FINALIDADE_LOGIN,
+    req,
+  });
+  if (!resultado.ok) {
+    return NextResponse.json({ erro: resultado.erro }, { status: 401 });
+  }
+  const usuario = resultado.usuario;
+
+  await db.usuario.update({
+    where: { id: usuario.id },
+    data: { ultimoAcesso: new Date() },
   });
 
-  if (
-    !challenge ||
-    challenge.usadoEm ||
-    challenge.expiresAt < new Date() ||
-    !challenge.usuario.ativo
-  ) {
-    await auditLog({
-      req,
-      acao: TipoAuditLog.LOGIN_FALHA,
-      entidade: "Usuario",
-      entidadeId: challenge?.usuarioId ?? null,
-      metadata: { etapa: "2FA", motivo: "challenge_invalido" },
-    });
-    return NextResponse.json(
-      { erro: "CODIGO_INVALIDO_OU_EXPIRADO" },
-      { status: 401 },
-    );
-  }
-
-  // Pre-check: ja estourou o limite? (defesa redundante caso outro request
-  // tenha marcado usadoEm entre nossa leitura e este ponto.)
-  if (challenge.tentativas >= MAX_TENTATIVAS_POR_CHALLENGE) {
-    return NextResponse.json(
-      { erro: "CHALLENGE_BLOQUEADO" },
-      { status: 401 },
-    );
-  }
-
-  const codigoOk =
-    challenge.metodo === "TOTP"
-      ? verificarTotp(codigo, decryptConfigValue(challenge.usuario.totpSecretEnc) ?? "")
-      : await bcrypt.compare(codigo, challenge.codigoHash);
-  if (!codigoOk) {
-    const novaTentativa = challenge.tentativas + 1;
-    const limiteAtingido = novaTentativa >= MAX_TENTATIVAS_POR_CHALLENGE;
-
-    await db.codigoVerificacao2FA.update({
-      where: { id: challenge.id },
-      data: {
-        tentativas: novaTentativa,
-        // Ao atingir o limite, invalida o challenge de uma vez.
-        usadoEm: limiteAtingido ? new Date() : undefined,
-      },
-    });
-
-    await auditLog({
-      req,
-      acao: TipoAuditLog.LOGIN_FALHA,
-      entidade: "Usuario",
-      entidadeId: challenge.usuarioId,
-      metadata: {
-        etapa: "2FA",
-        motivo: limiteAtingido ? "challenge_bloqueado_por_tentativas" : "codigo_incorreto",
-        tentativas: novaTentativa,
-      },
-    });
-
-    return NextResponse.json(
-      { erro: limiteAtingido ? "CHALLENGE_BLOQUEADO" : "CODIGO_INCORRETO" },
-      { status: 401 },
-    );
-  }
-
-  await db.$transaction([
-    db.codigoVerificacao2FA.update({
-      where: { id: challenge.id },
-      data: { usadoEm: new Date() },
-    }),
-    db.usuario.update({
-      where: { id: challenge.usuarioId },
-      data: { ultimoAcesso: new Date() },
-    }),
-  ]);
-
   const token = await signSession({
-    uid: challenge.usuario.id,
-    email: challenge.usuario.email,
-    nome: challenge.usuario.nome,
-    role: challenge.usuario.role,
+    uid: usuario.id,
+    email: usuario.email,
+    nome: usuario.nome,
+    role: usuario.role,
     exp: buildSessionExpiry(lembrar),
-    v: challenge.usuario.sessionVersion,
-    empresaId: challenge.usuario.empresaId ?? undefined,
+    v: usuario.sessionVersion,
+    empresaId: usuario.empresaId ?? undefined,
   });
 
   await auditLog({
-    session: { uid: challenge.usuario.id, email: challenge.usuario.email },
+    session: { uid: usuario.id, email: usuario.email },
     req,
     acao: TipoAuditLog.LOGIN_SUCESSO,
     entidade: "Usuario",
-    entidadeId: challenge.usuario.id,
+    entidadeId: usuario.id,
     metadata: { etapa: "2FA" },
   });
 
   const res = NextResponse.json({
     usuario: {
-      id: challenge.usuario.id,
-      email: challenge.usuario.email,
-      nome: challenge.usuario.nome,
-      role: challenge.usuario.role,
-      avatarUrl: challenge.usuario.avatarUrl,
+      id: usuario.id,
+      email: usuario.email,
+      nome: usuario.nome,
+      role: usuario.role,
+      avatarUrl: usuario.avatarUrl,
     },
   });
   res.cookies.set(SESSION_COOKIE_NAME, token, buildSessionCookieOptions(lembrar));
