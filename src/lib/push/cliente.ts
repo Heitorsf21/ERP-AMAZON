@@ -22,6 +22,31 @@ export function calcularEstadoPush(input: {
   return "desligado";
 }
 
+export type PerguntaAvisosAoSair = { endpoint: string; loja: string; padraoContinuar: boolean };
+
+export type DecisaoSaida =
+  | { acao: "encerrar" }
+  | { acao: "perguntar"; pergunta: PerguntaAvisosAoSair };
+
+/**
+ * O "Sair" só pergunta sobre os avisos quando quem chamou renderiza o
+ * `<DialogAvisosAoSair>` (`perguntarAvisos`). Sem o diálogo, perguntar
+ * travaria o botão em "Saindo…"; nesse caso (ex.: "Trocar de conta") sai
+ * direto e mantém os avisos, que é o padrão de quem alterna entre lojas.
+ * No app instalado o padrão é continuar; numa aba comum, parar (spec §5.3).
+ */
+export function decidirSaida(input: {
+  perguntarAvisos: boolean;
+  inscricao: { endpoint: string; loja: string } | null;
+  appInstalado: boolean;
+}): DecisaoSaida {
+  if (!input.perguntarAvisos || !input.inscricao) return { acao: "encerrar" };
+  return {
+    acao: "perguntar",
+    pergunta: { ...input.inscricao, padraoContinuar: input.appInstalado },
+  };
+}
+
 export function ehAppInstalado(): boolean {
   if (typeof window === "undefined") return false;
   const nav = navigator as Navigator & { standalone?: boolean };

@@ -116,7 +116,7 @@ function gerarIniciais(nome: string): string {
 }
 
 function ProfileMenu() {
-  const logout = useLogout();
+  const logout = useLogout({ perguntarAvisos: true });
 
   const { data, isLoading } = useQuery<MeResponse>({
     queryKey: ["auth-me"],

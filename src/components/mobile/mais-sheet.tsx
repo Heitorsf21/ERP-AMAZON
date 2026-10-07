@@ -83,7 +83,7 @@ export function MaisSheet({
 }) {
   const { grupos, homeVisivel } = useMenuVisivel();
   const { plataforma } = usePwa();
-  const logout = useLogout();
+  const logout = useLogout({ perguntarAvisos: true });
   const [instalarAberto, setInstalarAberto] = React.useState(false);
 
   const extras = grupos

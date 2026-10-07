@@ -13,9 +13,14 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { fetchJSON } from "@/lib/fetcher";
-import { ehAppInstalado, inscricaoDestaLojaNesteAparelho } from "@/lib/push/cliente";
+import {
+  decidirSaida,
+  ehAppInstalado,
+  inscricaoDestaLojaNesteAparelho,
+  type PerguntaAvisosAoSair,
+} from "@/lib/push/cliente";
 
-type Pergunta = { endpoint: string; loja: string; padraoContinuar: boolean };
+type Pergunta = PerguntaAvisosAoSair;
 
 export type ControleLogout = {
   sair: () => Promise<void>;
@@ -24,7 +29,13 @@ export type ControleLogout = {
   responder: (continuar: boolean) => Promise<void>;
 };
 
-export function useLogout(): ControleLogout {
+/**
+ * `perguntarAvisos: true` SÓ para quem renderiza `<DialogAvisosAoSair
+ * controle={...} />` (topbar e "Mais"). Sem a opção, o "Sair" não pergunta:
+ * encerra a sessão e mantém os avisos deste aparelho (ex.: "Trocar de conta").
+ */
+export function useLogout(opcoes: { perguntarAvisos?: boolean } = {}): ControleLogout {
+  const perguntarAvisos = opcoes.perguntarAvisos === true;
   const qc = useQueryClient();
   const [saindo, setSaindo] = React.useState(false);
   const [pergunta, setPergunta] = React.useState<Pergunta | null>(null);
@@ -46,13 +57,14 @@ export function useLogout(): ControleLogout {
     setSaindo(true);
     // Quem troca entre MundoFS e UDN no mesmo celular quer continuar recebendo
     // as duas; computador compartilhado, não. Por isso perguntamos.
-    const inscricao = await inscricaoDestaLojaNesteAparelho();
-    if (inscricao) {
-      setPergunta({ ...inscricao, padraoContinuar: ehAppInstalado() });
+    const inscricao = perguntarAvisos ? await inscricaoDestaLojaNesteAparelho() : null;
+    const decisao = decidirSaida({ perguntarAvisos, inscricao, appInstalado: ehAppInstalado() });
+    if (decisao.acao === "perguntar") {
+      setPergunta(decisao.pergunta);
       return;
     }
     await encerrar();
-  }, [saindo, encerrar]);
+  }, [saindo, encerrar, perguntarAvisos]);
 
   const responder = React.useCallback(
     async (continuar: boolean) => {
